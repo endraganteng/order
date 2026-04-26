@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print Label Barcode Rak</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 18px;
+            background: #f8fafc;
+            color: #0f172a;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            color: #fff;
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: #475569;
+        }
+
+        .labels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 12px;
+        }
+
+        .label-item {
+            background: #fff;
+            border: 1px dashed #94a3b8;
+            border-radius: 10px;
+            padding: 10px;
+            break-inside: avoid;
+        }
+
+        .label-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .label-sub {
+            font-size: 12px;
+            color: #475569;
+            margin-bottom: 6px;
+        }
+
+        .label-code {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .label-status {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #334155;
+        }
+
+        @media print {
+            body {
+                background: #fff;
+                padding: 8px;
+            }
+
+            .toolbar {
+                display: none;
+            }
+
+            .labels-grid {
+                gap: 8px;
+            }
+
+            .label-item {
+                border: 1px solid #94a3b8;
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="toolbar">
+        <div>
+            <div style="font-size:18px;font-weight:700;">🖨️ Print Label Barcode Rak</div>
+            <div style="font-size:12px;color:#475569;">Scope: {{ $labelScope }} • Total Label: {{ count($racks) }} • Waktu: {{ date('d/m/Y H:i', (int) $printedAt) }}</div>
+        </div>
+        <div class="toolbar-actions">
+            <button type="button" class="btn" onclick="window.print()">🖨️ Print Sekarang</button>
+            <a href="{{ route('admin.racks.index') }}" class="btn btn-secondary">⬅️ Kembali ke Master Rak</a>
+        </div>
+    </div>
+
+    <div class="labels-grid">
+        @foreach($racks as $rack)
+            @php
+                $rackName = (string) ($rack['name'] ?? '-');
+                $rackLocation = (string) ($rack['location'] ?? '-');
+                $barcodeValue = (string) ($rack['barcode_value'] ?? '');
+                $statusLabel = (($rack['is_active'] ?? true) === true) ? 'Aktif' : 'Nonaktif';
+            @endphp
+            <div class="label-item">
+                <div class="label-title">{{ $rackName }}</div>
+                <div class="label-sub">📍 {{ $rackLocation }}</div>
+                @if($barcodeValue !== '')
+                    <svg class="rack-barcode" data-barcode="{{ $barcodeValue }}"></svg>
+                @else
+                    <div style="font-size:12px;color:#b91c1c;">Barcode belum tersedia</div>
+                @endif
+                <div class="label-code">Kode: {{ $barcodeValue !== '' ? $barcodeValue : '-' }}</div>
+                <div class="label-status">Status Rak: {{ $statusLabel }}</div>
+            </div>
+        @endforeach
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script>
+        document.querySelectorAll('.rack-barcode').forEach((el) => {
+            const value = String(el.getAttribute('data-barcode') || '').trim();
+            if (!value) {
+                return;
+            }
+
+            try {
+                JsBarcode(el, value, {
+                    format: 'CODE128',
+                    width: 1.35,
+                    height: 50,
+                    displayValue: true,
+                    fontSize: 11,
+                    margin: 0,
+                });
+            } catch (error) {
+                el.outerHTML = '<span style="font-size:12px;color:#b91c1c;">Barcode invalid</span>';
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -89,6 +89,15 @@
             color: #fff;
             margin-bottom: 8px;
         }
+        .btn-flash {
+            background: #0ea5e9;
+            color: #fff;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+        .btn-flash.active {
+            background: #0284c7;
+        }
         .tag-rack {
             display: inline-block;
             font-size: 12px;
@@ -140,6 +149,32 @@
             border: 1px dashed #dbe2ea;
             padding: 12px;
         }
+        .rack-tools {
+            margin-bottom: 10px;
+            display: grid;
+            grid-template-columns: minmax(180px, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+        }
+        .rack-tools .input {
+            margin-bottom: 0;
+        }
+        .rack-tools-hint {
+            grid-column: 1 / -1;
+            font-size: 12px;
+            color: #64748b;
+            margin-top: -2px;
+        }
+        .btn-soft {
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: #334155;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
         .empty {
             background: #fff;
             border-radius: 12px;
@@ -171,6 +206,9 @@
             padding: 8px 14px;
             cursor: pointer;
             font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
         .tab-btn.active {
             background: #1d4ed8;
@@ -358,6 +396,36 @@
             font-weight: 700;
             color: #64748b;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .menu-badge {
+            min-width: 20px;
+            height: 20px;
+            padding: 0 6px;
+            border-radius: 999px;
+            font-size: 11px;
+            line-height: 20px;
+            font-weight: 700;
+            text-align: center;
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+        .menu-badge.hidden {
+            display: none;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .tab-btn.active .menu-badge,
+        .mobile-nav-btn.active .menu-badge {
+            background: rgba(255, 255, 255, 0.22);
+            color: #fff;
+        }
+        .rack-task-item.is-hidden {
+            display: none;
         }
         .mobile-nav-btn.active {
             color: #1d4ed8;
@@ -373,7 +441,7 @@
             }
             .mobile-nav {
                 display: grid;
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: 1fr 1fr 1fr;
                 position: fixed;
                 left: 0;
                 right: 0;
@@ -405,15 +473,16 @@
         </div>
 
         <div class="portal-tabs">
-            <button type="button" class="tab-btn js-tab-btn active" data-tab="tasks">📝 Tugas</button>
+            <button type="button" class="tab-btn js-tab-btn active" data-tab="rack">📦 Cek Rak <span id="badge-tab-rack" class="menu-badge js-rack-menu-badge hidden">0</span></button>
+            <button type="button" class="tab-btn js-tab-btn" data-tab="tasks">📝 Tugas <span id="badge-tab-general" class="menu-badge js-general-menu-badge hidden">0</span></button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="reports">📔 Laporan Kegiatan</button>
         </div>
 
-        <section id="panel-tasks" class="portal-panel active">
-            <h2 style="margin: 0 0 10px 0;">Tugas Saya (<span id="pending-count">{{ count($pendingTasks) }}</span>)</h2>
-            <div id="pending-container"></div>
+        <section id="panel-rack" class="portal-panel active">
+            <h2 style="margin: 0 0 10px 0;">Cek Rak Saya (<span id="rack-pending-count">0</span>)</h2>
+            <div id="rack-pending-container"></div>
 
-            <h2 style="margin: 10px 0;">Riwayat Tugas Saya</h2>
+            <h2 style="margin: 10px 0;">Riwayat Cek Rak</h2>
             <div style="overflow-x: auto;">
                 <table>
                     <thead>
@@ -427,7 +496,30 @@
                             <th>Waktu</th>
                         </tr>
                     </thead>
-                    <tbody id="history-body"></tbody>
+                    <tbody id="rack-history-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="panel-tasks" class="portal-panel">
+            <h2 style="margin: 0 0 10px 0;">Tugas Umum Saya (<span id="general-pending-count">0</span>)</h2>
+            <div id="general-pending-container"></div>
+
+            <h2 style="margin: 10px 0;">Riwayat Tugas Umum</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tugas</th>
+                            <th>Status</th>
+                            <th>Catatan</th>
+                            <th>Verifikasi Rak</th>
+                            <th>Laporan Stok Rak</th>
+                            <th>Bukti Foto</th>
+                            <th>Waktu</th>
+                        </tr>
+                    </thead>
+                    <tbody id="general-history-body"></tbody>
                 </table>
             </div>
         </section>
@@ -452,7 +544,8 @@
     </div>
 
     <nav class="mobile-nav" id="waiter-mobile-nav" aria-label="Menu Portal Waiter Mobile">
-        <button type="button" class="mobile-nav-btn js-tab-btn active" data-tab="tasks">📝 Tugas</button>
+        <button type="button" class="mobile-nav-btn js-tab-btn active" data-tab="rack">📦 Cek Rak <span id="badge-mobile-rack" class="menu-badge js-rack-menu-badge hidden">0</span></button>
+        <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="tasks">📝 Tugas <span id="badge-mobile-general" class="menu-badge js-general-menu-badge hidden">0</span></button>
         <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="reports">📔 Laporan</button>
     </nav>
 
@@ -460,7 +553,10 @@
         <div class="scanner-box">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
                 <strong>📷 Scan Barcode Rak</strong>
-                <button type="button" id="scanner-close-btn" class="btn" style="background:#ef4444;color:#fff;padding:6px 10px;">Tutup</button>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button type="button" id="scanner-flash-btn" class="btn btn-flash hidden" disabled>🔦 Nyalakan Flash</button>
+                    <button type="button" id="scanner-close-btn" class="btn" style="background:#ef4444;color:#fff;padding:6px 10px;">Tutup</button>
+                </div>
             </div>
             <div id="scanner-task-meta" class="muted" style="margin-top: 6px;"></div>
             <div id="scanner-reader" class="scanner-reader"></div>
@@ -494,13 +590,17 @@
         const context = contextEl ? JSON.parse(contextEl.textContent || '{}') : {};
 
         const waiterId = String(context.waiterId || '');
-        const pendingCountEl = document.getElementById('pending-count');
-        const pendingContainer = document.getElementById('pending-container');
-        const historyBody = document.getElementById('history-body');
+        const rackPendingCountEl = document.getElementById('rack-pending-count');
+        const rackPendingContainer = document.getElementById('rack-pending-container');
+        const generalPendingCountEl = document.getElementById('general-pending-count');
+        const generalPendingContainer = document.getElementById('general-pending-container');
+        const rackHistoryBody = document.getElementById('rack-history-body');
+        const generalHistoryBody = document.getElementById('general-history-body');
         const successEl = document.getElementById('flash-success');
         const errorEl = document.getElementById('flash-error');
         const scannerModalEl = document.getElementById('scanner-modal');
         const scannerCloseBtn = document.getElementById('scanner-close-btn');
+        const scannerFlashBtn = document.getElementById('scanner-flash-btn');
         const scannerReaderElId = 'scanner-reader';
         const scannerFeedbackEl = document.getElementById('scanner-feedback');
         const scannerTaskMetaEl = document.getElementById('scanner-task-meta');
@@ -515,6 +615,9 @@
         const activityStoreUrl = "{{ route('waiter.activity.store', [], false) }}";
 
         const tabButtons = Array.from(document.querySelectorAll('.js-tab-btn'));
+        const rackMenuBadgeEls = Array.from(document.querySelectorAll('.js-rack-menu-badge'));
+        const generalMenuBadgeEls = Array.from(document.querySelectorAll('.js-general-menu-badge'));
+        const panelRack = document.getElementById('panel-rack');
         const panelTasks = document.getElementById('panel-tasks');
         const panelReports = document.getElementById('panel-reports');
         const reportDateLabelEl = document.getElementById('report-date-label');
@@ -533,6 +636,9 @@
         let activeScannerExpectedBarcode = '';
         let scannerInstance = null;
         let scannerRunning = false;
+        let scannerTorchSupported = false;
+        let scannerTorchEnabled = false;
+        let scannerTorchBusy = false;
         let pendingRenderDeferred = false;
 
         let waiterTasks = [
@@ -548,6 +654,7 @@
         let pollInFlight = false;
         let pollCooldownUntil = 0;
         let pollBackoffMs = 0;
+        let rackSearchKeyword = '';
 
         const MIN_SYNC_DUE_INTERVAL_MS = 5000;
 
@@ -709,8 +816,10 @@
         }
 
         function setActiveTab(tab) {
-            const targetTab = tab === 'reports' ? 'reports' : 'tasks';
+            const allowedTabs = ['rack', 'tasks', 'reports'];
+            const targetTab = allowedTabs.includes(tab) ? tab : 'rack';
 
+            panelRack.classList.toggle('active', targetTab === 'rack');
             panelTasks.classList.toggle('active', targetTab === 'tasks');
             panelReports.classList.toggle('active', targetTab === 'reports');
 
@@ -819,11 +928,117 @@
                 return false;
             }
 
-            if (!pendingContainer.contains(active)) {
+            const isInsideTaskInputArea =
+                (rackPendingContainer && rackPendingContainer.contains(active)) ||
+                (generalPendingContainer && generalPendingContainer.contains(active));
+
+            if (!isInsideTaskInputArea) {
                 return false;
             }
 
-            return active.matches('.js-stock-report, .js-complete-form input[name="note"], .js-photo-proof');
+            return active.matches('.js-stock-report, .js-complete-form input[name="note"], .js-photo-proof, .js-rack-search');
+        }
+
+        function normalizeSearchKeyword(value) {
+            return String(value || '').trim().toLowerCase();
+        }
+
+        function buildRackTaskSearchText(task) {
+            return normalizeSearchKeyword([
+                task?.title,
+                task?.rack_name,
+                task?.rack_location,
+                task?.rack_barcode_value,
+            ].map((item) => String(item || '')).join(' '));
+        }
+
+        function matchRackTaskByKeyword(task, keyword) {
+            if (keyword === '') {
+                return true;
+            }
+
+            return buildRackTaskSearchText(task).includes(keyword);
+        }
+
+        function updateMenuBadge(badgeEls, count) {
+            const safeCount = Number.isFinite(Number(count)) ? Number(count) : 0;
+            badgeEls.forEach((el) => {
+                if (!(el instanceof HTMLElement)) {
+                    return;
+                }
+
+                el.textContent = String(safeCount);
+                el.classList.toggle('hidden', safeCount <= 0);
+            });
+        }
+
+        function applyRackSearchFilterInPlace() {
+            if (!rackPendingContainer) {
+                return;
+            }
+
+            const rackSection = rackPendingContainer.querySelector('.js-rack-group-section');
+            if (!(rackSection instanceof HTMLElement)) {
+                return;
+            }
+
+            const inputEl = rackSection.querySelector('.js-rack-search');
+            if (!(inputEl instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const keyword = normalizeSearchKeyword(inputEl.value);
+            rackSearchKeyword = String(inputEl.value || '');
+
+            const rackTaskItems = Array.from(rackSection.querySelectorAll('.js-rack-task-item'));
+            const total = rackTaskItems.length;
+            let visible = 0;
+
+            rackTaskItems.forEach((item) => {
+                if (!(item instanceof HTMLElement)) {
+                    return;
+                }
+
+                const haystack = normalizeSearchKeyword(item.getAttribute('data-rack-search-text') || '');
+                const matched = keyword === '' ? true : haystack.includes(keyword);
+                item.classList.toggle('is-hidden', !matched);
+                if (matched) {
+                    visible += 1;
+                }
+            });
+
+            const hintEl = rackSection.querySelector('.js-rack-search-hint');
+            if (hintEl instanceof HTMLElement) {
+                hintEl.textContent = keyword === ''
+                    ? `${visible} dari ${total} rak tugas aktif ditampilkan.`
+                    : `${visible} dari ${total} rak cocok dengan kata kunci "${keyword}".`;
+            }
+
+            const clearBtn = rackSection.querySelector('.js-rack-search-clear');
+            if (clearBtn instanceof HTMLElement) {
+                clearBtn.classList.toggle('hidden', keyword === '');
+            }
+
+            const emptyFilteredEl = rackSection.querySelector('.js-rack-search-empty');
+            if (emptyFilteredEl instanceof HTMLElement) {
+                emptyFilteredEl.classList.toggle('hidden', visible > 0 || keyword === '');
+            }
+        }
+
+        function compareRackTaskOrder(a, b) {
+            const aLoc = String(a?.rack_location || '').toLowerCase();
+            const bLoc = String(b?.rack_location || '').toLowerCase();
+            if (aLoc !== bLoc) {
+                return aLoc.localeCompare(bLoc, 'id');
+            }
+
+            const aName = String(a?.rack_name || '').toLowerCase();
+            const bName = String(b?.rack_name || '').toLowerCase();
+            if (aName !== bName) {
+                return aName.localeCompare(bName, 'id');
+            }
+
+            return parseTimestamp(b?.created_at) - parseTimestamp(a?.created_at);
         }
 
         function flushDeferredPendingRender() {
@@ -886,15 +1101,17 @@
         }
 
         function renderPendingTaskCard(task) {
+            const requiresScan = isRackScanTask(task);
             const priority = task.priority || 'normal';
-            const cls = priority === 'urgent' ? 'urgent' : (priority === 'low' ? 'low' : '');
+            const cls = requiresScan
+                ? ''
+                : (priority === 'urgent' ? 'urgent' : (priority === 'low' ? 'low' : ''));
             const scheduleText = task.scheduled_time
                 ? `<div class="meta">Jadwal: ${escapeHtml(task.scheduled_for_date || '-')} ${escapeHtml(task.scheduled_time)}</div>`
                 : '';
             const deadlineText = task.deadline_at
                 ? `<div class="meta">Batas waktu: ${escapeHtml(formatDateTime(task.deadline_at))}</div>`
                 : '';
-            const requiresScan = isRackScanTask(task);
             const requiresPhotoProof = Boolean(task?.requires_photo_proof);
             const existingScan = String(scannedBarcodeByTask.get(task.id) || '');
             const existingStockReport = String(stockReportItemsByTask.get(task.id) || '');
@@ -944,24 +1161,31 @@
                         ${stockReportBlock}
                     </div>`
                 : '';
-            const noteInput = requiresScan
+            const defaultMetaBlock = requiresScan
                 ? ''
-                : `<input class="input" type="text" name="note" maxlength="500" placeholder="Catatan verifikasi (opsional)" value="${escapeAttr(existingNoteDraft)}">`;
-            const submitLabel = requiresScan ? '✅ Selesaikan Cek Rak' : '✅ Verifikasi Selesai';
+                : `<div class="meta">Prioritas: ${escapeHtml(String(priority).toUpperCase())}</div>
+                   <div class="meta">Dibuat: ${escapeHtml(formatDateTime(task.created_at))}</div>
+                   ${scheduleText}
+                   ${deadlineText}`;
+
+            const completeActionBlock = requiresScan
+                ? (existingScan
+                    ? `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
+                           <button type="submit" class="btn btn-done">✅ Selesaikan Cek Rak</button>
+                       </form>`
+                    : '<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 10px;">🔒 Tombol selesai akan muncul setelah barcode rak berhasil di-scan.</div>')
+                : `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
+                       <input class="input" type="text" name="note" maxlength="500" placeholder="Catatan verifikasi (opsional)" value="${escapeAttr(existingNoteDraft)}">
+                       <button type="submit" class="btn btn-done">✅ Verifikasi Selesai</button>
+                   </form>`;
 
             return `<div class="card ${cls}">
                 <div class="title">${escapeHtml(task.title || '-')}</div>
-                ${task.description ? `<div class="desc">${escapeHtml(task.description)}</div>` : ''}
-                <div class="meta">Prioritas: ${escapeHtml(String(priority).toUpperCase())}</div>
-                <div class="meta">Dibuat: ${escapeHtml(formatDateTime(task.created_at))}</div>
-                ${scheduleText}
-                ${deadlineText}
+                ${requiresScan ? '' : (task.description ? `<div class="desc">${escapeHtml(task.description)}</div>` : '')}
+                ${defaultMetaBlock}
                 ${rackBlock}
                 ${photoProofBlock}
-                <form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
-                    ${noteInput}
-                    <button type="submit" class="btn btn-done">${submitLabel}</button>
-                </form>
+                ${completeActionBlock}
             </div>`;
         }
 
@@ -980,9 +1204,44 @@
             </section>`;
         }
 
-        function renderPending(pendingTasks) {
-            pendingCountEl.textContent = String(pendingTasks.length);
+        function renderRackTaskGroupSection(rackTasks) {
+            const sortedRackTasks = rackTasks.slice().sort(compareRackTaskOrder);
+            const searchKeyword = normalizeSearchKeyword(rackSearchKeyword);
 
+            const subtitle = 'Urut otomatis berdasarkan lokasi dan nama rak. Gunakan pencarian untuk langsung lompat ke rak target.';
+            const hintText = searchKeyword === ''
+                ? `${rackTasks.length} dari ${rackTasks.length} rak tugas aktif ditampilkan.`
+                : `${rackTasks.length} dari ${rackTasks.length} rak cocok dengan kata kunci "${escapeHtml(searchKeyword)}".`;
+
+            return `<section class="task-group js-rack-group-section">
+                <div class="task-group-head">
+                    <div>
+                        <h3 class="task-group-title">📦 Tugas Cek Rak Rutin</h3>
+                        <div class="task-group-subtitle">${subtitle}</div>
+                    </div>
+                    <span class="task-group-badge">${rackTasks.length} tugas</span>
+                </div>
+
+                <div class="rack-tools">
+                    <input
+                        class="input js-rack-search"
+                        type="search"
+                        placeholder="Cari rak (nama/lokasi/barcode)..."
+                        value="${escapeAttr(rackSearchKeyword)}"
+                        autocomplete="off"
+                    >
+                    <button type="button" class="btn-soft js-rack-search-clear${searchKeyword === '' ? ' hidden' : ''}">Reset</button>
+                    <div class="rack-tools-hint js-rack-search-hint">${hintText}</div>
+                </div>
+
+                ${sortedRackTasks.length
+                    ? `<div class="grid">${sortedRackTasks.map((task) => `<div class="rack-task-item js-rack-task-item" data-rack-search-text="${escapeAttr(buildRackTaskSearchText(task))}">${renderPendingTaskCard(task)}</div>`).join('')}</div>
+                       <div class="task-group-empty js-rack-search-empty hidden">Tidak ada rak yang cocok dengan pencarian. Coba kata kunci lain atau reset filter.</div>`
+                    : '<div class="task-group-empty">Tidak ada rak yang cocok dengan pencarian. Coba kata kunci lain atau reset filter.</div>'}
+            </section>`;
+        }
+
+        function renderPending(pendingTasks) {
             const pendingTaskIds = new Set(pendingTasks.map((task) => String(task.id || '')));
             for (const taskId of Array.from(scannedBarcodeByTask.keys())) {
                 if (!pendingTaskIds.has(taskId)) {
@@ -1005,37 +1264,49 @@
                 }
             }
 
-            if (!pendingTasks.length) {
-                pendingContainer.innerHTML = '<div class="empty">Tidak ada tugas aktif saat ini.</div>';
-                return;
-            }
-
             const rackTasks = pendingTasks.filter((task) => isRackScanTask(task));
             const generalTasks = pendingTasks.filter((task) => !isRackScanTask(task));
 
-            pendingContainer.innerHTML = [
-                renderTaskGroupSection(
-                    '📦 Tugas Cek Rak Rutin',
-                    'Alur khusus: scan barcode rak, isi form barang menipis/habis jika ada, lalu selesai.',
-                    rackTasks,
-                    'Tidak ada tugas cek rak aktif saat ini.'
-                ),
-                renderTaskGroupSection(
-                    '📝 Tugas Umum',
-                    'Tugas operasional waiter di luar cek rak.',
-                    generalTasks,
-                    'Tidak ada tugas umum aktif saat ini.'
-                ),
-            ].join('');
+            if (rackPendingCountEl) {
+                rackPendingCountEl.textContent = String(rackTasks.length);
+            }
+            updateMenuBadge(rackMenuBadgeEls, rackTasks.length);
+
+            if (generalPendingCountEl) {
+                generalPendingCountEl.textContent = String(generalTasks.length);
+            }
+            updateMenuBadge(generalMenuBadgeEls, generalTasks.length);
+
+            if (rackPendingContainer) {
+                rackPendingContainer.innerHTML = rackTasks.length
+                    ? renderRackTaskGroupSection(rackTasks)
+                    : '<div class="empty">Tidak ada tugas cek rak aktif saat ini.</div>';
+                applyRackSearchFilterInPlace();
+            }
+
+            if (generalPendingContainer) {
+                generalPendingContainer.innerHTML = generalTasks.length
+                    ? renderTaskGroupSection(
+                        '📝 Tugas Umum',
+                        'Tugas operasional waiter di luar cek rak.',
+                        generalTasks,
+                        'Tidak ada tugas umum aktif saat ini.'
+                    )
+                    : '<div class="empty">Tidak ada tugas umum aktif saat ini.</div>';
+            }
         }
 
-        function renderHistory(historyTasks) {
-            if (!historyTasks.length) {
-                historyBody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #6b7280;">Belum ada riwayat.</td></tr>';
+        function renderHistory(historyTasks, historyTarget, emptyMessage) {
+            if (!historyTarget) {
                 return;
             }
 
-            historyBody.innerHTML = historyTasks.map((task) => {
+            if (!historyTasks.length) {
+                historyTarget.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #6b7280;">${escapeHtml(emptyMessage || 'Belum ada riwayat.')}</td></tr>`;
+                return;
+            }
+
+            historyTarget.innerHTML = historyTasks.map((task) => {
                 let statusText = escapeHtml(String(task.status || '-').toUpperCase());
                 if (task.status === 'done') {
                     statusText = '✅ Selesai';
@@ -1068,10 +1339,12 @@
                             ? '<span style="color:#9a3412; font-size:12px;">(wajib foto)</span>'
                             : '-')}</td>
                     <td>
-                        Dibuat: ${escapeHtml(formatDateTime(task.created_at))}
-                        <div style="font-size: 12px; color: #6b7280;">
-                            Selesai: ${escapeHtml(formatDateTime(task.completed_at))}
-                        </div>
+                        ${isRackScanTask(task)
+                            ? `Selesai: ${escapeHtml(formatDateTime(task.completed_at))}`
+                            : `Dibuat: ${escapeHtml(formatDateTime(task.created_at))}
+                               <div style="font-size: 12px; color: #6b7280;">
+                                   Selesai: ${escapeHtml(formatDateTime(task.completed_at))}
+                               </div>`}
                     </td>
                 </tr>`;
             }).join('');
@@ -1094,8 +1367,12 @@
                     return bScore - aScore;
                 });
 
+            const rackHistoryTasks = historyTasks.filter((task) => isRackScanTask(task));
+            const generalHistoryTasks = historyTasks.filter((task) => !isRackScanTask(task));
+
             renderPending(pendingTasks);
-            renderHistory(historyTasks);
+            renderHistory(rackHistoryTasks, rackHistoryBody, 'Belum ada riwayat cek rak.');
+            renderHistory(generalHistoryTasks, generalHistoryBody, 'Belum ada riwayat tugas umum.');
         }
 
         function hydrateTasksFromPayload(payload) {
@@ -1309,8 +1586,125 @@
             }
         }
 
+        function resetScannerTorchState() {
+            scannerTorchSupported = false;
+            scannerTorchEnabled = false;
+            scannerTorchBusy = false;
+        }
+
+        function updateScannerFlashButton() {
+            if (!scannerFlashBtn) {
+                return;
+            }
+
+            if (!scannerRunning) {
+                scannerFlashBtn.classList.add('hidden');
+                scannerFlashBtn.classList.remove('active');
+                scannerFlashBtn.disabled = true;
+                scannerFlashBtn.textContent = '🔦 Nyalakan Flash';
+                return;
+            }
+
+            scannerFlashBtn.classList.remove('hidden');
+
+            if (!scannerTorchSupported) {
+                scannerFlashBtn.classList.remove('active');
+                scannerFlashBtn.disabled = true;
+                scannerFlashBtn.textContent = '🔦 Flash tidak didukung';
+                return;
+            }
+
+            if (scannerTorchBusy) {
+                scannerFlashBtn.classList.toggle('active', scannerTorchEnabled);
+                scannerFlashBtn.disabled = true;
+                scannerFlashBtn.textContent = '⏳ Mengubah Flash...';
+                return;
+            }
+
+            scannerFlashBtn.classList.toggle('active', scannerTorchEnabled);
+            scannerFlashBtn.disabled = false;
+            scannerFlashBtn.textContent = scannerTorchEnabled ? '🔦 Matikan Flash' : '🔦 Nyalakan Flash';
+        }
+
+        function getScannerTorchSupportCapability() {
+            if (!scannerInstance || typeof scannerInstance.getRunningTrackCapabilities !== 'function') {
+                return false;
+            }
+
+            try {
+                const capabilities = scannerInstance.getRunningTrackCapabilities();
+                return Boolean(capabilities && capabilities.torch);
+            } catch (error) {
+                console.log('getRunningTrackCapabilities failed', error);
+                return false;
+            }
+        }
+
+        function getScannerTorchEnabledSetting() {
+            if (!scannerInstance || typeof scannerInstance.getRunningTrackSettings !== 'function') {
+                return false;
+            }
+
+            try {
+                const settings = scannerInstance.getRunningTrackSettings();
+                return Boolean(settings && settings.torch);
+            } catch (error) {
+                console.log('getRunningTrackSettings failed', error);
+                return false;
+            }
+        }
+
+        function syncScannerTorchStateFromTrack() {
+            scannerTorchSupported = getScannerTorchSupportCapability();
+            scannerTorchEnabled = scannerTorchSupported ? getScannerTorchEnabledSetting() : false;
+            updateScannerFlashButton();
+        }
+
+        async function toggleScannerTorch() {
+            if (!scannerRunning || !scannerInstance) {
+                showFlash('error', 'Scanner belum aktif, tidak bisa mengatur flash.');
+                return;
+            }
+
+            if (!scannerTorchSupported) {
+                showFlash('error', 'Flash tidak didukung pada device/browser ini.');
+                return;
+            }
+
+            if (scannerTorchBusy) {
+                return;
+            }
+
+            const targetTorchState = !scannerTorchEnabled;
+            scannerTorchBusy = true;
+            updateScannerFlashButton();
+
+            try {
+                await scannerInstance.applyVideoConstraints({
+                    torch: targetTorchState,
+                    advanced: [{ torch: targetTorchState }],
+                });
+
+                scannerTorchEnabled = getScannerTorchEnabledSetting();
+                if (scannerTorchEnabled !== targetTorchState) {
+                    scannerTorchEnabled = targetTorchState;
+                }
+
+                scannerFeedbackEl.textContent = scannerTorchEnabled
+                    ? '🔦 Flash aktif. Arahkan kamera ke barcode rak.'
+                    : '🔦 Flash dimatikan. Arahkan kamera ke barcode rak.';
+            } catch (error) {
+                showFlash('error', `Gagal mengubah flash: ${error?.message || 'Tidak didukung browser/device.'}`);
+            } finally {
+                scannerTorchBusy = false;
+                syncScannerTorchStateFromTrack();
+            }
+        }
+
         async function closeScannerModal() {
             await stopScannerIfRunning();
+            resetScannerTorchState();
+            updateScannerFlashButton();
             scannerModalEl.style.display = 'none';
             scannerModalEl.setAttribute('aria-hidden', 'true');
             activeScannerTaskId = '';
@@ -1335,6 +1729,8 @@
             scannerFeedbackEl.textContent = 'Arahkan kamera ke barcode rak sampai terbaca.';
             scannerModalEl.style.display = 'flex';
             scannerModalEl.setAttribute('aria-hidden', 'false');
+            resetScannerTorchState();
+            updateScannerFlashButton();
 
             if (typeof Html5Qrcode === 'undefined') {
                 scannerFeedbackEl.textContent = 'Library scanner belum termuat. Refresh halaman lalu coba lagi.';
@@ -1388,166 +1784,209 @@
                 );
 
                 scannerRunning = true;
+                syncScannerTorchStateFromTrack();
+                if (!scannerTorchSupported) {
+                    scannerFeedbackEl.textContent = 'Scanner aktif. Flash tidak tersedia di device/browser ini, lanjut scan dengan pencahayaan normal.';
+                }
             } catch (error) {
+                resetScannerTorchState();
+                updateScannerFlashButton();
                 scannerFeedbackEl.textContent = `Gagal menyalakan kamera: ${error?.message || 'Unknown error'}`;
             }
         }
 
-        pendingContainer.addEventListener('submit', async (event) => {
-            const form = event.target.closest('.js-complete-form');
-            if (!form) {
+        function attachPendingContainerListeners(container) {
+            if (!container) {
                 return;
             }
 
-            event.preventDefault();
+            container.addEventListener('submit', async (event) => {
+                const form = event.target.closest('.js-complete-form');
+                if (!form) {
+                    return;
+                }
 
-            const taskId = String(form.getAttribute('data-task-id') || '');
-            if (!taskId) {
-                showFlash('error', 'Task ID tidak valid.');
-                return;
-            }
+                event.preventDefault();
 
-            const noteInput = form.querySelector('input[name="note"]');
-            const submitButton = form.querySelector('button[type="submit"]');
-            const stockReportInput = form.closest('.card')?.querySelector(`textarea.js-stock-report[data-task-id="${taskId}"]`);
-            const note = noteInput ? noteInput.value : '';
-            const stockReportItems = stockReportInput ? String(stockReportInput.value || '').trim() : '';
-            const currentTask = waiterTasks.find((task) => String(task?.id || '') === taskId);
-            const requiresPhotoProof = Boolean(currentTask?.requires_photo_proof);
-            const photoProofDataUrl = String(photoProofByTask.get(taskId)?.dataUrl || '');
-            const expectedBarcode = normalizeBarcodeValue(currentTask?.rack_barcode_value || '');
-            const scannedBarcode = normalizeBarcodeValue(scannedBarcodeByTask.get(taskId) || '');
+                const taskId = String(form.getAttribute('data-task-id') || '');
+                if (!taskId) {
+                    showFlash('error', 'Task ID tidak valid.');
+                    return;
+                }
 
-            if (isRackScanTask(currentTask) && expectedBarcode === '') {
-                showFlash('error', 'Barcode rak target pada task ini belum terdaftar. Hubungi supervisor.');
-                return;
-            }
+                const noteInput = form.querySelector('input[name="note"]');
+                const submitButton = form.querySelector('button[type="submit"]');
+                const stockReportInput = form.closest('.card')?.querySelector(`textarea.js-stock-report[data-task-id="${taskId}"]`);
+                const note = noteInput ? noteInput.value : '';
+                const stockReportItems = stockReportInput ? String(stockReportInput.value || '').trim() : '';
+                const currentTask = waiterTasks.find((task) => String(task?.id || '') === taskId);
+                const requiresPhotoProof = Boolean(currentTask?.requires_photo_proof);
+                const photoProofDataUrl = String(photoProofByTask.get(taskId)?.dataUrl || '');
+                const expectedBarcode = normalizeBarcodeValue(currentTask?.rack_barcode_value || '');
+                const scannedBarcode = normalizeBarcodeValue(scannedBarcodeByTask.get(taskId) || '');
 
-            if (isRackScanTask(currentTask) && !String(scannedBarcodeByTask.get(taskId) || '').trim()) {
-                showFlash('error', 'Task cek rak wajib scan barcode rak terlebih dahulu.');
-                return;
-            }
+                if (isRackScanTask(currentTask) && expectedBarcode === '') {
+                    showFlash('error', 'Barcode rak target pada task ini belum terdaftar. Hubungi supervisor.');
+                    return;
+                }
 
-            if (isRackScanTask(currentTask) && scannedBarcode !== expectedBarcode) {
-                showFlash('error', `Barcode tidak sesuai task. Target ${expectedBarcode}, yang ter-scan ${scannedBarcode || '-'}.`);
-                return;
-            }
+                if (isRackScanTask(currentTask) && !String(scannedBarcodeByTask.get(taskId) || '').trim()) {
+                    showFlash('error', 'Task cek rak wajib scan barcode rak terlebih dahulu.');
+                    return;
+                }
 
-            if (requiresPhotoProof && photoProofDataUrl === '') {
-                showFlash('error', 'Task ini wajib foto bukti sebelum verifikasi selesai.');
-                return;
-            }
+                if (isRackScanTask(currentTask) && scannedBarcode !== expectedBarcode) {
+                    showFlash('error', `Barcode tidak sesuai task. Target ${expectedBarcode}, yang ter-scan ${scannedBarcode || '-'}.`);
+                    return;
+                }
 
-            await completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl);
-            await pollTasks();
-        });
+                if (requiresPhotoProof && photoProofDataUrl === '') {
+                    showFlash('error', 'Task ini wajib foto bukti sebelum verifikasi selesai.');
+                    return;
+                }
 
-        pendingContainer.addEventListener('input', (event) => {
-            const reportField = event.target.closest('.js-stock-report');
-            if (reportField) {
-                const taskId = String(reportField.getAttribute('data-task-id') || '');
+                await completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl);
+                await pollTasks();
+            });
+
+            container.addEventListener('input', (event) => {
+                const rackSearchInput = event.target.closest('.js-rack-search');
+                if (rackSearchInput) {
+                    applyRackSearchFilterInPlace();
+                    return;
+                }
+
+                const reportField = event.target.closest('.js-stock-report');
+                if (reportField) {
+                    const taskId = String(reportField.getAttribute('data-task-id') || '');
+                    if (!taskId) {
+                        return;
+                    }
+
+                    stockReportItemsByTask.set(taskId, String(reportField.value || ''));
+                    return;
+                }
+
+                const noteField = event.target.closest('.js-complete-form input[name="note"]');
+                if (!noteField) {
+                    return;
+                }
+
+                const taskId = String(noteField.closest('.js-complete-form')?.getAttribute('data-task-id') || '');
                 if (!taskId) {
                     return;
                 }
 
-                stockReportItemsByTask.set(taskId, String(reportField.value || ''));
-                return;
-            }
+                noteDraftByTask.set(taskId, String(noteField.value || ''));
+            });
 
-            const noteField = event.target.closest('.js-complete-form input[name="note"]');
-            if (!noteField) {
-                return;
-            }
+            container.addEventListener('change', async (event) => {
+                const photoInput = event.target.closest('.js-photo-proof');
+                if (!photoInput) {
+                    return;
+                }
 
-            const taskId = String(noteField.closest('.js-complete-form')?.getAttribute('data-task-id') || '');
-            if (!taskId) {
-                return;
-            }
-
-            noteDraftByTask.set(taskId, String(noteField.value || ''));
-        });
-
-        pendingContainer.addEventListener('change', async (event) => {
-            const photoInput = event.target.closest('.js-photo-proof');
-            if (!photoInput) {
-                return;
-            }
-
-            const taskId = String(photoInput.getAttribute('data-task-id') || '');
-            if (!taskId) {
-                return;
-            }
-
-            const selectedFile = photoInput.files && photoInput.files.length > 0
-                ? photoInput.files[0]
-                : null;
-
-            if (!selectedFile) {
-                photoProofByTask.delete(taskId);
-                renderAllTasks();
-                return;
-            }
-
-            try {
-                const compressed = await compressPhotoProofFile(selectedFile);
-                photoProofByTask.set(taskId, compressed);
-                showFlash('success', `Foto bukti siap dikirim (${formatBytes(compressed.sizeBytes)}).`);
-            } catch (error) {
-                photoProofByTask.delete(taskId);
-                showFlash('error', error?.message || 'Gagal memproses foto bukti.');
-            }
-
-            renderAllTasks();
-        });
-
-        pendingContainer.addEventListener('focusout', () => {
-            setTimeout(() => {
-                flushDeferredPendingRender();
-            }, 0);
-        });
-
-        pendingContainer.addEventListener('click', async (event) => {
-            const photoClearBtn = event.target.closest('.js-photo-proof-clear');
-            if (photoClearBtn) {
-                const taskId = String(photoClearBtn.getAttribute('data-task-id') || '');
+                const taskId = String(photoInput.getAttribute('data-task-id') || '');
                 if (!taskId) {
                     return;
                 }
 
-                photoProofByTask.delete(taskId);
+                const selectedFile = photoInput.files && photoInput.files.length > 0
+                    ? photoInput.files[0]
+                    : null;
+
+                if (!selectedFile) {
+                    photoProofByTask.delete(taskId);
+                    renderAllTasks();
+                    return;
+                }
+
+                try {
+                    const compressed = await compressPhotoProofFile(selectedFile);
+                    photoProofByTask.set(taskId, compressed);
+                    showFlash('success', `Foto bukti siap dikirim (${formatBytes(compressed.sizeBytes)}).`);
+                } catch (error) {
+                    photoProofByTask.delete(taskId);
+                    showFlash('error', error?.message || 'Gagal memproses foto bukti.');
+                }
+
                 renderAllTasks();
-                showFlash('success', 'Foto bukti dihapus dari draft task ini.');
-                return;
-            }
+            });
 
-            const btn = event.target.closest('.js-open-scanner');
-            if (!btn) return;
+            container.addEventListener('focusout', () => {
+                setTimeout(() => {
+                    flushDeferredPendingRender();
+                }, 0);
+            });
 
-            const taskId = String(btn.getAttribute('data-task-id') || '');
-            const taskLabel = String(btn.getAttribute('data-task-label') || 'Task');
-            const rackName = String(btn.getAttribute('data-rack-name') || '-');
-            const rackBarcode = String(btn.getAttribute('data-rack-barcode') || '');
-            if (!taskId) return;
+            container.addEventListener('click', async (event) => {
+                const rackSearchClearBtn = event.target.closest('.js-rack-search-clear');
+                if (rackSearchClearBtn) {
+                    rackSearchKeyword = '';
+                    const rackSearchInput = container.querySelector('.js-rack-search');
+                    if (rackSearchInput instanceof HTMLInputElement) {
+                        rackSearchInput.value = '';
+                        rackSearchInput.focus();
+                    }
+                    applyRackSearchFilterInPlace();
+                    return;
+                }
 
-            await startScannerForTask(taskId, taskLabel, rackName, rackBarcode);
-        });
+                const photoClearBtn = event.target.closest('.js-photo-proof-clear');
+                if (photoClearBtn) {
+                    const taskId = String(photoClearBtn.getAttribute('data-task-id') || '');
+                    if (!taskId) {
+                        return;
+                    }
 
-        historyBody.addEventListener('click', (event) => {
-            const photoViewBtn = event.target.closest('.js-photo-view');
-            if (!photoViewBtn) {
-                return;
-            }
+                    photoProofByTask.delete(taskId);
+                    renderAllTasks();
+                    showFlash('success', 'Foto bukti dihapus dari draft task ini.');
+                    return;
+                }
 
-            const taskId = String(photoViewBtn.getAttribute('data-task-id') || '');
-            if (!taskId) {
-                return;
-            }
+                const btn = event.target.closest('.js-open-scanner');
+                if (!btn) {
+                    return;
+                }
 
-            openPhotoPreviewForTask(taskId);
+                const taskId = String(btn.getAttribute('data-task-id') || '');
+                const taskLabel = String(btn.getAttribute('data-task-label') || 'Task');
+                const rackName = String(btn.getAttribute('data-rack-name') || '-');
+                const rackBarcode = String(btn.getAttribute('data-rack-barcode') || '');
+                if (!taskId) {
+                    return;
+                }
+
+                await startScannerForTask(taskId, taskLabel, rackName, rackBarcode);
+            });
+        }
+
+        attachPendingContainerListeners(rackPendingContainer);
+        attachPendingContainerListeners(generalPendingContainer);
+
+        [rackHistoryBody, generalHistoryBody].forEach((historyTarget) => {
+            historyTarget?.addEventListener('click', (event) => {
+                const photoViewBtn = event.target.closest('.js-photo-view');
+                if (!photoViewBtn) {
+                    return;
+                }
+
+                const taskId = String(photoViewBtn.getAttribute('data-task-id') || '');
+                if (!taskId) {
+                    return;
+                }
+
+                openPhotoPreviewForTask(taskId);
+            });
         });
 
         scannerCloseBtn.addEventListener('click', async () => {
             await closeScannerModal();
+        });
+
+        scannerFlashBtn?.addEventListener('click', async () => {
+            await toggleScannerTorch();
         });
 
         scannerModalEl.addEventListener('click', async (event) => {
@@ -1597,7 +2036,7 @@
             }
         });
 
-        setActiveTab('tasks');
+        setActiveTab('rack');
         renderAllTasks();
         renderActivityReports();
         syncDueTasks();

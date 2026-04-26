@@ -3,7 +3,14 @@
 @section('title', 'Buat Tugas Baru - Admin')
 
 @section('content')
-    <h2 style="margin-bottom: 20px; color: #333; font-size: clamp(24px, 5vw, 32px);">📝 Buat Tugas Baru</h2>
+    @php
+        $taskScopeMode = ($taskScope ?? 'general') === 'rack_check' ? 'rack_check' : 'general';
+        $taskScopeLabel = $taskScopeMode === 'rack_check' ? 'Cek Rak' : 'Tugas Umum';
+    @endphp
+
+    <h2 style="margin-bottom: 20px; color: #333; font-size: clamp(24px, 5vw, 32px);">
+        {{ $taskScopeMode === 'rack_check' ? '📦 Buat Tugas Cek Rak' : '📝 Buat Tugas Umum' }}
+    </h2>
 
     @if($errors->any())
         <div class="alert" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; margin-bottom: 20px; padding: 12px 20px; border-radius: 6px;">
@@ -18,84 +25,92 @@
     <div class="card" style="max-width: 600px; padding: 30px;">
         <form action="{{ route('admin.tasks.store') }}" method="POST">
             @csrf
+            <input type="hidden" name="task_scope" value="{{ $taskScope ?? 'general' }}">
+            <input type="hidden" id="task_type" name="task_type" value="{{ $taskScopeMode === 'rack_check' ? 'rack_check' : 'general' }}">
 
-            <div style="margin-bottom: 20px;">
-                <label for="title" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                    Judul Tugas <span style="color: #dc3545;">*</span>
-                </label>
-                <input type="text" id="title" name="title" value="{{ old('title') }}"
-                    placeholder="Contoh: Bersihkan area meja 5"
-                    style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"
-                    onfocus="this.style.borderColor='#667eea'"
-                    onblur="this.style.borderColor='#e0e0e0'"
-                    required>
-            </div>
-
-            <div style="margin-bottom: 20px;">
-                <label for="description" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                    Deskripsi <span style="color: #999; font-weight: normal;">(opsional)</span>
-                </label>
-                <textarea id="description" name="description" rows="3"
-                    placeholder="Detail tambahan tentang tugas..."
-                    style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; resize: vertical; font-family: inherit; transition: border-color 0.3s;"
-                    onfocus="this.style.borderColor='#667eea'"
-                    onblur="this.style.borderColor='#e0e0e0'">{{ old('description') }}</textarea>
-            </div>
-
-            <div style="margin-bottom: 25px;">
-                <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
-                    Prioritas <span style="color: #dc3545;">*</span>
-                </label>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <label style="flex: 1; min-width: 120px; cursor: pointer;">
-                        <input type="radio" name="priority" value="urgent" {{ old('priority') === 'urgent' ? 'checked' : '' }}
-                            style="display: none;" onchange="updatePriorityStyle(this)">
-                        <div class="priority-option" data-priority="urgent"
-                            style="padding: 14px; border: 2px solid #e0e0e0; border-radius: 8px; text-align: center; transition: all 0.3s;">
-                            <div style="font-size: 24px; margin-bottom: 6px;">🔴</div>
-                            <div style="font-weight: 600; font-size: 14px;">Urgent</div>
-                        </div>
-                    </label>
-                    <label style="flex: 1; min-width: 120px; cursor: pointer;">
-                        <input type="radio" name="priority" value="normal" {{ old('priority', 'normal') === 'normal' ? 'checked' : '' }}
-                            style="display: none;" onchange="updatePriorityStyle(this)">
-                        <div class="priority-option" data-priority="normal"
-                            style="padding: 14px; border: 2px solid #667eea; border-radius: 8px; text-align: center; background: #f0f3ff; transition: all 0.3s;">
-                            <div style="font-size: 24px; margin-bottom: 6px;">🔵</div>
-                            <div style="font-weight: 600; font-size: 14px;">Normal</div>
-                        </div>
-                    </label>
-                    <label style="flex: 1; min-width: 120px; cursor: pointer;">
-                        <input type="radio" name="priority" value="low" {{ old('priority') === 'low' ? 'checked' : '' }}
-                            style="display: none;" onchange="updatePriorityStyle(this)">
-                        <div class="priority-option" data-priority="low"
-                            style="padding: 14px; border: 2px solid #e0e0e0; border-radius: 8px; text-align: center; transition: all 0.3s;">
-                            <div style="font-size: 24px; margin-bottom: 6px;">⚪</div>
-                            <div style="font-weight: 600; font-size: 14px;">Low</div>
-                        </div>
-                    </label>
+            @if($taskScopeMode === 'rack_check')
+                <div style="margin-bottom: 20px; padding: 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a;">
+                    <div style="font-weight: 700; margin-bottom: 6px;">🧭 Form Cek Rak Disederhanakan</div>
+                    <div style="font-size: 13px; line-height: 1.5;">
+                        Untuk tugas cek rak, supervisor hanya perlu memilih rak target dan delegasi waiter.
+                        <b>Judul tugas otomatis menggunakan nama rak</b> agar waiter langsung fokus ke rak tujuan.
+                    </div>
                 </div>
-            </div>
+            @else
+                <div style="margin-bottom: 20px;">
+                    <label for="title" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Judul Tugas <span style="color: #dc3545;">*</span>
+                    </label>
+                    <input type="text" id="title" name="title" value="{{ old('title') }}"
+                        placeholder="Contoh: Bersihkan area meja 5"
+                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"
+                        onfocus="this.style.borderColor='#667eea'"
+                        onblur="this.style.borderColor='#e0e0e0'"
+                        required>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label for="description" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Deskripsi <span style="color: #999; font-weight: normal;">(opsional)</span>
+                    </label>
+                    <textarea id="description" name="description" rows="3"
+                        placeholder="Detail tambahan tentang tugas..."
+                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; resize: vertical; font-family: inherit; transition: border-color 0.3s;"
+                        onfocus="this.style.borderColor='#667eea'"
+                        onblur="this.style.borderColor='#e0e0e0'">{{ old('description') }}</textarea>
+                </div>
+
+                <div style="margin-bottom: 25px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
+                        Prioritas <span style="color: #dc3545;">*</span>
+                    </label>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <label style="flex: 1; min-width: 120px; cursor: pointer;">
+                            <input type="radio" name="priority" value="urgent" {{ old('priority') === 'urgent' ? 'checked' : '' }}
+                                style="display: none;" onchange="updatePriorityStyle(this)">
+                            <div class="priority-option" data-priority="urgent"
+                                style="padding: 14px; border: 2px solid #e0e0e0; border-radius: 8px; text-align: center; transition: all 0.3s;">
+                                <div style="font-size: 24px; margin-bottom: 6px;">🔴</div>
+                                <div style="font-weight: 600; font-size: 14px;">Urgent</div>
+                            </div>
+                        </label>
+                        <label style="flex: 1; min-width: 120px; cursor: pointer;">
+                            <input type="radio" name="priority" value="normal" {{ old('priority', 'normal') === 'normal' ? 'checked' : '' }}
+                                style="display: none;" onchange="updatePriorityStyle(this)">
+                            <div class="priority-option" data-priority="normal"
+                                style="padding: 14px; border: 2px solid #667eea; border-radius: 8px; text-align: center; background: #f0f3ff; transition: all 0.3s;">
+                                <div style="font-size: 24px; margin-bottom: 6px;">🔵</div>
+                                <div style="font-weight: 600; font-size: 14px;">Normal</div>
+                            </div>
+                        </label>
+                        <label style="flex: 1; min-width: 120px; cursor: pointer;">
+                            <input type="radio" name="priority" value="low" {{ old('priority') === 'low' ? 'checked' : '' }}
+                                style="display: none;" onchange="updatePriorityStyle(this)">
+                            <div class="priority-option" data-priority="low"
+                                style="padding: 14px; border: 2px solid #e0e0e0; border-radius: 8px; text-align: center; transition: all 0.3s;">
+                                <div style="font-size: 24px; margin-bottom: 6px;">⚪</div>
+                                <div style="font-weight: 600; font-size: 14px;">Low</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            @endif
 
             @php
-                $taskType = old('task_type', 'general');
+                $taskType = $taskScopeMode === 'rack_check' ? 'rack_check' : 'general';
                 $rackTargetScope = old('rack_target_scope', 'single');
             @endphp
             <div style="margin-bottom: 20px;">
-                <label for="task_type" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                    Jenis Tugas <span style="color: #dc3545;">*</span>
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                    Jenis Halaman
                 </label>
-                <select
-                    id="task_type"
-                    name="task_type"
-                    onchange="toggleTaskTypeFields()"
-                    style="width: 280px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                >
-                    <option value="general" {{ $taskType === 'general' ? 'selected' : '' }}>Tugas Umum</option>
-                    <option value="rack_check" {{ $taskType === 'rack_check' ? 'selected' : '' }}>Cek Rak (Wajib Scan + Laporan Stok Opsional)</option>
-                </select>
+                @if($taskScopeMode === 'rack_check')
+                    <div style="display: inline-block; padding: 10px 14px; border-radius: 8px; background: #fff7ed; border: 1px solid #fdba74; color: #1f2937; font-weight: 700; font-size: 14px;">📦 Cek Rak</div>
+                @else
+                    <div style="display: inline-block; padding: 10px 14px; border-radius: 8px; background: #eef2ff; border: 1px solid #c7d2fe; color: #1f2937; font-weight: 700; font-size: 14px;">📝 Tugas Umum</div>
+                @endif
                 <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                    Pilih <b>Cek Rak</b> jika waiter harus scan barcode rak. Setelah scan, waiter bisa langsung selesai atau isi laporan barang menipis/habis jika ada.
+                    Anda sedang membuat <b>{{ $taskScopeLabel }}</b>. Jenis tugas dikunci sesuai halaman agar tidak tercampur.
                 </div>
             </div>
 
@@ -191,121 +206,227 @@
                 </select>
             </div>
 
-            <div style="margin-bottom: 20px;">
-                <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; color: #333; cursor: pointer;">
+            @if($taskScopeMode === 'rack_check')
+                <div style="margin-bottom: 20px; padding: 14px; border: 1px solid #fdba74; border-radius: 10px; background: #fff7ed;">
+                    <div style="font-weight: 700; color: #9a3412; margin-bottom: 6px;">⏱️ Jadwal Cek Rak</div>
+                    <div style="font-size: 13px; color: #7c2d12; line-height: 1.5;">
+                        Supervisor dapat mengubah pola jadwal, jam mulai, dan batas waktu penyelesaian sesuai kebutuhan operasional.
+                    </div>
+                </div>
+                <input type="hidden" id="is_recurring" name="is_recurring" value="1">
+
+                <div id="recurring-time-wrapper" style="margin-bottom: 25px; display: block;">
+                    <div style="margin-bottom: 14px;">
+                        <label for="recurrence_type" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Pola Perulangan <span style="color: #dc3545;">*</span>
+                        </label>
+                        @php $recurrenceType = old('recurrence_type', 'daily'); @endphp
+                        <select
+                            id="recurrence_type"
+                            name="recurrence_type"
+                            onchange="toggleRecurrenceDetailFields()"
+                            style="width: 260px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                            required
+                        >
+                            <option value="daily" {{ $recurrenceType === 'daily' ? 'selected' : '' }}>Setiap Hari</option>
+                            <option value="weekly" {{ $recurrenceType === 'weekly' ? 'selected' : '' }}>Mingguan (hari tertentu)</option>
+                            <option value="every_n_days" {{ $recurrenceType === 'every_n_days' ? 'selected' : '' }}>Setiap N Hari</option>
+                        </select>
+                    </div>
+
+                    <div id="weekly-day-wrapper" style="margin-bottom: 14px; display: none;">
+                        <label for="weekly_day" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Hari (Mode Mingguan) <span style="color: #dc3545;">*</span>
+                        </label>
+                        @php $weeklyDay = old('weekly_day', date('N')); @endphp
+                        <select
+                            id="weekly_day"
+                            name="weekly_day"
+                            style="width: 260px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                        >
+                            <option value="1" {{ (string) $weeklyDay === '1' ? 'selected' : '' }}>Senin</option>
+                            <option value="2" {{ (string) $weeklyDay === '2' ? 'selected' : '' }}>Selasa</option>
+                            <option value="3" {{ (string) $weeklyDay === '3' ? 'selected' : '' }}>Rabu</option>
+                            <option value="4" {{ (string) $weeklyDay === '4' ? 'selected' : '' }}>Kamis</option>
+                            <option value="5" {{ (string) $weeklyDay === '5' ? 'selected' : '' }}>Jumat</option>
+                            <option value="6" {{ (string) $weeklyDay === '6' ? 'selected' : '' }}>Sabtu</option>
+                            <option value="7" {{ (string) $weeklyDay === '7' ? 'selected' : '' }}>Minggu</option>
+                        </select>
+                    </div>
+
+                    <div id="interval-days-wrapper" style="margin-bottom: 14px; display: none;">
+                        <label for="interval_days" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Interval Hari (Mode Setiap N Hari) <span style="color: #dc3545;">*</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="interval_days"
+                            name="interval_days"
+                            min="1"
+                            max="365"
+                            value="{{ old('interval_days', 2) }}"
+                            style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                        >
+                        <div style="font-size: 13px; color: #666; margin-top: 8px;">
+                            Contoh: isi 2 berarti task muncul setiap 2 hari sekali.
+                        </div>
+                    </div>
+
+                    <label for="schedule_time" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Jam Jadwal <span style="color: #dc3545;">*</span>
+                    </label>
                     <input
-                        type="checkbox"
-                        id="is_recurring"
-                        name="is_recurring"
-                        value="1"
-                        {{ old('is_recurring') ? 'checked' : '' }}
-                        onchange="toggleRecurringFields()"
-                    >
-                    🔁 Jadwalkan sebagai task berulang
-                </label>
-                <div style="font-size: 13px; color: #666; margin-top: 8px; margin-left: 26px;">
-                    Pilih pola: harian, mingguan, atau setiap N hari.
-                </div>
-            </div>
-
-            <div id="recurring-time-wrapper" style="margin-bottom: 25px; display: none;">
-                <div style="margin-bottom: 14px;">
-                    <label for="recurrence_type" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Pola Perulangan <span style="color: #dc3545;">*</span>
-                    </label>
-                    @php $recurrenceType = old('recurrence_type', 'daily'); @endphp
-                    <select
-                        id="recurrence_type"
-                        name="recurrence_type"
-                        onchange="toggleRecurrenceDetailFields()"
-                        style="width: 260px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                    >
-                        <option value="daily" {{ $recurrenceType === 'daily' ? 'selected' : '' }}>Setiap Hari</option>
-                        <option value="weekly" {{ $recurrenceType === 'weekly' ? 'selected' : '' }}>Mingguan (hari tertentu)</option>
-                        <option value="every_n_days" {{ $recurrenceType === 'every_n_days' ? 'selected' : '' }}>Setiap N Hari</option>
-                    </select>
-                </div>
-
-                <div id="weekly-day-wrapper" style="margin-bottom: 14px; display: none;">
-                    <label for="weekly_day" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Hari (Mode Mingguan) <span style="color: #dc3545;">*</span>
-                    </label>
-                    @php $weeklyDay = old('weekly_day', date('N')); @endphp
-                    <select
-                        id="weekly_day"
-                        name="weekly_day"
-                        style="width: 260px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                    >
-                        <option value="1" {{ (string) $weeklyDay === '1' ? 'selected' : '' }}>Senin</option>
-                        <option value="2" {{ (string) $weeklyDay === '2' ? 'selected' : '' }}>Selasa</option>
-                        <option value="3" {{ (string) $weeklyDay === '3' ? 'selected' : '' }}>Rabu</option>
-                        <option value="4" {{ (string) $weeklyDay === '4' ? 'selected' : '' }}>Kamis</option>
-                        <option value="5" {{ (string) $weeklyDay === '5' ? 'selected' : '' }}>Jumat</option>
-                        <option value="6" {{ (string) $weeklyDay === '6' ? 'selected' : '' }}>Sabtu</option>
-                        <option value="7" {{ (string) $weeklyDay === '7' ? 'selected' : '' }}>Minggu</option>
-                    </select>
-                </div>
-
-                <div id="interval-days-wrapper" style="margin-bottom: 14px; display: none;">
-                    <label for="interval_days" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Interval Hari (Mode Setiap N Hari) <span style="color: #dc3545;">*</span>
-                    </label>
-                    <input
-                        type="number"
-                        id="interval_days"
-                        name="interval_days"
-                        min="1"
-                        max="365"
-                        value="{{ old('interval_days', 2) }}"
-                        style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                        type="time"
+                        id="schedule_time"
+                        name="schedule_time"
+                        value="{{ old('schedule_time', '06:00') }}"
+                        style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"
+                        onfocus="this.style.borderColor='#667eea'"
+                        onblur="this.style.borderColor='#e0e0e0'"
+                        required
                     >
                     <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                        Contoh: isi 2 berarti task muncul setiap 2 hari sekali.
+                        Format 24 jam, contoh: 06:00 atau 07:30.
+                    </div>
+
+                    <div style="margin-top: 14px;">
+                        <label for="time_limit_minutes" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Batas Waktu Penyelesaian (menit) <span style="color: #dc3545;">*</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="time_limit_minutes"
+                            name="time_limit_minutes"
+                            min="1"
+                            max="1440"
+                            value="{{ old('time_limit_minutes', 900) }}"
+                            style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"
+                            onfocus="this.style.borderColor='#667eea'"
+                            onblur="this.style.borderColor='#e0e0e0'"
+                            required
+                        >
+                        <div style="font-size: 13px; color: #666; margin-top: 8px;">
+                            Contoh: isi 900 berarti task harus selesai maksimal 15 jam setelah jam jadwal.
+                        </div>
+                    </div>
+                </div>
+            @else
+                <div style="margin-bottom: 20px;">
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; color: #333; cursor: pointer;">
+                        <input
+                            type="checkbox"
+                            id="is_recurring"
+                            name="is_recurring"
+                            value="1"
+                            {{ old('is_recurring') ? 'checked' : '' }}
+                            onchange="toggleRecurringFields()"
+                        >
+                        🔁 Jadwalkan sebagai task berulang
+                    </label>
+                    <div style="font-size: 13px; color: #666; margin-top: 8px; margin-left: 26px;">
+                        Pilih pola: harian, mingguan, atau setiap N hari.
                     </div>
                 </div>
 
-                <label for="schedule_time" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                    Jam Jadwal <span style="color: #dc3545;">*</span>
-                </label>
-                <input
-                    type="time"
-                    id="schedule_time"
-                    name="schedule_time"
-                    value="{{ old('schedule_time') }}"
-                    style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"
-                    onfocus="this.style.borderColor='#667eea'"
-                    onblur="this.style.borderColor='#e0e0e0'"
-                >
-                <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                    Format 24 jam, contoh: 10:30 atau 16:45.
-                </div>
+                <div id="recurring-time-wrapper" style="margin-bottom: 25px; display: none;">
+                    <div style="margin-bottom: 14px;">
+                        <label for="recurrence_type" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Pola Perulangan <span style="color: #dc3545;">*</span>
+                        </label>
+                        @php $recurrenceType = old('recurrence_type', 'daily'); @endphp
+                        <select
+                            id="recurrence_type"
+                            name="recurrence_type"
+                            onchange="toggleRecurrenceDetailFields()"
+                            style="width: 260px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                        >
+                            <option value="daily" {{ $recurrenceType === 'daily' ? 'selected' : '' }}>Setiap Hari</option>
+                            <option value="weekly" {{ $recurrenceType === 'weekly' ? 'selected' : '' }}>Mingguan (hari tertentu)</option>
+                            <option value="every_n_days" {{ $recurrenceType === 'every_n_days' ? 'selected' : '' }}>Setiap N Hari</option>
+                        </select>
+                    </div>
 
-                <div style="margin-top: 14px;">
-                    <label for="time_limit_minutes" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Batas Waktu Penyelesaian (menit) <span style="color: #dc3545;">*</span>
+                    <div id="weekly-day-wrapper" style="margin-bottom: 14px; display: none;">
+                        <label for="weekly_day" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Hari (Mode Mingguan) <span style="color: #dc3545;">*</span>
+                        </label>
+                        @php $weeklyDay = old('weekly_day', date('N')); @endphp
+                        <select
+                            id="weekly_day"
+                            name="weekly_day"
+                            style="width: 260px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                        >
+                            <option value="1" {{ (string) $weeklyDay === '1' ? 'selected' : '' }}>Senin</option>
+                            <option value="2" {{ (string) $weeklyDay === '2' ? 'selected' : '' }}>Selasa</option>
+                            <option value="3" {{ (string) $weeklyDay === '3' ? 'selected' : '' }}>Rabu</option>
+                            <option value="4" {{ (string) $weeklyDay === '4' ? 'selected' : '' }}>Kamis</option>
+                            <option value="5" {{ (string) $weeklyDay === '5' ? 'selected' : '' }}>Jumat</option>
+                            <option value="6" {{ (string) $weeklyDay === '6' ? 'selected' : '' }}>Sabtu</option>
+                            <option value="7" {{ (string) $weeklyDay === '7' ? 'selected' : '' }}>Minggu</option>
+                        </select>
+                    </div>
+
+                    <div id="interval-days-wrapper" style="margin-bottom: 14px; display: none;">
+                        <label for="interval_days" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Interval Hari (Mode Setiap N Hari) <span style="color: #dc3545;">*</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="interval_days"
+                            name="interval_days"
+                            min="1"
+                            max="365"
+                            value="{{ old('interval_days', 2) }}"
+                            style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                        >
+                        <div style="font-size: 13px; color: #666; margin-top: 8px;">
+                            Contoh: isi 2 berarti task muncul setiap 2 hari sekali.
+                        </div>
+                    </div>
+
+                    <label for="schedule_time" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Jam Jadwal <span style="color: #dc3545;">*</span>
                     </label>
                     <input
-                        type="number"
-                        id="time_limit_minutes"
-                        name="time_limit_minutes"
-                        min="1"
-                        max="1440"
-                        value="{{ old('time_limit_minutes', 30) }}"
+                        type="time"
+                        id="schedule_time"
+                        name="schedule_time"
+                        value="{{ old('schedule_time') }}"
                         style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"
                         onfocus="this.style.borderColor='#667eea'"
                         onblur="this.style.borderColor='#e0e0e0'"
                     >
                     <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                        Contoh: isi 30 berarti task harus selesai maksimal 30 menit setelah jam jadwal.
+                        Format 24 jam, contoh: 10:30 atau 16:45.
+                    </div>
+
+                    <div style="margin-top: 14px;">
+                        <label for="time_limit_minutes" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                            Batas Waktu Penyelesaian (menit) <span style="color: #dc3545;">*</span>
+                        </label>
+                        <input
+                            type="number"
+                            id="time_limit_minutes"
+                            name="time_limit_minutes"
+                            min="1"
+                            max="1440"
+                            value="{{ old('time_limit_minutes', 30) }}"
+                            style="width: 220px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"
+                            onfocus="this.style.borderColor='#667eea'"
+                            onblur="this.style.borderColor='#e0e0e0'"
+                        >
+                        <div style="font-size: 13px; color: #666; margin-top: 8px;">
+                            Contoh: isi 30 berarti task harus selesai maksimal 30 menit setelah jam jadwal.
+                        </div>
                     </div>
                 </div>
-            </div>
+            @endif
 
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button type="submit" class="btn btn-primary" style="padding: 12px 30px; font-size: 16px; flex: 1;">
                     📤 Delegasikan Tugas ke Waiter
                 </button>
-                <a href="{{ route('admin.tasks.index') }}" class="btn" 
+                <a href="{{ route($backRouteName ?? 'admin.tasks.index') }}" class="btn" 
                     style="padding: 12px 20px; font-size: 16px; background: #e0e0e0; color: #333; text-align: center;">
                     Batal
                 </a>
@@ -344,7 +465,12 @@
             const timeLimitInput = document.getElementById('time_limit_minutes');
             const recurrenceTypeInput = document.getElementById('recurrence_type');
 
-            if (recurringCheckbox.checked) {
+            if (!recurringCheckbox || !recurringWrapper || !scheduleTimeInput || !timeLimitInput || !recurrenceTypeInput) {
+                return;
+            }
+
+            const forceRecurring = recurringCheckbox.type === 'hidden';
+            if (forceRecurring || recurringCheckbox.checked) {
                 recurringWrapper.style.display = 'block';
                 scheduleTimeInput.required = true;
                 timeLimitInput.required = true;
@@ -412,11 +538,17 @@
         }
 
         function toggleRecurrenceDetailFields() {
-            const recurrenceType = document.getElementById('recurrence_type').value;
+            const recurrenceTypeInput = document.getElementById('recurrence_type');
             const weeklyWrapper = document.getElementById('weekly-day-wrapper');
             const intervalWrapper = document.getElementById('interval-days-wrapper');
             const weeklyDayInput = document.getElementById('weekly_day');
             const intervalDaysInput = document.getElementById('interval_days');
+
+            if (!recurrenceTypeInput || !weeklyWrapper || !intervalWrapper || !weeklyDayInput || !intervalDaysInput) {
+                return;
+            }
+
+            const recurrenceType = recurrenceTypeInput.value;
 
             if (recurrenceType === 'weekly') {
                 weeklyWrapper.style.display = 'block';

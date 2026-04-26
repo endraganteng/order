@@ -1,13 +1,40 @@
 @extends('admin.layout')
 
-@section('title', 'Tugas Waiter - Admin')
+@section('title', (($taskScope ?? 'general') === 'rack_check' ? 'Cek Rak Waiter - Admin' : 'Tugas Umum Waiter - Admin'))
 
 @section('content')
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-        <h2 style="color: #333; font-size: clamp(24px, 5vw, 32px); margin: 0;">📝 Delegasi Tugas Waiter</h2>
-        <a href="{{ route('admin.tasks.create') }}" class="btn btn-primary" style="font-size: 16px; padding: 10px 20px;">
-            ➕ Buat Tugas Baru
-        </a>
+    @php
+        $isRackScope = ($taskScope ?? 'general') === 'rack_check';
+        $createTaskType = $isRackScope ? 'rack_check' : 'general';
+        $createScope = $isRackScope ? 'rack_check' : 'general';
+        $pageTitle = $isRackScope ? '📦 Manajemen Cek Rak Waiter' : '📝 Manajemen Tugas Umum Waiter';
+        $pageSubtitle = $isRackScope
+            ? 'Kelola task cek rak secara terpisah dari tugas operasional umum.'
+            : 'Kelola task operasional umum waiter tanpa bercampur dengan task cek rak.';
+        $switchLabel = $isRackScope ? '📝 Buka Tugas Umum' : '📦 Buka Cek Rak';
+    @endphp
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+        <div>
+            <h2 style="color: #333; font-size: clamp(24px, 5vw, 32px); margin: 0;">{{ $pageTitle }}</h2>
+            <div style="font-size: 13px; color: #64748b; margin-top: 6px;">{{ $pageSubtitle }}</div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <a href="{{ route($otherTaskScopeRouteName ?? 'admin.tasks.rack.index') }}" class="btn" style="font-size: 14px; padding: 9px 14px; background:#e2e8f0; color:#1e293b;">
+                {{ $switchLabel }}
+            </a>
+            <a href="{{ route('admin.tasks.create', ['task_type' => $createTaskType, 'task_scope' => $createScope]) }}" class="btn btn-primary" style="font-size: 16px; padding: 10px 20px;">
+                ➕ Buat Tugas Baru
+            </a>
+            @if($isRackScope)
+                <form method="POST" action="{{ route('admin.tasks.rack.reset') }}" onsubmit="return confirm('Yakin reset semua data cek rak waiter? Tindakan ini akan menghapus seluruh task cek rak (pending/done/overdue) dan template berulang cek rak.');">
+                    @csrf
+                    <button type="submit" class="btn" style="font-size: 14px; padding: 10px 14px; background:#dc2626; color:#fff;">
+                        ♻️ Reset Data Cek Rak
+                    </button>
+                </form>
+            @endif
+        </div>
     </div>
 
     @if(session('success'))
@@ -36,6 +63,10 @@
         $collectedTopItems = $collectedStockBoard['top_items'] ?? [];
         $dateNotDoneCount = count($dateNotDoneTasks ?? []);
         $rackNotDoneTotal = collect($rackExecutionBoard ?? [])->sum(fn ($board) => (int) ($board['not_done_count'] ?? 0));
+        $rackDoneTotal = collect($rackExecutionBoard ?? [])->sum(fn ($board) => (int) ($board['done_count'] ?? 0));
+        $recurringDailyCount = collect($recurringTemplates ?? [])->filter(fn ($template) => ($template['recurrence_type'] ?? 'daily') === 'daily')->count();
+        $recurringSingleDelegateCount = collect($recurringTemplates ?? [])->filter(fn ($template) => ($template['assignment_type'] ?? 'all') === 'single')->count();
+        $recurringPhotoRequiredCount = collect($recurringTemplates ?? [])->filter(fn ($template) => !empty($template['requires_photo_proof']))->count();
     @endphp
 
     <div class="card" style="margin-bottom: 20px; padding: 20px;">
@@ -105,6 +136,7 @@
         </div>
     </details>
 
+    @if($isRackScope)
     <details class="card admin-section-card" style="margin-bottom: 20px;">
         <summary class="admin-section-summary">📦 Ringkasan Rak <span class="badge">{{ $activeRackCount }} aktif</span></summary>
         <div class="admin-section-body">
@@ -118,6 +150,7 @@
             </div>
         </div>
     </details>
+    @endif
 
     {{-- Recurring templates --}}
     <details class="card admin-section-card" style="margin-bottom: 20px;" open>
@@ -129,103 +162,114 @@
                 Belum ada template task berulang untuk waiter.
             </div>
         @else
-            <div style="overflow-x: auto;">
-                <table style="display: table; min-width: 1040px;">
-                    <thead>
-                        <tr>
-                            <th>Judul</th>
-                            <th>Jenis</th>
-                            <th>Delegasi</th>
-                            <th>Pola</th>
-                            <th>Prioritas</th>
-                            <th>Jam</th>
-                            <th>Limit</th>
-                            <th>Terakhir Generate</th>
-                            <th>Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($recurringTemplates as $template)
-                            <tr>
-                                <td>
-                                    <div style="font-weight: 600;">{{ $template['title'] ?? '-' }}</div>
-                                    @if(!empty($template['description']))
-                                        <div style="font-size: 13px; color: #666;">{{ $template['description'] }}</div>
-                                    @endif
-                                </td>
-                                <td>
-                                    @if(($template['task_type'] ?? 'general') === 'rack_check')
-                                        <span class="badge" style="background: #fff7ed; color: #9a3412;">📦 Cek Rak</span>
-                                        <div style="font-size: 12px; color: #9a3412; margin-top: 4px;">
-                                            {{ $template['rack_name'] ?? '-' }}
-                                        </div>
-                                    @else
-                                        <span class="badge" style="background: #eef2ff; color: #3730a3;">📝 Umum</span>
-                                    @endif
-                                    @if(!empty($template['requires_photo_proof']))
-                                        <div style="font-size: 11px; color: #0369a1; margin-top: 4px;">📷 Bukti foto wajib</div>
-                                    @endif
-                                </td>
-                                <td>
-                                    @if(($template['assignment_type'] ?? 'all') === 'single')
-                                        <span class="badge" style="background: #e3f2fd; color: #0d47a1;">🎯 {{ $template['assigned_waiter_name'] ?? '-' }}</span>
-                                    @else
-                                        <span class="badge" style="background: #ede7f6; color: #4a148c;">🌐 Semua Waiter</span>
-                                    @endif
-                                </td>
-                                <td>
-                                    @php
-                                        $type = $template['recurrence_type'] ?? 'daily';
-                                        $weeklyNames = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'];
-                                    @endphp
+            <div class="admin-tools-row">
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <span class="badge" style="background:#e0e7ff; color:#3730a3;">Harian: {{ $recurringDailyCount }}</span>
+                    <span class="badge" style="background:#e0f2fe; color:#0c4a6e;">Delegasi Single: {{ $recurringSingleDelegateCount }}</span>
+                    <span class="badge" style="background:#fef3c7; color:#92400e;">Wajib Foto: {{ $recurringPhotoRequiredCount }}</span>
+                </div>
+                <div class="admin-filter-wrap">
+                    <input
+                        type="text"
+                        class="admin-inline-filter js-admin-inline-filter"
+                        data-target-id="recurring-template-list"
+                        data-empty-id="recurring-template-empty"
+                        placeholder="Cari jadwal: judul, jenis, waiter, rak..."
+                    >
+                </div>
+            </div>
 
-                                    @if($type === 'weekly')
-                                        <span class="badge" style="background: #e8f5e9; color: #1b5e20;">📅 Mingguan</span>
-                                        <div style="font-size: 12px; color: #1b5e20; margin-top: 4px;">
-                                            {{ $weeklyNames[(int) ($template['weekly_day'] ?? 0)] ?? '-' }}
-                                        </div>
-                                    @elseif($type === 'every_n_days')
-                                        <span class="badge" style="background: #fff8e1; color: #8d6e00;">🔁 Setiap N Hari</span>
-                                        <div style="font-size: 12px; color: #8d6e00; margin-top: 4px;">
-                                            Tiap {{ $template['interval_days'] ?? '-' }} hari
-                                        </div>
+            <div id="recurring-template-list" class="admin-list-grid">
+                @foreach($recurringTemplates as $template)
+                    @php
+                        $templateType = $template['recurrence_type'] ?? 'daily';
+                        $weeklyNames = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'];
+                        $templateTypeLabel = $templateType === 'weekly'
+                            ? ('Mingguan ' . ($weeklyNames[(int) ($template['weekly_day'] ?? 0)] ?? '-'))
+                            : ($templateType === 'every_n_days'
+                                ? ('Setiap ' . ($template['interval_days'] ?? '-') . ' hari')
+                                : 'Harian');
+                        $templateSearchText = strtolower(trim(implode(' ', [
+                            (string) ($template['title'] ?? ''),
+                            (string) ($template['description'] ?? ''),
+                            (string) ($template['task_type'] ?? ''),
+                            (string) ($template['assigned_waiter_name'] ?? ''),
+                            (string) ($template['rack_name'] ?? ''),
+                            (string) ($template['schedule_time'] ?? ''),
+                            (string) $templateTypeLabel,
+                        ])));
+                    @endphp
+
+                    <details class="admin-data-card js-admin-filter-item" data-filter-text="{{ $templateSearchText }}">
+                        <summary class="admin-data-card-summary">
+                            <div>
+                                <div class="admin-data-card-title">{{ $template['title'] ?? '-' }}</div>
+                                <div class="admin-data-card-subtitle">{{ $template['description'] ?? 'Tanpa deskripsi tambahan.' }}</div>
+                            </div>
+                            <div class="admin-data-card-badges">
+                                @if(($template['task_type'] ?? 'general') === 'rack_check')
+                                    <span class="badge" style="background:#fff7ed;color:#9a3412;">📦 Cek Rak</span>
+                                @else
+                                    <span class="badge" style="background:#eef2ff;color:#3730a3;">📝 Umum</span>
+                                @endif
+                                <span class="badge" style="background:#e3f2fd;color:#0d47a1;">🕒 {{ $template['schedule_time'] ?? '-' }}</span>
+                                <span class="badge" style="background:#fff3cd;color:#856404;">⏳ {{ $template['time_limit_minutes'] ?? '-' }} menit</span>
+                            </div>
+                        </summary>
+
+                        <div class="admin-data-card-body">
+                            <div class="admin-meta-grid">
+                                <div><strong>Pola</strong><br>{{ $templateTypeLabel }}</div>
+                                <div>
+                                    <strong>Delegasi</strong><br>
+                                    @if(($template['assignment_type'] ?? 'all') === 'single')
+                                        🎯 {{ $template['assigned_waiter_name'] ?? '-' }}
                                     @else
-                                        <span class="badge" style="background: #e3f2fd; color: #0d47a1;">🗓️ Harian</span>
+                                        🌐 Semua Waiter
                                     @endif
-                                </td>
-                                <td>
-                                    @if(($template['priority'] ?? 'normal') === 'urgent')
-                                        <span class="badge" style="background: #f8d7da; color: #721c24;">🔴 Urgent</span>
-                                    @elseif(($template['priority'] ?? 'normal') === 'normal')
-                                        <span class="badge" style="background: #cce5ff; color: #004085;">🔵 Normal</span>
-                                    @else
-                                        <span class="badge" style="background: #e2e3e5; color: #383d41;">⚪ Low</span>
-                                    @endif
-                                </td>
-                                <td><span class="badge" style="background: #ede7f6; color: #5e35b1;">⏰ {{ $template['schedule_time'] ?? '-' }}</span></td>
-                                <td><span class="badge" style="background: #fff3cd; color: #856404;">⏳ {{ $template['time_limit_minutes'] ?? '-' }} menit</span></td>
-                                <td style="font-size: 13px; white-space: nowrap;">{{ !empty($template['last_generated_date']) ? $template['last_generated_date'] : '-' }}</td>
-                                <td>
-                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                        <a href="{{ route('admin.tasks.recurring.edit', $template['id']) }}"
-                                            class="btn" style="padding: 5px 10px; font-size: 13px; background: #e3f2fd; color: #0d47a1;">✏️ Edit</a>
-                                        <form action="{{ route('admin.tasks.recurring.destroy', $template['id']) }}" method="POST"
-                                            onsubmit="return confirm('Yakin hapus template task berulang ini?')">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="btn btn-danger" style="padding: 5px 10px; font-size: 13px;">🗑️ Hapus</button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                                </div>
+                                <div>
+                                    <strong>Prioritas</strong><br>
+                                    {{ strtoupper((string) ($template['priority'] ?? 'normal')) }}
+                                </div>
+                                <div>
+                                    <strong>Terakhir Generate</strong><br>
+                                    {{ !empty($template['last_generated_date']) ? $template['last_generated_date'] : '-' }}
+                                </div>
+                            </div>
+
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+                                @if(($template['task_type'] ?? 'general') === 'rack_check')
+                                    <span class="badge" style="background:#ffedd5;color:#9a3412;">Rak: {{ $template['rack_name'] ?? '-' }}</span>
+                                @endif
+                                @if(!empty($template['requires_photo_proof']))
+                                    <span class="badge" style="background:#e0f2fe;color:#0369a1;">📷 Bukti foto wajib</span>
+                                @endif
+                            </div>
+
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+                                <a href="{{ route('admin.tasks.recurring.edit', $template['id']) }}"
+                                    class="btn" style="padding: 6px 10px; font-size: 13px; background: #e3f2fd; color: #0d47a1;">✏️ Edit</a>
+                                <form action="{{ route('admin.tasks.recurring.destroy', $template['id']) }}" method="POST"
+                                    onsubmit="return confirm('Yakin hapus template task berulang ini?')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-danger" style="padding: 6px 10px; font-size: 13px;">🗑️ Hapus</button>
+                                </form>
+                            </div>
+                        </div>
+                    </details>
+                @endforeach
+            </div>
+
+            <div id="recurring-template-empty" class="admin-empty-filtered" style="display:none;">
+                Tidak ada template yang cocok dengan kata kunci pencarian.
             </div>
         @endif
         </div>
     </details>
 
+    @if(!$isRackScope)
     <details class="card admin-section-card" style="margin-bottom: 20px;">
         <summary class="admin-section-summary">🏆 Performa Waiter <span class="badge">Ranking penyelesaian</span></summary>
         <div class="admin-section-body">
@@ -257,70 +301,125 @@
         @endif
         </div>
     </details>
+    @endif
 
     <details class="card admin-section-card" style="margin-bottom: 20px;" open>
         <summary class="admin-section-summary">📅 Tracking Tugas per Tanggal <span class="badge">{{ $dateNotDoneCount }} belum dikerjakan</span></summary>
         <div class="admin-section-body">
 
-        <form method="GET" action="{{ route('admin.tasks.index') }}" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
+        <form method="GET" action="{{ route($taskScopeRouteName ?? 'admin.tasks.index') }}" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
             <input type="date" name="track_date" value="{{ $selectedDate }}"
                 style="padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 8px;">
             <button type="submit" class="btn btn-primary">Tampilkan</button>
         </form>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
-            <div style="border: 1px solid #d4edda; border-radius: 8px; padding: 12px; background: #f6fffa;">
-                <div style="font-weight: 600; color: #155724; margin-bottom: 8px;">✅ Dikerjakan ({{ count($dateDoneTasks) }})</div>
-                @if(empty($dateDoneTasks))
-                    <div style="font-size: 13px; color: #666;">Tidak ada tugas selesai pada tanggal ini.</div>
-                @else
-                    <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #333;">
-                        @foreach($dateDoneTasks as $task)
-                            <li style="margin-bottom: 5px;">
-                                <strong>{{ $task['title'] ?? '-' }}</strong>
-                                <div>Waiter: {{ $task['completed_by_waiter_name'] ?? '-' }}</div>
-                                @if(($task['task_type'] ?? 'general') === 'rack_check')
-                                    <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }} ({{ $task['completed_scanned_barcode'] ?? '-' }})</div>
-                                    <div style="font-size: 12px; color: #334155;">
-                                        Laporan stok:
-                                        @if(!empty($task['completed_no_out_of_stock']))
-                                            ✅ Tidak ada barang habis
-                                        @elseif(!empty($task['completed_stock_report']))
-                                            ⚠️ {{ $task['completed_stock_report'] }}
-                                        @else
-                                            -
-                                        @endif
-                                    </div>
-                                @endif
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
-            </div>
+        @if($isRackScope)
+            @if(empty($dateWaiterTrackingBoard))
+                <div style="font-size: 13px; color: #666;">Belum ada data cek rak pada tanggal ini.</div>
+            @else
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px;">
+                    @foreach($dateWaiterTrackingBoard as $waiterTracking)
+                        <details style="border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; overflow: hidden;">
+                            <summary style="cursor: pointer; list-style: none; display:flex; justify-content:space-between; align-items:center; gap:10px; padding: 12px 14px; background:#f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                <span style="font-weight: 700; color: #0f172a;">{{ $waiterTracking['waiter_name'] ?? '-' }}</span>
+                                <span style="display:flex; gap:6px; flex-wrap:wrap;">
+                                    <span class="badge" style="background:#ecfdf5;color:#166534;">✅ {{ $waiterTracking['done_count'] ?? 0 }}</span>
+                                    <span class="badge" style="background:#fef2f2;color:#991b1b;">❌ {{ $waiterTracking['not_done_count'] ?? 0 }}</span>
+                                </span>
+                            </summary>
+                            <div style="padding: 12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
+                                <div style="border: 1px solid #d1fae5; border-radius: 8px; padding: 10px; background:#f0fdf4;">
+                                    <div style="font-weight: 600; color: #166534; margin-bottom: 8px;">✅ Dikerjakan ({{ $waiterTracking['done_count'] ?? 0 }})</div>
+                                    @if(empty($waiterTracking['done_tasks']))
+                                        <div style="font-size: 12px; color: #64748b;">Tidak ada task selesai.</div>
+                                    @else
+                                        <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #1f2937;">
+                                            @foreach($waiterTracking['done_tasks'] as $task)
+                                                <li style="margin-bottom: 6px;">
+                                                    <strong>{{ $task['rack_name'] ?? ($task['title'] ?? '-') }}</strong>
+                                                    <div>Scan: {{ $task['completed_scanned_barcode'] ?? '-' }}</div>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </div>
 
-            <div style="border: 1px solid #f5c6cb; border-radius: 8px; padding: 12px; background: #fff8f8;">
-                <div style="font-weight: 600; color: #721c24; margin-bottom: 8px;">❌ Tidak Dikerjakan ({{ count($dateNotDoneTasks) }})</div>
-                @if(empty($dateNotDoneTasks))
-                    <div style="font-size: 13px; color: #666;">Semua tugas pada tanggal ini selesai.</div>
-                @else
-                    <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #333;">
-                        @foreach($dateNotDoneTasks as $task)
-                            <li style="margin-bottom: 5px;">
-                                <strong>{{ $task['title'] ?? '-' }}</strong>
-                                <div>Status: {{ strtoupper($task['status'] ?? '-') }}</div>
-                                <div>Target: {{ $task['assigned_waiter_name'] ?? '-' }}</div>
-                                @if(($task['task_type'] ?? 'general') === 'rack_check')
-                                    <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }}</div>
-                                @endif
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
+                                <div style="border: 1px solid #fecaca; border-radius: 8px; padding: 10px; background:#fff1f2;">
+                                    <div style="font-weight: 600; color: #b91c1c; margin-bottom: 8px;">❌ Tidak Dikerjakan ({{ $waiterTracking['not_done_count'] ?? 0 }})</div>
+                                    @if(empty($waiterTracking['not_done_tasks']))
+                                        <div style="font-size: 12px; color: #64748b;">Semua task waiter ini selesai.</div>
+                                    @else
+                                        <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #1f2937;">
+                                            @foreach($waiterTracking['not_done_tasks'] as $task)
+                                                <li style="margin-bottom: 6px;">
+                                                    <strong>{{ $task['rack_name'] ?? ($task['title'] ?? '-') }}</strong>
+                                                    <div>Status: {{ strtoupper($task['status'] ?? '-') }}</div>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </div>
+                            </div>
+                        </details>
+                    @endforeach
+                </div>
+            @endif
+        @else
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+                <div style="border: 1px solid #d4edda; border-radius: 8px; padding: 12px; background: #f6fffa;">
+                    <div style="font-weight: 600; color: #155724; margin-bottom: 8px;">✅ Dikerjakan ({{ count($dateDoneTasks) }})</div>
+                    @if(empty($dateDoneTasks))
+                        <div style="font-size: 13px; color: #666;">Tidak ada tugas selesai pada tanggal ini.</div>
+                    @else
+                        <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #333;">
+                            @foreach($dateDoneTasks as $task)
+                                <li style="margin-bottom: 5px;">
+                                    <strong>{{ $task['title'] ?? '-' }}</strong>
+                                    <div>Waiter: {{ $task['completed_by_waiter_name'] ?? '-' }}</div>
+                                    @if(($task['task_type'] ?? 'general') === 'rack_check')
+                                        <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }} ({{ $task['completed_scanned_barcode'] ?? '-' }})</div>
+                                        <div style="font-size: 12px; color: #334155;">
+                                            Laporan stok:
+                                            @if(!empty($task['completed_no_out_of_stock']))
+                                                ✅ Tidak ada barang habis
+                                            @elseif(!empty($task['completed_stock_report']))
+                                                ⚠️ {{ $task['completed_stock_report'] }}
+                                            @else
+                                                -
+                                            @endif
+                                        </div>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+                </div>
+
+                <div style="border: 1px solid #f5c6cb; border-radius: 8px; padding: 12px; background: #fff8f8;">
+                    <div style="font-weight: 600; color: #721c24; margin-bottom: 8px;">❌ Tidak Dikerjakan ({{ count($dateNotDoneTasks) }})</div>
+                    @if(empty($dateNotDoneTasks))
+                        <div style="font-size: 13px; color: #666;">Semua tugas pada tanggal ini selesai.</div>
+                    @else
+                        <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #333;">
+                            @foreach($dateNotDoneTasks as $task)
+                                <li style="margin-bottom: 5px;">
+                                    <strong>{{ $task['title'] ?? '-' }}</strong>
+                                    <div>Status: {{ strtoupper($task['status'] ?? '-') }}</div>
+                                    <div>Target: {{ $task['assigned_waiter_name'] ?? '-' }}</div>
+                                    @if(($task['task_type'] ?? 'general') === 'rack_check')
+                                        <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }}</div>
+                                    @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+                </div>
             </div>
-        </div>
+        @endif
         </div>
     </details>
 
+    @if(!$isRackScope)
     <details class="card admin-section-card" style="margin-bottom: 20px;">
         <summary class="admin-section-summary">📔 Laporan Kegiatan Waiter <span class="badge">{{ $activityTotalReports }} laporan</span></summary>
         <div class="admin-section-body">
@@ -369,7 +468,9 @@
         @endif
         </div>
     </details>
+    @endif
 
+    @if($isRackScope)
     <details class="card admin-section-card" style="margin-bottom: 20px;">
         <summary class="admin-section-summary">🔍 Monitoring Cek Rak <span class="badge">{{ $rackNotDoneTotal }} belum selesai</span></summary>
         <div class="admin-section-body">
@@ -377,60 +478,101 @@
         @if(empty($rackExecutionBoard))
             <div style="font-size: 13px; color: #777;">Tidak ada task cek rak pada tanggal ini.</div>
         @else
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px;">
+            <div class="admin-tools-row">
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <span class="badge" style="background:#dcfce7;color:#166534;">✅ Selesai: {{ $rackDoneTotal }}</span>
+                    <span class="badge" style="background:#fee2e2;color:#991b1b;">❌ Belum Selesai: {{ $rackNotDoneTotal }}</span>
+                    <span class="badge" style="background:#e0e7ff;color:#3730a3;">Rak Dipantau: {{ count($rackExecutionBoard) }}</span>
+                </div>
+                <div class="admin-filter-wrap">
+                    <input
+                        type="text"
+                        class="admin-inline-filter js-admin-inline-filter"
+                        data-target-id="rack-monitoring-list"
+                        data-empty-id="rack-monitoring-empty"
+                        placeholder="Cari rak: nama, lokasi, barcode, waiter..."
+                    >
+                </div>
+            </div>
+
+            <div id="rack-monitoring-list" class="admin-list-grid">
                 @foreach($rackExecutionBoard as $rackBoard)
-                    <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; background: #f8fafc;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    @php
+                        $rackSearchText = strtolower(trim(implode(' ', [
+                            (string) ($rackBoard['rack_name'] ?? ''),
+                            (string) ($rackBoard['rack_location'] ?? ''),
+                            (string) ($rackBoard['rack_barcode_value'] ?? ''),
+                            implode(' ', array_map(fn ($waiter) => (string) ($waiter['name'] ?? ''), $rackBoard['done_waiters'] ?? [])),
+                            implode(' ', array_map(fn ($waiter) => (string) ($waiter['name'] ?? ''), $rackBoard['not_done_waiters'] ?? [])),
+                        ])));
+                    @endphp
+
+                    <details class="admin-data-card js-admin-filter-item" data-filter-text="{{ $rackSearchText }}">
+                        <summary class="admin-data-card-summary">
                             <div>
-                                <div style="font-weight: 700; color: #0f172a;">{{ $rackBoard['rack_name'] ?? '-' }}</div>
-                                <div style="font-size: 12px; color: #475569;">{{ $rackBoard['rack_location'] ?? '-' }}</div>
+                                <div class="admin-data-card-title">{{ $rackBoard['rack_name'] ?? '-' }}</div>
+                                <div class="admin-data-card-subtitle">{{ $rackBoard['rack_location'] ?? '-' }}</div>
                             </div>
-                            <span class="badge" style="background:#fff7ed;color:#9a3412;">{{ $rackBoard['rack_barcode_value'] ?? '-' }}</span>
+                            <div class="admin-data-card-badges">
+                                <span class="badge" style="background:#fff7ed;color:#9a3412;">{{ $rackBoard['rack_barcode_value'] ?? '-' }}</span>
+                                <span class="badge" style="background:#dcfce7;color:#166534;">✅ {{ $rackBoard['done_count'] ?? 0 }}</span>
+                                <span class="badge" style="background:#fee2e2;color:#991b1b;">❌ {{ $rackBoard['not_done_count'] ?? 0 }}</span>
+                            </div>
+                        </summary>
+
+                        <div class="admin-data-card-body">
+                            <div class="admin-status-columns">
+                                <div class="admin-status-col admin-status-col-success">
+                                    <div class="admin-status-title">✅ Yang sudah mengerjakan ({{ $rackBoard['done_count'] ?? 0 }})</div>
+                                    @if(empty($rackBoard['done_waiters']))
+                                        <div class="admin-status-empty">Belum ada waiter selesai.</div>
+                                    @else
+                                        <ul class="admin-status-list">
+                                            @foreach($rackBoard['done_waiters'] as $doneWaiter)
+                                                <li>
+                                                    <strong>{{ $doneWaiter['name'] ?? '-' }}</strong>
+                                                    @if(!empty($doneWaiter['completed_scanned_barcode']))
+                                                        <div>Scan: {{ $doneWaiter['completed_scanned_barcode'] }}</div>
+                                                    @endif
+                                                    <div>
+                                                        Laporan stok:
+                                                        @if(!empty($doneWaiter['completed_no_out_of_stock']))
+                                                            ✅ Tidak ada barang habis
+                                                        @elseif(!empty($doneWaiter['completed_stock_report']))
+                                                            ⚠️ {{ $doneWaiter['completed_stock_report'] }}
+                                                        @else
+                                                            -
+                                                        @endif
+                                                    </div>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </div>
+
+                                <div class="admin-status-col admin-status-col-danger">
+                                    <div class="admin-status-title">❌ Yang belum mengerjakan ({{ $rackBoard['not_done_count'] ?? 0 }})</div>
+                                    @if(empty($rackBoard['not_done_waiters']))
+                                        <div class="admin-status-empty">Semua waiter target sudah selesai.</div>
+                                    @else
+                                        <ul class="admin-status-list">
+                                            @foreach($rackBoard['not_done_waiters'] as $pendingWaiter)
+                                                <li>
+                                                    <strong>{{ $pendingWaiter['name'] ?? '-' }}</strong>
+                                                    <div>Status: {{ strtoupper($pendingWaiter['status'] ?? 'pending') }}</div>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                </div>
+                            </div>
                         </div>
-
-                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 10px;">
-                            <span class="badge" style="background:#dcfce7;color:#166534;">✅ Selesai: {{ $rackBoard['done_count'] ?? 0 }}</span>
-                            <span class="badge" style="background:#fee2e2;color:#991b1b;">❌ Belum: {{ $rackBoard['not_done_count'] ?? 0 }}</span>
-                        </div>
-
-                        <div style="font-size: 12px; color: #334155; margin-bottom: 6px; font-weight: 600;">Yang sudah mengerjakan:</div>
-                        @if(empty($rackBoard['done_waiters']))
-                            <div style="font-size: 12px; color: #64748b; margin-bottom: 10px;">Belum ada waiter selesai.</div>
-                        @else
-                            <ul style="margin: 0 0 10px 0; padding-left: 18px; font-size: 12px; color: #166534;">
-                                @foreach($rackBoard['done_waiters'] as $doneWaiter)
-                                    <li>
-                                        {{ $doneWaiter['name'] ?? '-' }}
-                                        @if(!empty($doneWaiter['completed_scanned_barcode']))
-                                            - scan: {{ $doneWaiter['completed_scanned_barcode'] }}
-                                        @endif
-                                        <div style="font-size: 11px; color: #334155; margin-top: 2px;">
-                                            Laporan stok:
-                                            @if(!empty($doneWaiter['completed_no_out_of_stock']))
-                                                ✅ Tidak ada barang habis
-                                            @elseif(!empty($doneWaiter['completed_stock_report']))
-                                                ⚠️ {{ $doneWaiter['completed_stock_report'] }}
-                                            @else
-                                                -
-                                            @endif
-                                        </div>
-                                    </li>
-                                @endforeach
-                            </ul>
-                        @endif
-
-                        <div style="font-size: 12px; color: #334155; margin-bottom: 6px; font-weight: 600;">Yang belum mengerjakan:</div>
-                        @if(empty($rackBoard['not_done_waiters']))
-                            <div style="font-size: 12px; color: #64748b;">Semua waiter target sudah selesai.</div>
-                        @else
-                            <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #991b1b;">
-                                @foreach($rackBoard['not_done_waiters'] as $pendingWaiter)
-                                    <li>{{ $pendingWaiter['name'] ?? '-' }} - {{ strtoupper($pendingWaiter['status'] ?? 'pending') }}</li>
-                                @endforeach
-                            </ul>
-                        @endif
-                    </div>
+                    </details>
                 @endforeach
+            </div>
+
+            <div id="rack-monitoring-empty" class="admin-empty-filtered" style="display:none;">
+                Tidak ada data rak yang cocok dengan kata kunci pencarian.
             </div>
         @endif
         </div>
@@ -524,6 +666,7 @@
         @endif
         </div>
     </details>
+    @endif
 
     <details class="card admin-section-card" style="padding: 0; overflow: hidden; margin-bottom: 20px;">
         <summary class="admin-section-summary" style="padding: 16px;">🕘 Riwayat Tugas Waiter <span class="badge">{{ count($taskHistory ?? []) }} data</span></summary>
@@ -694,6 +837,127 @@
             padding: 0 16px 16px 16px;
             border-top: 1px solid #f1f5f9;
         }
+        .admin-tools-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .admin-filter-wrap {
+            min-width: 260px;
+            flex: 1;
+            max-width: 360px;
+        }
+        .admin-inline-filter {
+            width: 100%;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            padding: 9px 11px;
+            font-size: 13px;
+            color: #0f172a;
+            background: #ffffff;
+        }
+        .admin-list-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 12px;
+        }
+        .admin-data-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+        .admin-data-card[open] {
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+        }
+        .admin-data-card-summary {
+            list-style: none;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px;
+            background: #f8fafc;
+        }
+        .admin-data-card-summary::-webkit-details-marker {
+            display: none;
+        }
+        .admin-data-card-title {
+            font-weight: 700;
+            color: #0f172a;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        .admin-data-card-subtitle {
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.4;
+        }
+        .admin-data-card-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .admin-data-card-body {
+            padding: 12px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .admin-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px;
+            font-size: 12px;
+            color: #334155;
+        }
+        .admin-status-columns {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .admin-status-col {
+            border-radius: 9px;
+            border: 1px solid #e2e8f0;
+            padding: 10px;
+            font-size: 12px;
+            color: #334155;
+        }
+        .admin-status-col-success {
+            border-color: #d1fae5;
+            background: #f0fdf4;
+        }
+        .admin-status-col-danger {
+            border-color: #fecaca;
+            background: #fff1f2;
+        }
+        .admin-status-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .admin-status-empty {
+            color: #64748b;
+        }
+        .admin-status-list {
+            margin: 0;
+            padding-left: 18px;
+            line-height: 1.45;
+        }
+        .admin-status-list li {
+            margin-bottom: 7px;
+        }
+        .admin-empty-filtered {
+            margin-top: 12px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #64748b;
+            background: #f8fafc;
+        }
         .admin-photo-modal {
             position: fixed;
             inset: 0;
@@ -749,6 +1013,51 @@
             if (!modal || !imageEl || !metaEl) {
                 return;
             }
+
+            function setupInlineFilters() {
+                const filterInputs = document.querySelectorAll('.js-admin-inline-filter');
+                if (!filterInputs.length) {
+                    return;
+                }
+
+                filterInputs.forEach((input) => {
+                    const targetId = String(input.getAttribute('data-target-id') || '');
+                    const emptyId = String(input.getAttribute('data-empty-id') || '');
+                    if (!targetId) {
+                        return;
+                    }
+
+                    const container = document.getElementById(targetId);
+                    const emptyState = emptyId ? document.getElementById(emptyId) : null;
+                    if (!container) {
+                        return;
+                    }
+
+                    const applyFilter = () => {
+                        const keyword = String(input.value || '').trim().toLowerCase();
+                        const items = Array.from(container.querySelectorAll('.js-admin-filter-item'));
+                        let visibleCount = 0;
+
+                        items.forEach((item) => {
+                            const haystack = String(item.getAttribute('data-filter-text') || '').toLowerCase();
+                            const isVisible = keyword === '' || haystack.includes(keyword);
+                            item.style.display = isVisible ? '' : 'none';
+                            if (isVisible) {
+                                visibleCount += 1;
+                            }
+                        });
+
+                        if (emptyState) {
+                            emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+                        }
+                    };
+
+                    input.addEventListener('input', applyFilter);
+                    applyFilter();
+                });
+            }
+
+            setupInlineFilters();
 
             function formatBytes(bytes) {
                 const value = Number(bytes || 0);

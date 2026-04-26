@@ -3,6 +3,11 @@
 @section('title', 'Edit Task Berulang - Admin')
 
 @section('content')
+    @php
+        $isRackTemplate = ($template['task_type'] ?? 'general') === 'rack_check';
+        $backRouteName = $isRackTemplate ? 'admin.tasks.rack.index' : 'admin.tasks.index';
+    @endphp
+
     <h2 style="margin-bottom: 20px; color: #333; font-size: clamp(24px, 5vw, 32px);">✏️ Edit Task Berulang</h2>
 
     @if($errors->any())
@@ -37,13 +42,13 @@
                     style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; resize: vertical; font-family: inherit;">{{ old('description', $template['description'] ?? '') }}</textarea>
             </div>
 
-            @if(($template['task_type'] ?? 'general') === 'rack_check')
+            @if($isRackTemplate)
                 <div style="margin-bottom: 20px; padding: 12px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed;">
                     <div style="font-weight: 700; color: #9a3412; margin-bottom: 6px;">📦 Template Cek Rak (Wajib Scan Barcode)</div>
                     <div style="font-size: 13px; color: #9a3412;">Rak: <strong>{{ $template['rack_name'] ?? '-' }}</strong> ({{ $template['rack_location'] ?? '-' }})</div>
                     <div style="font-size: 13px; color: #9a3412;">Barcode: <code>{{ $template['rack_barcode_value'] ?? '-' }}</code></div>
                     <div style="font-size: 12px; color: #7c2d12; margin-top: 6px;">
-                        Untuk pindah ke rak lain, buat template baru dari menu "Buat Tugas Baru" agar histori audit tetap rapi.
+                        Jadwal cek rak dapat disesuaikan supervisor sesuai kebutuhan operasional.
                     </div>
                 </div>
             @endif
@@ -143,7 +148,7 @@
                 <button type="submit" class="btn btn-primary" style="padding: 12px 30px; font-size: 16px; flex: 1;">
                     💾 Simpan Perubahan
                 </button>
-                <a href="{{ route('admin.tasks.index') }}" class="btn"
+                <a href="{{ route($backRouteName) }}" class="btn"
                     style="padding: 12px 20px; font-size: 16px; background: #e0e0e0; color: #333; text-align: center;">
                     Batal
                 </a>

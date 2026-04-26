@@ -59,13 +59,45 @@ class AdminController extends Controller
     /**
      * Show dashboard
      */
-    public function dashboard()
+    public function dashboard(Request $request)
     {
         $waiters = $this->firebase->getAllowedEmails();
         $settings = $this->firebase->getSettings();
-        $userStats = $this->firebase->getUserOrderStats();
+        $orderPeriodInput = strtolower(trim((string) $request->input('order_period', 'daily')));
+        $orderPeriod = in_array($orderPeriodInput, ['daily', 'weekly', 'monthly'], true) ? $orderPeriodInput : 'daily';
 
-        return view('admin.dashboard', compact('waiters', 'settings', 'userStats'));
+        [$periodStartTs, $periodEndTs, $orderPeriodLabel] = $this->resolveDashboardPeriodRange($orderPeriod);
+
+        $userStats = $this->buildWaiterOrderStatsByPeriod(
+            $this->firebase->getOrders(),
+            $periodStartTs,
+            $periodEndTs
+        );
+
+        $waiterTaskRanking = $this->buildWaiterTaskCompletionRankingByPeriod(
+            $this->firebase->getWaiterTasks(),
+            $periodStartTs,
+            $periodEndTs
+        );
+
+        $orderStatsSummary = [
+            'total_orders' => array_sum(array_map(function ($stat) {
+                return (int) ($stat['order_count'] ?? 0);
+            }, $userStats)),
+            'waiter_with_orders' => count($userStats),
+        ];
+
+        return view('admin.dashboard', compact(
+            'waiters',
+            'settings',
+            'userStats',
+            'waiterTaskRanking',
+            'orderPeriod',
+            'orderPeriodLabel',
+            'periodStartTs',
+            'periodEndTs',
+            'orderStatsSummary'
+        ));
     }
 
     /**
@@ -214,6 +246,68 @@ class AdminController extends Controller
 
         return redirect()->route('admin.racks.index')
             ->with('success', 'Rak berhasil ditambahkan dan barcode otomatis digenerate.');
+    }
+
+    /**
+     * Print rack barcode labels (single/selected/all).
+     */
+    public function racksPrintLabels(Request $request)
+    {
+        $selectedRacks = $this->resolveSelectedRacksFromRequest($request);
+
+        if (count($selectedRacks) === 0) {
+            return redirect()->route('admin.racks.index')
+                ->with('error', 'Pilih minimal satu rak untuk print label barcode.');
+        }
+
+        $labelScope = $request->boolean('all') ? 'Semua Rak Aktif' : 'Rak Terpilih';
+
+        return view('admin.racks.print_labels', [
+            'racks' => $selectedRacks,
+            'labelScope' => $labelScope,
+            'printedAt' => time(),
+        ]);
+    }
+
+    /**
+     * Export selected/all rack barcodes to CSV.
+     */
+    public function racksExportBarcodes(Request $request)
+    {
+        $selectedRacks = $this->resolveSelectedRacksFromRequest($request);
+
+        if (count($selectedRacks) === 0) {
+            return redirect()->route('admin.racks.index')
+                ->with('error', 'Pilih minimal satu rak untuk export barcode.');
+        }
+
+        $fileName = 'rack-barcodes-'.date('Ymd-His').'.csv';
+
+        return response()->streamDownload(function () use ($selectedRacks) {
+            $output = fopen('php://output', 'w');
+            if ($output === false) {
+                return;
+            }
+
+            fwrite($output, "\xEF\xBB\xBF"); // UTF-8 BOM for Excel
+            fputcsv($output, ['Rack ID', 'Nama Rak', 'Lokasi', 'Barcode Value', 'Status']);
+
+            foreach ($selectedRacks as $rack) {
+                $status = (($rack['is_active'] ?? true) === true) ? 'Aktif' : 'Nonaktif';
+
+                fputcsv($output, [
+                    $this->sanitizeCsvCell((string) ($rack['id'] ?? '')),
+                    $this->sanitizeCsvCell((string) ($rack['name'] ?? '')),
+                    $this->sanitizeCsvCell((string) ($rack['location'] ?? '')),
+                    $this->sanitizeCsvCell((string) ($rack['barcode_value'] ?? '')),
+                    $status,
+                ]);
+            }
+
+            fclose($output);
+        }, $fileName, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     /**
@@ -609,6 +703,49 @@ class AdminController extends Controller
      */
     public function tasksIndex(Request $request)
     {
+        return $this->tasksIndexByScope($request, 'general');
+    }
+
+    /**
+     * Show dedicated rack-check management list.
+     */
+    public function rackTasksIndex(Request $request)
+    {
+        return $this->tasksIndexByScope($request, 'rack_check');
+    }
+
+    /**
+     * Reset all rack-check waiter data (tasks + recurring templates).
+     */
+    public function rackTasksReset()
+    {
+        try {
+            $result = $this->firebase->resetRackCheckWaiterData();
+            $deletedTasks = (int) ($result['deleted_tasks'] ?? 0);
+            $deletedTemplates = (int) ($result['deleted_templates'] ?? 0);
+
+            if ($deletedTasks === 0 && $deletedTemplates === 0) {
+                return redirect()->route('admin.tasks.rack.index')
+                    ->with('success', 'Data cek rak waiter sudah kosong. Tidak ada data yang direset.');
+            }
+
+            return redirect()->route('admin.tasks.rack.index')
+                ->with('success', "Reset data cek rak berhasil. {$deletedTasks} task dan {$deletedTemplates} template berulang telah dihapus.");
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->route('admin.tasks.rack.index')
+                ->with('error', 'Reset data cek rak gagal diproses. Silakan coba lagi.');
+        }
+    }
+
+    /**
+     * Render tasks index by task scope.
+     */
+    protected function tasksIndexByScope(Request $request, string $taskScope)
+    {
+        $taskScope = $taskScope === 'rack_check' ? 'rack_check' : 'general';
+
         $this->firebase->generateDueRecurringWaiterTasks();
         $this->firebase->markOverdueWaiterTasks();
         $tasks = $this->firebase->getWaiterTasks();
@@ -621,6 +758,14 @@ class AdminController extends Controller
 
             return $task;
         }, $tasks);
+
+        $tasks = array_values(array_filter($tasks, function ($task) use ($taskScope) {
+            return $this->matchesTaskScope($task, $taskScope);
+        }));
+
+        $recurringTemplates = array_values(array_filter($recurringTemplates, function ($template) use ($taskScope) {
+            return $this->matchesTaskScope($template, $taskScope);
+        }));
 
         $taskHistory = $tasks;
 
@@ -639,10 +784,28 @@ class AdminController extends Controller
             return ($task['status'] ?? '') !== 'done';
         }));
 
+        $dateWaiterTrackingBoard = $this->buildWaiterTrackingBoard($dateDoneTasks, $dateNotDoneTasks);
+
         $rackExecutionBoard = $this->buildRackExecutionBoard($dateTasks);
         $collectedStockBoard = $this->buildCollectedStockBoard($dateTasks);
 
         $waiterPerformance = $this->buildWaiterPerformance($tasks);
+
+        $taskScopeRouteName = $taskScope === 'rack_check'
+            ? 'admin.tasks.rack.index'
+            : 'admin.tasks.index';
+
+        $otherTaskScopeRouteName = $taskScope === 'rack_check'
+            ? 'admin.tasks.index'
+            : 'admin.tasks.rack.index';
+
+        $taskScopeLabel = $taskScope === 'rack_check'
+            ? 'Cek Rak'
+            : 'Tugas Umum';
+
+        $otherTaskScopeLabel = $taskScope === 'rack_check'
+            ? 'Tugas Umum'
+            : 'Cek Rak';
 
         return view('admin.tasks.index', compact(
             'tasks',
@@ -653,12 +816,18 @@ class AdminController extends Controller
             'dateTasks',
             'dateDoneTasks',
             'dateNotDoneTasks',
+            'dateWaiterTrackingBoard',
             'waiterActivityReports',
             'waiterActivityBoard',
             'racks',
             'rackExecutionBoard',
             'collectedStockBoard',
-            'waiterPerformance'
+            'waiterPerformance',
+            'taskScope',
+            'taskScopeRouteName',
+            'otherTaskScopeRouteName',
+            'taskScopeLabel',
+            'otherTaskScopeLabel'
         ));
     }
 
@@ -691,12 +860,18 @@ class AdminController extends Controller
     /**
      * Show create task form
      */
-    public function tasksCreate()
+    public function tasksCreate(Request $request)
     {
         $waiters = $this->firebase->getActiveWaiters();
         $racks = $this->firebase->getActiveRacks();
+        $requestedScope = (string) $request->input('task_scope', 'general');
+        $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
+        $requestedTaskType = $taskScope === 'rack_check' ? 'rack_check' : 'general';
+        $backRouteName = $taskScope === 'rack_check'
+            ? 'admin.tasks.rack.index'
+            : 'admin.tasks.index';
 
-        return view('admin.tasks.create', compact('waiters', 'racks'));
+        return view('admin.tasks.create', compact('waiters', 'racks', 'taskScope', 'backRouteName', 'requestedTaskType'));
     }
 
     /**
@@ -705,9 +880,10 @@ class AdminController extends Controller
     public function tasksStore(Request $request)
     {
         $request->validate([
-            'title' => 'required|string|max:255',
+            'title' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1000',
-            'priority' => 'required|in:urgent,normal,low',
+            'priority' => 'nullable|in:urgent,normal,low',
+            'task_scope' => 'required|in:general,rack_check',
             'task_type' => 'required|in:general,rack_check',
             'requires_photo_proof' => 'nullable|boolean',
             'rack_target_scope' => 'nullable|in:single,all',
@@ -725,9 +901,34 @@ class AdminController extends Controller
         $isRecurring = (bool) $request->boolean('is_recurring');
         $assignmentType = $request->input('assignment_type', 'all');
         $assignedWaiterId = $request->input('assigned_waiter_id');
-        $taskType = (string) $request->input('task_type', 'general');
         $rackTargetScope = (string) $request->input('rack_target_scope', 'single');
         $requiresPhotoProof = (bool) $request->boolean('requires_photo_proof');
+        $requestedScope = (string) $request->input('task_scope', 'general');
+        $taskType = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
+        $taskTitle = trim((string) $request->input('title', ''));
+        $taskDescription = trim((string) $request->input('description', ''));
+        $taskPriority = (string) $request->input('priority', 'normal');
+
+        if ($taskType !== 'rack_check' && $taskTitle === '') {
+            return back()
+                ->withErrors(['title' => 'Judul tugas wajib diisi untuk tugas umum.'])
+                ->withInput();
+        }
+
+        if (! in_array($taskPriority, ['urgent', 'normal', 'low'], true)) {
+            $taskPriority = 'normal';
+        }
+
+        if ($taskType === 'rack_check') {
+            $isRecurring = true;
+            $taskDescription = '';
+            $taskPriority = 'normal';
+            $request->merge([
+                'is_recurring' => 1,
+            ]);
+        }
+
+        $redirectRouteName = $this->resolveTaskScopeRouteNameByTaskType($taskType, $requestedScope);
 
         $taskRackPayloads = [[
             'task_type' => 'general',
@@ -837,10 +1038,14 @@ class AdminController extends Controller
         if ($isRecurring) {
             $templateCount = 0;
             foreach ($taskRackPayloads as $taskRackPayload) {
+                $resolvedTaskTitle = $taskType === 'rack_check'
+                    ? $this->buildRackCheckTaskTitle($taskRackPayload)
+                    : $taskTitle;
+
                 $this->firebase->createRecurringWaiterTaskTemplate([
-                    'title' => $request->title,
-                    'description' => $request->description ?? '',
-                    'priority' => $request->priority,
+                    'title' => $resolvedTaskTitle,
+                    'description' => $taskDescription,
+                    'priority' => $taskPriority,
                     'assigned_by' => 'Supervisor',
                     'task_type' => $taskRackPayload['task_type'],
                     'requires_barcode_scan' => $taskRackPayload['requires_barcode_scan'],
@@ -862,20 +1067,24 @@ class AdminController extends Controller
             }
 
             if ($taskType === 'rack_check' && $rackTargetScope === 'all') {
-                return redirect()->route('admin.tasks.index')
+                return redirect()->route($redirectRouteName)
                     ->with('success', "Template task cek rak berulang berhasil dibuat untuk semua rak aktif ({$templateCount} rak). Waiter akan wajib scan barcode tiap rak saat eksekusi.");
             }
 
-            return redirect()->route('admin.tasks.index')
+            return redirect()->route($redirectRouteName)
                 ->with('success', 'Task berulang waiter berhasil dibuat dengan pola jadwal yang dipilih.');
         }
 
         $createdCount = 0;
         foreach ($taskRackPayloads as $taskRackPayload) {
+            $resolvedTaskTitle = $taskType === 'rack_check'
+                ? $this->buildRackCheckTaskTitle($taskRackPayload)
+                : $taskTitle;
+
             $createdCount += $this->firebase->createWaiterTasksFromAssignment([
-                'title' => $request->title,
-                'description' => $request->description ?? '',
-                'priority' => $request->priority,
+                'title' => $resolvedTaskTitle,
+                'description' => $taskDescription,
+                'priority' => $taskPriority,
                 'assigned_by' => 'Supervisor',
                 'task_type' => $taskRackPayload['task_type'],
                 'requires_barcode_scan' => $taskRackPayload['requires_barcode_scan'],
@@ -891,18 +1100,18 @@ class AdminController extends Controller
         }
 
         if ($createdCount <= 0) {
-            return redirect()->route('admin.tasks.index')
+            return redirect()->route($redirectRouteName)
                 ->with('error', 'Tidak ada waiter aktif yang bisa menerima tugas ini.');
         }
 
         if ($taskType === 'rack_check' && $rackTargetScope === 'all') {
             $rackCount = count($taskRackPayloads);
 
-            return redirect()->route('admin.tasks.index')
+            return redirect()->route($redirectRouteName)
                 ->with('success', "Tugas cek rak berhasil dibuat untuk semua rak aktif ({$rackCount} rak) dengan total {$createdCount} delegasi waiter. Waiter harus scan barcode setiap rak melalui task masing-masing.");
         }
 
-        return redirect()->route('admin.tasks.index')
+        return redirect()->route($redirectRouteName)
             ->with('success', "Tugas berhasil dibuat dan didelegasikan ke {$createdCount} waiter.");
     }
 
@@ -911,9 +1120,15 @@ class AdminController extends Controller
      */
     public function tasksDestroy($id)
     {
+        $task = collect($this->firebase->getWaiterTasks())->first(function ($candidate) use ($id) {
+            return (string) ($candidate['id'] ?? '') === (string) $id;
+        });
+
+        $redirectRouteName = $this->resolveTaskScopeRouteNameByTaskType((string) ($task['task_type'] ?? 'general'));
+
         $this->firebase->deleteWaiterTask($id);
 
-        return redirect()->route('admin.tasks.index')
+        return redirect()->route($redirectRouteName)
             ->with('success', 'Tugas berhasil dihapus');
     }
 
@@ -922,9 +1137,12 @@ class AdminController extends Controller
      */
     public function tasksRecurringDestroy($id)
     {
+        $template = $this->firebase->getRecurringWaiterTaskTemplateById($id);
+        $redirectRouteName = $this->resolveTaskScopeRouteNameByTaskType((string) ($template['task_type'] ?? 'general'));
+
         $this->firebase->deleteRecurringWaiterTaskTemplate($id);
 
-        return redirect()->route('admin.tasks.index')
+        return redirect()->route($redirectRouteName)
             ->with('success', 'Template task berulang berhasil dihapus');
     }
 
@@ -965,13 +1183,17 @@ class AdminController extends Controller
             abort(404);
         }
 
-        if ($request->recurrence_type === 'weekly' && ! $request->filled('weekly_day')) {
+        $recurrenceType = (string) $request->input('recurrence_type', 'daily');
+        $scheduleTime = (string) $request->input('schedule_time', '');
+        $timeLimitMinutes = (int) $request->input('time_limit_minutes', 0);
+
+        if ($recurrenceType === 'weekly' && ! $request->filled('weekly_day')) {
             return back()
                 ->withErrors(['weekly_day' => 'Hari mingguan wajib dipilih untuk mode mingguan'])
                 ->withInput();
         }
 
-        if ($request->recurrence_type === 'every_n_days' && ! $request->filled('interval_days')) {
+        if ($recurrenceType === 'every_n_days' && ! $request->filled('interval_days')) {
             return back()
                 ->withErrors(['interval_days' => 'Jumlah hari wajib diisi untuk mode setiap N hari'])
                 ->withInput();
@@ -981,16 +1203,18 @@ class AdminController extends Controller
             'title' => $request->title,
             'description' => $request->description ?? '',
             'priority' => $request->priority,
-            'schedule_time' => $request->schedule_time,
-            'time_limit_minutes' => (int) $request->time_limit_minutes,
-            'recurrence_type' => $request->recurrence_type,
-            'weekly_day' => $request->recurrence_type === 'weekly' ? (int) $request->weekly_day : null,
-            'interval_days' => $request->recurrence_type === 'every_n_days' ? (int) $request->interval_days : null,
+            'schedule_time' => $scheduleTime,
+            'time_limit_minutes' => $timeLimitMinutes,
+            'recurrence_type' => $recurrenceType,
+            'weekly_day' => $recurrenceType === 'weekly' ? (int) $request->weekly_day : null,
+            'interval_days' => $recurrenceType === 'every_n_days' ? (int) $request->interval_days : null,
             'reset_anchor_date' => $request->has('reset_anchor_date'),
             'is_active' => $request->has('is_active'),
         ]);
 
-        return redirect()->route('admin.tasks.index')
+        $redirectRouteName = $this->resolveTaskScopeRouteNameByTaskType((string) ($template['task_type'] ?? 'general'));
+
+        return redirect()->route($redirectRouteName)
             ->with('success', 'Template task berulang berhasil diupdate');
     }
 
@@ -1009,6 +1233,281 @@ class AdminController extends Controller
         }
 
         return $value;
+    }
+
+    /**
+     * Resolve dashboard period range for order/task stats.
+     */
+    protected function resolveDashboardPeriodRange(string $period): array
+    {
+        $todayStart = strtotime(date('Y-m-d 00:00:00'));
+
+        if ($period === 'weekly') {
+            $weekStart = strtotime('monday this week', $todayStart);
+            if ($weekStart === false) {
+                $weekStart = $todayStart;
+            }
+
+            return [(int) $weekStart, (int) ($weekStart + (7 * 24 * 60 * 60) - 1), 'Minggu Ini'];
+        }
+
+        if ($period === 'monthly') {
+            $monthStart = strtotime(date('Y-m-01 00:00:00'));
+            $monthEnd = strtotime(date('Y-m-t 23:59:59'));
+
+            return [(int) $monthStart, (int) $monthEnd, 'Bulan Ini'];
+        }
+
+        return [$todayStart, (int) ($todayStart + (24 * 60 * 60) - 1), 'Hari Ini'];
+    }
+
+    /**
+     * Build canonical waiter identity key.
+     */
+    protected function buildWaiterIdentityKey(string $waiterId, string $waiterName, string $waiterEmail): string
+    {
+        $waiterId = trim($waiterId);
+        $waiterName = trim($waiterName);
+        $waiterEmail = strtolower(trim($waiterEmail));
+
+        if ($waiterEmail !== '') {
+            return 'email:'.$waiterEmail;
+        }
+
+        if ($waiterId !== '') {
+            return 'id:'.$waiterId;
+        }
+
+        if ($waiterName !== '') {
+            return 'name:'.strtolower($waiterName);
+        }
+
+        return 'unknown';
+    }
+
+    /**
+     * Build waiter order stats within selected period.
+     */
+    protected function buildWaiterOrderStatsByPeriod(array $orders, int $startTs, int $endTs): array
+    {
+        $stats = [];
+
+        foreach ($orders as $order) {
+            $createdAt = $this->normalizeOrderTimestamp($order['created_at'] ?? 0);
+            if ($createdAt < $startTs || $createdAt > $endTs) {
+                continue;
+            }
+
+            $waiterId = trim((string) ($order['waiter_id'] ?? ''));
+            $waiterName = trim((string) ($order['waiter_name'] ?? ''));
+            $waiterEmail = strtolower(trim((string) ($order['waiter_email'] ?? '')));
+            $identityKey = $this->buildWaiterIdentityKey($waiterId, $waiterName, $waiterEmail);
+
+            if (! isset($stats[$identityKey])) {
+                $stats[$identityKey] = [
+                    'waiter_id' => $waiterId,
+                    'waiter_name' => $waiterName !== '' ? $waiterName : 'Waiter Tidak Diketahui',
+                    'waiter_email' => $waiterEmail,
+                    'order_count' => 0,
+                    'last_order_at' => 0,
+                ];
+            }
+
+            $stats[$identityKey]['order_count']++;
+            if ($createdAt > $stats[$identityKey]['last_order_at']) {
+                $stats[$identityKey]['last_order_at'] = $createdAt;
+            }
+
+            if ($stats[$identityKey]['waiter_name'] === 'Waiter Tidak Diketahui' && $waiterName !== '') {
+                $stats[$identityKey]['waiter_name'] = $waiterName;
+            }
+
+            if ($stats[$identityKey]['waiter_email'] === '' && $waiterEmail !== '') {
+                $stats[$identityKey]['waiter_email'] = $waiterEmail;
+            }
+
+            if ($stats[$identityKey]['waiter_id'] === '' && $waiterId !== '') {
+                $stats[$identityKey]['waiter_id'] = $waiterId;
+            }
+        }
+
+        $result = array_values($stats);
+        usort($result, function ($a, $b) {
+            if (($b['order_count'] ?? 0) === ($a['order_count'] ?? 0)) {
+                return ((int) ($b['last_order_at'] ?? 0)) <=> ((int) ($a['last_order_at'] ?? 0));
+            }
+
+            return ((int) ($b['order_count'] ?? 0)) <=> ((int) ($a['order_count'] ?? 0));
+        });
+
+        return $result;
+    }
+
+    /**
+     * Build waiter ranking for completed tasks (including rack-check) in selected period.
+     */
+    protected function buildWaiterTaskCompletionRankingByPeriod(array $tasks, int $startTs, int $endTs): array
+    {
+        $stats = [];
+
+        foreach ($tasks as $task) {
+            if ((string) ($task['status'] ?? '') !== 'done') {
+                continue;
+            }
+
+            $completedAt = $this->normalizeOrderTimestamp($task['completed_at'] ?? 0);
+            if ($completedAt < $startTs || $completedAt > $endTs) {
+                continue;
+            }
+
+            $waiterId = trim((string) ($task['completed_by_waiter_id'] ?? $task['assigned_waiter_id'] ?? ''));
+            $waiterName = trim((string) ($task['completed_by_waiter_name'] ?? $task['assigned_waiter_name'] ?? ''));
+            $waiterEmail = strtolower(trim((string) ($task['completed_by_waiter_email'] ?? '')));
+            $identityKey = $this->buildWaiterIdentityKey($waiterId, $waiterName, $waiterEmail);
+            $taskType = (string) ($task['task_type'] ?? 'general');
+
+            if (! isset($stats[$identityKey])) {
+                $stats[$identityKey] = [
+                    'waiter_id' => $waiterId,
+                    'waiter_name' => $waiterName !== '' ? $waiterName : 'Waiter Tidak Diketahui',
+                    'waiter_email' => $waiterEmail,
+                    'completed_count' => 0,
+                    'rack_done_count' => 0,
+                    'general_done_count' => 0,
+                    'last_completed_at' => 0,
+                ];
+            }
+
+            $stats[$identityKey]['completed_count']++;
+            if ($taskType === 'rack_check') {
+                $stats[$identityKey]['rack_done_count']++;
+            } else {
+                $stats[$identityKey]['general_done_count']++;
+            }
+
+            if ($completedAt > $stats[$identityKey]['last_completed_at']) {
+                $stats[$identityKey]['last_completed_at'] = $completedAt;
+            }
+
+            if ($stats[$identityKey]['waiter_name'] === 'Waiter Tidak Diketahui' && $waiterName !== '') {
+                $stats[$identityKey]['waiter_name'] = $waiterName;
+            }
+
+            if ($stats[$identityKey]['waiter_email'] === '' && $waiterEmail !== '') {
+                $stats[$identityKey]['waiter_email'] = $waiterEmail;
+            }
+
+            if ($stats[$identityKey]['waiter_id'] === '' && $waiterId !== '') {
+                $stats[$identityKey]['waiter_id'] = $waiterId;
+            }
+        }
+
+        $result = array_values($stats);
+        usort($result, function ($a, $b) {
+            $totalCompare = ((int) ($b['completed_count'] ?? 0)) <=> ((int) ($a['completed_count'] ?? 0));
+            if ($totalCompare !== 0) {
+                return $totalCompare;
+            }
+
+            $rackCompare = ((int) ($b['rack_done_count'] ?? 0)) <=> ((int) ($a['rack_done_count'] ?? 0));
+            if ($rackCompare !== 0) {
+                return $rackCompare;
+            }
+
+            return ((int) ($b['last_completed_at'] ?? 0)) <=> ((int) ($a['last_completed_at'] ?? 0));
+        });
+
+        return $result;
+    }
+
+    /**
+     * Check whether task/template belongs to selected management scope.
+     */
+    protected function matchesTaskScope(array $item, string $taskScope): bool
+    {
+        $type = (string) ($item['task_type'] ?? 'general');
+        if ($taskScope === 'rack_check') {
+            return $type === 'rack_check';
+        }
+
+        return $type !== 'rack_check';
+    }
+
+    /**
+     * Resolve destination route based on task scope.
+     */
+    protected function resolveTaskScopeRouteNameByTaskType(string $taskType, string $fallbackScope = ''): string
+    {
+        if ($taskType === 'rack_check') {
+            return 'admin.tasks.rack.index';
+        }
+
+        if ($fallbackScope === 'rack_check') {
+            return 'admin.tasks.rack.index';
+        }
+
+        return 'admin.tasks.index';
+    }
+
+    /**
+     * Rack-check tasks always use rack name as title.
+     */
+    protected function buildRackCheckTaskTitle(array $taskRackPayload): string
+    {
+        $rackName = trim((string) ($taskRackPayload['rack_name'] ?? ''));
+        if ($rackName !== '') {
+            return $rackName;
+        }
+
+        $rackLocation = trim((string) ($taskRackPayload['rack_location'] ?? ''));
+        if ($rackLocation !== '') {
+            return 'Rak '.$rackLocation;
+        }
+
+        return 'Rak Tanpa Nama';
+    }
+
+    /**
+     * Resolve selected racks from request scope.
+     */
+    protected function resolveSelectedRacksFromRequest(Request $request): array
+    {
+        $allRacks = $this->firebase->getRacks();
+
+        if ($request->boolean('all')) {
+            return $allRacks;
+        }
+
+        $rawRackIds = $request->input('rack_ids', []);
+        if (! is_array($rawRackIds)) {
+            $rawRackIds = explode(',', (string) $rawRackIds);
+        }
+
+        $rackIds = array_values(array_unique(array_filter(array_map(function ($id) {
+            return trim((string) $id);
+        }, $rawRackIds), function ($id) {
+            return $id !== '';
+        })));
+
+        if (count($rackIds) === 0) {
+            return [];
+        }
+
+        return array_values(array_filter($allRacks, function ($rack) use ($rackIds) {
+            return in_array((string) ($rack['id'] ?? ''), $rackIds, true);
+        }));
+    }
+
+    /**
+     * Prevent CSV formula injection on exported cells.
+     */
+    protected function sanitizeCsvCell(string $value): string
+    {
+        if ($value === '') {
+            return $value;
+        }
+
+        return preg_match('/^[=+\-@]/', $value) === 1 ? "'".$value : $value;
     }
 
     /**
@@ -1089,6 +1588,88 @@ class AdminController extends Controller
             }
 
             return $b['done_count'] <=> $a['done_count'];
+        });
+
+        return $result;
+    }
+
+    /**
+     * Build waiter-centric tracking board for selected date.
+     */
+    protected function buildWaiterTrackingBoard(array $doneTasks, array $notDoneTasks): array
+    {
+        $board = [];
+
+        $upsertWaiter = function (string $waiterName, string $waiterId) use (&$board): string {
+            $normalizedName = trim($waiterName);
+            $normalizedId = trim($waiterId);
+
+            $key = '';
+            if ($normalizedId !== '') {
+                $key = 'id:'.$normalizedId;
+            } elseif ($normalizedName !== '') {
+                $key = 'name:'.strtolower($normalizedName);
+            } else {
+                $key = 'unknown';
+            }
+
+            if (! isset($board[$key])) {
+                $board[$key] = [
+                    'waiter_key' => $key,
+                    'waiter_id' => $normalizedId,
+                    'waiter_name' => $normalizedName !== '' ? $normalizedName : 'Waiter Tidak Diketahui',
+                    'done_tasks' => [],
+                    'not_done_tasks' => [],
+                    'done_count' => 0,
+                    'not_done_count' => 0,
+                    'total_count' => 0,
+                ];
+            }
+
+            if ($board[$key]['waiter_name'] === 'Waiter Tidak Diketahui' && $normalizedName !== '') {
+                $board[$key]['waiter_name'] = $normalizedName;
+            }
+
+            if ($board[$key]['waiter_id'] === '' && $normalizedId !== '') {
+                $board[$key]['waiter_id'] = $normalizedId;
+            }
+
+            return $key;
+        };
+
+        foreach ($doneTasks as $task) {
+            $key = $upsertWaiter(
+                (string) ($task['completed_by_waiter_name'] ?? ''),
+                (string) ($task['completed_by_waiter_id'] ?? '')
+            );
+
+            $board[$key]['done_tasks'][] = $task;
+            $board[$key]['done_count']++;
+            $board[$key]['total_count']++;
+        }
+
+        foreach ($notDoneTasks as $task) {
+            $key = $upsertWaiter(
+                (string) ($task['assigned_waiter_name'] ?? ''),
+                (string) ($task['assigned_waiter_id'] ?? '')
+            );
+
+            $board[$key]['not_done_tasks'][] = $task;
+            $board[$key]['not_done_count']++;
+            $board[$key]['total_count']++;
+        }
+
+        $result = array_values($board);
+        usort($result, function ($a, $b) {
+            $totalCompare = (int) ($b['total_count'] ?? 0) <=> (int) ($a['total_count'] ?? 0);
+            if ($totalCompare !== 0) {
+                return $totalCompare;
+            }
+
+            return strcmp(
+                strtolower((string) ($a['waiter_name'] ?? '')),
+                strtolower((string) ($b['waiter_name'] ?? ''))
+            );
         });
 
         return $result;

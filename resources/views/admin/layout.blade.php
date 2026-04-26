@@ -29,6 +29,12 @@
             max-width: 1200px;
             margin: 0 auto;
             display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .navbar-top {
+            display: flex;
             justify-content: space-between;
             align-items: center;
         }
@@ -39,23 +45,60 @@
         }
 
         .navbar nav {
-            display: flex;
+            display: grid;
+            width: 100%;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 10px;
-            align-items: center;
         }
 
-        .navbar nav a {
+        .nav-group {
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .nav-group-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.92);
+            margin-bottom: 8px;
+        }
+
+        .nav-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .nav-link {
             color: white;
             text-decoration: none;
-            padding: 8px 12px;
+            padding: 7px 11px;
             border-radius: 4px;
             transition: background 0.3s;
-            font-size: 14px;
+            font-size: 13px;
             white-space: nowrap;
+            background: rgba(255, 255, 255, 0.08);
         }
 
-        .navbar nav a:hover {
+        .nav-link:hover {
             background: rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-link.is-active {
+            background: rgba(255, 255, 255, 0.28);
+            font-weight: 700;
+        }
+
+        .nav-link.is-danger {
+            background: rgba(220, 53, 69, 0.75);
+        }
+
+        .nav-link.is-danger:hover {
+            background: rgba(220, 53, 69, 0.9);
         }
 
         /* Hamburger Menu */
@@ -78,7 +121,7 @@
         /* Mobile Menu */
         @media (max-width: 768px) {
             .navbar-container {
-                flex-wrap: wrap;
+                gap: 10px;
             }
 
             .hamburger {
@@ -90,8 +133,8 @@
                 width: 100%;
                 flex-direction: column;
                 gap: 5px;
-                margin-top: 15px;
-                padding-top: 15px;
+                margin-top: 0;
+                padding-top: 12px;
                 border-top: 1px solid rgba(255, 255, 255, 0.2);
             }
 
@@ -99,10 +142,20 @@
                 display: flex;
             }
 
-            .navbar nav a {
+            .nav-group {
+                width: 100%;
+            }
+
+            .nav-links {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .nav-link {
                 width: 100%;
                 text-align: left;
-                padding: 12px 15px;
+                padding: 10px 12px;
             }
 
             /* Hamburger Animation */
@@ -235,23 +288,49 @@
 <body>
     <div class="navbar">
         <div class="navbar-container">
-            <h1>📋 Order App Admin</h1>
-            <div class="hamburger" onclick="toggleMenu()">
-                <span></span>
-                <span></span>
-                <span></span>
+            <div class="navbar-top">
+                <h1>📋 Order App Admin</h1>
+                <div class="hamburger" onclick="toggleMenu()">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
             </div>
             <nav id="navMenu">
-                <a href="{{ route('admin.dashboard') }}">Dashboard</a>
-                <a href="{{ route('admin.waiters.index') }}">Waiters</a>
-                <a href="{{ route('admin.racks.index') }}">📦 Racks</a>
-                <a href="{{ route('admin.test_order') }}">Test Order</a>
-                <a href="{{ route('admin.current_order.index') }}">🧾 Current Order</a>
-                <a href="{{ route('admin.tasks.index') }}">📝 Tasks</a>
-                <a href="{{ route('waiter.login') }}" target="_blank" rel="noopener">🧑‍🍳 Portal Waiter</a>
-                <a href="{{ route('admin.cleanup') }}">Cleanup</a>
-                <a href="{{ route('admin.settings') }}">Settings</a>
-                <a href="{{ route('admin.logout') }}">Logout</a>
+                <div class="nav-group">
+                    <div class="nav-group-title">Ringkasan</div>
+                    <div class="nav-links">
+                        <a class="nav-link {{ request()->routeIs('admin.dashboard') ? 'is-active' : '' }}" href="{{ route('admin.dashboard') }}">🏠 Dashboard</a>
+                        <a class="nav-link {{ request()->routeIs('admin.current_order.*') ? 'is-active' : '' }}" href="{{ route('admin.current_order.index') }}">🧾 Current Order</a>
+                        <a class="nav-link {{ request()->routeIs('admin.test_order') ? 'is-active' : '' }}" href="{{ route('admin.test_order') }}">🧪 Test Order</a>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <div class="nav-group-title">Tim & Area</div>
+                    <div class="nav-links">
+                        <a class="nav-link {{ request()->routeIs('admin.waiters.*') ? 'is-active' : '' }}" href="{{ route('admin.waiters.index') }}">👥 Waiters</a>
+                        <a class="nav-link {{ request()->routeIs('admin.racks.*') ? 'is-active' : '' }}" href="{{ route('admin.racks.index') }}">📦 Racks</a>
+                        <a class="nav-link" href="{{ route('waiter.login') }}" target="_blank" rel="noopener">🧑‍🍳 Portal Waiter</a>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <div class="nav-group-title">Operasional</div>
+                    <div class="nav-links">
+                        <a class="nav-link {{ request()->routeIs('admin.tasks.index') ? 'is-active' : '' }}" href="{{ route('admin.tasks.index') }}">📝 Tugas Umum</a>
+                        <a class="nav-link {{ request()->routeIs('admin.tasks.rack.*') ? 'is-active' : '' }}" href="{{ route('admin.tasks.rack.index') }}">📦 Cek Rak</a>
+                        <a class="nav-link {{ request()->routeIs('admin.cleanup') ? 'is-active' : '' }}" href="{{ route('admin.cleanup') }}">🧹 Cleanup</a>
+                    </div>
+                </div>
+
+                <div class="nav-group">
+                    <div class="nav-group-title">Sistem</div>
+                    <div class="nav-links">
+                        <a class="nav-link {{ request()->routeIs('admin.settings') ? 'is-active' : '' }}" href="{{ route('admin.settings') }}">⚙️ Settings</a>
+                        <a class="nav-link is-danger" href="{{ route('admin.logout') }}">🚪 Logout</a>
+                    </div>
+                </div>
             </nav>
         </div>
     </div>

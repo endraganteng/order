@@ -891,7 +891,10 @@ class FirebaseService
      */
     public function createRecurringWaiterTaskTemplate(array $data)
     {
+        $taskType = (string) ($data['task_type'] ?? 'general');
         $recurrenceType = $data['recurrence_type'] ?? 'daily';
+        $scheduleTime = (string) ($data['schedule_time'] ?? '');
+        $timeLimitMinutes = (int) ($data['time_limit_minutes'] ?? 0);
         $assignmentType = $data['assignment_type'] ?? 'all';
         $assignedWaiterId = $assignmentType === 'single' ? ($data['assigned_waiter_id'] ?? null) : null;
         $assignedWaiter = $assignedWaiterId ? $this->getWaiterById($assignedWaiterId) : null;
@@ -901,7 +904,7 @@ class FirebaseService
             'description' => $data['description'] ?? '',
             'priority' => $data['priority'] ?? 'normal',
             'assigned_by' => $data['assigned_by'] ?? 'Supervisor',
-            'task_type' => $data['task_type'] ?? 'general',
+            'task_type' => $taskType,
             'requires_barcode_scan' => (bool) ($data['requires_barcode_scan'] ?? false),
             'requires_photo_proof' => (bool) ($data['requires_photo_proof'] ?? false),
             'rack_target_scope' => $data['rack_target_scope'] ?? null,
@@ -913,8 +916,8 @@ class FirebaseService
             'assigned_waiter_id' => $assignmentType === 'single' ? ($assignedWaiter['id'] ?? $assignedWaiterId) : null,
             'assigned_waiter_name' => $assignmentType === 'single' ? ($assignedWaiter['name'] ?? null) : null,
             'assigned_waiter_email' => $assignmentType === 'single' ? ($assignedWaiter['email'] ?? null) : null,
-            'schedule_time' => $data['schedule_time'],
-            'time_limit_minutes' => (int) ($data['time_limit_minutes'] ?? 0),
+            'schedule_time' => $scheduleTime,
+            'time_limit_minutes' => $timeLimitMinutes,
             'recurrence_type' => $recurrenceType,
             'weekly_day' => $recurrenceType === 'weekly' ? (int) ($data['weekly_day'] ?? date('N')) : null,
             'interval_days' => $recurrenceType === 'every_n_days' ? (int) ($data['interval_days'] ?? 1) : null,
@@ -980,12 +983,16 @@ class FirebaseService
             $anchorDate = date('Y-m-d');
         }
 
+        $updatedScheduleTime = (string) ($data['schedule_time'] ?? ($existing['schedule_time'] ?? ''));
+
+        $updatedTimeLimitMinutes = (int) ($data['time_limit_minutes'] ?? ($existing['time_limit_minutes'] ?? 0));
+
         $updates = [
             'title' => $data['title'],
             'description' => $data['description'] ?? '',
             'priority' => $data['priority'] ?? 'normal',
-            'schedule_time' => $data['schedule_time'],
-            'time_limit_minutes' => (int) ($data['time_limit_minutes'] ?? 0),
+            'schedule_time' => $updatedScheduleTime,
+            'time_limit_minutes' => $updatedTimeLimitMinutes,
             'recurrence_type' => $recurrenceType,
             'weekly_day' => $recurrenceType === 'weekly' ? (int) ($data['weekly_day'] ?? date('N')) : null,
             'interval_days' => $recurrenceType === 'every_n_days' ? (int) ($data['interval_days'] ?? 1) : null,
@@ -1050,6 +1057,19 @@ class FirebaseService
                     continue;
                 }
 
+                $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity(
+                    $template['id'],
+                    $waiter['id'] ?? null,
+                    $todayDate
+                );
+                $taskNodeKey = $this->buildWaiterRecurringTaskNodeKey($recurringInstanceKey);
+                $taskReference = $this->database->getReference('waiter_tasks/'.$taskNodeKey);
+                if ($taskReference->getSnapshot()->exists()) {
+                    $existingRecurringMap[$mapKey] = true;
+
+                    continue;
+                }
+
                 $taskData = $this->buildWaiterTaskPayload($template, $waiter, [
                     'status' => 'pending',
                     'created_at' => time(),
@@ -1062,12 +1082,13 @@ class FirebaseService
                     'scheduled_time' => $scheduleTime,
                     'scheduled_for_date' => $todayDate,
                     'source_template_id' => $template['id'],
+                    'recurring_instance_key' => $recurringInstanceKey,
                     'time_limit_minutes' => $timeLimitMinutes > 0 ? $timeLimitMinutes : null,
                     'deadline_at' => $deadlineAt,
                     'recurrence_type' => $template['recurrence_type'] ?? 'daily',
                 ]);
 
-                $this->database->getReference('waiter_tasks')->push($taskData);
+                $taskReference->set($taskData);
                 $existingRecurringMap[$mapKey] = true;
                 $generatedForTemplate++;
                 $generatedCount++;
@@ -1131,6 +1152,51 @@ class FirebaseService
     }
 
     /**
+     * Reset all rack-check waiter data (tasks + recurring templates).
+     */
+    public function resetRackCheckWaiterData(): array
+    {
+        $deletedTasks = 0;
+        $deletedTemplates = 0;
+        $updates = [];
+
+        $tasksReference = $this->database->getReference('waiter_tasks');
+        $tasksSnapshot = $tasksReference->getSnapshot();
+        if ($tasksSnapshot->exists()) {
+            foreach ($tasksSnapshot->getValue() as $taskId => $task) {
+                if ((string) ($task['task_type'] ?? 'general') !== 'rack_check') {
+                    continue;
+                }
+
+                $updates['waiter_tasks/'.$taskId] = null;
+                $deletedTasks++;
+            }
+        }
+
+        $templatesReference = $this->database->getReference('waiter_task_templates');
+        $templatesSnapshot = $templatesReference->getSnapshot();
+        if ($templatesSnapshot->exists()) {
+            foreach ($templatesSnapshot->getValue() as $templateId => $template) {
+                if ((string) ($template['task_type'] ?? 'general') !== 'rack_check') {
+                    continue;
+                }
+
+                $updates['waiter_task_templates/'.$templateId] = null;
+                $deletedTemplates++;
+            }
+        }
+
+        if (! empty($updates)) {
+            $this->database->getReference()->update($updates);
+        }
+
+        return [
+            'deleted_tasks' => $deletedTasks,
+            'deleted_templates' => $deletedTemplates,
+        ];
+    }
+
+    /**
      * Resolve target waiters from assignment.
      */
     protected function resolveTargetWaiters($assignmentType, $assignedWaiterId = null)
@@ -1156,11 +1222,27 @@ class FirebaseService
      */
     protected function buildWaiterTaskPayload(array $data, array $waiter, array $overrides = [])
     {
+        $taskType = (string) ($data['task_type'] ?? 'general');
+        $rackName = trim((string) ($data['rack_name'] ?? ''));
+
+        $resolvedTitle = (string) ($data['title'] ?? '');
+        if ($taskType === 'rack_check' && $rackName !== '') {
+            $resolvedTitle = $rackName;
+        }
+
+        $resolvedDescription = $taskType === 'rack_check'
+            ? ''
+            : (string) ($data['description'] ?? '');
+
+        $resolvedPriority = $taskType === 'rack_check'
+            ? 'normal'
+            : (string) ($data['priority'] ?? 'normal');
+
         $payload = [
-            'title' => $data['title'] ?? '',
-            'description' => $data['description'] ?? '',
-            'priority' => $data['priority'] ?? 'normal',
-            'task_type' => $data['task_type'] ?? 'general',
+            'title' => $resolvedTitle,
+            'description' => $resolvedDescription,
+            'priority' => $resolvedPriority,
+            'task_type' => $taskType,
             'requires_barcode_scan' => (bool) ($data['requires_barcode_scan'] ?? false),
             'requires_photo_proof' => (bool) ($data['requires_photo_proof'] ?? false),
             'rack_target_scope' => $data['rack_target_scope'] ?? null,
@@ -1195,6 +1277,7 @@ class FirebaseService
             'time_limit_minutes' => null,
             'deadline_at' => null,
             'recurrence_type' => null,
+            'recurring_instance_key' => null,
         ];
 
         return array_merge($payload, $overrides);
@@ -1338,6 +1421,22 @@ class FirebaseService
     }
 
     /**
+     * Build unique recurring instance identity per template, waiter, and date.
+     */
+    protected function buildWaiterRecurringInstanceIdentity($templateId, $waiterId, $scheduledDate)
+    {
+        return (string) $templateId.'::'.(string) $waiterId.'::'.(string) $scheduledDate;
+    }
+
+    /**
+     * Build deterministic Firebase node key for recurring waiter tasks.
+     */
+    protected function buildWaiterRecurringTaskNodeKey($recurringInstanceKey)
+    {
+        return 'waiter_rec_'.substr(hash('sha256', (string) $recurringInstanceKey), 0, 32);
+    }
+
+    /**
      * Existing recurring waiter instances for a date.
      */
     protected function getExistingWaiterRecurringMapForDate($date)
@@ -1354,9 +1453,7 @@ class FirebaseService
             $sourceTemplateId = $task['source_template_id'] ?? null;
             $scheduledDate = $task['scheduled_for_date'] ?? null;
             $assignedWaiterId = $task['assigned_waiter_id'] ?? null;
-            $status = $task['status'] ?? 'pending';
-
-            if (! $sourceTemplateId || ! $assignedWaiterId || $scheduledDate !== $date || $status !== 'pending') {
+            if (! $sourceTemplateId || ! $assignedWaiterId || $scheduledDate !== $date) {
                 continue;
             }
 

@@ -30,6 +30,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('racks', [AdminController::class, 'racksIndex'])->name('racks.index');
         Route::get('racks/create', [AdminController::class, 'racksCreate'])->name('racks.create');
         Route::post('racks', [AdminController::class, 'racksStore'])->name('racks.store');
+        Route::get('racks/print-labels', [AdminController::class, 'racksPrintLabels'])->name('racks.print_labels');
+        Route::get('racks/export-barcodes', [AdminController::class, 'racksExportBarcodes'])->name('racks.export_barcodes');
         Route::get('racks/{id}/edit', [AdminController::class, 'racksEdit'])->name('racks.edit');
         Route::put('racks/{id}', [AdminController::class, 'racksUpdate'])->name('racks.update');
         Route::post('racks/{id}/regenerate-barcode', [AdminController::class, 'racksRegenerateBarcode'])->name('racks.regenerate_barcode');
@@ -50,6 +52,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Task Management (Supervisor)
         Route::get('tasks', [AdminController::class, 'tasksIndex'])->name('tasks.index');
+        Route::get('tasks/rack-check', [AdminController::class, 'rackTasksIndex'])->name('tasks.rack.index');
+        Route::post('tasks/rack-check/reset', [AdminController::class, 'rackTasksReset'])->name('tasks.rack.reset');
         Route::get('tasks/create', [AdminController::class, 'tasksCreate'])->name('tasks.create');
         Route::post('tasks', [AdminController::class, 'tasksStore'])->name('tasks.store');
         Route::post('tasks/cashiers', [AdminController::class, 'tasksCashierStore'])->name('tasks.cashiers.store');

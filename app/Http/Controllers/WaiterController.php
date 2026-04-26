@@ -271,6 +271,7 @@ class WaiterController extends Controller
         $pendingTasks = array_values(array_filter($tasks, function ($task) {
             return ($task['status'] ?? 'pending') === 'pending';
         }));
+        $pendingTasks = $this->deduplicatePendingTasks($pendingTasks);
 
         $taskHistory = array_values(array_filter($tasks, function ($task) {
             return ($task['status'] ?? 'pending') !== 'pending';
@@ -280,6 +281,44 @@ class WaiterController extends Controller
             'pending_tasks' => $pendingTasks,
             'task_history' => $taskHistory,
         ];
+    }
+
+    /**
+     * Remove accidental duplicate pending recurring tasks for waiter portal.
+     */
+    protected function deduplicatePendingTasks(array $pendingTasks): array
+    {
+        $sorted = array_values($pendingTasks);
+        usort($sorted, function ($a, $b) {
+            return (int) ($b['created_at'] ?? 0) <=> (int) ($a['created_at'] ?? 0);
+        });
+
+        $seenRecurring = [];
+        $result = [];
+
+        foreach ($sorted as $task) {
+            $instanceKey = trim((string) ($task['recurring_instance_key'] ?? ''));
+            if ($instanceKey === '') {
+                $sourceTemplateId = trim((string) ($task['source_template_id'] ?? ''));
+                $scheduledDate = trim((string) ($task['scheduled_for_date'] ?? ''));
+                $assignedWaiterId = trim((string) ($task['assigned_waiter_id'] ?? ''));
+
+                if ($sourceTemplateId !== '' && $scheduledDate !== '' && $assignedWaiterId !== '') {
+                    $instanceKey = $sourceTemplateId.'::'.$assignedWaiterId.'::'.$scheduledDate;
+                }
+            }
+
+            if ($instanceKey !== '') {
+                if (isset($seenRecurring[$instanceKey])) {
+                    continue;
+                }
+                $seenRecurring[$instanceKey] = true;
+            }
+
+            $result[] = $task;
+        }
+
+        return $result;
     }
 
     /**
