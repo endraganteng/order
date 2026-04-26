@@ -63,21 +63,21 @@ class AdminController extends Controller
     {
         $waiters = $this->firebase->getAllowedEmails();
         $settings = $this->firebase->getSettings();
-        $orderPeriodInput = strtolower(trim((string) $request->input('order_period', 'daily')));
-        $orderPeriod = in_array($orderPeriodInput, ['daily', 'weekly', 'monthly'], true) ? $orderPeriodInput : 'daily';
-
-        [$periodStartTs, $periodEndTs, $orderPeriodLabel] = $this->resolveDashboardPeriodRange($orderPeriod);
+        [$periodStartTs, $periodEndTs, $orderPeriodLabel, $startDate, $endDate, $dateRangeInput] = $this->resolveDashboardDateRangeFromRequest($request);
+        $waiterIdentityDirectory = $this->buildWaiterIdentityDirectory($waiters);
 
         $userStats = $this->buildWaiterOrderStatsByPeriod(
             $this->firebase->getOrders(),
             $periodStartTs,
-            $periodEndTs
+            $periodEndTs,
+            $waiterIdentityDirectory
         );
 
         $waiterTaskRanking = $this->buildWaiterTaskCompletionRankingByPeriod(
             $this->firebase->getWaiterTasks(),
             $periodStartTs,
-            $periodEndTs
+            $periodEndTs,
+            $waiterIdentityDirectory
         );
 
         $orderStatsSummary = [
@@ -92,11 +92,13 @@ class AdminController extends Controller
             'settings',
             'userStats',
             'waiterTaskRanking',
-            'orderPeriod',
             'orderPeriodLabel',
             'periodStartTs',
             'periodEndTs',
-            'orderStatsSummary'
+            'orderStatsSummary',
+            'startDate',
+            'endDate',
+            'dateRangeInput'
         ));
     }
 
@@ -1262,6 +1264,130 @@ class AdminController extends Controller
     }
 
     /**
+     * Resolve dashboard date range from daterangepicker inputs.
+     */
+    protected function resolveDashboardDateRangeFromRequest(Request $request): array
+    {
+        $startDateInput = trim((string) $request->input('start_date', ''));
+        $endDateInput = trim((string) $request->input('end_date', ''));
+        $dateRangeInput = trim((string) $request->input('date_range', ''));
+
+        if (($startDateInput === '' || $endDateInput === '') && $dateRangeInput !== '') {
+            $parts = preg_split('/\s*-\s*/', $dateRangeInput) ?: [];
+            if (count($parts) >= 2) {
+                $startDateInput = $startDateInput !== '' ? $startDateInput : trim((string) ($parts[0] ?? ''));
+                $endDateInput = $endDateInput !== '' ? $endDateInput : trim((string) ($parts[1] ?? ''));
+            }
+        }
+
+        $startDate = $this->normalizeDashboardDateString($startDateInput);
+        $endDate = $this->normalizeDashboardDateString($endDateInput);
+
+        if ($startDate === '' && $endDate === '') {
+            $legacyPeriodInput = strtolower(trim((string) $request->input('order_period', 'daily')));
+            $legacyPeriod = in_array($legacyPeriodInput, ['daily', 'weekly', 'monthly'], true) ? $legacyPeriodInput : 'daily';
+            [$legacyStartTs, $legacyEndTs] = $this->resolveDashboardPeriodRange($legacyPeriod);
+
+            $startDate = date('Y-m-d', $legacyStartTs);
+            $endDate = date('Y-m-d', $legacyEndTs);
+        } elseif ($startDate === '' && $endDate !== '') {
+            $startDate = $endDate;
+        } elseif ($endDate === '' && $startDate !== '') {
+            $endDate = $startDate;
+        }
+
+        if ($startDate > $endDate) {
+            [$startDate, $endDate] = [$endDate, $startDate];
+        }
+
+        $periodStartTs = (int) strtotime($startDate.' 00:00:00');
+        $periodEndTs = (int) strtotime($endDate.' 23:59:59');
+        $orderPeriodLabel = $this->resolveDashboardRangeLabel($startDate, $endDate);
+
+        return [
+            $periodStartTs,
+            $periodEndTs,
+            $orderPeriodLabel,
+            $startDate,
+            $endDate,
+            date('d M Y', $periodStartTs).' - '.date('d M Y', $periodEndTs),
+        ];
+    }
+
+    /**
+     * Normalize dashboard date string to Y-m-d.
+     */
+    protected function normalizeDashboardDateString(string $date): string
+    {
+        $date = trim($date);
+        if ($date === '') {
+            return '';
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1) {
+            $parsed = strtotime($date.' 00:00:00');
+            if ($parsed === false) {
+                return '';
+            }
+
+            return date('Y-m-d', $parsed);
+        }
+
+        $parsed = strtotime($date);
+        if ($parsed === false) {
+            return '';
+        }
+
+        return date('Y-m-d', $parsed);
+    }
+
+    /**
+     * Build dashboard period label based on selected range.
+     */
+    protected function resolveDashboardRangeLabel(string $startDate, string $endDate): string
+    {
+        $today = date('Y-m-d');
+        if ($startDate === $today && $endDate === $today) {
+            return 'Today';
+        }
+
+        $yesterday = date('Y-m-d', strtotime('-1 day'));
+        if ($startDate === $yesterday && $endDate === $yesterday) {
+            return 'Yesterday';
+        }
+
+        $last7Start = date('Y-m-d', strtotime('-6 day'));
+        if ($startDate === $last7Start && $endDate === $today) {
+            return 'Last 7 Days';
+        }
+
+        $last30Start = date('Y-m-d', strtotime('-29 day'));
+        if ($startDate === $last30Start && $endDate === $today) {
+            return 'Last 30 Days';
+        }
+
+        $weekStart = date('Y-m-d', strtotime('monday this week'));
+        $weekEnd = date('Y-m-d', strtotime('sunday this week'));
+        if ($startDate === $weekStart && $endDate === $weekEnd) {
+            return 'Minggu Ini';
+        }
+
+        $monthStart = date('Y-m-01');
+        $monthEnd = date('Y-m-t');
+        if ($startDate === $monthStart && $endDate === $monthEnd) {
+            return 'This Month';
+        }
+
+        $lastMonthStart = date('Y-m-01', strtotime('first day of last month'));
+        $lastMonthEnd = date('Y-m-t', strtotime('last day of last month'));
+        if ($startDate === $lastMonthStart && $endDate === $lastMonthEnd) {
+            return 'Last Month';
+        }
+
+        return 'Rentang Kustom';
+    }
+
+    /**
      * Build canonical waiter identity key.
      */
     protected function buildWaiterIdentityKey(string $waiterId, string $waiterName, string $waiterEmail): string
@@ -1286,9 +1412,90 @@ class AdminController extends Controller
     }
 
     /**
+     * Build canonical waiter lookup maps from master waiter data.
+     */
+    protected function buildWaiterIdentityDirectory(array $waiters): array
+    {
+        $byId = [];
+        $byEmail = [];
+
+        foreach ($waiters as $waiter) {
+            $id = trim((string) ($waiter['id'] ?? ''));
+            $name = trim((string) ($waiter['name'] ?? ''));
+            $email = strtolower(trim((string) ($waiter['email'] ?? '')));
+
+            $profile = [
+                'id' => $id,
+                'name' => $name,
+                'email' => $email,
+            ];
+
+            if ($id !== '') {
+                $byId[$id] = $profile;
+            }
+
+            if ($email !== '') {
+                $byEmail[$email] = $profile;
+            }
+        }
+
+        return [
+            'by_id' => $byId,
+            'by_email' => $byEmail,
+        ];
+    }
+
+    /**
+     * Resolve waiter profile using master waiter directory to avoid duplicate identities.
+     */
+    protected function resolveCanonicalWaiterProfile(string $waiterId, string $waiterName, string $waiterEmail, array $directory): array
+    {
+        $waiterId = trim($waiterId);
+        $waiterName = trim($waiterName);
+        $waiterEmail = strtolower(trim($waiterEmail));
+
+        $byId = is_array($directory['by_id'] ?? null) ? $directory['by_id'] : [];
+        $byEmail = is_array($directory['by_email'] ?? null) ? $directory['by_email'] : [];
+
+        $masterProfile = null;
+        if ($waiterEmail !== '' && isset($byEmail[$waiterEmail])) {
+            $masterProfile = $byEmail[$waiterEmail];
+        } elseif ($waiterId !== '' && isset($byId[$waiterId])) {
+            $masterProfile = $byId[$waiterId];
+        }
+
+        $canonicalId = $waiterId;
+        $canonicalName = $waiterName;
+        $canonicalEmail = $waiterEmail;
+
+        if (is_array($masterProfile)) {
+            if (($masterProfile['id'] ?? '') !== '') {
+                $canonicalId = (string) $masterProfile['id'];
+            }
+
+            if (($masterProfile['name'] ?? '') !== '') {
+                $canonicalName = (string) $masterProfile['name'];
+            }
+
+            if (($masterProfile['email'] ?? '') !== '') {
+                $canonicalEmail = (string) $masterProfile['email'];
+            }
+        }
+
+        $identityKey = $this->buildWaiterIdentityKey($canonicalId, $canonicalName, $canonicalEmail);
+
+        return [
+            'identity_key' => $identityKey,
+            'waiter_id' => $canonicalId,
+            'waiter_name' => $canonicalName,
+            'waiter_email' => $canonicalEmail,
+        ];
+    }
+
+    /**
      * Build waiter order stats within selected period.
      */
-    protected function buildWaiterOrderStatsByPeriod(array $orders, int $startTs, int $endTs): array
+    protected function buildWaiterOrderStatsByPeriod(array $orders, int $startTs, int $endTs, array $waiterDirectory = []): array
     {
         $stats = [];
 
@@ -1298,10 +1505,17 @@ class AdminController extends Controller
                 continue;
             }
 
-            $waiterId = trim((string) ($order['waiter_id'] ?? ''));
-            $waiterName = trim((string) ($order['waiter_name'] ?? ''));
-            $waiterEmail = strtolower(trim((string) ($order['waiter_email'] ?? '')));
-            $identityKey = $this->buildWaiterIdentityKey($waiterId, $waiterName, $waiterEmail);
+            $resolvedWaiter = $this->resolveCanonicalWaiterProfile(
+                (string) ($order['waiter_id'] ?? ''),
+                (string) ($order['waiter_name'] ?? ''),
+                (string) ($order['waiter_email'] ?? ''),
+                $waiterDirectory
+            );
+
+            $waiterId = (string) ($resolvedWaiter['waiter_id'] ?? '');
+            $waiterName = trim((string) ($resolvedWaiter['waiter_name'] ?? ''));
+            $waiterEmail = strtolower(trim((string) ($resolvedWaiter['waiter_email'] ?? '')));
+            $identityKey = (string) ($resolvedWaiter['identity_key'] ?? 'unknown');
 
             if (! isset($stats[$identityKey])) {
                 $stats[$identityKey] = [
@@ -1346,7 +1560,7 @@ class AdminController extends Controller
     /**
      * Build waiter ranking for completed tasks (including rack-check) in selected period.
      */
-    protected function buildWaiterTaskCompletionRankingByPeriod(array $tasks, int $startTs, int $endTs): array
+    protected function buildWaiterTaskCompletionRankingByPeriod(array $tasks, int $startTs, int $endTs, array $waiterDirectory = []): array
     {
         $stats = [];
 
@@ -1360,10 +1574,17 @@ class AdminController extends Controller
                 continue;
             }
 
-            $waiterId = trim((string) ($task['completed_by_waiter_id'] ?? $task['assigned_waiter_id'] ?? ''));
-            $waiterName = trim((string) ($task['completed_by_waiter_name'] ?? $task['assigned_waiter_name'] ?? ''));
-            $waiterEmail = strtolower(trim((string) ($task['completed_by_waiter_email'] ?? '')));
-            $identityKey = $this->buildWaiterIdentityKey($waiterId, $waiterName, $waiterEmail);
+            $resolvedWaiter = $this->resolveCanonicalWaiterProfile(
+                (string) ($task['completed_by_waiter_id'] ?? $task['assigned_waiter_id'] ?? ''),
+                (string) ($task['completed_by_waiter_name'] ?? $task['assigned_waiter_name'] ?? ''),
+                (string) ($task['completed_by_waiter_email'] ?? ''),
+                $waiterDirectory
+            );
+
+            $waiterId = (string) ($resolvedWaiter['waiter_id'] ?? '');
+            $waiterName = trim((string) ($resolvedWaiter['waiter_name'] ?? ''));
+            $waiterEmail = strtolower(trim((string) ($resolvedWaiter['waiter_email'] ?? '')));
+            $identityKey = (string) ($resolvedWaiter['identity_key'] ?? 'unknown');
             $taskType = (string) ($task['task_type'] ?? 'general');
 
             if (! isset($stats[$identityKey])) {
