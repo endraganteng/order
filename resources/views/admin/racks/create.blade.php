@@ -47,7 +47,7 @@
             </div>
 
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 20px; color: #334155; font-size: 13px;">
-                Barcode akan otomatis digenerate setelah rak disimpan, lalu bisa langsung dipakai untuk verifikasi scan oleh waiter.
+                QR code akan otomatis digenerate setelah rak disimpan, lalu bisa langsung dipakai untuk verifikasi scan oleh waiter.
             </div>
 
             <div style="display: flex; gap: 10px;">

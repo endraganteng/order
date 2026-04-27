@@ -552,7 +552,7 @@
     <div id="scanner-modal" class="scanner-modal" aria-hidden="true">
         <div class="scanner-box">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                <strong>📷 Scan Barcode Rak</strong>
+                <strong>📷 Scan QR Code Rak</strong>
                 <div style="display:flex; align-items:center; gap:8px;">
                     <button type="button" id="scanner-flash-btn" class="btn btn-flash hidden" disabled>🔦 Nyalakan Flash</button>
                     <button type="button" id="scanner-close-btn" class="btn" style="background:#ef4444;color:#fff;padding:6px 10px;">Tutup</button>
@@ -560,7 +560,7 @@
             </div>
             <div id="scanner-task-meta" class="muted" style="margin-top: 6px;"></div>
             <div id="scanner-reader" class="scanner-reader"></div>
-            <div id="scanner-feedback" class="muted">Arahkan kamera ke barcode rak sampai terbaca.</div>
+            <div id="scanner-feedback" class="muted">Arahkan kamera ke QR code rak sampai terbaca.</div>
         </div>
     </div>
 
@@ -1122,8 +1122,8 @@
             const stockReportBlock = existingScan
                 ? `<label class="meta" style="display:block; margin-top: 8px; margin-bottom: 4px; color:#111827; font-weight:600;">Laporan Barang Menipis/Habis (Opsional)</label>
                     <textarea class="input js-stock-report" name="stock_report_items" data-task-id="${escapeAttr(task.id)}" maxlength="2000" placeholder="Jika ada barang menipis/habis, tulis di sini. Boleh dikosongkan jika tidak ada.">${escapeHtml(existingStockReport)}</textarea>
-                    <div class="meta" style="font-size:12px; color:#6b7280;">Alur cek rak: scan barcode rak → (jika ada) isi barang menipis/habis → selesai.</div>`
-                : `<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 8px;">🔒 Form barang menipis/habis muncul setelah barcode rak berhasil di-scan.</div>`;
+                    <div class="meta" style="font-size:12px; color:#6b7280;">Alur cek rak: scan QR code rak → (jika ada) isi barang menipis/habis → selesai.</div>`
+                : `<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 8px;">🔒 Form barang menipis/habis muncul setelah QR code rak berhasil di-scan.</div>`;
             const photoProofBlock = requiresPhotoProof
                 ? `<div class="photo-proof-wrap">
                         <div class="photo-proof-head">
@@ -1151,12 +1151,12 @@
                 ? `<div style="margin: 8px 0 10px 0;">
                         <span class="tag-rack">📦 Cek Rak - Wajib Scan</span>
                         <div class="meta">Rak: <strong>${escapeHtml(task.rack_name || '-')}</strong> (${escapeHtml(task.rack_location || '-')})</div>
-                        <div class="meta">Barcode Rak: <code>${escapeHtml(task.rack_barcode_value || '-')}</code></div>
+                        <div class="meta">QR Code Rak: <code>${escapeHtml(task.rack_barcode_value || '-')}</code></div>
                         ${rackTargetScope === 'all' ? '<div class="meta" style="font-size:12px;color:#334155;">🎯 Bagian dari assignment <b>Semua Rak Aktif</b> (wajib scan tiap rak melalui task masing-masing).</div>' : ''}
                         <input type="hidden" name="scanned_barcode" value="${escapeAttr(existingScan)}">
-                        <button type="button" class="btn btn-scan js-open-scanner" data-task-id="${escapeAttr(task.id)}" data-task-label="${escapeAttr(task.title || 'Task')}" data-rack-name="${escapeAttr(task.rack_name || '-')}" data-rack-barcode="${escapeAttr(task.rack_barcode_value || '')}">📷 Scan Barcode Rak</button>
+                        <button type="button" class="btn btn-scan js-open-scanner" data-task-id="${escapeAttr(task.id)}" data-task-label="${escapeAttr(task.title || 'Task')}" data-rack-name="${escapeAttr(task.rack_name || '-')}" data-rack-barcode="${escapeAttr(task.rack_barcode_value || '')}">📷 Scan QR Code Rak</button>
                         <div class="meta" style="font-size:12px;color:${existingScan ? '#166534' : '#9a3412'};" data-scan-status>
-                            ${existingScan ? `✅ Barcode ter-scan: <code>${escapeHtml(existingScan)}</code>` : '⚠️ Belum scan barcode rak.'}
+                            ${existingScan ? `✅ QR code ter-scan: <code>${escapeHtml(existingScan)}</code>` : '⚠️ Belum scan QR code rak.'}
                         </div>
                         ${stockReportBlock}
                     </div>`
@@ -1173,7 +1173,7 @@
                     ? `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
                            <button type="submit" class="btn btn-done">✅ Selesaikan Cek Rak</button>
                        </form>`
-                    : '<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 10px;">🔒 Tombol selesai akan muncul setelah barcode rak berhasil di-scan.</div>')
+                    : '<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 10px;">🔒 Tombol selesai akan muncul setelah QR code rak berhasil di-scan.</div>')
                 : `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
                        <input class="input" type="text" name="note" maxlength="500" placeholder="Catatan verifikasi (opsional)" value="${escapeAttr(existingNoteDraft)}">
                        <button type="submit" class="btn btn-done">✅ Verifikasi Selesai</button>
@@ -1226,7 +1226,7 @@
                     <input
                         class="input js-rack-search"
                         type="search"
-                        placeholder="Cari rak (nama/lokasi/barcode)..."
+                        placeholder="Cari rak (nama/lokasi/QR)..."
                         value="${escapeAttr(rackSearchKeyword)}"
                         autocomplete="off"
                     >
@@ -1691,8 +1691,8 @@
                 }
 
                 scannerFeedbackEl.textContent = scannerTorchEnabled
-                    ? '🔦 Flash aktif. Arahkan kamera ke barcode rak.'
-                    : '🔦 Flash dimatikan. Arahkan kamera ke barcode rak.';
+                    ? '🔦 Flash aktif. Arahkan kamera ke QR code rak.'
+                    : '🔦 Flash dimatikan. Arahkan kamera ke QR code rak.';
             } catch (error) {
                 showFlash('error', `Gagal mengubah flash: ${error?.message || 'Tidak didukung browser/device.'}`);
             } finally {
@@ -1718,7 +1718,7 @@
             activeScannerExpectedBarcode = normalizeBarcodeValue(expectedBarcode);
 
             if (activeScannerExpectedBarcode === '') {
-                showFlash('error', 'Barcode rak target belum terkonfigurasi pada task ini. Hubungi supervisor.');
+                showFlash('error', 'QR code rak target belum terkonfigurasi pada task ini. Hubungi supervisor.');
                 activeScannerTaskId = '';
                 activeScannerTaskLabel = '';
                 activeScannerExpectedBarcode = '';
@@ -1726,7 +1726,7 @@
             }
 
             scannerTaskMetaEl.textContent = `Task: ${taskLabel} | Rak: ${rackName} | Target: ${activeScannerExpectedBarcode}`;
-            scannerFeedbackEl.textContent = 'Arahkan kamera ke barcode rak sampai terbaca.';
+            scannerFeedbackEl.textContent = 'Arahkan kamera ke QR code rak sampai terbaca.';
             scannerModalEl.style.display = 'flex';
             scannerModalEl.setAttribute('aria-hidden', 'false');
             resetScannerTorchState();
@@ -1745,19 +1745,14 @@
 
             try {
                 const formats = typeof Html5QrcodeSupportedFormats !== 'undefined'
-                    ? [
-                        Html5QrcodeSupportedFormats.CODE_128,
-                        Html5QrcodeSupportedFormats.EAN_13,
-                        Html5QrcodeSupportedFormats.EAN_8,
-                        Html5QrcodeSupportedFormats.QR_CODE,
-                    ]
+                    ? [Html5QrcodeSupportedFormats.QR_CODE]
                     : undefined;
 
                 await scannerInstance.start(
                     { facingMode: 'environment' },
                     {
                         fps: 10,
-                        qrbox: { width: 320, height: 140 },
+                        qrbox: { width: 280, height: 280 },
                         ...(formats ? { formatsToSupport: formats } : {}),
                     },
                     async (decodedText) => {
@@ -1769,12 +1764,12 @@
                         }
 
                         if (cleanBarcode !== activeScannerExpectedBarcode) {
-                            scannerFeedbackEl.textContent = `❌ Barcode tidak cocok. Target ${activeScannerExpectedBarcode}, terbaca ${cleanBarcode}. Scan ulang rak yang benar.`;
+                            scannerFeedbackEl.textContent = `❌ QR code tidak cocok. Target ${activeScannerExpectedBarcode}, terbaca ${cleanBarcode}. Scan ulang rak yang benar.`;
                             return;
                         }
 
                         scannedBarcodeByTask.set(activeScannerTaskId, cleanBarcode);
-                        scannerFeedbackEl.textContent = `✅ Barcode cocok: ${cleanBarcode}`;
+                        scannerFeedbackEl.textContent = `✅ QR code cocok: ${cleanBarcode}`;
                         renderAllTasks();
                         await closeScannerModal();
                     },
@@ -1826,17 +1821,17 @@
                 const scannedBarcode = normalizeBarcodeValue(scannedBarcodeByTask.get(taskId) || '');
 
                 if (isRackScanTask(currentTask) && expectedBarcode === '') {
-                    showFlash('error', 'Barcode rak target pada task ini belum terdaftar. Hubungi supervisor.');
+                    showFlash('error', 'QR code rak target pada task ini belum terdaftar. Hubungi supervisor.');
                     return;
                 }
 
                 if (isRackScanTask(currentTask) && !String(scannedBarcodeByTask.get(taskId) || '').trim()) {
-                    showFlash('error', 'Task cek rak wajib scan barcode rak terlebih dahulu.');
+                    showFlash('error', 'Task cek rak wajib scan QR code rak terlebih dahulu.');
                     return;
                 }
 
                 if (isRackScanTask(currentTask) && scannedBarcode !== expectedBarcode) {
-                    showFlash('error', `Barcode tidak sesuai task. Target ${expectedBarcode}, yang ter-scan ${scannedBarcode || '-'}.`);
+                    showFlash('error', `QR code tidak sesuai task. Target ${expectedBarcode}, yang ter-scan ${scannedBarcode || '-'}.`);
                     return;
                 }
 

@@ -41,6 +41,19 @@
             </div>
 
             <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">Role Waiter</label>
+                <select name="waiter_role" required
+                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    @php $waiterRoleValue = old('waiter_role', $waiter['waiter_role'] ?? 'pelayan'); @endphp
+                    <option value="pelayan" {{ $waiterRoleValue === 'pelayan' ? 'selected' : '' }}>Pelayan</option>
+                    <option value="kasir" {{ $waiterRoleValue === 'kasir' ? 'selected' : '' }}>Kasir</option>
+                </select>
+                @error('waiter_role')
+                    <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">
                     Password Cadangan Baru <span style="color: #777; font-weight: normal;">(opsional)</span>
                 </label>

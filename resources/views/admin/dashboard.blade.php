@@ -152,6 +152,119 @@
         </div>
     </div>
 
+    {{-- Follow-up Operasional Waiter --}}
+    <div class="card" style="margin-bottom: 22px; padding: 20px 15px;">
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-bottom:10px;">
+            <h3 style="margin:0; color:#7c2d12; font-size: clamp(18px, 4vw, 22px);">🚨 Follow-up Operasional Waiter</h3>
+            <span style="font-size:12px; color:#64748b; align-self:center;">Periode evaluasi: <strong>{{ $waiterFollowUpBoard['period_label'] ?? $orderPeriodLabel }}</strong></span>
+        </div>
+
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+            <span class="status overdue" style="display:inline-flex; align-items:center; gap:6px;">
+                Perlu Follow-up: {{ $waiterFollowUpBoard['active_waiter_attention_count'] ?? 0 }} waiter
+            </span>
+            <span class="status pending" style="display:inline-flex; align-items:center; gap:6px;">
+                Total Waiter Aktif: {{ $waiterFollowUpBoard['active_waiter_count'] ?? 0 }}
+            </span>
+        </div>
+
+        @if(($waiterFollowUpBoard['has_attention'] ?? false) === true)
+            <div style="overflow-x:auto; max-height: 420px; border:1px solid #fed7aa; border-radius:10px;">
+                <table class="table" style="margin:0; min-width: 900px;">
+                    <thead>
+                        <tr>
+                            <th>Waiter</th>
+                            <th>Role</th>
+                            <th>Tugas Umum</th>
+                            <th>Cek Rak</th>
+                            <th>Belum Selesai</th>
+                            <th>Laporan</th>
+                            <th>Catatan Follow-up</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach(array_slice($waiterFollowUpBoard['rows'] ?? [], 0, 30) as $row)
+                            <tr>
+                                <td>
+                                    <strong>{{ $row['waiter_name'] ?? 'Waiter Tidak Diketahui' }}</strong>
+                                    @if(($row['waiter_email'] ?? '') !== '')
+                                        <div style="font-size:12px; color:#64748b;">{{ $row['waiter_email'] }}</div>
+                                    @endif
+                                </td>
+                                <td>
+                                    @php
+                                        $role = strtolower((string) ($row['waiter_role'] ?? 'pelayan'));
+                                        $roleLabel = $role === 'kasir' ? 'Kasir' : 'Pelayan';
+                                    @endphp
+                                    @if($role === 'kasir')
+                                        <span style="display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; background:#fff7ed; color:#9a3412; border:1px solid rgba(15,23,42,0.08);">
+                                            {{ $roleLabel }}
+                                        </span>
+                                    @else
+                                        <span style="display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; background:#ecfeff; color:#0f766e; border:1px solid rgba(15,23,42,0.08);">
+                                            {{ $roleLabel }}
+                                        </span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <span class="status done">Selesai: {{ $row['general_done_count'] ?? 0 }}</span>
+                                        @if(((int) ($row['general_total_count'] ?? 0)) === 0)
+                                            <span class="status pending">Tidak ada tugas dijadwalkan</span>
+                                        @elseif(($row['missing_general_done'] ?? false) === true)
+                                            <span class="status overdue">Belum ada penyelesaian</span>
+                                        @endif
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                        <span class="status done">Selesai: {{ $row['rack_done_count'] ?? 0 }}</span>
+                                        @if(((int) ($row['rack_total_count'] ?? 0)) === 0)
+                                            <span class="status pending">Tidak ada tugas dijadwalkan</span>
+                                        @elseif(($row['missing_rack_done'] ?? false) === true)
+                                            <span class="status overdue">Belum ada penyelesaian</span>
+                                        @endif
+                                    </div>
+                                </td>
+                                <td>
+                                    @php $openCount = (int) ($row['total_open_count'] ?? 0); @endphp
+                                    @if($openCount > 0)
+                                        <span class="status overdue">{{ $openCount }} task</span>
+                                        <div style="font-size:12px; color:#7f1d1d; margin-top:4px;">
+                                            Umum: {{ $row['general_open_count'] ?? 0 }} • Cek Rak: {{ $row['rack_open_count'] ?? 0 }}
+                                        </div>
+                                    @else
+                                        <span class="status done">Tidak ada task terbuka</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if((int) ($row['report_count'] ?? 0) > 0)
+                                        <span class="status done">{{ $row['report_count'] }} laporan</span>
+                                    @else
+                                        <span class="status overdue">Belum isi laporan</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                                        @foreach(($row['attention_tags'] ?? []) as $tag)
+                                            <span style="display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; background:#fff7ed; color:#9a3412; border:1px solid #fdba74;">
+                                                {{ $tag }}
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @else
+            <div class="empty" style="margin: 0; background:#f0fdf4; border-color:#86efac; color:#166534;">
+                Semua waiter aktif sudah on-track pada periode ini: tugas umum, cek rak, dan laporan sudah terpenuhi.
+            </div>
+        @endif
+    </div>
+
     {{-- Statistics Cards --}}
     <div style="
                 display: grid;

@@ -67,6 +67,75 @@
         $recurringDailyCount = collect($recurringTemplates ?? [])->filter(fn ($template) => ($template['recurrence_type'] ?? 'daily') === 'daily')->count();
         $recurringSingleDelegateCount = collect($recurringTemplates ?? [])->filter(fn ($template) => ($template['assignment_type'] ?? 'all') === 'single')->count();
         $recurringPhotoRequiredCount = collect($recurringTemplates ?? [])->filter(fn ($template) => !empty($template['requires_photo_proof']))->count();
+        $weeklyNames = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'];
+
+        $recurringGroupedRackTemplates = collect();
+        if ($isRackScope) {
+            $recurringGroupedRackTemplates = collect($recurringTemplates ?? [])
+                ->groupBy(function ($template) {
+                    return implode('|', [
+                        (string) ($template['recurrence_type'] ?? 'daily'),
+                        (string) ($template['weekly_day'] ?? ''),
+                        (string) ($template['interval_days'] ?? ''),
+                        (string) ($template['schedule_time'] ?? ''),
+                        (string) ($template['time_limit_minutes'] ?? ''),
+                        (string) ($template['assignment_type'] ?? 'all'),
+                        (string) ($template['assigned_waiter_role'] ?? ''),
+                        (string) ($template['assignment_strategy'] ?? ''),
+                        !empty($template['requires_photo_proof']) ? '1' : '0',
+                    ]);
+                })
+                ->map(function ($group, $groupKey) use ($weeklyNames) {
+                    $first = $group->first();
+                    $recurrenceType = (string) ($first['recurrence_type'] ?? 'daily');
+                    $typeLabel = $recurrenceType === 'weekly'
+                        ? ('Mingguan ' . ($weeklyNames[(int) ($first['weekly_day'] ?? 0)] ?? '-'))
+                        : ($recurrenceType === 'every_n_days'
+                            ? ('Setiap ' . ($first['interval_days'] ?? '-') . ' hari')
+                            : 'Harian');
+
+                    $rackNames = $group->pluck('rack_name')->filter()->unique()->values()->all();
+                    $assignedRole = ucfirst((string) ($first['assigned_waiter_role'] ?? 'pelayan'));
+                    $delegateLabel = (string) ($first['assignment_type'] ?? 'all') === 'single'
+                        ? ('Single: ' . ((string) ($first['assigned_waiter_name'] ?? '-') !== '' ? (string) ($first['assigned_waiter_name'] ?? '-') : '-'))
+                        : ((string) ($first['assignment_type'] ?? 'all') === 'role'
+                            ? ('Role: ' . $assignedRole)
+                            : 'Semua Waiter');
+
+                    $searchText = strtolower(trim(implode(' ', [
+                        (string) $typeLabel,
+                        (string) ($first['schedule_time'] ?? ''),
+                        (string) ($first['time_limit_minutes'] ?? ''),
+                        (string) $delegateLabel,
+                        implode(' ', $rackNames),
+                    ])));
+
+                    return [
+                        'group_key' => $groupKey,
+                        'first' => $first,
+                        'type_label' => $typeLabel,
+                        'delegate_label' => $delegateLabel,
+                        'template_count' => $group->count(),
+                        'rack_count' => count($rackNames),
+                        'rack_names' => $rackNames,
+                        'templates' => $group->values()->all(),
+                        'search_text' => $searchText,
+                    ];
+                })
+                ->sortBy(function ($group) {
+                    $first = $group['first'] ?? [];
+
+                    return sprintf(
+                        '%s|%s|%s',
+                        (string) ($first['schedule_time'] ?? ''),
+                        (string) ($first['recurrence_type'] ?? ''),
+                        (string) ($group['delegate_label'] ?? '')
+                    );
+                })
+                ->values();
+        }
+
+        $recurringDisplayCount = $isRackScope ? $recurringGroupedRackTemplates->count() : count($recurringTemplates ?? []);
     @endphp
 
     <div class="card" style="margin-bottom: 20px; padding: 20px;">
@@ -154,7 +223,15 @@
 
     {{-- Recurring templates --}}
     <details class="card admin-section-card" style="margin-bottom: 20px;" open>
-        <summary class="admin-section-summary">🔁 Jadwal Task Berulang (Waiter) <span class="badge">{{ count($recurringTemplates ?? []) }} template</span></summary>
+        <summary class="admin-section-summary">🔁 Jadwal Task Berulang (Waiter)
+            <span class="badge">
+                @if($isRackScope)
+                    {{ $recurringDisplayCount }} kelompok / {{ count($recurringTemplates ?? []) }} template
+                @else
+                    {{ count($recurringTemplates ?? []) }} template
+                @endif
+            </span>
+        </summary>
         <div class="admin-section-body">
 
         @if(empty($recurringTemplates) || count($recurringTemplates) === 0)
@@ -164,8 +241,13 @@
         @else
             <div class="admin-tools-row">
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <span class="badge" style="background:#e0e7ff; color:#3730a3;">Harian: {{ $recurringDailyCount }}</span>
-                    <span class="badge" style="background:#e0f2fe; color:#0c4a6e;">Delegasi Single: {{ $recurringSingleDelegateCount }}</span>
+                    @if($isRackScope)
+                        <span class="badge" style="background:#e0e7ff; color:#3730a3;">Kelompok Jadwal: {{ $recurringDisplayCount }}</span>
+                        <span class="badge" style="background:#e0f2fe; color:#0c4a6e;">Total Template Rak: {{ count($recurringTemplates ?? []) }}</span>
+                    @else
+                        <span class="badge" style="background:#e0e7ff; color:#3730a3;">Harian: {{ $recurringDailyCount }}</span>
+                        <span class="badge" style="background:#e0f2fe; color:#0c4a6e;">Delegasi Single: {{ $recurringSingleDelegateCount }}</span>
+                    @endif
                     <span class="badge" style="background:#fef3c7; color:#92400e;">Wajib Foto: {{ $recurringPhotoRequiredCount }}</span>
                 </div>
                 <div class="admin-filter-wrap">
@@ -174,92 +256,171 @@
                         class="admin-inline-filter js-admin-inline-filter"
                         data-target-id="recurring-template-list"
                         data-empty-id="recurring-template-empty"
-                        placeholder="Cari jadwal: judul, jenis, waiter, rak..."
+                        placeholder="{{ $isRackScope ? 'Cari kelompok jadwal: role, waktu, rak...' : 'Cari jadwal: judul, jenis, waiter, rak...' }}"
                     >
                 </div>
             </div>
 
             <div id="recurring-template-list" class="admin-list-grid">
-                @foreach($recurringTemplates as $template)
-                    @php
-                        $templateType = $template['recurrence_type'] ?? 'daily';
-                        $weeklyNames = [1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu', 4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu', 7 => 'Minggu'];
-                        $templateTypeLabel = $templateType === 'weekly'
-                            ? ('Mingguan ' . ($weeklyNames[(int) ($template['weekly_day'] ?? 0)] ?? '-'))
-                            : ($templateType === 'every_n_days'
-                                ? ('Setiap ' . ($template['interval_days'] ?? '-') . ' hari')
-                                : 'Harian');
-                        $templateSearchText = strtolower(trim(implode(' ', [
-                            (string) ($template['title'] ?? ''),
-                            (string) ($template['description'] ?? ''),
-                            (string) ($template['task_type'] ?? ''),
-                            (string) ($template['assigned_waiter_name'] ?? ''),
-                            (string) ($template['rack_name'] ?? ''),
-                            (string) ($template['schedule_time'] ?? ''),
-                            (string) $templateTypeLabel,
-                        ])));
-                    @endphp
+                @if($isRackScope)
+                    @foreach($recurringGroupedRackTemplates as $group)
+                        @php
+                            $template = $group['first'];
+                            $templateTypeLabel = $group['type_label'];
+                            $templateSearchText = $group['search_text'];
+                            $rackNames = $group['rack_names'];
+                            $rackPreview = array_slice($rackNames, 0, 4);
+                            $rackRemaining = max(0, count($rackNames) - count($rackPreview));
+                        @endphp
 
-                    <details class="admin-data-card js-admin-filter-item" data-filter-text="{{ $templateSearchText }}">
-                        <summary class="admin-data-card-summary">
-                            <div>
-                                <div class="admin-data-card-title">{{ $template['title'] ?? '-' }}</div>
-                                <div class="admin-data-card-subtitle">{{ $template['description'] ?? 'Tanpa deskripsi tambahan.' }}</div>
-                            </div>
-                            <div class="admin-data-card-badges">
-                                @if(($template['task_type'] ?? 'general') === 'rack_check')
-                                    <span class="badge" style="background:#fff7ed;color:#9a3412;">📦 Cek Rak</span>
-                                @else
-                                    <span class="badge" style="background:#eef2ff;color:#3730a3;">📝 Umum</span>
-                                @endif
-                                <span class="badge" style="background:#e3f2fd;color:#0d47a1;">🕒 {{ $template['schedule_time'] ?? '-' }}</span>
-                                <span class="badge" style="background:#fff3cd;color:#856404;">⏳ {{ $template['time_limit_minutes'] ?? '-' }} menit</span>
-                            </div>
-                        </summary>
-
-                        <div class="admin-data-card-body">
-                            <div class="admin-meta-grid">
-                                <div><strong>Pola</strong><br>{{ $templateTypeLabel }}</div>
+                        <details class="admin-data-card js-admin-filter-item" data-filter-text="{{ $templateSearchText }}">
+                            <summary class="admin-data-card-summary">
                                 <div>
-                                    <strong>Delegasi</strong><br>
-                                    @if(($template['assignment_type'] ?? 'all') === 'single')
-                                        🎯 {{ $template['assigned_waiter_name'] ?? '-' }}
-                                    @else
-                                        🌐 Semua Waiter
+                                    <div class="admin-data-card-title">📦 {{ $templateTypeLabel }} • {{ $template['schedule_time'] ?? '-' }}</div>
+                                    <div class="admin-data-card-subtitle">{{ $group['delegate_label'] }} • {{ $group['rack_count'] }} rak • {{ $group['template_count'] }} template</div>
+                                </div>
+                                <div class="admin-data-card-badges">
+                                    <span class="badge" style="background:#fff7ed;color:#9a3412;">📦 Cek Rak</span>
+                                    <span class="badge" style="background:#e3f2fd;color:#0d47a1;">🕒 {{ $template['schedule_time'] ?? '-' }}</span>
+                                    <span class="badge" style="background:#fff3cd;color:#856404;">⏳ {{ $template['time_limit_minutes'] ?? '-' }} menit</span>
+                                    @if(($template['assignment_strategy'] ?? '') === 'role_round_robin')
+                                        <span class="badge" style="background:#dcfce7;color:#166534;">🔄 Rolling Role</span>
                                     @endif
                                 </div>
-                                <div>
-                                    <strong>Prioritas</strong><br>
-                                    {{ strtoupper((string) ($template['priority'] ?? 'normal')) }}
-                                </div>
-                                <div>
-                                    <strong>Terakhir Generate</strong><br>
-                                    {{ !empty($template['last_generated_date']) ? $template['last_generated_date'] : '-' }}
-                                </div>
-                            </div>
+                            </summary>
 
-                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
-                                @if(($template['task_type'] ?? 'general') === 'rack_check')
-                                    <span class="badge" style="background:#ffedd5;color:#9a3412;">Rak: {{ $template['rack_name'] ?? '-' }}</span>
-                                @endif
-                                @if(!empty($template['requires_photo_proof']))
-                                    <span class="badge" style="background:#e0f2fe;color:#0369a1;">📷 Bukti foto wajib</span>
-                                @endif
-                            </div>
+                            <div class="admin-data-card-body">
+                                <div class="admin-meta-grid">
+                                    <div><strong>Pola</strong><br>{{ $templateTypeLabel }}</div>
+                                    <div><strong>Delegasi</strong><br>{{ $group['delegate_label'] }}</div>
+                                    <div><strong>Total Rak</strong><br>{{ $group['rack_count'] }}</div>
+                                    <div><strong>Terakhir Generate</strong><br>{{ !empty($template['last_generated_date']) ? $template['last_generated_date'] : '-' }}</div>
+                                </div>
 
-                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
-                                <a href="{{ route('admin.tasks.recurring.edit', $template['id']) }}"
-                                    class="btn" style="padding: 6px 10px; font-size: 13px; background: #e3f2fd; color: #0d47a1;">✏️ Edit</a>
-                                <form action="{{ route('admin.tasks.recurring.destroy', $template['id']) }}" method="POST"
-                                    onsubmit="return confirm('Yakin hapus template task berulang ini?')">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="btn btn-danger" style="padding: 6px 10px; font-size: 13px;">🗑️ Hapus</button>
-                                </form>
+                                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+                                    @foreach($rackPreview as $rackName)
+                                        <span class="badge" style="background:#ffedd5;color:#9a3412;">{{ $rackName }}</span>
+                                    @endforeach
+                                    @if($rackRemaining > 0)
+                                        <span class="badge" style="background:#f1f5f9;color:#334155;">+{{ $rackRemaining }} rak lainnya</span>
+                                    @endif
+                                    @if(!empty($template['requires_photo_proof']))
+                                        <span class="badge" style="background:#e0f2fe;color:#0369a1;">📷 Bukti foto wajib</span>
+                                    @endif
+                                </div>
+
+                                <div style="margin-top:12px; border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc;">
+                                    <div style="font-weight:600; color:#1e293b; margin-bottom:8px;">Template per Rak (Aksi Langsung)</div>
+                                    <div style="display:grid; gap:8px; max-height:260px; overflow:auto; padding-right:4px;">
+                                        @foreach($group['templates'] as $templateItem)
+                                            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px;">
+                                                <div>
+                                                    <div style="font-weight:600; color:#0f172a;">{{ $templateItem['rack_name'] ?? '-' }}</div>
+                                                    <div style="font-size:12px; color:#64748b;">ID Template: {{ $templateItem['id'] ?? '-' }}</div>
+                                                </div>
+                                                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                                    <a href="{{ route('admin.tasks.recurring.edit', $templateItem['id']) }}"
+                                                        class="btn" style="padding: 5px 9px; font-size: 12px; background: #e3f2fd; color: #0d47a1;">✏️ Edit</a>
+                                                    <form action="{{ route('admin.tasks.recurring.destroy', $templateItem['id']) }}" method="POST"
+                                                        onsubmit="return confirm('Yakin hapus template task berulang ini?')">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-danger" style="padding: 5px 9px; font-size: 12px;">🗑️ Hapus</button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </details>
-                @endforeach
+                        </details>
+                    @endforeach
+                @else
+                    @foreach($recurringTemplates as $template)
+                        @php
+                            $templateType = $template['recurrence_type'] ?? 'daily';
+                            $templateTypeLabel = $templateType === 'weekly'
+                                ? ('Mingguan ' . ($weeklyNames[(int) ($template['weekly_day'] ?? 0)] ?? '-'))
+                                : ($templateType === 'every_n_days'
+                                    ? ('Setiap ' . ($template['interval_days'] ?? '-') . ' hari')
+                                    : 'Harian');
+                            $templateSearchText = strtolower(trim(implode(' ', [
+                                (string) ($template['title'] ?? ''),
+                                (string) ($template['description'] ?? ''),
+                                (string) ($template['task_type'] ?? ''),
+                                (string) ($template['assigned_waiter_name'] ?? ''),
+                                (string) ($template['rack_name'] ?? ''),
+                                (string) ($template['schedule_time'] ?? ''),
+                                (string) $templateTypeLabel,
+                            ])));
+                        @endphp
+
+                        <details class="admin-data-card js-admin-filter-item" data-filter-text="{{ $templateSearchText }}">
+                            <summary class="admin-data-card-summary">
+                                <div>
+                                    <div class="admin-data-card-title">{{ $template['title'] ?? '-' }}</div>
+                                    <div class="admin-data-card-subtitle">{{ $template['description'] ?? 'Tanpa deskripsi tambahan.' }}</div>
+                                </div>
+                                <div class="admin-data-card-badges">
+                                    @if(($template['task_type'] ?? 'general') === 'rack_check')
+                                        <span class="badge" style="background:#fff7ed;color:#9a3412;">📦 Cek Rak</span>
+                                    @else
+                                        <span class="badge" style="background:#eef2ff;color:#3730a3;">📝 Umum</span>
+                                    @endif
+                                    <span class="badge" style="background:#e3f2fd;color:#0d47a1;">🕒 {{ $template['schedule_time'] ?? '-' }}</span>
+                                    <span class="badge" style="background:#fff3cd;color:#856404;">⏳ {{ $template['time_limit_minutes'] ?? '-' }} menit</span>
+                                </div>
+                            </summary>
+
+                            <div class="admin-data-card-body">
+                                <div class="admin-meta-grid">
+                                    <div><strong>Pola</strong><br>{{ $templateTypeLabel }}</div>
+                                    <div>
+                                        <strong>Delegasi</strong><br>
+                                        @if(($template['assignment_type'] ?? 'all') === 'single')
+                                            🎯 {{ $template['assigned_waiter_name'] ?? '-' }}
+                                        @elseif(($template['assignment_type'] ?? 'all') === 'role')
+                                            🧩 Role: {{ ucfirst((string) ($template['assigned_waiter_role'] ?? 'pelayan')) }}
+                                        @else
+                                            🌐 Semua Waiter
+                                        @endif
+                                    </div>
+                                    <div>
+                                        <strong>Prioritas</strong><br>
+                                        {{ strtoupper((string) ($template['priority'] ?? 'normal')) }}
+                                    </div>
+                                    <div>
+                                        <strong>Terakhir Generate</strong><br>
+                                        {{ !empty($template['last_generated_date']) ? $template['last_generated_date'] : '-' }}
+                                    </div>
+                                </div>
+
+                                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+                                    @if(($template['task_type'] ?? 'general') === 'rack_check')
+                                        <span class="badge" style="background:#ffedd5;color:#9a3412;">Rak: {{ $template['rack_name'] ?? '-' }}</span>
+                                    @endif
+                                    @if(($template['assignment_strategy'] ?? '') === 'role_round_robin')
+                                        <span class="badge" style="background:#dcfce7;color:#166534;">🔄 Rolling Role</span>
+                                    @endif
+                                    @if(!empty($template['requires_photo_proof']))
+                                        <span class="badge" style="background:#e0f2fe;color:#0369a1;">📷 Bukti foto wajib</span>
+                                    @endif
+                                </div>
+
+                                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+                                    <a href="{{ route('admin.tasks.recurring.edit', $template['id']) }}"
+                                        class="btn" style="padding: 6px 10px; font-size: 13px; background: #e3f2fd; color: #0d47a1;">✏️ Edit</a>
+                                    <form action="{{ route('admin.tasks.recurring.destroy', $template['id']) }}" method="POST"
+                                        onsubmit="return confirm('Yakin hapus template task berulang ini?')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-danger" style="padding: 6px 10px; font-size: 13px;">🗑️ Hapus</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </details>
+                    @endforeach
+                @endif
             </div>
 
             <div id="recurring-template-empty" class="admin-empty-filtered" style="display:none;">
@@ -337,7 +498,7 @@
                                             @foreach($waiterTracking['done_tasks'] as $task)
                                                 <li style="margin-bottom: 6px;">
                                                     <strong>{{ $task['rack_name'] ?? ($task['title'] ?? '-') }}</strong>
-                                                    <div>Scan: {{ $task['completed_scanned_barcode'] ?? '-' }}</div>
+                                                            <div>Scan QR: {{ $task['completed_scanned_barcode'] ?? '-' }}</div>
                                                 </li>
                                             @endforeach
                                         </ul>
@@ -377,7 +538,7 @@
                                     <strong>{{ $task['title'] ?? '-' }}</strong>
                                     <div>Waiter: {{ $task['completed_by_waiter_name'] ?? '-' }}</div>
                                     @if(($task['task_type'] ?? 'general') === 'rack_check')
-                                        <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }} ({{ $task['completed_scanned_barcode'] ?? '-' }})</div>
+                                                                <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }} (QR: {{ $task['completed_scanned_barcode'] ?? '-' }})</div>
                                         <div style="font-size: 12px; color: #334155;">
                                             Laporan stok:
                                             @if(!empty($task['completed_no_out_of_stock']))
@@ -490,7 +651,7 @@
                         class="admin-inline-filter js-admin-inline-filter"
                         data-target-id="rack-monitoring-list"
                         data-empty-id="rack-monitoring-empty"
-                        placeholder="Cari rak: nama, lokasi, barcode, waiter..."
+                        placeholder="Cari rak: nama, lokasi, QR, waiter..."
                     >
                 </div>
             </div>
@@ -514,13 +675,24 @@
                                 <div class="admin-data-card-subtitle">{{ $rackBoard['rack_location'] ?? '-' }}</div>
                             </div>
                             <div class="admin-data-card-badges">
-                                <span class="badge" style="background:#fff7ed;color:#9a3412;">{{ $rackBoard['rack_barcode_value'] ?? '-' }}</span>
+                                <span class="badge" style="background:#fff7ed;color:#9a3412;">QR: {{ $rackBoard['rack_barcode_value'] ?? '-' }}</span>
                                 <span class="badge" style="background:#dcfce7;color:#166534;">✅ {{ $rackBoard['done_count'] ?? 0 }}</span>
                                 <span class="badge" style="background:#fee2e2;color:#991b1b;">❌ {{ $rackBoard['not_done_count'] ?? 0 }}</span>
+                                @if(!empty($rackBoard['is_role_round_robin']))
+                                    <span class="badge" style="background:#ecfeff;color:#0f766e;">🔄 Rotasi {{ ucfirst((string) ($rackBoard['assigned_waiter_role'] ?? 'pelayan')) }}</span>
+                                    <span class="badge" style="background:#eef2ff;color:#3730a3;">👤 {{ ($selectedDate ?? date('Y-m-d')) === date('Y-m-d') ? 'Hari ini' : 'Tanggal ini' }}: {{ $rackBoard['today_assignee_label'] ?? '-' }}</span>
+                                @endif
                             </div>
                         </summary>
 
                         <div class="admin-data-card-body">
+                            @if(!empty($rackBoard['is_role_round_robin']))
+                                <div style="font-size:12px; color:#0f172a; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; margin-bottom:10px;">
+                                    Penanggung jawab rotasi {{ ($selectedDate ?? date('Y-m-d')) === date('Y-m-d') ? 'hari ini' : 'tanggal ini' }}:
+                                    <strong>{{ $rackBoard['today_assignee_label'] ?? '-' }}</strong>
+                                </div>
+                            @endif
+
                             <div class="admin-status-columns">
                                 <div class="admin-status-col admin-status-col-success">
                                     <div class="admin-status-title">✅ Yang sudah mengerjakan ({{ $rackBoard['done_count'] ?? 0 }})</div>
@@ -532,7 +704,7 @@
                                                 <li>
                                                     <strong>{{ $doneWaiter['name'] ?? '-' }}</strong>
                                                     @if(!empty($doneWaiter['completed_scanned_barcode']))
-                                                        <div>Scan: {{ $doneWaiter['completed_scanned_barcode'] }}</div>
+                                                        <div>Scan QR: {{ $doneWaiter['completed_scanned_barcode'] }}</div>
                                                     @endif
                                                     <div>
                                                         Laporan stok:
@@ -625,7 +797,7 @@
                                 <div style="font-weight: 700; color: #0f172a;">{{ $rackStock['rack_name'] ?? '-' }}</div>
                                 <div style="font-size: 12px; color: #475569;">{{ $rackStock['rack_location'] ?? '-' }}</div>
                             </div>
-                            <span class="badge" style="background:#fff7ed;color:#9a3412;">{{ $rackStock['rack_barcode_value'] ?? '-' }}</span>
+                                                <span class="badge" style="background:#fff7ed;color:#9a3412;">QR: {{ $rackStock['rack_barcode_value'] ?? '-' }}</span>
                         </div>
 
                         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 8px;">

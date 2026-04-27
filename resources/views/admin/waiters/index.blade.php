@@ -20,6 +20,7 @@
                 <tr>
                     <th>Nama</th>
                     <th>Email</th>
+                    <th>Role</th>
                     <th>Status</th>
                     <th>Metode Login</th>
                     <th>Dibuat</th>
@@ -31,6 +32,14 @@
                     <tr>
                         <td>{{ $waiter['name'] }}</td>
                         <td>{{ $waiter['email'] }}</td>
+                        <td>
+                            @php $waiterRole = strtolower((string) ($waiter['waiter_role'] ?? 'pelayan')); @endphp
+                            @if($waiterRole === 'kasir')
+                                <span class="badge" style="background:#fff7ed; color:#9a3412;">Kasir</span>
+                            @else
+                                <span class="badge" style="background:#ecfeff; color:#0f766e;">Pelayan</span>
+                            @endif
+                        </td>
                         <td>
                             @if($waiter['is_active'])
                                 <span class="badge badge-success">Aktif</span>
@@ -59,7 +68,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" style="text-align: center; color: #999;">Belum ada waiter</td>
+                        <td colspan="7" style="text-align: center; color: #999;">Belum ada waiter</td>
                     </tr>
                 @endforelse
             </tbody>

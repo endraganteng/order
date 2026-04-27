@@ -63,18 +63,30 @@ class AdminController extends Controller
     {
         $waiters = $this->firebase->getAllowedEmails();
         $settings = $this->firebase->getSettings();
+        $orders = $this->firebase->getOrders();
+        $waiterTasks = $this->firebase->getWaiterTasks();
+        $waiterActivityReports = $this->firebase->getWaiterActivityReports();
         [$periodStartTs, $periodEndTs, $orderPeriodLabel, $startDate, $endDate, $dateRangeInput] = $this->resolveDashboardDateRangeFromRequest($request);
         $waiterIdentityDirectory = $this->buildWaiterIdentityDirectory($waiters);
 
         $userStats = $this->buildWaiterOrderStatsByPeriod(
-            $this->firebase->getOrders(),
+            $orders,
             $periodStartTs,
             $periodEndTs,
             $waiterIdentityDirectory
         );
 
         $waiterTaskRanking = $this->buildWaiterTaskCompletionRankingByPeriod(
-            $this->firebase->getWaiterTasks(),
+            $waiterTasks,
+            $periodStartTs,
+            $periodEndTs,
+            $waiterIdentityDirectory
+        );
+
+        $waiterFollowUpBoard = $this->buildWaiterFollowUpBoard(
+            $waiters,
+            $waiterTasks,
+            $waiterActivityReports,
             $periodStartTs,
             $periodEndTs,
             $waiterIdentityDirectory
@@ -96,6 +108,7 @@ class AdminController extends Controller
             'periodStartTs',
             'periodEndTs',
             'orderStatsSummary',
+            'waiterFollowUpBoard',
             'startDate',
             'endDate',
             'dateRangeInput'
@@ -128,6 +141,7 @@ class AdminController extends Controller
         $request->validate([
             'email' => 'required|email',
             'name' => 'required|string|max:255',
+            'waiter_role' => 'required|in:kasir,pelayan',
             'password' => 'nullable|string|min:6|max:100',
         ]);
 
@@ -142,7 +156,7 @@ class AdminController extends Controller
             ? Hash::make($request->password)
             : null;
 
-        $this->firebase->addAllowedEmailWithPassword($email, $request->name, $passwordHash);
+        $this->firebase->addAllowedEmailWithPassword($email, $request->name, $passwordHash, $request->waiter_role);
 
         return redirect()->route('admin.waiters.index')
             ->with('success', 'Waiter berhasil ditambahkan');
@@ -171,6 +185,7 @@ class AdminController extends Controller
         $request->validate([
             'email' => 'required|email',
             'name' => 'required|string|max:255',
+            'waiter_role' => 'required|in:kasir,pelayan',
             'is_active' => 'required|boolean',
             'password' => 'nullable|string|min:6|max:100',
         ]);
@@ -185,6 +200,7 @@ class AdminController extends Controller
         $payload = [
             'email' => $email,
             'name' => $request->name,
+            'waiter_role' => $request->waiter_role,
             'is_active' => (bool) $request->is_active,
         ];
 
@@ -247,11 +263,11 @@ class AdminController extends Controller
         ]);
 
         return redirect()->route('admin.racks.index')
-            ->with('success', 'Rak berhasil ditambahkan dan barcode otomatis digenerate.');
+            ->with('success', 'Rak berhasil ditambahkan dan QR code otomatis digenerate.');
     }
 
     /**
-     * Print rack barcode labels (single/selected/all).
+     * Print rack QR code labels (single/selected/all).
      */
     public function racksPrintLabels(Request $request)
     {
@@ -259,7 +275,7 @@ class AdminController extends Controller
 
         if (count($selectedRacks) === 0) {
             return redirect()->route('admin.racks.index')
-                ->with('error', 'Pilih minimal satu rak untuk print label barcode.');
+                ->with('error', 'Pilih minimal satu rak untuk print label QR code.');
         }
 
         $labelScope = $request->boolean('all') ? 'Semua Rak Aktif' : 'Rak Terpilih';
@@ -272,7 +288,7 @@ class AdminController extends Controller
     }
 
     /**
-     * Export selected/all rack barcodes to CSV.
+     * Export selected/all rack QR codes to CSV.
      */
     public function racksExportBarcodes(Request $request)
     {
@@ -280,10 +296,10 @@ class AdminController extends Controller
 
         if (count($selectedRacks) === 0) {
             return redirect()->route('admin.racks.index')
-                ->with('error', 'Pilih minimal satu rak untuk export barcode.');
+                ->with('error', 'Pilih minimal satu rak untuk export QR code.');
         }
 
-        $fileName = 'rack-barcodes-'.date('Ymd-His').'.csv';
+        $fileName = 'rack-qr-codes-'.date('Ymd-His').'.csv';
 
         return response()->streamDownload(function () use ($selectedRacks) {
             $output = fopen('php://output', 'w');
@@ -292,7 +308,7 @@ class AdminController extends Controller
             }
 
             fwrite($output, "\xEF\xBB\xBF"); // UTF-8 BOM for Excel
-            fputcsv($output, ['Rack ID', 'Nama Rak', 'Lokasi', 'Barcode Value', 'Status']);
+            fputcsv($output, ['Rack ID', 'Nama Rak', 'Lokasi', 'QR Value', 'Status']);
 
             foreach ($selectedRacks as $rack) {
                 $status = (($rack['is_active'] ?? true) === true) ? 'Aktif' : 'Nonaktif';
@@ -354,7 +370,7 @@ class AdminController extends Controller
     }
 
     /**
-     * Regenerate rack barcode value.
+     * Regenerate rack QR code value.
      */
     public function racksRegenerateBarcode($id)
     {
@@ -364,7 +380,7 @@ class AdminController extends Controller
         }
 
         return redirect()->route('admin.racks.index')
-            ->with('success', 'Barcode rak berhasil digenerate ulang.');
+            ->with('success', 'QR code rak berhasil digenerate ulang.');
     }
 
     /**
@@ -890,8 +906,12 @@ class AdminController extends Controller
             'requires_photo_proof' => 'nullable|boolean',
             'rack_target_scope' => 'nullable|in:single,all',
             'rack_id' => 'nullable|string',
-            'assignment_type' => 'required|in:single,all',
+            'rack_ids' => 'nullable|array',
+            'rack_ids.*' => 'nullable|string',
+            'assignment_type' => 'required|in:single,all,role',
             'assigned_waiter_id' => 'nullable|string',
+            'assigned_waiter_role' => 'nullable|in:kasir,pelayan',
+            'role_assignment_mode' => 'nullable|in:all,rolling',
             'is_recurring' => 'nullable|boolean',
             'schedule_time' => 'nullable|date_format:H:i',
             'time_limit_minutes' => 'nullable|integer|min:1|max:1440',
@@ -903,6 +923,12 @@ class AdminController extends Controller
         $isRecurring = (bool) $request->boolean('is_recurring');
         $assignmentType = $request->input('assignment_type', 'all');
         $assignedWaiterId = $request->input('assigned_waiter_id');
+        $assignedWaiterRole = strtolower(trim((string) $request->input('assigned_waiter_role', '')));
+        $roleAssignmentMode = strtolower(trim((string) $request->input('role_assignment_mode', 'all')));
+        if (! in_array($roleAssignmentMode, ['all', 'rolling'], true)) {
+            $roleAssignmentMode = 'all';
+        }
+
         $rackTargetScope = (string) $request->input('rack_target_scope', 'single');
         $requiresPhotoProof = (bool) $request->boolean('requires_photo_proof');
         $requestedScope = (string) $request->input('task_scope', 'general');
@@ -944,56 +970,80 @@ class AdminController extends Controller
         ]];
 
         if ($taskType === 'rack_check') {
-            if (! in_array($rackTargetScope, ['single', 'all'], true)) {
-                $rackTargetScope = 'single';
+            $activeRacks = $this->firebase->getActiveRacks();
+            if (count($activeRacks) === 0) {
+                return back()
+                    ->withErrors(['rack_ids' => 'Tidak ada rak aktif. Tambahkan/aktifkan rak dulu sebelum membuat tugas cek rak.'])
+                    ->withInput();
             }
 
-            if ($rackTargetScope === 'all') {
-                $activeRacks = $this->firebase->getActiveRacks();
-                if (count($activeRacks) === 0) {
-                    return back()
-                        ->withErrors(['rack_target_scope' => 'Tidak ada rak aktif. Tambahkan/aktifkan rak dulu sebelum pilih semua rak.'])
-                        ->withInput();
+            $activeRackMap = [];
+            foreach ($activeRacks as $activeRack) {
+                $activeRackId = trim((string) ($activeRack['id'] ?? ''));
+                if ($activeRackId === '') {
+                    continue;
                 }
 
-                $taskRackPayloads = array_map(function ($rack) use ($requiresPhotoProof) {
-                    return [
-                        'task_type' => 'rack_check',
-                        'requires_barcode_scan' => true,
-                        'requires_photo_proof' => $requiresPhotoProof,
-                        'rack_target_scope' => 'all',
-                        'rack_id' => $rack['id'] ?? null,
-                        'rack_name' => $rack['name'] ?? null,
-                        'rack_location' => $rack['location'] ?? null,
-                        'rack_barcode_value' => $rack['barcode_value'] ?? null,
-                    ];
-                }, $activeRacks);
-            } else {
-                $rackId = (string) $request->input('rack_id', '');
-                if ($rackId === '') {
-                    return back()
-                        ->withErrors(['rack_id' => 'Untuk task cek rak, pilih rak tujuan terlebih dahulu.'])
-                        ->withInput();
-                }
+                $activeRackMap[$activeRackId] = $activeRack;
+            }
 
-                $rack = $this->firebase->getRackById($rackId);
-                if (! $rack || (($rack['is_active'] ?? true) === false)) {
-                    return back()
-                        ->withErrors(['rack_id' => 'Rak tidak valid atau sedang nonaktif.'])
-                        ->withInput();
-                }
+            $selectedRackIdsInput = $request->input('rack_ids', []);
+            if (! is_array($selectedRackIdsInput)) {
+                $selectedRackIdsInput = explode(',', (string) $selectedRackIdsInput);
+            }
 
-                $taskRackPayloads = [[
+            $selectedRackIds = array_values(array_unique(array_filter(array_map(function ($rackId) {
+                return trim((string) $rackId);
+            }, $selectedRackIdsInput), function ($rackId) {
+                return $rackId !== '';
+            })));
+
+            if (count($selectedRackIds) === 0) {
+                $legacyRackId = trim((string) $request->input('rack_id', ''));
+                if ($legacyRackId !== '') {
+                    $selectedRackIds[] = $legacyRackId;
+                }
+            }
+
+            if (count($selectedRackIds) === 0 && $request->input('rack_target_scope') === 'all') {
+                $selectedRackIds = array_keys($activeRackMap);
+            }
+
+            if (count($selectedRackIds) === 0) {
+                return back()
+                    ->withErrors(['rack_ids' => 'Untuk tugas cek rak, pilih minimal satu rak target.'])
+                    ->withInput();
+            }
+
+            $invalidRackIds = array_values(array_filter($selectedRackIds, function ($rackId) use ($activeRackMap) {
+                return ! isset($activeRackMap[$rackId]);
+            }));
+
+            if (count($invalidRackIds) > 0) {
+                return back()
+                    ->withErrors(['rack_ids' => 'Ada rak yang tidak valid atau nonaktif. Silakan pilih ulang rak target.'])
+                    ->withInput();
+            }
+
+            $selectedRacks = [];
+            foreach ($selectedRackIds as $selectedRackId) {
+                $selectedRacks[] = $activeRackMap[$selectedRackId];
+            }
+
+            $rackTargetScope = count($selectedRacks) === count($activeRacks) ? 'all' : 'single';
+
+            $taskRackPayloads = array_map(function ($rack) use ($requiresPhotoProof, $rackTargetScope) {
+                return [
                     'task_type' => 'rack_check',
                     'requires_barcode_scan' => true,
                     'requires_photo_proof' => $requiresPhotoProof,
-                    'rack_target_scope' => 'single',
-                    'rack_id' => $rack['id'] ?? $rackId,
+                    'rack_target_scope' => $rackTargetScope,
+                    'rack_id' => $rack['id'] ?? null,
                     'rack_name' => $rack['name'] ?? null,
                     'rack_location' => $rack['location'] ?? null,
                     'rack_barcode_value' => $rack['barcode_value'] ?? null,
-                ]];
-            }
+                ];
+            }, $selectedRacks);
         }
 
         if ($assignmentType === 'single' && ! $assignedWaiterId) {
@@ -1002,6 +1052,7 @@ class AdminController extends Controller
                 ->withInput();
         }
 
+        $roleWaiters = [];
         if ($assignmentType === 'single') {
             $targetWaiter = $this->firebase->getWaiterById($assignedWaiterId);
             if (! $targetWaiter || (($targetWaiter['is_active'] ?? true) === false)) {
@@ -1009,6 +1060,35 @@ class AdminController extends Controller
                     ->withErrors(['assigned_waiter_id' => 'Waiter tujuan tidak valid atau nonaktif.'])
                     ->withInput();
             }
+        }
+
+        if ($assignmentType === 'role') {
+            if (! in_array($assignedWaiterRole, ['kasir', 'pelayan'], true)) {
+                return back()
+                    ->withErrors(['assigned_waiter_role' => 'Pilih role waiter untuk delegasi berbasis role.'])
+                    ->withInput();
+            }
+
+            $roleWaiters = $this->firebase->getActiveWaitersByRole($assignedWaiterRole);
+            if (count($roleWaiters) === 0) {
+                return back()
+                    ->withErrors(['assigned_waiter_role' => 'Tidak ada waiter aktif untuk role yang dipilih.'])
+                    ->withInput();
+            }
+
+            usort($roleWaiters, function ($a, $b) {
+                $nameCompare = strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+                if ($nameCompare !== 0) {
+                    return $nameCompare;
+                }
+
+                return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
+            });
+        }
+
+        $assignmentStrategy = null;
+        if ($assignmentType === 'role') {
+            $assignmentStrategy = $roleAssignmentMode === 'rolling' ? 'role_round_robin' : 'role_all';
         }
 
         if ($isRecurring && ! $request->filled('schedule_time')) {
@@ -1039,10 +1119,23 @@ class AdminController extends Controller
 
         if ($isRecurring) {
             $templateCount = 0;
-            foreach ($taskRackPayloads as $taskRackPayload) {
+            $isRoleRollingRack = $taskType === 'rack_check'
+                && $assignmentType === 'role'
+                && $roleAssignmentMode === 'rolling';
+
+            foreach ($taskRackPayloads as $rackIndex => $taskRackPayload) {
                 $resolvedTaskTitle = $taskType === 'rack_check'
                     ? $this->buildRackCheckTaskTitle($taskRackPayload)
                     : $taskTitle;
+
+                $templateAssignmentType = $assignmentType;
+                $templateAssignedWaiterId = $assignmentType === 'single' ? $assignedWaiterId : null;
+                $rollingSlotIndex = null;
+                if ($isRoleRollingRack) {
+                    $templateAssignmentType = 'role';
+                    $templateAssignedWaiterId = null;
+                    $rollingSlotIndex = $rackIndex;
+                }
 
                 $this->firebase->createRecurringWaiterTaskTemplate([
                     'title' => $resolvedTaskTitle,
@@ -1057,8 +1150,11 @@ class AdminController extends Controller
                     'rack_name' => $taskRackPayload['rack_name'],
                     'rack_location' => $taskRackPayload['rack_location'],
                     'rack_barcode_value' => $taskRackPayload['rack_barcode_value'],
-                    'assignment_type' => $assignmentType,
-                    'assigned_waiter_id' => $assignmentType === 'single' ? $assignedWaiterId : null,
+                    'assignment_type' => $templateAssignmentType,
+                    'assignment_strategy' => $assignmentStrategy,
+                    'assigned_waiter_id' => $templateAssignedWaiterId,
+                    'assigned_waiter_role' => $assignmentType === 'role' ? $assignedWaiterRole : null,
+                    'rolling_slot_index' => $rollingSlotIndex,
                     'schedule_time' => $request->schedule_time,
                     'time_limit_minutes' => (int) $request->time_limit_minutes,
                     'recurrence_type' => $recurrenceType,
@@ -1070,7 +1166,27 @@ class AdminController extends Controller
 
             if ($taskType === 'rack_check' && $rackTargetScope === 'all') {
                 return redirect()->route($redirectRouteName)
-                    ->with('success', "Template task cek rak berulang berhasil dibuat untuk semua rak aktif ({$templateCount} rak). Waiter akan wajib scan barcode tiap rak saat eksekusi.");
+                    ->with('success', "Template task cek rak berulang berhasil dibuat untuk semua rak aktif ({$templateCount} rak). Waiter akan wajib scan QR code tiap rak saat eksekusi.");
+            }
+
+            if ($taskType === 'rack_check') {
+                if ($assignmentType === 'role' && $roleAssignmentMode === 'rolling') {
+                    return redirect()->route($redirectRouteName)
+                        ->with('success', "Template task cek rak berulang berhasil dibuat dengan rotasi harian otomatis berdasarkan role {$assignedWaiterRole} untuk {$templateCount} rak.");
+                }
+
+                if ($assignmentType === 'role') {
+                    return redirect()->route($redirectRouteName)
+                        ->with('success', "Template task cek rak berulang berhasil dibuat untuk role {$assignedWaiterRole} pada {$templateCount} rak.");
+                }
+
+                return redirect()->route($redirectRouteName)
+                    ->with('success', "Template task cek rak berulang berhasil dibuat untuk {$templateCount} rak terpilih. Waiter akan wajib scan QR code tiap rak saat eksekusi.");
+            }
+
+            if ($assignmentType === 'role') {
+                return redirect()->route($redirectRouteName)
+                    ->with('success', "Task berulang waiter berhasil dibuat untuk role {$assignedWaiterRole}.");
             }
 
             return redirect()->route($redirectRouteName)
@@ -1078,10 +1194,22 @@ class AdminController extends Controller
         }
 
         $createdCount = 0;
-        foreach ($taskRackPayloads as $taskRackPayload) {
+        $isRoleRollingRack = $taskType === 'rack_check'
+            && $assignmentType === 'role'
+            && $roleAssignmentMode === 'rolling';
+
+        foreach ($taskRackPayloads as $rackIndex => $taskRackPayload) {
             $resolvedTaskTitle = $taskType === 'rack_check'
                 ? $this->buildRackCheckTaskTitle($taskRackPayload)
                 : $taskTitle;
+
+            $taskAssignmentType = $assignmentType;
+            $taskAssignedWaiterId = $assignmentType === 'single' ? $assignedWaiterId : null;
+            if ($isRoleRollingRack) {
+                $targetWaiter = $roleWaiters[$rackIndex % count($roleWaiters)];
+                $taskAssignmentType = 'single';
+                $taskAssignedWaiterId = $targetWaiter['id'] ?? null;
+            }
 
             $createdCount += $this->firebase->createWaiterTasksFromAssignment([
                 'title' => $resolvedTaskTitle,
@@ -1096,8 +1224,10 @@ class AdminController extends Controller
                 'rack_name' => $taskRackPayload['rack_name'],
                 'rack_location' => $taskRackPayload['rack_location'],
                 'rack_barcode_value' => $taskRackPayload['rack_barcode_value'],
-                'assignment_type' => $assignmentType,
-                'assigned_waiter_id' => $assignmentType === 'single' ? $assignedWaiterId : null,
+                'assignment_type' => $taskAssignmentType,
+                'assignment_strategy' => $assignmentStrategy,
+                'assigned_waiter_id' => $taskAssignedWaiterId,
+                'assigned_waiter_role' => $assignmentType === 'role' ? $assignedWaiterRole : null,
             ]);
         }
 
@@ -1110,7 +1240,29 @@ class AdminController extends Controller
             $rackCount = count($taskRackPayloads);
 
             return redirect()->route($redirectRouteName)
-                ->with('success', "Tugas cek rak berhasil dibuat untuk semua rak aktif ({$rackCount} rak) dengan total {$createdCount} delegasi waiter. Waiter harus scan barcode setiap rak melalui task masing-masing.");
+                ->with('success', "Tugas cek rak berhasil dibuat untuk semua rak aktif ({$rackCount} rak) dengan total {$createdCount} delegasi waiter. Waiter harus scan QR code setiap rak melalui task masing-masing.");
+        }
+
+        if ($taskType === 'rack_check') {
+            $rackCount = count($taskRackPayloads);
+
+            if ($assignmentType === 'role' && $roleAssignmentMode === 'rolling') {
+                return redirect()->route($redirectRouteName)
+                    ->with('success', "Tugas cek rak berhasil di-rolling berdasarkan role {$assignedWaiterRole} untuk {$rackCount} rak (total {$createdCount} delegasi).");
+            }
+
+            if ($assignmentType === 'role') {
+                return redirect()->route($redirectRouteName)
+                    ->with('success', "Tugas cek rak berhasil dibuat untuk role {$assignedWaiterRole} pada {$rackCount} rak (total {$createdCount} delegasi).");
+            }
+
+            return redirect()->route($redirectRouteName)
+                ->with('success', "Tugas cek rak berhasil dibuat untuk {$rackCount} rak terpilih dengan total {$createdCount} delegasi waiter.");
+        }
+
+        if ($assignmentType === 'role') {
+            return redirect()->route($redirectRouteName)
+                ->with('success', "Tugas berhasil dibuat dan didelegasikan ke role {$assignedWaiterRole} (total {$createdCount} task).");
         }
 
         return redirect()->route($redirectRouteName)
@@ -1642,6 +1794,257 @@ class AdminController extends Controller
     }
 
     /**
+     * Build waiter follow-up board for unfinished tasks and missing reports.
+     */
+    protected function buildWaiterFollowUpBoard(
+        array $waiters,
+        array $tasks,
+        array $activityReports,
+        int $startTs,
+        int $endTs,
+        array $waiterDirectory = []
+    ): array {
+        $board = [];
+
+        $upsertWaiter = function (
+            string $waiterId,
+            string $waiterName,
+            string $waiterEmail,
+            ?string $waiterRole,
+            bool $isActive
+        ) use (&$board, $waiterDirectory) {
+            $resolvedWaiter = $this->resolveCanonicalWaiterProfile($waiterId, $waiterName, $waiterEmail, $waiterDirectory);
+
+            $identityKey = (string) ($resolvedWaiter['identity_key'] ?? 'unknown');
+            $canonicalId = (string) ($resolvedWaiter['waiter_id'] ?? '');
+            $canonicalName = trim((string) ($resolvedWaiter['waiter_name'] ?? ''));
+            $canonicalEmail = strtolower(trim((string) ($resolvedWaiter['waiter_email'] ?? '')));
+
+            $normalizedRole = strtolower(trim((string) $waiterRole));
+            if (! in_array($normalizedRole, ['kasir', 'pelayan'], true)) {
+                $normalizedRole = 'pelayan';
+            }
+
+            if (! isset($board[$identityKey])) {
+                $board[$identityKey] = [
+                    'waiter_key' => $identityKey,
+                    'waiter_id' => $canonicalId,
+                    'waiter_name' => $canonicalName !== '' ? $canonicalName : 'Waiter Tidak Diketahui',
+                    'waiter_email' => $canonicalEmail,
+                    'waiter_role' => $normalizedRole,
+                    'is_active' => $isActive,
+                    'general_total_count' => 0,
+                    'rack_total_count' => 0,
+                    'general_done_count' => 0,
+                    'rack_done_count' => 0,
+                    'general_open_count' => 0,
+                    'rack_open_count' => 0,
+                    'report_count' => 0,
+                ];
+
+                return $identityKey;
+            }
+
+            if ($board[$identityKey]['waiter_name'] === 'Waiter Tidak Diketahui' && $canonicalName !== '') {
+                $board[$identityKey]['waiter_name'] = $canonicalName;
+            }
+
+            if ($board[$identityKey]['waiter_email'] === '' && $canonicalEmail !== '') {
+                $board[$identityKey]['waiter_email'] = $canonicalEmail;
+            }
+
+            if ($board[$identityKey]['waiter_id'] === '' && $canonicalId !== '') {
+                $board[$identityKey]['waiter_id'] = $canonicalId;
+            }
+
+            if (! in_array((string) ($board[$identityKey]['waiter_role'] ?? ''), ['kasir', 'pelayan'], true)
+                && in_array($normalizedRole, ['kasir', 'pelayan'], true)) {
+                $board[$identityKey]['waiter_role'] = $normalizedRole;
+            }
+
+            if ($isActive) {
+                $board[$identityKey]['is_active'] = true;
+            }
+
+            return $identityKey;
+        };
+
+        foreach ($waiters as $waiter) {
+            $upsertWaiter(
+                (string) ($waiter['id'] ?? ''),
+                (string) ($waiter['name'] ?? ''),
+                (string) ($waiter['email'] ?? ''),
+                (string) ($waiter['waiter_role'] ?? 'pelayan'),
+                (bool) ($waiter['is_active'] ?? true)
+            );
+        }
+
+        foreach ($tasks as $task) {
+            $trackingDate = $this->resolveTrackingDate($task);
+            $trackingTimestamp = strtotime($trackingDate.' 00:00:00');
+            if ($trackingTimestamp === false || $trackingTimestamp < $startTs || $trackingTimestamp > $endTs) {
+                continue;
+            }
+
+            $taskType = (string) ($task['task_type'] ?? 'general');
+            $isRackCheck = $taskType === 'rack_check';
+            $isDone = (string) ($task['status'] ?? '') === 'done';
+
+            $waiterId = (string) ($isDone
+                ? ($task['completed_by_waiter_id'] ?? $task['assigned_waiter_id'] ?? '')
+                : ($task['assigned_waiter_id'] ?? ''));
+            $waiterName = (string) ($isDone
+                ? ($task['completed_by_waiter_name'] ?? $task['assigned_waiter_name'] ?? '')
+                : ($task['assigned_waiter_name'] ?? ''));
+            $waiterEmail = (string) ($isDone
+                ? ($task['completed_by_waiter_email'] ?? '')
+                : ($task['assigned_waiter_email'] ?? ''));
+            $waiterRole = (string) ($task['assigned_waiter_role'] ?? 'pelayan');
+
+            $identityKey = $upsertWaiter($waiterId, $waiterName, $waiterEmail, $waiterRole, true);
+
+            if ($isRackCheck) {
+                $board[$identityKey]['rack_total_count']++;
+            } else {
+                $board[$identityKey]['general_total_count']++;
+            }
+
+            if ($isDone) {
+                if ($isRackCheck) {
+                    $board[$identityKey]['rack_done_count']++;
+                } else {
+                    $board[$identityKey]['general_done_count']++;
+                }
+            } else {
+                if ($isRackCheck) {
+                    $board[$identityKey]['rack_open_count']++;
+                } else {
+                    $board[$identityKey]['general_open_count']++;
+                }
+            }
+        }
+
+        foreach ($activityReports as $report) {
+            $reportDate = $this->normalizeDashboardDateString((string) ($report['report_date'] ?? ''));
+            $reportTimestamp = $reportDate !== '' ? strtotime($reportDate.' 00:00:00') : false;
+            if ($reportTimestamp === false) {
+                $createdAt = $this->normalizeOrderTimestamp($report['created_at'] ?? 0);
+                if ($createdAt <= 0) {
+                    continue;
+                }
+
+                $reportTimestamp = strtotime(date('Y-m-d', $createdAt).' 00:00:00');
+            }
+
+            if ($reportTimestamp === false || $reportTimestamp < $startTs || $reportTimestamp > $endTs) {
+                continue;
+            }
+
+            $identityKey = $upsertWaiter(
+                (string) ($report['waiter_id'] ?? ''),
+                (string) ($report['waiter_name'] ?? ''),
+                (string) ($report['waiter_email'] ?? ''),
+                'pelayan',
+                true
+            );
+
+            $board[$identityKey]['report_count']++;
+        }
+
+        $rows = [];
+        $activeWaiterCount = 0;
+        $activeWaiterAttentionCount = 0;
+
+        foreach ($board as $item) {
+            $isActive = (bool) ($item['is_active'] ?? true);
+            if ($isActive) {
+                $activeWaiterCount++;
+            }
+
+            $generalDoneCount = (int) ($item['general_done_count'] ?? 0);
+            $rackDoneCount = (int) ($item['rack_done_count'] ?? 0);
+            $generalTotalCount = (int) ($item['general_total_count'] ?? 0);
+            $rackTotalCount = (int) ($item['rack_total_count'] ?? 0);
+            $generalOpenCount = (int) ($item['general_open_count'] ?? 0);
+            $rackOpenCount = (int) ($item['rack_open_count'] ?? 0);
+            $reportCount = (int) ($item['report_count'] ?? 0);
+            $totalOpenCount = $generalOpenCount + $rackOpenCount;
+
+            $missingGeneralDone = $generalTotalCount > 0 && $generalDoneCount === 0;
+            $missingRackDone = $rackTotalCount > 0 && $rackDoneCount === 0;
+            $missingReport = $reportCount === 0;
+            $hasOpenTask = $totalOpenCount > 0;
+
+            $needsAttention = $missingGeneralDone || $missingRackDone || $missingReport || $hasOpenTask;
+            if (! $needsAttention) {
+                continue;
+            }
+
+            if ($isActive) {
+                $activeWaiterAttentionCount++;
+            }
+
+            $attentionTags = [];
+            if ($missingGeneralDone) {
+                $attentionTags[] = 'Belum kerjakan tugas umum';
+            }
+            if ($missingRackDone) {
+                $attentionTags[] = 'Belum kerjakan cek rak';
+            }
+            if ($hasOpenTask) {
+                $attentionTags[] = 'Masih ada tugas belum selesai';
+            }
+            if ($missingReport) {
+                $attentionTags[] = 'Belum isi laporan';
+            }
+
+            $rows[] = array_merge($item, [
+                'total_open_count' => $totalOpenCount,
+                'general_total_count' => $generalTotalCount,
+                'rack_total_count' => $rackTotalCount,
+                'missing_general_done' => $missingGeneralDone,
+                'missing_rack_done' => $missingRackDone,
+                'missing_report' => $missingReport,
+                'has_open_task' => $hasOpenTask,
+                'attention_tags' => $attentionTags,
+                'needs_attention' => true,
+            ]);
+        }
+
+        usort($rows, function ($a, $b) {
+            $openCompare = ((int) ($b['total_open_count'] ?? 0)) <=> ((int) ($a['total_open_count'] ?? 0));
+            if ($openCompare !== 0) {
+                return $openCompare;
+            }
+
+            $reportCompare = ((bool) ($b['missing_report'] ?? false)) <=> ((bool) ($a['missing_report'] ?? false));
+            if ($reportCompare !== 0) {
+                return $reportCompare;
+            }
+
+            $rackCompare = ((bool) ($b['missing_rack_done'] ?? false)) <=> ((bool) ($a['missing_rack_done'] ?? false));
+            if ($rackCompare !== 0) {
+                return $rackCompare;
+            }
+
+            return strcmp(
+                strtolower((string) ($a['waiter_name'] ?? '')),
+                strtolower((string) ($b['waiter_name'] ?? ''))
+            );
+        });
+
+        return [
+            'rows' => $rows,
+            'has_attention' => count($rows) > 0,
+            'active_waiter_count' => $activeWaiterCount,
+            'active_waiter_attention_count' => $activeWaiterAttentionCount,
+            'period_label' => $startTs === $endTs
+                ? date('d M Y', $startTs)
+                : date('d M Y', $startTs).' - '.date('d M Y', $endTs),
+        ];
+    }
+
+    /**
      * Check whether task/template belongs to selected management scope.
      */
     protected function matchesTaskScope(array $item, string $taskScope): bool
@@ -2154,12 +2557,31 @@ class AdminController extends Controller
                     'not_done_waiters' => [],
                     'done_count' => 0,
                     'not_done_count' => 0,
+                    'is_role_round_robin' => false,
+                    'assigned_waiter_role' => '',
+                    'today_assignee_map' => [],
+                    'today_assignee_label' => '-',
                 ];
             }
 
             $waiterLabel = trim((string) ($task['assigned_waiter_name'] ?? '-'));
             if ($waiterLabel === '') {
                 $waiterLabel = '-';
+            }
+
+            $assignmentStrategy = (string) ($task['assignment_strategy'] ?? '');
+            if ($assignmentStrategy === 'role_round_robin') {
+                $grouped[$key]['is_role_round_robin'] = true;
+
+                $assignedWaiterRole = strtolower(trim((string) ($task['assigned_waiter_role'] ?? '')));
+                if ($grouped[$key]['assigned_waiter_role'] === '' && in_array($assignedWaiterRole, ['kasir', 'pelayan'], true)) {
+                    $grouped[$key]['assigned_waiter_role'] = $assignedWaiterRole;
+                }
+
+                if ($waiterLabel !== '-' && $waiterLabel !== '') {
+                    $assigneeKey = strtolower($waiterLabel);
+                    $grouped[$key]['today_assignee_map'][$assigneeKey] = $waiterLabel;
+                }
             }
 
             if (($task['status'] ?? '') === 'done') {
@@ -2181,6 +2603,22 @@ class AdminController extends Controller
         }
 
         $result = array_values($grouped);
+        foreach ($result as &$rackBoard) {
+            $assignees = array_values($rackBoard['today_assignee_map'] ?? []);
+            sort($assignees, SORT_NATURAL | SORT_FLAG_CASE);
+
+            if (count($assignees) === 1) {
+                $rackBoard['today_assignee_label'] = $assignees[0];
+            } elseif (count($assignees) > 1) {
+                $rackBoard['today_assignee_label'] = implode(', ', $assignees);
+            } else {
+                $rackBoard['today_assignee_label'] = '-';
+            }
+
+            unset($rackBoard['today_assignee_map']);
+        }
+        unset($rackBoard);
+
         usort($result, function ($a, $b) {
             if ($b['not_done_count'] === $a['not_done_count']) {
                 return $b['done_count'] <=> $a['done_count'];

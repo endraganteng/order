@@ -44,9 +44,9 @@
 
             @if($isRackTemplate)
                 <div style="margin-bottom: 20px; padding: 12px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed;">
-                    <div style="font-weight: 700; color: #9a3412; margin-bottom: 6px;">📦 Template Cek Rak (Wajib Scan Barcode)</div>
+                    <div style="font-weight: 700; color: #9a3412; margin-bottom: 6px;">📦 Template Cek Rak (Wajib Scan QR Code)</div>
                     <div style="font-size: 13px; color: #9a3412;">Rak: <strong>{{ $template['rack_name'] ?? '-' }}</strong> ({{ $template['rack_location'] ?? '-' }})</div>
-                    <div style="font-size: 13px; color: #9a3412;">Barcode: <code>{{ $template['rack_barcode_value'] ?? '-' }}</code></div>
+                    <div style="font-size: 13px; color: #9a3412;">QR Code: <code>{{ $template['rack_barcode_value'] ?? '-' }}</code></div>
                     <div style="font-size: 12px; color: #7c2d12; margin-top: 6px;">
                         Jadwal cek rak dapat disesuaikan supervisor sesuai kebutuhan operasional.
                     </div>

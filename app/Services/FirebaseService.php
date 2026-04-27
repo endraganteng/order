@@ -30,7 +30,9 @@ class FirebaseService
         $waiters = [];
         if ($snapshot->exists()) {
             foreach ($snapshot->getValue() as $key => $waiter) {
-                $waiters[] = array_merge(['id' => $key], $waiter);
+                $merged = array_merge(['id' => $key], $waiter);
+                $merged['waiter_role'] = $this->normalizeWaiterRole($merged['waiter_role'] ?? 'pelayan');
+                $waiters[] = $merged;
             }
         }
 
@@ -48,11 +50,12 @@ class FirebaseService
     /**
      * Add new waiter account (with optional password hash).
      */
-    public function addAllowedEmailWithPassword($email, $name, $passwordHash = null)
+    public function addAllowedEmailWithPassword($email, $name, $passwordHash = null, $waiterRole = 'pelayan')
     {
         $payload = [
             'email' => strtolower(trim((string) $email)),
             'name' => trim((string) $name),
+            'waiter_role' => $this->normalizeWaiterRole($waiterRole),
             'is_active' => true,
             'created_at' => time(),
         ];
@@ -69,6 +72,10 @@ class FirebaseService
      */
     public function updateAllowedEmail($id, $data)
     {
+        if (array_key_exists('waiter_role', $data)) {
+            $data['waiter_role'] = $this->normalizeWaiterRole($data['waiter_role']);
+        }
+
         $this->database->getReference('allowed_waiters/'.$id)
             ->update($data);
     }
@@ -80,6 +87,18 @@ class FirebaseService
     {
         return array_values(array_filter($this->getAllowedEmails(), function ($waiter) {
             return ($waiter['is_active'] ?? true) !== false;
+        }));
+    }
+
+    /**
+     * Get active waiters by role.
+     */
+    public function getActiveWaitersByRole($waiterRole)
+    {
+        $normalizedRole = $this->normalizeWaiterRole($waiterRole);
+
+        return array_values(array_filter($this->getActiveWaiters(), function ($waiter) use ($normalizedRole) {
+            return $this->normalizeWaiterRole($waiter['waiter_role'] ?? 'pelayan') === $normalizedRole;
         }));
     }
 
@@ -536,7 +555,8 @@ class FirebaseService
     {
         $assignmentType = $data['assignment_type'] ?? 'all';
         $assignedWaiterId = $data['assigned_waiter_id'] ?? null;
-        $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId);
+        $assignedWaiterRole = $data['assigned_waiter_role'] ?? null;
+        $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId, $assignedWaiterRole);
         $count = 0;
 
         foreach ($targetWaiters as $waiter) {
@@ -786,7 +806,7 @@ class FirebaseService
                 if ($masterBarcode === '') {
                     return [
                         'success' => false,
-                        'message' => 'Barcode rak target untuk task ini belum terdaftar. Hubungi supervisor.',
+                        'message' => 'QR code rak target untuk task ini belum terdaftar. Hubungi supervisor.',
                     ];
                 }
 
@@ -799,21 +819,21 @@ class FirebaseService
             if ($expectedBarcode === '') {
                 return [
                     'success' => false,
-                    'message' => 'Barcode rak untuk tugas ini belum terdaftar. Hubungi supervisor.',
+                    'message' => 'QR code rak untuk tugas ini belum terdaftar. Hubungi supervisor.',
                 ];
             }
 
             if ($providedBarcode === '') {
                 return [
                     'success' => false,
-                    'message' => 'Task ini wajib scan barcode rak sebelum verifikasi selesai.',
+                    'message' => 'Task ini wajib scan QR code rak sebelum verifikasi selesai.',
                 ];
             }
 
             if ($providedBarcode !== $expectedBarcode) {
                 return [
                     'success' => false,
-                    'message' => 'Barcode tidak sesuai dengan rak target. Silakan scan ulang barcode rak yang benar.',
+                    'message' => 'QR code tidak sesuai dengan rak target. Silakan scan ulang QR code rak yang benar.',
                 ];
             }
         }
@@ -896,6 +916,9 @@ class FirebaseService
         $scheduleTime = (string) ($data['schedule_time'] ?? '');
         $timeLimitMinutes = (int) ($data['time_limit_minutes'] ?? 0);
         $assignmentType = $data['assignment_type'] ?? 'all';
+        $assignedWaiterRole = $assignmentType === 'role'
+            ? $this->normalizeWaiterRole($data['assigned_waiter_role'] ?? 'pelayan')
+            : null;
         $assignedWaiterId = $assignmentType === 'single' ? ($data['assigned_waiter_id'] ?? null) : null;
         $assignedWaiter = $assignedWaiterId ? $this->getWaiterById($assignedWaiterId) : null;
 
@@ -913,9 +936,14 @@ class FirebaseService
             'rack_location' => $data['rack_location'] ?? null,
             'rack_barcode_value' => $data['rack_barcode_value'] ?? null,
             'assignment_type' => $assignmentType,
+            'assignment_strategy' => $data['assignment_strategy'] ?? null,
+            'rolling_slot_index' => isset($data['rolling_slot_index']) ? max(0, (int) $data['rolling_slot_index']) : null,
             'assigned_waiter_id' => $assignmentType === 'single' ? ($assignedWaiter['id'] ?? $assignedWaiterId) : null,
             'assigned_waiter_name' => $assignmentType === 'single' ? ($assignedWaiter['name'] ?? null) : null,
             'assigned_waiter_email' => $assignmentType === 'single' ? ($assignedWaiter['email'] ?? null) : null,
+            'assigned_waiter_role' => $assignmentType === 'single'
+                ? $this->normalizeWaiterRole($assignedWaiter['waiter_role'] ?? $assignedWaiterRole)
+                : ($assignmentType === 'role' ? $assignedWaiterRole : null),
             'schedule_time' => $scheduleTime,
             'time_limit_minutes' => $timeLimitMinutes,
             'recurrence_type' => $recurrenceType,
@@ -1033,13 +1061,57 @@ class FirebaseService
                 continue;
             }
 
+            $templateAssignmentType = (string) ($template['assignment_type'] ?? 'all');
+            $assignmentStrategy = (string) ($template['assignment_strategy'] ?? '');
+            $assignedWaiterRole = $this->normalizeWaiterRole($template['assigned_waiter_role'] ?? 'pelayan');
+            $isRackRollingTemplate = (string) ($template['task_type'] ?? 'general') === 'rack_check'
+                && $assignmentStrategy === 'role_round_robin'
+                && trim((string) ($template['assigned_waiter_role'] ?? '')) !== '';
+
+            if ($isRackRollingTemplate) {
+                $templateAssignmentType = 'role';
+            }
+
             $targetWaiters = $this->resolveTargetWaiters(
-                $template['assignment_type'] ?? 'all',
-                $template['assigned_waiter_id'] ?? null
+                $templateAssignmentType,
+                $template['assigned_waiter_id'] ?? null,
+                $assignedWaiterRole
             );
 
             if (empty($targetWaiters)) {
                 continue;
+            }
+
+            if ($isRackRollingTemplate) {
+                usort($targetWaiters, function ($a, $b) {
+                    $nameCompare = strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+                    if ($nameCompare !== 0) {
+                        return $nameCompare;
+                    }
+
+                    return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
+                });
+
+                $rotationOffset = $this->resolveDailyRotationOffset($todayDate);
+                $slotIndex = $this->resolveRollingSlotIndex($template);
+                $selectedWaiterIndex = ($slotIndex + $rotationOffset) % count($targetWaiters);
+                $targetWaiters = [$targetWaiters[$selectedWaiterIndex]];
+
+                $templateUpdates = [];
+                if ((string) ($template['assignment_type'] ?? '') !== 'role') {
+                    $templateUpdates['assignment_type'] = 'role';
+                    $templateUpdates['assigned_waiter_id'] = null;
+                    $templateUpdates['assigned_waiter_name'] = null;
+                    $templateUpdates['assigned_waiter_email'] = null;
+                }
+
+                if (! isset($template['rolling_slot_index']) || $template['rolling_slot_index'] === null || $template['rolling_slot_index'] === '') {
+                    $templateUpdates['rolling_slot_index'] = $slotIndex;
+                }
+
+                if (! empty($templateUpdates)) {
+                    $this->database->getReference('waiter_task_templates/'.$template['id'])->update($templateUpdates);
+                }
             }
 
             $timeLimitMinutes = (int) ($template['time_limit_minutes'] ?? 0);
@@ -1199,7 +1271,7 @@ class FirebaseService
     /**
      * Resolve target waiters from assignment.
      */
-    protected function resolveTargetWaiters($assignmentType, $assignedWaiterId = null)
+    protected function resolveTargetWaiters($assignmentType, $assignedWaiterId = null, $assignedWaiterRole = null)
     {
         if ($assignmentType === 'single') {
             if (! $assignedWaiterId) {
@@ -1212,6 +1284,14 @@ class FirebaseService
             }
 
             return [$waiter];
+        }
+
+        if ($assignmentType === 'role') {
+            if (! $assignedWaiterRole) {
+                return [];
+            }
+
+            return $this->getActiveWaitersByRole($assignedWaiterRole);
         }
 
         return $this->getActiveWaiters();
@@ -1253,9 +1333,11 @@ class FirebaseService
             'status' => 'pending',
             'assigned_by' => $data['assigned_by'] ?? 'Supervisor',
             'assignment_type' => $data['assignment_type'] ?? 'single',
+            'assignment_strategy' => $data['assignment_strategy'] ?? null,
             'assigned_waiter_id' => $waiter['id'] ?? null,
             'assigned_waiter_name' => $waiter['name'] ?? null,
             'assigned_waiter_email' => $waiter['email'] ?? null,
+            'assigned_waiter_role' => $this->normalizeWaiterRole($waiter['waiter_role'] ?? ($data['assigned_waiter_role'] ?? 'pelayan')),
             'created_at' => time(),
             'completed_at' => null,
             'completed_note' => null,
@@ -1281,6 +1363,53 @@ class FirebaseService
         ];
 
         return array_merge($payload, $overrides);
+    }
+
+    /**
+     * Normalize waiter role to supported values.
+     */
+    protected function normalizeWaiterRole($waiterRole): string
+    {
+        $role = strtolower(trim((string) $waiterRole));
+
+        return in_array($role, ['kasir', 'pelayan'], true) ? $role : 'pelayan';
+    }
+
+    /**
+     * Resolve rolling slot index used for daily waiter rotation.
+     */
+    protected function resolveRollingSlotIndex(array $template): int
+    {
+        if (isset($template['rolling_slot_index']) && $template['rolling_slot_index'] !== null && $template['rolling_slot_index'] !== '') {
+            $value = (int) $template['rolling_slot_index'];
+
+            return $value >= 0 ? $value : 0;
+        }
+
+        $rackId = trim((string) ($template['rack_id'] ?? ''));
+        if ($rackId !== '') {
+            return abs((int) sprintf('%u', crc32($rackId)));
+        }
+
+        $templateId = trim((string) ($template['id'] ?? ''));
+        if ($templateId !== '') {
+            return abs((int) sprintf('%u', crc32($templateId)));
+        }
+
+        return 0;
+    }
+
+    /**
+     * Resolve day-based rotation offset from date string.
+     */
+    protected function resolveDailyRotationOffset(string $date): int
+    {
+        $dateTimestamp = strtotime($date.' 00:00:00');
+        if ($dateTimestamp === false) {
+            return 0;
+        }
+
+        return (int) floor($dateTimestamp / 86400);
     }
 
     /**

@@ -49,13 +49,13 @@
             </div>
 
             <div style="margin-bottom: 20px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc;">
-                <div style="font-weight: 600; color: #334155; margin-bottom: 8px;">Barcode Saat Ini</div>
+                <div style="font-weight: 600; color: #334155; margin-bottom: 8px;">QR Code Saat Ini</div>
                 <code style="display: inline-block; margin-bottom: 10px; color: #0f172a;">{{ $rack['barcode_value'] ?? '-' }}</code>
                 <div>
-                    <svg id="rack-barcode-preview" data-barcode="{{ $rack['barcode_value'] ?? '' }}"></svg>
+                    <div id="rack-qrcode-preview" data-code="{{ $rack['barcode_value'] ?? '' }}"></div>
                 </div>
                 <div style="font-size: 12px; color: #64748b; margin-top: 8px;">
-                    Untuk generate ulang barcode, gunakan tombol "Generate Ulang" di halaman daftar rack.
+                    Untuk generate ulang QR code, gunakan tombol "Generate Ulang" di halaman daftar rack.
                 </div>
             </div>
 
@@ -66,22 +66,21 @@
         </form>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
-        const preview = document.getElementById('rack-barcode-preview');
-        const value = String(preview?.getAttribute('data-barcode') || '').trim();
+        const preview = document.getElementById('rack-qrcode-preview');
+        const value = String(preview?.getAttribute('data-code') || '').trim();
         if (preview && value) {
             try {
-                JsBarcode(preview, value, {
-                    format: 'CODE128',
-                    width: 1.6,
-                    height: 52,
-                    displayValue: true,
-                    fontSize: 12,
-                    margin: 0,
+                preview.innerHTML = '';
+                new QRCode(preview, {
+                    text: value,
+                    width: 110,
+                    height: 110,
+                    correctLevel: QRCode.CorrectLevel.M,
                 });
             } catch (error) {
-                preview.outerHTML = '<span style="font-size:12px;color:#b91c1c;">Barcode invalid</span>';
+                preview.outerHTML = '<span style="font-size:12px;color:#b91c1c;">QR code invalid</span>';
             }
         }
     </script>

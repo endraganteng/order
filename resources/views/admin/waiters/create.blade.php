@@ -28,6 +28,21 @@
             </div>
 
             <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">Role Waiter</label>
+                <select name="waiter_role" required
+                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    <option value="pelayan" {{ old('waiter_role', 'pelayan') === 'pelayan' ? 'selected' : '' }}>Pelayan</option>
+                    <option value="kasir" {{ old('waiter_role') === 'kasir' ? 'selected' : '' }}>Kasir</option>
+                </select>
+                <div style="font-size:12px; color:#666; margin-top:6px;">
+                    Role dipakai untuk delegasi tugas berbasis role pada manajemen tugas supervisor.
+                </div>
+                @error('waiter_role')
+                    <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">
                     Password Cadangan <span style="color: #777; font-weight: normal;">(opsional)</span>
                 </label>

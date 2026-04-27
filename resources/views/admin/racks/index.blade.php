@@ -4,7 +4,7 @@
 
 @section('content')
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 10px; flex-wrap: wrap;">
-        <h2 style="color: #333; margin: 0; font-size: clamp(24px, 5vw, 32px);">📦 Master Rak & Barcode</h2>
+        <h2 style="color: #333; margin: 0; font-size: clamp(24px, 5vw, 32px);">📦 Master Rak & QR Code</h2>
         <a href="{{ route('admin.racks.create') }}" class="btn btn-primary">➕ Tambah Rak</a>
     </div>
 
@@ -56,13 +56,18 @@
             font-size: 11px;
             color: #64748b;
         }
+        .rack-qrcode {
+            width: 70px;
+            height: 70px;
+            background: #fff;
+        }
     </style>
 
     <form id="rackBulkActionForm" method="GET" action="{{ route('admin.racks.print_labels') }}" target="_blank">
         <div class="rack-bulk-card">
             <div>
-                <div style="font-size: 14px; font-weight: 700; color: #1e293b;">🖨️ Print / Export Barcode Rak (Massal)</div>
-                <div style="font-size: 12px; color: #64748b;">Pilih beberapa rak lalu print label massal atau export CSV. Label akan menampilkan nama rak + barcode value.</div>
+                <div style="font-size: 14px; font-weight: 700; color: #1e293b;">🖨️ Print / Export QR Code Rak (Massal)</div>
+                <div style="font-size: 12px; color: #64748b;">Pilih beberapa rak lalu print label massal atau export CSV. Label akan menampilkan nama rak + QR value.</div>
             </div>
             <div class="rack-bulk-actions">
                 <button type="submit" class="btn btn-primary" data-requires-selection="1">🖨️ Print Terpilih</button>
@@ -80,8 +85,8 @@
                             <th style="width:44px;"><input type="checkbox" id="selectAllRacks" title="Pilih semua"></th>
                             <th>Nama Rak</th>
                             <th>Lokasi</th>
-                            <th>Barcode Value</th>
-                            <th>Preview Label Barcode</th>
+                            <th>QR Value</th>
+                            <th>Preview Label QR</th>
                             <th>Status</th>
                             <th>Aksi</th>
                         </tr>
@@ -113,7 +118,7 @@
                                     @if($barcodeValue !== '')
                                         <div class="rack-label-preview">
                                             <div class="rack-label-name">{{ $rackName }}</div>
-                                            <svg class="rack-barcode" data-barcode="{{ $barcodeValue }}"></svg>
+                                            <div class="rack-qrcode" data-code="{{ $barcodeValue }}"></div>
                                             <div class="rack-label-value">{{ $barcodeValue }}</div>
                                         </div>
                                     @else
@@ -132,7 +137,7 @@
                                         <a href="{{ route('admin.racks.print_labels', ['rack_ids' => [$rackId]]) }}" target="_blank" class="btn" style="padding: 6px 10px; font-size: 12px; background:#1d4ed8; color:#fff;">🖨️ Print Label</a>
                                         <a href="{{ route('admin.racks.edit', $rackId) }}" class="btn btn-warning" style="padding: 6px 10px; font-size: 12px;">✏️ Edit</a>
 
-                                        <form method="POST" action="{{ route('admin.racks.regenerate_barcode', $rackId) }}" onsubmit="return confirm('Generate ulang barcode rak ini? Barcode lama tidak bisa dipakai lagi untuk verifikasi task baru.')">
+                                        <form method="POST" action="{{ route('admin.racks.regenerate_barcode', $rackId) }}" onsubmit="return confirm('Generate ulang QR code rak ini? QR code lama tidak bisa dipakai lagi untuk verifikasi task baru.')">
                                             @csrf
                                             <button type="submit" class="btn" style="padding: 6px 10px; font-size: 12px; background: #2563eb; color: #fff;">🔄 Generate Ulang</button>
                                         </form>
@@ -156,27 +161,26 @@
         </div>
     </form>
 
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
         const rackBulkActionForm = document.getElementById('rackBulkActionForm');
         const selectAllRacksEl = document.getElementById('selectAllRacks');
         const rackCheckboxes = Array.from(document.querySelectorAll('.js-rack-checkbox'));
 
-        document.querySelectorAll('.rack-barcode').forEach((el) => {
-            const value = String(el.getAttribute('data-barcode') || '').trim();
+        document.querySelectorAll('.rack-qrcode').forEach((el) => {
+            const value = String(el.getAttribute('data-code') || '').trim();
             if (!value) return;
 
             try {
-                JsBarcode(el, value, {
-                    format: 'CODE128',
-                    width: 1.3,
-                    height: 44,
-                    displayValue: false,
-                    fontSize: 12,
-                    margin: 0,
+                el.innerHTML = '';
+                new QRCode(el, {
+                    text: value,
+                    width: 70,
+                    height: 70,
+                    correctLevel: QRCode.CorrectLevel.M,
                 });
             } catch (error) {
-                el.outerHTML = '<span style="font-size:12px;color:#b91c1c;">Barcode invalid</span>';
+                el.outerHTML = '<span style="font-size:12px;color:#b91c1c;">QR code invalid</span>';
             }
         });
 

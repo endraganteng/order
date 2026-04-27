@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Print Label Barcode Rak</title>
+    <title>Print Label QR Code Rak</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -62,30 +62,42 @@
             border-radius: 10px;
             padding: 10px;
             break-inside: avoid;
+            text-align: center;
         }
 
         .label-title {
             font-size: 14px;
             font-weight: 700;
             margin-bottom: 4px;
+            text-align: center;
         }
 
         .label-sub {
             font-size: 12px;
             color: #475569;
             margin-bottom: 6px;
+            text-align: center;
         }
 
         .label-code {
             font-size: 11px;
             color: #64748b;
             margin-top: 4px;
+            font-weight: 700;
+            text-align: center;
         }
-
-        .label-status {
-            margin-top: 6px;
-            font-size: 11px;
-            color: #334155;
+        .label-qrcode {
+            width: 110px;
+            height: 110px;
+            margin-top: 4px;
+            margin-left: auto;
+            margin-right: auto;
+            background: #fff;
+        }
+        .label-qrcode > img,
+        .label-qrcode > canvas {
+            display: block;
+            margin: 0 auto;
         }
 
         @media print {
@@ -113,7 +125,7 @@
 <body>
     <div class="toolbar">
         <div>
-            <div style="font-size:18px;font-weight:700;">🖨️ Print Label Barcode Rak</div>
+            <div style="font-size:18px;font-weight:700;">🖨️ Print Label QR Code Rak</div>
             <div style="font-size:12px;color:#475569;">Scope: {{ $labelScope }} • Total Label: {{ count($racks) }} • Waktu: {{ date('d/m/Y H:i', (int) $printedAt) }}</div>
         </div>
         <div class="toolbar-actions">
@@ -128,41 +140,38 @@
                 $rackName = (string) ($rack['name'] ?? '-');
                 $rackLocation = (string) ($rack['location'] ?? '-');
                 $barcodeValue = (string) ($rack['barcode_value'] ?? '');
-                $statusLabel = (($rack['is_active'] ?? true) === true) ? 'Aktif' : 'Nonaktif';
             @endphp
             <div class="label-item">
                 <div class="label-title">{{ $rackName }}</div>
                 <div class="label-sub">📍 {{ $rackLocation }}</div>
                 @if($barcodeValue !== '')
-                    <svg class="rack-barcode" data-barcode="{{ $barcodeValue }}"></svg>
+                    <div class="label-qrcode rack-qrcode" data-code="{{ $barcodeValue }}"></div>
                 @else
-                    <div style="font-size:12px;color:#b91c1c;">Barcode belum tersedia</div>
+                    <div style="font-size:12px;color:#b91c1c;">QR code belum tersedia</div>
                 @endif
                 <div class="label-code">Kode: {{ $barcodeValue !== '' ? $barcodeValue : '-' }}</div>
-                <div class="label-status">Status Rak: {{ $statusLabel }}</div>
             </div>
         @endforeach
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
-        document.querySelectorAll('.rack-barcode').forEach((el) => {
-            const value = String(el.getAttribute('data-barcode') || '').trim();
+        document.querySelectorAll('.rack-qrcode').forEach((el) => {
+            const value = String(el.getAttribute('data-code') || '').trim();
             if (!value) {
                 return;
             }
 
             try {
-                JsBarcode(el, value, {
-                    format: 'CODE128',
-                    width: 1.35,
-                    height: 50,
-                    displayValue: true,
-                    fontSize: 11,
-                    margin: 0,
+                el.innerHTML = '';
+                new QRCode(el, {
+                    text: value,
+                    width: 110,
+                    height: 110,
+                    correctLevel: QRCode.CorrectLevel.M,
                 });
             } catch (error) {
-                el.outerHTML = '<span style="font-size:12px;color:#b91c1c;">Barcode invalid</span>';
+                el.outerHTML = '<span style="font-size:12px;color:#b91c1c;">QR code invalid</span>';
             }
         });
     </script>

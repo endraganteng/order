@@ -22,7 +22,41 @@
         </div>
     @endif
 
-    <div class="card" style="max-width: 600px; padding: 30px;">
+    <style>
+        .task-create-card {
+            max-width: 1100px !important;
+        }
+
+        @media (min-width: 1024px) {
+            #rack-checkbox-list {
+                grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+                max-height: 360px !important;
+            }
+
+            #assignment_type,
+            #assigned_waiter_id,
+            #assigned_waiter_role,
+            #role_assignment_mode,
+            #recurrence_type {
+                width: 100% !important;
+                max-width: 460px !important;
+            }
+
+            #schedule_time,
+            #time_limit_minutes,
+            #weekly_day,
+            #interval_days {
+                width: 100% !important;
+                max-width: 320px !important;
+            }
+
+            .task-create-actions {
+                max-width: 700px;
+            }
+        }
+    </style>
+
+    <div class="card task-create-card" style="padding: 30px;">
         <form action="{{ route('admin.tasks.store') }}" method="POST">
             @csrf
             <input type="hidden" name="task_scope" value="{{ $taskScope ?? 'general' }}">
@@ -98,7 +132,25 @@
 
             @php
                 $taskType = $taskScopeMode === 'rack_check' ? 'rack_check' : 'general';
-                $rackTargetScope = old('rack_target_scope', 'single');
+                $oldRackIdsInput = old('rack_ids', []);
+                if (!is_array($oldRackIdsInput)) {
+                    $oldRackIdsInput = explode(',', (string) $oldRackIdsInput);
+                }
+                $oldRackIdsInput = array_values(array_filter(array_map(function ($rackId) {
+                    return trim((string) $rackId);
+                }, $oldRackIdsInput), function ($rackId) {
+                    return $rackId !== '';
+                }));
+
+                $legacyRackId = trim((string) old('rack_id', ''));
+                if ($legacyRackId !== '') {
+                    $oldRackIdsInput[] = $legacyRackId;
+                }
+
+                $selectedRackIds = array_values(array_unique($oldRackIdsInput));
+                $rackTotalCount = count($racks ?? []);
+                $selectedRackCount = count($selectedRackIds);
+                $rackTargetScope = old('rack_target_scope', ($rackTotalCount > 0 && $selectedRackCount === $rackTotalCount) ? 'all' : 'single');
             @endphp
             <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
@@ -115,36 +167,52 @@
             </div>
 
             <div id="rack-selector-wrapper" style="margin-bottom: 20px; display: none;">
-                <label for="rack_target_scope" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                    Target Rak <span style="color: #dc3545;">*</span>
-                </label>
-                <select
-                    id="rack_target_scope"
-                    name="rack_target_scope"
-                    onchange="toggleTaskTypeFields()"
-                    style="width: 100%; max-width: 320px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; margin-bottom: 10px;"
-                >
-                    <option value="single" {{ $rackTargetScope === 'single' ? 'selected' : '' }}>Satu Rak Tertentu</option>
-                    <option value="all" {{ $rackTargetScope === 'all' ? 'selected' : '' }}>Semua Rak Aktif</option>
-                </select>
+                <input type="hidden" id="rack_target_scope" name="rack_target_scope" value="{{ $rackTargetScope }}">
 
-                <label for="rack_id" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                    Pilih Rak Target <span style="color: #dc3545;">*</span>
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                    Pilih Rak Target (Bisa Multi-Pilih) <span style="color: #dc3545;">*</span>
                 </label>
-                <select
-                    id="rack_id"
-                    name="rack_id"
-                    style="width: 100%; max-width: 460px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                >
-                    <option value="">-- Pilih rak --</option>
-                    @foreach(($racks ?? []) as $rack)
-                        <option value="{{ $rack['id'] }}" {{ old('rack_id') === ($rack['id'] ?? '') ? 'selected' : '' }}>
-                            {{ $rack['name'] ?? '-' }} | {{ $rack['location'] ?? '-' }} | {{ $rack['barcode_value'] ?? '-' }}
-                        </option>
-                    @endforeach
-                    </select>
+
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #334155; cursor: pointer;">
+                        <input type="checkbox" id="rack_select_all" {{ ($rackTotalCount > 0 && $selectedRackCount === $rackTotalCount) ? 'checked' : '' }}>
+                        Pilih semua rak aktif
+                    </label>
+                    <span id="rack-selection-count-hint" style="font-size: 12px; color: #64748b;">
+                        {{ $selectedRackCount }} dari {{ $rackTotalCount }} rak dipilih
+                    </span>
+                </div>
+
+                <div id="rack-checkbox-list" style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); max-height: 280px; overflow: auto; padding: 10px; border: 1px solid #dbe2ea; border-radius: 10px; background: #f8fafc;">
+                    @forelse(($racks ?? []) as $rack)
+                        @php
+                            $rackId = (string) ($rack['id'] ?? '');
+                            $isChecked = in_array($rackId, $selectedRackIds, true);
+                        @endphp
+                        <label class="rack-checkbox-item" style="display: block; border: 1px solid #dbe2ea; border-radius: 8px; padding: 10px; background: #fff; cursor: pointer;">
+                            <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                <input
+                                    type="checkbox"
+                                    class="js-rack-checkbox"
+                                    name="rack_ids[]"
+                                    value="{{ $rackId }}"
+                                    {{ $isChecked ? 'checked' : '' }}
+                                    style="margin-top: 3px;"
+                                >
+                                <div style="min-width: 0;">
+                                    <div style="font-weight: 700; color: #0f172a; word-break: break-word;">{{ $rack['name'] ?? '-' }}</div>
+                                    <div style="font-size: 12px; color: #64748b; word-break: break-word;">📍 {{ $rack['location'] ?? '-' }}</div>
+                                    <div style="font-size: 11px; color: #94a3b8; word-break: break-all;">QR: {{ $rack['barcode_value'] ?? '-' }}</div>
+                                </div>
+                            </div>
+                        </label>
+                    @empty
+                        <div style="font-size: 13px; color: #b91c1c;">Belum ada rak aktif untuk dipilih.</div>
+                    @endforelse
+                </div>
+
                 <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                    Jika pilih <b>Semua Rak Aktif</b>, sistem akan membuat task cek-rak per rak, jadi waiter wajib scan barcode semua rak (satu task per rak).
+                    Supervisor bisa memilih satu atau beberapa rak sekaligus. Sistem akan membuat task cek-rak per rak terpilih.
                     <br>
                     Rak belum ada? <a href="{{ route('admin.racks.create') }}" target="_blank" rel="noopener">Tambah rak dulu</a>.
                 </div>
@@ -169,6 +237,14 @@
 
             @php
                 $assignmentType = old('assignment_type', 'all');
+                $assignedWaiterRole = old('assigned_waiter_role', 'pelayan');
+                $roleAssignmentMode = old('role_assignment_mode', $taskScopeMode === 'rack_check' ? 'rolling' : 'all');
+                $activePelayanCount = collect($waiters ?? [])->filter(function ($waiter) {
+                    return strtolower((string) ($waiter['waiter_role'] ?? 'pelayan')) === 'pelayan';
+                })->count();
+                $activeKasirCount = collect($waiters ?? [])->filter(function ($waiter) {
+                    return strtolower((string) ($waiter['waiter_role'] ?? 'pelayan')) === 'kasir';
+                })->count();
             @endphp
             <div style="margin-bottom: 20px;">
                 <label for="assignment_type" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
@@ -182,9 +258,10 @@
                 >
                     <option value="all" {{ $assignmentType === 'all' ? 'selected' : '' }}>Semua Waiter Aktif</option>
                     <option value="single" {{ $assignmentType === 'single' ? 'selected' : '' }}>Waiter Tertentu</option>
+                    <option value="role" {{ $assignmentType === 'role' ? 'selected' : '' }}>Berdasarkan Role</option>
                 </select>
                 <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                    Supervisor bisa kirim ke 1 waiter atau ke semua waiter aktif sekaligus.
+                    Supervisor bisa kirim ke 1 waiter, semua waiter aktif, atau waiter berdasarkan role.
                 </div>
             </div>
 
@@ -204,6 +281,38 @@
                         </option>
                     @endforeach
                 </select>
+            </div>
+
+            <div id="role-waiter-wrapper" style="margin-bottom: 20px; display: none;">
+                <label for="assigned_waiter_role" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                    Pilih Role Waiter <span style="color: #dc3545;">*</span>
+                </label>
+                <select
+                    id="assigned_waiter_role"
+                    name="assigned_waiter_role"
+                    style="width: 100%; max-width: 320px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                >
+                    <option value="pelayan" {{ $assignedWaiterRole === 'pelayan' ? 'selected' : '' }}>Pelayan ({{ $activePelayanCount }} aktif)</option>
+                    <option value="kasir" {{ $assignedWaiterRole === 'kasir' ? 'selected' : '' }}>Kasir ({{ $activeKasirCount }} aktif)</option>
+                </select>
+            </div>
+
+            <div id="role-assignment-mode-wrapper" style="margin-bottom: 20px; display: none;">
+                <label for="role_assignment_mode" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                    Mode Delegasi Role <span style="color: #dc3545;">*</span>
+                </label>
+                <select
+                    id="role_assignment_mode"
+                    name="role_assignment_mode"
+                    style="width: 100%; max-width: 360px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
+                >
+                    <option value="rolling" {{ $roleAssignmentMode === 'rolling' ? 'selected' : '' }}>Rolling per Rak (disarankan untuk Cek Rak)</option>
+                    <option value="all" {{ $roleAssignmentMode === 'all' ? 'selected' : '' }}>Semua Waiter dalam Role</option>
+                </select>
+                <div style="font-size: 13px; color: #666; margin-top: 8px;">
+                    Rolling per rak akan membagi rak terpilih ke waiter dalam role secara bergantian
+                    dan <b>berotasi otomatis setiap hari</b> agar pembagian kerja lebih merata.
+                </div>
             </div>
 
             @if($taskScopeMode === 'rack_check')
@@ -422,7 +531,7 @@
                 </div>
             @endif
 
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <div class="task-create-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button type="submit" class="btn btn-primary" style="padding: 12px 30px; font-size: 16px; flex: 1;">
                     📤 Delegasikan Tugas ke Waiter
                 </button>
@@ -487,53 +596,113 @@
             }
         }
 
+        function syncRackSelectionState() {
+            const rackTargetScopeInput = document.getElementById('rack_target_scope');
+            const rackCheckboxes = Array.from(document.querySelectorAll('.js-rack-checkbox'));
+            const selectAllCheckbox = document.getElementById('rack_select_all');
+            const countHintEl = document.getElementById('rack-selection-count-hint');
+
+            if (!rackTargetScopeInput || rackCheckboxes.length === 0) {
+                if (countHintEl) {
+                    countHintEl.textContent = '0 rak tersedia';
+                }
+                return;
+            }
+
+            const totalCount = rackCheckboxes.length;
+            const selectedCount = rackCheckboxes.filter((checkbox) => checkbox.checked).length;
+
+            rackTargetScopeInput.value = selectedCount > 0 && selectedCount === totalCount ? 'all' : 'single';
+
+            if (countHintEl) {
+                countHintEl.textContent = `${selectedCount} dari ${totalCount} rak dipilih`;
+            }
+
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = selectedCount > 0 && selectedCount === totalCount;
+                selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+            }
+
+            rackCheckboxes.forEach((checkbox, index) => {
+                checkbox.required = index === 0 && selectedCount === 0;
+            });
+        }
+
         function toggleTaskTypeFields() {
-            const taskType = document.getElementById('task_type').value;
+            const taskTypeInput = document.getElementById('task_type');
+            const taskType = taskTypeInput ? taskTypeInput.value : 'general';
             const rackWrapper = document.getElementById('rack-selector-wrapper');
             const rackTargetScopeInput = document.getElementById('rack_target_scope');
-            const rackInput = document.getElementById('rack_id');
-            const rackLabel = document.querySelector('label[for="rack_id"]');
+            const rackCheckboxes = Array.from(document.querySelectorAll('.js-rack-checkbox'));
+            const selectAllCheckbox = document.getElementById('rack_select_all');
+
+            if (!rackWrapper || !rackTargetScopeInput) {
+                toggleAssignmentFields();
+                return;
+            }
 
             if (taskType === 'rack_check') {
                 rackWrapper.style.display = 'block';
                 rackTargetScopeInput.required = true;
 
-                const rackTargetScope = rackTargetScopeInput.value || 'single';
-                if (rackTargetScope === 'all') {
-                    rackInput.required = false;
-                    rackInput.value = '';
-                    rackInput.disabled = true;
-                    if (rackLabel) {
-                        rackLabel.style.opacity = '0.6';
-                    }
-                    rackInput.style.opacity = '0.7';
-                } else {
-                    rackInput.required = true;
-                    rackInput.disabled = false;
-                    if (rackLabel) {
-                        rackLabel.style.opacity = '1';
-                    }
-                    rackInput.style.opacity = '1';
+                rackCheckboxes.forEach((checkbox) => {
+                    checkbox.disabled = false;
+                });
+
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.disabled = false;
                 }
+
+                syncRackSelectionState();
             } else {
                 rackWrapper.style.display = 'none';
                 rackTargetScopeInput.required = false;
-                rackInput.required = false;
-                rackInput.disabled = false;
+
+                rackCheckboxes.forEach((checkbox) => {
+                    checkbox.required = false;
+                    checkbox.disabled = true;
+                });
+
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.disabled = true;
+                }
             }
+
+            toggleAssignmentFields();
         }
 
         function toggleAssignmentFields() {
             const assignmentType = document.getElementById('assignment_type').value;
             const singleWaiterWrapper = document.getElementById('single-waiter-wrapper');
+            const roleWaiterWrapper = document.getElementById('role-waiter-wrapper');
+            const roleAssignmentModeWrapper = document.getElementById('role-assignment-mode-wrapper');
             const assignedWaiterInput = document.getElementById('assigned_waiter_id');
+            const assignedWaiterRoleInput = document.getElementById('assigned_waiter_role');
+            const roleAssignmentModeInput = document.getElementById('role_assignment_mode');
+            const taskTypeInput = document.getElementById('task_type');
+            const taskType = taskTypeInput ? taskTypeInput.value : 'general';
 
             if (assignmentType === 'single') {
                 singleWaiterWrapper.style.display = 'block';
+                roleWaiterWrapper.style.display = 'none';
+                roleAssignmentModeWrapper.style.display = 'none';
                 assignedWaiterInput.required = true;
+                assignedWaiterRoleInput.required = false;
+                roleAssignmentModeInput.required = false;
+            } else if (assignmentType === 'role') {
+                singleWaiterWrapper.style.display = 'none';
+                roleWaiterWrapper.style.display = 'block';
+                roleAssignmentModeWrapper.style.display = taskType === 'rack_check' ? 'block' : 'none';
+                assignedWaiterInput.required = false;
+                assignedWaiterRoleInput.required = true;
+                roleAssignmentModeInput.required = taskType === 'rack_check';
             } else {
                 singleWaiterWrapper.style.display = 'none';
+                roleWaiterWrapper.style.display = 'none';
+                roleAssignmentModeWrapper.style.display = 'none';
                 assignedWaiterInput.required = false;
+                assignedWaiterRoleInput.required = false;
+                roleAssignmentModeInput.required = false;
             }
         }
 
@@ -567,6 +736,23 @@
                 intervalDaysInput.required = false;
             }
         }
+
+        const rackSelectAllEl = document.getElementById('rack_select_all');
+        if (rackSelectAllEl) {
+            rackSelectAllEl.addEventListener('change', () => {
+                const checked = rackSelectAllEl.checked;
+                document.querySelectorAll('.js-rack-checkbox').forEach((checkbox) => {
+                    if (!checkbox.disabled) {
+                        checkbox.checked = checked;
+                    }
+                });
+                syncRackSelectionState();
+            });
+        }
+
+        document.querySelectorAll('.js-rack-checkbox').forEach((checkbox) => {
+            checkbox.addEventListener('change', syncRackSelectionState);
+        });
 
         toggleAssignmentFields();
         toggleRecurringFields();
