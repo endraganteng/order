@@ -911,7 +911,9 @@ class AdminController extends Controller
             'assignment_type' => 'required|in:single,all,role',
             'assigned_waiter_id' => 'nullable|string',
             'assigned_waiter_role' => 'nullable|in:kasir,pelayan',
-            'role_assignment_mode' => 'nullable|in:all,rolling',
+            'role_assignment_mode' => 'nullable|in:all,rolling,selected',
+            'selected_waiter_ids' => 'nullable|array',
+            'selected_waiter_ids.*' => 'nullable|string',
             'is_recurring' => 'nullable|boolean',
             'schedule_time' => 'nullable|date_format:H:i',
             'time_limit_minutes' => 'nullable|integer|min:1|max:1440',
@@ -925,9 +927,20 @@ class AdminController extends Controller
         $assignedWaiterId = $request->input('assigned_waiter_id');
         $assignedWaiterRole = strtolower(trim((string) $request->input('assigned_waiter_role', '')));
         $roleAssignmentMode = strtolower(trim((string) $request->input('role_assignment_mode', 'all')));
-        if (! in_array($roleAssignmentMode, ['all', 'rolling'], true)) {
+        if (! in_array($roleAssignmentMode, ['all', 'rolling', 'selected'], true)) {
             $roleAssignmentMode = 'all';
         }
+
+        $selectedWaiterIdsInput = $request->input('selected_waiter_ids', []);
+        if (! is_array($selectedWaiterIdsInput)) {
+            $selectedWaiterIdsInput = explode(',', (string) $selectedWaiterIdsInput);
+        }
+
+        $selectedWaiterIds = array_values(array_unique(array_filter(array_map(function ($waiterId) {
+            return trim((string) $waiterId);
+        }, $selectedWaiterIdsInput), function ($waiterId) {
+            return $waiterId !== '';
+        })));
 
         $rackTargetScope = (string) $request->input('rack_target_scope', 'single');
         $requiresPhotoProof = (bool) $request->boolean('requires_photo_proof');
@@ -936,6 +949,10 @@ class AdminController extends Controller
         $taskTitle = trim((string) $request->input('title', ''));
         $taskDescription = trim((string) $request->input('description', ''));
         $taskPriority = (string) $request->input('priority', 'normal');
+
+        if ($assignmentType === 'role' && $taskType !== 'rack_check' && $roleAssignmentMode === 'rolling') {
+            $roleAssignmentMode = 'all';
+        }
 
         if ($taskType !== 'rack_check' && $taskTitle === '') {
             return back()
@@ -1053,6 +1070,7 @@ class AdminController extends Controller
         }
 
         $roleWaiters = [];
+        $selectedRoleWaiters = [];
         if ($assignmentType === 'single') {
             $targetWaiter = $this->firebase->getWaiterById($assignedWaiterId);
             if (! $targetWaiter || (($targetWaiter['is_active'] ?? true) === false)) {
@@ -1084,11 +1102,59 @@ class AdminController extends Controller
 
                 return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
             });
+
+            $modeNeedsSubsetValidation = in_array($roleAssignmentMode, ['selected', 'rolling'], true);
+            if ($modeNeedsSubsetValidation) {
+                if ($roleAssignmentMode === 'selected' && count($selectedWaiterIds) === 0) {
+                    return back()
+                        ->withErrors(['selected_waiter_ids' => 'Pilih minimal satu waiter dari role yang dipilih.'])
+                        ->withInput();
+                }
+
+                $roleWaiterMap = [];
+                foreach ($roleWaiters as $roleWaiter) {
+                    $roleWaiterId = trim((string) ($roleWaiter['id'] ?? ''));
+                    if ($roleWaiterId === '') {
+                        continue;
+                    }
+
+                    $roleWaiterMap[$roleWaiterId] = $roleWaiter;
+                }
+
+                foreach ($selectedWaiterIds as $selectedWaiterId) {
+                    if (! isset($roleWaiterMap[$selectedWaiterId])) {
+                        return back()
+                            ->withErrors(['selected_waiter_ids' => 'Daftar waiter terpilih tidak valid untuk role yang dipilih.'])
+                            ->withInput();
+                    }
+
+                    $selectedRoleWaiters[] = $roleWaiterMap[$selectedWaiterId];
+                }
+
+                usort($selectedRoleWaiters, function ($a, $b) {
+                    $nameCompare = strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+                    if ($nameCompare !== 0) {
+                        return $nameCompare;
+                    }
+
+                    return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
+                });
+
+                if (count($selectedRoleWaiters) > 0) {
+                    $roleWaiters = $selectedRoleWaiters;
+                }
+            }
         }
 
         $assignmentStrategy = null;
         if ($assignmentType === 'role') {
-            $assignmentStrategy = $roleAssignmentMode === 'rolling' ? 'role_round_robin' : 'role_all';
+            if ($roleAssignmentMode === 'rolling') {
+                $assignmentStrategy = 'role_round_robin';
+            } elseif ($roleAssignmentMode === 'selected') {
+                $assignmentStrategy = 'role_selected';
+            } else {
+                $assignmentStrategy = 'role_all';
+            }
         }
 
         if ($isRecurring && ! $request->filled('schedule_time')) {
@@ -1154,6 +1220,11 @@ class AdminController extends Controller
                     'assignment_strategy' => $assignmentStrategy,
                     'assigned_waiter_id' => $templateAssignedWaiterId,
                     'assigned_waiter_role' => $assignmentType === 'role' ? $assignedWaiterRole : null,
+                    'selected_waiter_ids' => $assignmentType === 'role' && count($selectedRoleWaiters) > 0
+                        ? array_values(array_map(function ($waiter) {
+                            return (string) ($waiter['id'] ?? '');
+                        }, $selectedRoleWaiters))
+                        : [],
                     'rolling_slot_index' => $rollingSlotIndex,
                     'schedule_time' => $request->schedule_time,
                     'time_limit_minutes' => (int) $request->time_limit_minutes,
@@ -1171,8 +1242,21 @@ class AdminController extends Controller
 
             if ($taskType === 'rack_check') {
                 if ($assignmentType === 'role' && $roleAssignmentMode === 'rolling') {
+                    $selectedCount = count($selectedRoleWaiters);
+                    if ($selectedCount > 0) {
+                        return redirect()->route($redirectRouteName)
+                            ->with('success', "Template task cek rak berulang berhasil dibuat dengan rotasi harian otomatis untuk {$selectedCount} waiter terpilih (role {$assignedWaiterRole}) pada {$templateCount} rak.");
+                    }
+
                     return redirect()->route($redirectRouteName)
                         ->with('success', "Template task cek rak berulang berhasil dibuat dengan rotasi harian otomatis berdasarkan role {$assignedWaiterRole} untuk {$templateCount} rak.");
+                }
+
+                if ($assignmentType === 'role' && $roleAssignmentMode === 'selected') {
+                    $selectedCount = count($selectedRoleWaiters);
+
+                    return redirect()->route($redirectRouteName)
+                        ->with('success', "Template task cek rak berulang berhasil dibuat untuk {$selectedCount} waiter terpilih (role {$assignedWaiterRole}) pada {$templateCount} rak.");
                 }
 
                 if ($assignmentType === 'role') {
@@ -1185,6 +1269,13 @@ class AdminController extends Controller
             }
 
             if ($assignmentType === 'role') {
+                if ($roleAssignmentMode === 'selected') {
+                    $selectedCount = count($selectedRoleWaiters);
+
+                    return redirect()->route($redirectRouteName)
+                        ->with('success', "Task berulang waiter berhasil dibuat untuk {$selectedCount} waiter terpilih (role {$assignedWaiterRole}).");
+                }
+
                 return redirect()->route($redirectRouteName)
                     ->with('success', "Task berulang waiter berhasil dibuat untuk role {$assignedWaiterRole}.");
             }
@@ -1228,6 +1319,11 @@ class AdminController extends Controller
                 'assignment_strategy' => $assignmentStrategy,
                 'assigned_waiter_id' => $taskAssignedWaiterId,
                 'assigned_waiter_role' => $assignmentType === 'role' ? $assignedWaiterRole : null,
+                'selected_waiter_ids' => $assignmentType === 'role' && count($selectedRoleWaiters) > 0
+                    ? array_values(array_map(function ($waiter) {
+                        return (string) ($waiter['id'] ?? '');
+                    }, $selectedRoleWaiters))
+                    : [],
             ]);
         }
 
@@ -1247,11 +1343,24 @@ class AdminController extends Controller
             $rackCount = count($taskRackPayloads);
 
             if ($assignmentType === 'role' && $roleAssignmentMode === 'rolling') {
+                $selectedCount = count($selectedRoleWaiters);
+                if ($selectedCount > 0) {
+                    return redirect()->route($redirectRouteName)
+                        ->with('success', "Tugas cek rak berhasil di-rolling untuk {$selectedCount} waiter terpilih (role {$assignedWaiterRole}) pada {$rackCount} rak (total {$createdCount} delegasi).");
+                }
+
                 return redirect()->route($redirectRouteName)
                     ->with('success', "Tugas cek rak berhasil di-rolling berdasarkan role {$assignedWaiterRole} untuk {$rackCount} rak (total {$createdCount} delegasi).");
             }
 
             if ($assignmentType === 'role') {
+                if ($roleAssignmentMode === 'selected') {
+                    $selectedCount = count($selectedRoleWaiters);
+
+                    return redirect()->route($redirectRouteName)
+                        ->with('success', "Tugas cek rak berhasil dibuat untuk {$selectedCount} waiter terpilih (role {$assignedWaiterRole}) pada {$rackCount} rak (total {$createdCount} delegasi).");
+                }
+
                 return redirect()->route($redirectRouteName)
                     ->with('success', "Tugas cek rak berhasil dibuat untuk role {$assignedWaiterRole} pada {$rackCount} rak (total {$createdCount} delegasi).");
             }
@@ -1261,6 +1370,13 @@ class AdminController extends Controller
         }
 
         if ($assignmentType === 'role') {
+            if ($roleAssignmentMode === 'selected') {
+                $selectedCount = count($selectedRoleWaiters);
+
+                return redirect()->route($redirectRouteName)
+                    ->with('success', "Tugas berhasil dibuat dan didelegasikan ke {$selectedCount} waiter terpilih (role {$assignedWaiterRole}) dengan total {$createdCount} task.");
+            }
+
             return redirect()->route($redirectRouteName)
                 ->with('success', "Tugas berhasil dibuat dan didelegasikan ke role {$assignedWaiterRole} (total {$createdCount} task).");
         }

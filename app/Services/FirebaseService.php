@@ -556,7 +556,8 @@ class FirebaseService
         $assignmentType = $data['assignment_type'] ?? 'all';
         $assignedWaiterId = $data['assigned_waiter_id'] ?? null;
         $assignedWaiterRole = $data['assigned_waiter_role'] ?? null;
-        $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId, $assignedWaiterRole);
+        $selectedWaiterIds = $data['selected_waiter_ids'] ?? [];
+        $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId, $assignedWaiterRole, $selectedWaiterIds);
         $count = 0;
 
         foreach ($targetWaiters as $waiter) {
@@ -919,6 +920,15 @@ class FirebaseService
         $assignedWaiterRole = $assignmentType === 'role'
             ? $this->normalizeWaiterRole($data['assigned_waiter_role'] ?? 'pelayan')
             : null;
+        $selectedWaiterIdsInput = $data['selected_waiter_ids'] ?? [];
+        if (! is_array($selectedWaiterIdsInput)) {
+            $selectedWaiterIdsInput = explode(',', (string) $selectedWaiterIdsInput);
+        }
+        $selectedWaiterIds = array_values(array_unique(array_filter(array_map(function ($waiterId) {
+            return trim((string) $waiterId);
+        }, $selectedWaiterIdsInput), function ($waiterId) {
+            return $waiterId !== '';
+        })));
         $assignedWaiterId = $assignmentType === 'single' ? ($data['assigned_waiter_id'] ?? null) : null;
         $assignedWaiter = $assignedWaiterId ? $this->getWaiterById($assignedWaiterId) : null;
 
@@ -944,6 +954,7 @@ class FirebaseService
             'assigned_waiter_role' => $assignmentType === 'single'
                 ? $this->normalizeWaiterRole($assignedWaiter['waiter_role'] ?? $assignedWaiterRole)
                 : ($assignmentType === 'role' ? $assignedWaiterRole : null),
+            'selected_waiter_ids' => $assignmentType === 'role' ? $selectedWaiterIds : [],
             'schedule_time' => $scheduleTime,
             'time_limit_minutes' => $timeLimitMinutes,
             'recurrence_type' => $recurrenceType,
@@ -1075,7 +1086,8 @@ class FirebaseService
             $targetWaiters = $this->resolveTargetWaiters(
                 $templateAssignmentType,
                 $template['assigned_waiter_id'] ?? null,
-                $assignedWaiterRole
+                $assignedWaiterRole,
+                $template['selected_waiter_ids'] ?? []
             );
 
             if (empty($targetWaiters)) {
@@ -1271,7 +1283,7 @@ class FirebaseService
     /**
      * Resolve target waiters from assignment.
      */
-    protected function resolveTargetWaiters($assignmentType, $assignedWaiterId = null, $assignedWaiterRole = null)
+    protected function resolveTargetWaiters($assignmentType, $assignedWaiterId = null, $assignedWaiterRole = null, $selectedWaiterIdsInput = [])
     {
         if ($assignmentType === 'single') {
             if (! $assignedWaiterId) {
@@ -1291,7 +1303,28 @@ class FirebaseService
                 return [];
             }
 
-            return $this->getActiveWaitersByRole($assignedWaiterRole);
+            $roleWaiters = $this->getActiveWaitersByRole($assignedWaiterRole);
+            if (! is_array($selectedWaiterIdsInput)) {
+                $selectedWaiterIdsInput = explode(',', (string) $selectedWaiterIdsInput);
+            }
+
+            $selectedWaiterIds = array_values(array_unique(array_filter(array_map(function ($waiterId) {
+                return trim((string) $waiterId);
+            }, $selectedWaiterIdsInput), function ($waiterId) {
+                return $waiterId !== '';
+            })));
+
+            if (count($selectedWaiterIds) === 0) {
+                return $roleWaiters;
+            }
+
+            $selectedWaiterMap = array_fill_keys($selectedWaiterIds, true);
+
+            return array_values(array_filter($roleWaiters, function ($waiter) use ($selectedWaiterMap) {
+                $waiterId = trim((string) ($waiter['id'] ?? ''));
+
+                return $waiterId !== '' && isset($selectedWaiterMap[$waiterId]);
+            }));
         }
 
         return $this->getActiveWaiters();

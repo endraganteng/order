@@ -27,10 +27,26 @@
             max-width: 1100px !important;
         }
 
+        #role-waiter-checkbox-list .role-waiter-item {
+            border: 1px solid #dbe2ea;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fff;
+        }
+
+        #role-waiter-checkbox-list .role-waiter-item.is-hidden {
+            display: none;
+        }
+
         @media (min-width: 1024px) {
             #rack-checkbox-list {
                 grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
                 max-height: 360px !important;
+            }
+
+            #role-waiter-checkbox-list {
+                grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+                max-height: 300px !important;
             }
 
             #assignment_type,
@@ -239,6 +255,15 @@
                 $assignmentType = old('assignment_type', 'all');
                 $assignedWaiterRole = old('assigned_waiter_role', 'pelayan');
                 $roleAssignmentMode = old('role_assignment_mode', $taskScopeMode === 'rack_check' ? 'rolling' : 'all');
+                $oldSelectedWaiterIdsInput = old('selected_waiter_ids', []);
+                if (!is_array($oldSelectedWaiterIdsInput)) {
+                    $oldSelectedWaiterIdsInput = explode(',', (string) $oldSelectedWaiterIdsInput);
+                }
+                $selectedWaiterIds = array_values(array_unique(array_filter(array_map(function ($waiterId) {
+                    return trim((string) $waiterId);
+                }, $oldSelectedWaiterIdsInput), function ($waiterId) {
+                    return $waiterId !== '';
+                })));
                 $activePelayanCount = collect($waiters ?? [])->filter(function ($waiter) {
                     return strtolower((string) ($waiter['waiter_role'] ?? 'pelayan')) === 'pelayan';
                 })->count();
@@ -306,12 +331,61 @@
                     name="role_assignment_mode"
                     style="width: 100%; max-width: 360px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
                 >
-                    <option value="rolling" {{ $roleAssignmentMode === 'rolling' ? 'selected' : '' }}>Rolling per Rak (disarankan untuk Cek Rak)</option>
                     <option value="all" {{ $roleAssignmentMode === 'all' ? 'selected' : '' }}>Semua Waiter dalam Role</option>
+                    <option value="selected" {{ $roleAssignmentMode === 'selected' ? 'selected' : '' }}>Pilih Waiter Tertentu (Checklist)</option>
+                    <option value="rolling" data-rack-only="1" {{ $roleAssignmentMode === 'rolling' ? 'selected' : '' }}>Rolling per Rak (disarankan untuk Cek Rak)</option>
                 </select>
                 <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                    Rolling per rak akan membagi rak terpilih ke waiter dalam role secara bergantian
-                    dan <b>berotasi otomatis setiap hari</b> agar pembagian kerja lebih merata.
+                    Pilih <b>Semua</b> untuk broadcast satu role, <b>Pilih Waiter Tertentu</b> untuk subset via checkbox,
+                    atau <b>Rolling per Rak</b> untuk pembagian merata yang berotasi otomatis setiap hari.
+                    Anda juga bisa memilih waiter tertentu lalu tetap memakai rolling per rak.
+                </div>
+            </div>
+
+            <div id="role-selected-waiters-wrapper" style="margin-bottom: 20px; display: none;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                    Pilih Nama Waiter dalam Role <span style="color: #dc3545;">*</span>
+                </label>
+
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #334155; cursor: pointer;">
+                        <input type="checkbox" id="role_waiter_select_all">
+                        Pilih semua waiter yang tampil
+                    </label>
+                    <span id="role-selection-count-hint" style="font-size: 12px; color: #64748b;">0 waiter dipilih</span>
+                </div>
+
+                <div id="role-waiter-checkbox-list" style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); max-height: 240px; overflow: auto; padding: 10px; border: 1px solid #dbe2ea; border-radius: 10px; background: #f8fafc;">
+                    @foreach(($waiters ?? []) as $waiter)
+                        @php
+                            $waiterId = (string) ($waiter['id'] ?? '');
+                            $waiterRole = strtolower((string) ($waiter['waiter_role'] ?? 'pelayan'));
+                            $isSelectedWaiter = in_array($waiterId, $selectedWaiterIds, true);
+                        @endphp
+                        <label class="role-waiter-item" data-waiter-role="{{ $waiterRole }}">
+                            <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                <input
+                                    type="checkbox"
+                                    class="js-role-waiter-checkbox"
+                                    name="selected_waiter_ids[]"
+                                    value="{{ $waiterId }}"
+                                    data-waiter-role="{{ $waiterRole }}"
+                                    {{ $isSelectedWaiter ? 'checked' : '' }}
+                                    style="margin-top: 3px;"
+                                >
+                                <div style="min-width: 0;">
+                                    <div style="font-weight: 700; color: #0f172a; word-break: break-word;">{{ $waiter['name'] ?? '-' }}</div>
+                                    <div style="font-size: 12px; color: #64748b; word-break: break-all;">{{ $waiter['email'] ?? '-' }}</div>
+                                    <div style="font-size: 11px; color: #94a3b8; text-transform: capitalize;">Role: {{ $waiterRole }}</div>
+                                </div>
+                            </div>
+                        </label>
+                    @endforeach
+                </div>
+
+                <div style="font-size: 13px; color: #666; margin-top: 8px;">
+                    Centang waiter yang dipilih untuk menerima tugas pada role ini.
+                    Jika mode <b>Rolling per Rak</b> aktif dan tidak ada checklist waiter, sistem akan memakai semua waiter pada role.
                 </div>
             </div>
 
@@ -676,33 +750,135 @@
             const singleWaiterWrapper = document.getElementById('single-waiter-wrapper');
             const roleWaiterWrapper = document.getElementById('role-waiter-wrapper');
             const roleAssignmentModeWrapper = document.getElementById('role-assignment-mode-wrapper');
+            const roleSelectedWaitersWrapper = document.getElementById('role-selected-waiters-wrapper');
             const assignedWaiterInput = document.getElementById('assigned_waiter_id');
             const assignedWaiterRoleInput = document.getElementById('assigned_waiter_role');
             const roleAssignmentModeInput = document.getElementById('role_assignment_mode');
             const taskTypeInput = document.getElementById('task_type');
             const taskType = taskTypeInput ? taskTypeInput.value : 'general';
+            const rollingOption = roleAssignmentModeInput
+                ? roleAssignmentModeInput.querySelector('option[value="rolling"]')
+                : null;
 
             if (assignmentType === 'single') {
                 singleWaiterWrapper.style.display = 'block';
                 roleWaiterWrapper.style.display = 'none';
                 roleAssignmentModeWrapper.style.display = 'none';
+                roleSelectedWaitersWrapper.style.display = 'none';
                 assignedWaiterInput.required = true;
                 assignedWaiterRoleInput.required = false;
                 roleAssignmentModeInput.required = false;
             } else if (assignmentType === 'role') {
                 singleWaiterWrapper.style.display = 'none';
                 roleWaiterWrapper.style.display = 'block';
-                roleAssignmentModeWrapper.style.display = taskType === 'rack_check' ? 'block' : 'none';
+                roleAssignmentModeWrapper.style.display = 'block';
                 assignedWaiterInput.required = false;
                 assignedWaiterRoleInput.required = true;
-                roleAssignmentModeInput.required = taskType === 'rack_check';
+                roleAssignmentModeInput.required = true;
+
+                if (rollingOption) {
+                    rollingOption.disabled = taskType !== 'rack_check';
+                }
+
+                if (taskType !== 'rack_check' && roleAssignmentModeInput.value === 'rolling') {
+                    roleAssignmentModeInput.value = 'all';
+                }
+
+                roleSelectedWaitersWrapper.style.display = roleAssignmentModeInput.value === 'selected' ? 'block' : 'none';
             } else {
                 singleWaiterWrapper.style.display = 'none';
                 roleWaiterWrapper.style.display = 'none';
                 roleAssignmentModeWrapper.style.display = 'none';
+                roleSelectedWaitersWrapper.style.display = 'none';
                 assignedWaiterInput.required = false;
                 assignedWaiterRoleInput.required = false;
                 roleAssignmentModeInput.required = false;
+
+                if (rollingOption) {
+                    rollingOption.disabled = false;
+                }
+            }
+
+            syncRoleWaiterSelectionState();
+        }
+
+        function syncRoleWaiterSelectionState() {
+            const assignmentTypeInput = document.getElementById('assignment_type');
+            const roleInput = document.getElementById('assigned_waiter_role');
+            const roleModeInput = document.getElementById('role_assignment_mode');
+            const selectedWrapper = document.getElementById('role-selected-waiters-wrapper');
+            const selectAllCheckbox = document.getElementById('role_waiter_select_all');
+            const countHint = document.getElementById('role-selection-count-hint');
+            const taskTypeInput = document.getElementById('task_type');
+            const waiterItems = Array.from(document.querySelectorAll('.role-waiter-item'));
+            const waiterCheckboxes = Array.from(document.querySelectorAll('.js-role-waiter-checkbox'));
+
+            if (!assignmentTypeInput || !roleInput || !roleModeInput || !selectedWrapper || waiterCheckboxes.length === 0) {
+                return;
+            }
+
+            const selectedRole = (roleInput.value || '').toLowerCase();
+            const taskType = taskTypeInput ? taskTypeInput.value : 'general';
+            const modeValue = roleModeInput.value;
+            const usingRoleChecklistMode = assignmentTypeInput.value === 'role' && (modeValue === 'selected' || (taskType === 'rack_check' && modeValue === 'rolling'));
+            const requireAtLeastOne = assignmentTypeInput.value === 'role' && modeValue === 'selected';
+
+            selectedWrapper.style.display = usingRoleChecklistMode ? 'block' : 'none';
+
+            let visibleCount = 0;
+            let selectedVisibleCount = 0;
+            let firstVisibleCheckbox = null;
+
+            waiterItems.forEach((item) => {
+                const itemRole = (item.getAttribute('data-waiter-role') || '').toLowerCase();
+                const checkbox = item.querySelector('.js-role-waiter-checkbox');
+                const isVisible = usingRoleChecklistMode && itemRole === selectedRole;
+
+                item.classList.toggle('is-hidden', !isVisible);
+
+                if (!checkbox) {
+                    return;
+                }
+
+                checkbox.disabled = !isVisible;
+                checkbox.required = false;
+
+                if (!isVisible) {
+                    checkbox.checked = false;
+                    return;
+                }
+
+                visibleCount++;
+                if (!firstVisibleCheckbox) {
+                    firstVisibleCheckbox = checkbox;
+                }
+                if (checkbox.checked) {
+                    selectedVisibleCount++;
+                }
+            });
+
+            if (firstVisibleCheckbox && requireAtLeastOne && selectedVisibleCount === 0) {
+                firstVisibleCheckbox.required = true;
+            }
+
+            if (countHint) {
+                if (!usingRoleChecklistMode) {
+                    countHint.textContent = 'Mode role terpilih tidak aktif';
+                } else {
+                    countHint.textContent = `${selectedVisibleCount} dari ${visibleCount} waiter dipilih`;
+                }
+            }
+
+            if (selectAllCheckbox) {
+                if (!usingRoleChecklistMode || visibleCount === 0) {
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = false;
+                    selectAllCheckbox.disabled = true;
+                } else {
+                    selectAllCheckbox.disabled = false;
+                    selectAllCheckbox.checked = selectedVisibleCount > 0 && selectedVisibleCount === visibleCount;
+                    selectAllCheckbox.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleCount;
+                }
             }
         }
 
@@ -752,6 +928,37 @@
 
         document.querySelectorAll('.js-rack-checkbox').forEach((checkbox) => {
             checkbox.addEventListener('change', syncRackSelectionState);
+        });
+
+        const roleSelectAllEl = document.getElementById('role_waiter_select_all');
+        if (roleSelectAllEl) {
+            roleSelectAllEl.addEventListener('change', () => {
+                const selectedRole = (document.getElementById('assigned_waiter_role')?.value || '').toLowerCase();
+                const shouldCheck = roleSelectAllEl.checked;
+
+                document.querySelectorAll('.js-role-waiter-checkbox').forEach((checkbox) => {
+                    const checkboxRole = (checkbox.getAttribute('data-waiter-role') || '').toLowerCase();
+                    if (!checkbox.disabled && checkboxRole === selectedRole) {
+                        checkbox.checked = shouldCheck;
+                    }
+                });
+
+                syncRoleWaiterSelectionState();
+            });
+        }
+
+        const roleInputEl = document.getElementById('assigned_waiter_role');
+        if (roleInputEl) {
+            roleInputEl.addEventListener('change', syncRoleWaiterSelectionState);
+        }
+
+        const roleModeEl = document.getElementById('role_assignment_mode');
+        if (roleModeEl) {
+            roleModeEl.addEventListener('change', toggleAssignmentFields);
+        }
+
+        document.querySelectorAll('.js-role-waiter-checkbox').forEach((checkbox) => {
+            checkbox.addEventListener('change', syncRoleWaiterSelectionState);
         });
 
         toggleAssignmentFields();
