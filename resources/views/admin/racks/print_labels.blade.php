@@ -80,7 +80,7 @@
         }
 
         .label-code {
-            font-size: 11px;
+            font-size: 12px;
             color: #64748b;
             margin-top: 4px;
             font-weight: 700;
@@ -154,14 +154,11 @@
         @endforeach
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="{{ asset('js/vendor/qrcode.min.js') }}"></script>
     <script>
-        document.querySelectorAll('.rack-qrcode').forEach((el) => {
-            const value = String(el.getAttribute('data-code') || '').trim();
-            if (!value) {
-                return;
-            }
-
+        document.querySelectorAll('.rack-qrcode').forEach(function(el) {
+            var value = String(el.getAttribute('data-code') || '').trim();
+            if (!value) return;
             try {
                 el.innerHTML = '';
                 new QRCode(el, {

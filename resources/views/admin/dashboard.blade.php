@@ -5,61 +5,148 @@
 @section('content')
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css">
 
-    <h2 style="margin-bottom: 20px; color: #333; font-size: clamp(24px, 5vw, 32px);">Dashboard</h2>
+    <h2 style="margin-bottom: 20px; color: #1e293b; font-size: clamp(24px, 5vw, 32px); font-weight: 800;">Dashboard</h2>
 
-    {{-- Quick Actions --}}
-    <div class="card" style="padding: 20px 15px; margin-bottom: 30px;">
-        <h3 style="margin-bottom: 15px; font-size: clamp(18px, 4vw, 20px);">⚡ Quick Actions</h3>
-        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-            <a href="{{ route('admin.waiters.create') }}" class="btn btn-primary"
-                style="flex: 1 1 auto; min-width: 150px; text-align: center;">
-                ➕ Tambah Waiter
+    {{-- ============================================================ --}}
+    {{-- KPI SUMMARY CARDS — Paling atas agar langsung terlihat --}}
+    {{-- ============================================================ --}}
+    @php
+        $totalWaiters = count($waiters);
+        $activeWaiters = collect($waiters)->where('is_active', true)->count();
+        $totalOrders = $orderStatsSummary['total_orders'] ?? 0;
+        $timeoutMinutes = $settings['order_timeout_minutes'] ?? 3;
+    @endphp
+
+    <div class="kpi-grid">
+        <div class="kpi-card kpi-blue">
+            <div class="kpi-icon">👥</div>
+            <div class="kpi-value">{{ $totalWaiters }}</div>
+            <div class="kpi-label">Total Waiters</div>
+        </div>
+
+        <div class="kpi-card kpi-green">
+            <div class="kpi-icon">✅</div>
+            <div class="kpi-value">{{ $activeWaiters }}</div>
+            <div class="kpi-label">Waiter Aktif</div>
+        </div>
+
+        <div class="kpi-card kpi-amber">
+            <div class="kpi-icon">📦</div>
+            <div class="kpi-value">{{ $totalOrders }}</div>
+            <div class="kpi-label">Total Order</div>
+            <div class="kpi-trend neutral">Periode: {{ $orderPeriodLabel }}</div>
+        </div>
+
+        <div class="kpi-card kpi-red">
+            <div class="kpi-icon">⏱️</div>
+            <div class="kpi-value">{{ $timeoutMinutes }}<span style="font-size: 16px; font-weight: 500;">m</span></div>
+            <div class="kpi-label">Timeout Order</div>
+        </div>
+    </div>
+
+    {{-- ============================================================ --}}
+    {{-- QUICK ACTIONS --}}
+    {{-- ============================================================ --}}
+    <div class="card" style="padding: 18px 16px; margin-bottom: 24px;">
+        <h3 style="margin-bottom: 12px; font-size: 16px; color: #475569; font-weight: 700;">Quick Actions</h3>
+        <div class="quick-actions">
+            <a href="{{ route('admin.waiters.create') }}" class="btn btn-primary">
+                + Tambah Waiter
             </a>
-            <a href="{{ route('admin.settings') }}" class="btn btn-warning"
-                style="flex: 1 1 auto; min-width: 150px; text-align: center;">
-                ⚙️ Settings
+            <a href="{{ route('admin.settings') }}" class="btn btn-warning">
+                Pengaturan
             </a>
-            <a href="{{ route('admin.cleanup') }}" class="btn btn-danger"
-                style="flex: 1 1 auto; min-width: 150px; text-align: center;">
-                🗑️ Cleanup Orders
+            <a href="{{ route('admin.cleanup') }}" class="btn btn-danger">
+                Cleanup Orders
             </a>
         </div>
     </div>
 
-    {{-- Statistik Supervisor (Filter + Statistik + Peringkat) --}}
-    <div class="card" style="margin-bottom: 22px; padding: 20px 15px;">
-        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-bottom:12px;">
-            <h3 style="margin:0; color:#333; font-size: clamp(18px, 4vw, 24px);">📈 Statistik Supervisor</h3>
-            <span style="font-size:12px; color:#64748b; align-self:center;">Periode aktif: <strong>{{ $orderPeriodLabel }}</strong></span>
+    {{-- ============================================================ --}}
+    {{-- STATISTIK SUPERVISOR — Filter + Chart + Tabel --}}
+    {{-- ============================================================ --}}
+    <div class="card" style="margin-bottom: 24px; padding: 20px 16px;">
+        <div class="section-header">
+            <h3 class="section-title" style="color: #1e293b;">Statistik Supervisor</h3>
+            <span class="section-subtitle">Periode aktif: <strong>{{ $orderPeriodLabel }}</strong></span>
         </div>
 
-        <form method="GET" action="{{ route('admin.dashboard') }}" id="dashboard-order-period-form"
-            style="display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:12px;">
-            <div style="min-width: 210px; flex: 1 1 250px;">
-                <label for="dashboard-date-range" style="display:block; font-size:13px; color:#475569; margin-bottom:6px;">Filter Periode (Date Range Picker)</label>
-                <input id="dashboard-date-range" name="date_range" type="text" class="input" style="width:100%;"
+        {{-- Filter Periode --}}
+        <form method="GET" action="{{ route('admin.dashboard') }}" id="dashboard-order-period-form">
+            <div class="filter-area">
+                <label for="dashboard-date-range">Filter Periode</label>
+                <input id="dashboard-date-range" name="date_range" type="text" class="input" style="width: 100%; max-width: 320px;"
                     value="{{ $dateRangeInput }}" autocomplete="off">
                 <input type="hidden" id="dashboard-start-date" name="start_date" value="{{ $startDate }}">
                 <input type="hidden" id="dashboard-end-date" name="end_date" value="{{ $endDate }}">
+                <div class="filter-hint">Filter diterapkan otomatis saat pilihan berubah.</div>
             </div>
-            <div style="font-size:12px; color:#94a3b8; padding-bottom:8px;">Filter diterapkan otomatis saat pilihan berubah.</div>
         </form>
 
-        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
-            <span class="status pending" style="display:inline-flex; align-items:center; gap:6px;">Rentang:
-                {{ date('d M Y', $periodStartTs) }} - {{ date('d M Y', $periodEndTs) }}</span>
-            <span class="status done" style="display:inline-flex; align-items:center; gap:6px;">Total Order:
-                {{ $orderStatsSummary['total_orders'] ?? 0 }}</span>
-            <span class="status overdue" style="display:inline-flex; align-items:center; gap:6px;">Waiter dengan Order:
-                {{ $orderStatsSummary['waiter_with_orders'] ?? 0 }}</span>
+        {{-- Summary Pills --}}
+        <div class="summary-pills">
+            <span class="status pending">
+                {{ date('d M Y', $periodStartTs) }} - {{ date('d M Y', $periodEndTs) }}
+            </span>
+            <span class="status done">
+                Total Order: {{ $totalOrders }}
+            </span>
+            <span class="status overdue">
+                Waiter dengan Order: {{ $orderStatsSummary['waiter_with_orders'] ?? 0 }}
+            </span>
         </div>
 
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 14px;">
-            <div style="border:1px solid #e2e8f0; border-radius: 10px; overflow:hidden;">
-                <div style="padding:10px 12px; background:#f8fafc; font-weight:700; color:#0f172a;">📊 Statistik Order per Waiter</div>
+        {{-- ============================================================ --}}
+        {{-- TOP WAITER BAR CHART + TABEL GABUNGAN --}}
+        {{-- ============================================================ --}}
+        <div class="dashboard-grid-2">
+            {{-- Bar Chart: Top 10 Waiter --}}
+            <div class="data-panel">
+                <div class="data-panel-header blue">Top 10 Waiter — Order Terbanyak</div>
                 @if(count($userStats) > 0)
-                    <div style="overflow-x:auto; max-height:360px;">
-                        <table class="table" style="margin:0;">
+                    @php
+                        $topStats = array_slice($userStats, 0, 10);
+                        $maxOrders = max(array_column($topStats, 'order_count'));
+                    @endphp
+                    <div class="bar-chart">
+                        @foreach($topStats as $rank => $stat)
+                            @php
+                                $pct = $maxOrders > 0 ? round(($stat['order_count'] / $maxOrders) * 100) : 0;
+                                $barClass = match($rank) {
+                                    0 => 'gold',
+                                    1 => 'silver',
+                                    2 => 'bronze',
+                                    default => '',
+                                };
+                                $medal = match($rank) {
+                                    0 => '🥇',
+                                    1 => '🥈',
+                                    2 => '🥉',
+                                    default => ($rank + 1),
+                                };
+                            @endphp
+                            <div class="bar-row">
+                                <span class="bar-rank">{{ $medal }}</span>
+                                <span class="bar-label" title="{{ $stat['waiter_name'] }}">{{ $stat['waiter_name'] }}</span>
+                                <div class="bar-track">
+                                    <div class="bar-fill {{ $barClass }}" style="width: {{ max($pct, 8) }}%;">
+                                        <span class="bar-count">{{ $stat['order_count'] }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <div class="empty" style="margin: 14px;">Belum ada order pada periode {{ strtolower($orderPeriodLabel) }}.</div>
+                @endif
+            </div>
+
+            {{-- Tabel: Statistik Order per Waiter (lengkap) --}}
+            <div class="data-panel">
+                <div class="data-panel-header gray">Statistik Order per Waiter</div>
+                @if(count($userStats) > 0)
+                    <div style="overflow-x: auto; max-height: 420px;">
+                        <table class="table" style="margin: 0;">
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -69,12 +156,22 @@
                             </thead>
                             <tbody>
                                 @foreach(array_slice($userStats, 0, 20) as $index => $stat)
-                                    <tr>
-                                        <td>{{ $index + 1 }}</td>
+                                    <tr style="{{ $index < 3 ? 'background: #fefce8;' : '' }}">
+                                        <td>
+                                            @if($index === 0)
+                                                <span style="font-size: 16px;">🥇</span>
+                                            @elseif($index === 1)
+                                                <span style="font-size: 16px;">🥈</span>
+                                            @elseif($index === 2)
+                                                <span style="font-size: 16px;">🥉</span>
+                                            @else
+                                                {{ $index + 1 }}
+                                            @endif
+                                        </td>
                                         <td>
                                             <strong>{{ $stat['waiter_name'] }}</strong>
                                             @if(($stat['waiter_email'] ?? '') !== '')
-                                                <div style="font-size:12px; color:#64748b;">{{ $stat['waiter_email'] }}</div>
+                                                <div style="font-size: 12px; color: #64748b;">{{ $stat['waiter_email'] }}</div>
                                             @endif
                                         </td>
                                         <td><span class="status done">{{ $stat['order_count'] }}</span></td>
@@ -84,212 +181,219 @@
                         </table>
                     </div>
                 @else
-                    <div class="empty" style="margin:10px;">Belum ada order pada periode {{ strtolower($orderPeriodLabel) }}.</div>
+                    <div class="empty" style="margin: 14px;">Belum ada order pada periode {{ strtolower($orderPeriodLabel) }}.</div>
                 @endif
             </div>
+        </div>
 
-            <div style="display:grid; gap: 14px;">
-                <div style="border:1px solid #e2e8f0; border-radius: 10px; overflow:hidden;">
-                    <div style="padding:10px 12px; background:#eef2ff; font-weight:700; color:#1e3a8a;">🏆 Peringkat Order Terbanyak</div>
-                    @if(count($userStats) > 0)
-                        <div style="overflow-x:auto; max-height:180px;">
-                            <table class="table" style="margin:0;">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Waiter</th>
-                                        <th>Order</th>
+        {{-- ============================================================ --}}
+        {{-- RANKING TUGAS (Cek Rak + Umum) --}}
+        {{-- ============================================================ --}}
+        <div style="margin-top: 16px;">
+            <div class="data-panel">
+                <div class="data-panel-header teal">Paling Rajin Mengerjakan Tugas (Termasuk Cek Rak)</div>
+                @if(count($waiterTaskRanking) > 0)
+                    <div style="overflow-x: auto; max-height: 300px;">
+                        <table class="table" style="margin: 0;">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Waiter</th>
+                                    <th>Total</th>
+                                    <th>Umum</th>
+                                    <th>Cek Rak</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach(array_slice($waiterTaskRanking, 0, 10) as $rank => $stat)
+                                    <tr style="{{ $rank < 3 ? 'background: #ecfeff;' : '' }}">
+                                        <td>
+                                            @if($rank === 0)
+                                                <span style="font-size: 16px;">🥇</span>
+                                            @elseif($rank === 1)
+                                                <span style="font-size: 16px;">🥈</span>
+                                            @elseif($rank === 2)
+                                                <span style="font-size: 16px;">🥉</span>
+                                            @else
+                                                {{ $rank + 1 }}
+                                            @endif
+                                        </td>
+                                        <td><strong>{{ $stat['waiter_name'] }}</strong></td>
+                                        <td><span class="status done">{{ $stat['completed_count'] }}</span></td>
+                                        <td>{{ $stat['general_done_count'] }}</td>
+                                        <td>{{ $stat['rack_done_count'] }}</td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach(array_slice($userStats, 0, 10) as $rank => $stat)
-                                        <tr>
-                                            <td>{{ $rank + 1 }}</td>
-                                            <td>{{ $stat['waiter_name'] }}</td>
-                                            <td><span class="status done">{{ $stat['order_count'] }}</span></td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @else
-                        <div class="empty" style="margin:10px;">Belum ada data ranking order.</div>
-                    @endif
-                </div>
-
-                <div style="border:1px solid #e2e8f0; border-radius: 10px; overflow:hidden;">
-                    <div style="padding:10px 12px; background:#ecfeff; font-weight:700; color:#0f766e;">💪 Paling Rajin Mengerjakan Tugas (Termasuk Cek Rak)</div>
-                    @if(count($waiterTaskRanking) > 0)
-                        <div style="overflow-x:auto; max-height:220px;">
-                            <table class="table" style="margin:0;">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Waiter</th>
-                                        <th>Total</th>
-                                        <th>Umum</th>
-                                        <th>Cek Rak</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach(array_slice($waiterTaskRanking, 0, 10) as $rank => $stat)
-                                        <tr>
-                                            <td>{{ $rank + 1 }}</td>
-                                            <td>{{ $stat['waiter_name'] }}</td>
-                                            <td><span class="status done">{{ $stat['completed_count'] }}</span></td>
-                                            <td>{{ $stat['general_done_count'] }}</td>
-                                            <td>{{ $stat['rack_done_count'] }}</td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @else
-                        <div class="empty" style="margin:10px;">Belum ada data penyelesaian tugas pada periode ini.</div>
-                    @endif
-                </div>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="empty" style="margin: 14px;">Belum ada data penyelesaian tugas pada periode ini.</div>
+                @endif
             </div>
         </div>
     </div>
 
-    {{-- Follow-up Operasional Waiter --}}
-    <div class="card" style="margin-bottom: 22px; padding: 20px 15px;">
-        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-bottom:10px;">
-            <h3 style="margin:0; color:#7c2d12; font-size: clamp(18px, 4vw, 22px);">🚨 Follow-up Operasional Waiter</h3>
-            <span style="font-size:12px; color:#64748b; align-self:center;">Periode evaluasi: <strong>{{ $waiterFollowUpBoard['period_label'] ?? $orderPeriodLabel }}</strong></span>
+    {{-- ============================================================ --}}
+    {{-- FOLLOW-UP OPERASIONAL WAITER --}}
+    {{-- ============================================================ --}}
+    <div class="card" style="margin-bottom: 24px; padding: 20px 16px;">
+        <div class="section-header">
+            <h3 class="section-title" style="color: #7c2d12;">Follow-up Operasional Waiter</h3>
+            <span class="section-subtitle">Periode evaluasi: <strong>{{ $waiterFollowUpBoard['period_label'] ?? $orderPeriodLabel }}</strong></span>
         </div>
 
-        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-            <span class="status overdue" style="display:inline-flex; align-items:center; gap:6px;">
+        <div class="summary-pills">
+            <span class="status overdue">
                 Perlu Follow-up: {{ $waiterFollowUpBoard['active_waiter_attention_count'] ?? 0 }} waiter
             </span>
-            <span class="status pending" style="display:inline-flex; align-items:center; gap:6px;">
+            <span class="status pending">
                 Total Waiter Aktif: {{ $waiterFollowUpBoard['active_waiter_count'] ?? 0 }}
             </span>
         </div>
 
         @if(($waiterFollowUpBoard['has_attention'] ?? false) === true)
-            <div style="overflow-x:auto; max-height: 420px; border:1px solid #fed7aa; border-radius:10px;">
-                <table class="table" style="margin:0; min-width: 900px;">
-                    <thead>
-                        <tr>
-                            <th>Waiter</th>
-                            <th>Role</th>
-                            <th>Tugas Umum</th>
-                            <th>Cek Rak</th>
-                            <th>Belum Selesai</th>
-                            <th>Laporan</th>
-                            <th>Catatan Follow-up</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach(array_slice($waiterFollowUpBoard['rows'] ?? [], 0, 30) as $row)
+            {{-- Desktop: Table View --}}
+            <div class="followup-table-wrap">
+                <div style="overflow-x: auto; max-height: 420px; border: 1px solid #fed7aa; border-radius: 10px;">
+                    <table class="table" style="margin: 0; min-width: 860px;">
+                        <thead>
                             <tr>
-                                <td>
-                                    <strong>{{ $row['waiter_name'] ?? 'Waiter Tidak Diketahui' }}</strong>
-                                    @if(($row['waiter_email'] ?? '') !== '')
-                                        <div style="font-size:12px; color:#64748b;">{{ $row['waiter_email'] }}</div>
-                                    @endif
-                                </td>
-                                <td>
-                                    @php
-                                        $role = strtolower((string) ($row['waiter_role'] ?? 'pelayan'));
-                                        $roleLabel = $role === 'kasir' ? 'Kasir' : 'Pelayan';
-                                    @endphp
-                                    @if($role === 'kasir')
-                                        <span style="display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; background:#fff7ed; color:#9a3412; border:1px solid rgba(15,23,42,0.08);">
+                                <th>Waiter</th>
+                                <th>Role</th>
+                                <th>Tugas Umum</th>
+                                <th>Cek Rak</th>
+                                <th>Belum Selesai</th>
+                                <th>Laporan</th>
+                                <th>Catatan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach(array_slice($waiterFollowUpBoard['rows'] ?? [], 0, 30) as $row)
+                                <tr>
+                                    <td>
+                                        <strong>{{ $row['waiter_name'] ?? 'Waiter Tidak Diketahui' }}</strong>
+                                        @if(($row['waiter_email'] ?? '') !== '')
+                                            <div style="font-size: 12px; color: #64748b;">{{ $row['waiter_email'] }}</div>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @php
+                                            $role = strtolower((string) ($row['waiter_role'] ?? 'pelayan'));
+                                            $roleLabel = $role === 'kasir' ? 'Kasir' : 'Pelayan';
+                                            $roleBg = $role === 'kasir' ? '#fff7ed' : '#ecfeff';
+                                            $roleColor = $role === 'kasir' ? '#9a3412' : '#0f766e';
+                                        @endphp
+                                        <span style="display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; background: {{ $roleBg }}; color: {{ $roleColor }}; border: 1px solid rgba(15,23,42,0.08);">
                                             {{ $roleLabel }}
                                         </span>
-                                    @else
-                                        <span style="display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; background:#ecfeff; color:#0f766e; border:1px solid rgba(15,23,42,0.08);">
-                                            {{ $roleLabel }}
-                                        </span>
-                                    @endif
-                                </td>
-                                <td>
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                    </td>
+                                    <td>
                                         <span class="status done">Selesai: {{ $row['general_done_count'] ?? 0 }}</span>
                                         @if(((int) ($row['general_total_count'] ?? 0)) === 0)
-                                            <span class="status pending">Tidak ada tugas dijadwalkan</span>
+                                            <div style="margin-top: 4px;"><span class="status pending">Tidak ada tugas</span></div>
                                         @elseif(($row['missing_general_done'] ?? false) === true)
-                                            <span class="status overdue">Belum ada penyelesaian</span>
+                                            <div style="margin-top: 4px;"><span class="status overdue">Belum ada penyelesaian</span></div>
                                         @endif
-                                    </div>
-                                </td>
-                                <td>
-                                    <div style="display:flex; flex-direction:column; gap:4px;">
+                                    </td>
+                                    <td>
                                         <span class="status done">Selesai: {{ $row['rack_done_count'] ?? 0 }}</span>
                                         @if(((int) ($row['rack_total_count'] ?? 0)) === 0)
-                                            <span class="status pending">Tidak ada tugas dijadwalkan</span>
+                                            <div style="margin-top: 4px;"><span class="status pending">Tidak ada tugas</span></div>
                                         @elseif(($row['missing_rack_done'] ?? false) === true)
-                                            <span class="status overdue">Belum ada penyelesaian</span>
+                                            <div style="margin-top: 4px;"><span class="status overdue">Belum ada penyelesaian</span></div>
                                         @endif
-                                    </div>
-                                </td>
-                                <td>
-                                    @php $openCount = (int) ($row['total_open_count'] ?? 0); @endphp
-                                    @if($openCount > 0)
-                                        <span class="status overdue">{{ $openCount }} task</span>
-                                        <div style="font-size:12px; color:#7f1d1d; margin-top:4px;">
-                                            Umum: {{ $row['general_open_count'] ?? 0 }} • Cek Rak: {{ $row['rack_open_count'] ?? 0 }}
+                                    </td>
+                                    <td>
+                                        @php $openCount = (int) ($row['total_open_count'] ?? 0); @endphp
+                                        @if($openCount > 0)
+                                            <span class="status overdue">{{ $openCount }} task</span>
+                                            <div style="font-size: 12px; color: #7f1d1d; margin-top: 4px;">
+                                                Umum: {{ $row['general_open_count'] ?? 0 }} &bull; Rak: {{ $row['rack_open_count'] ?? 0 }}
+                                            </div>
+                                        @else
+                                            <span class="status done">Semua selesai</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if((int) ($row['report_count'] ?? 0) > 0)
+                                            <span class="status done">{{ $row['report_count'] }} laporan</span>
+                                        @else
+                                            <span class="status overdue">Belum isi</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                            @foreach(($row['attention_tags'] ?? []) as $tag)
+                                                <span class="attention-tag" style="display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; background: #fff7ed; color: #9a3412; border: 1px solid #fdba74;">
+                                                    {{ $tag }}
+                                                </span>
+                                            @endforeach
                                         </div>
-                                    @else
-                                        <span class="status done">Tidak ada task terbuka</span>
-                                    @endif
-                                </td>
-                                <td>
-                                    @if((int) ($row['report_count'] ?? 0) > 0)
-                                        <span class="status done">{{ $row['report_count'] }} laporan</span>
-                                    @else
-                                        <span class="status overdue">Belum isi laporan</span>
-                                    @endif
-                                </td>
-                                <td>
-                                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                                        @foreach(($row['attention_tags'] ?? []) as $tag)
-                                            <span style="display:inline-flex; align-items:center; border-radius:999px; padding:4px 10px; font-size:12px; font-weight:700; background:#fff7ed; color:#9a3412; border:1px solid #fdba74;">
-                                                {{ $tag }}
-                                            </span>
-                                        @endforeach
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {{-- Mobile: Card View --}}
+            <div class="followup-cards">
+                @foreach(array_slice($waiterFollowUpBoard['rows'] ?? [], 0, 30) as $row)
+                    <div class="followup-card">
+                        <div class="followup-card-name">{{ $row['waiter_name'] ?? 'Waiter Tidak Diketahui' }}</div>
+                        @if(($row['waiter_email'] ?? '') !== '')
+                            <div class="followup-card-email">{{ $row['waiter_email'] }}</div>
+                        @endif
+                        <div class="followup-card-grid">
+                            <div class="followup-card-item">
+                                <span class="followup-card-item-label">Tugas Umum</span>
+                                <span class="status done">Selesai: {{ $row['general_done_count'] ?? 0 }}</span>
+                                @if(($row['missing_general_done'] ?? false) === true)
+                                    <span class="status overdue">Belum ada</span>
+                                @endif
+                            </div>
+                            <div class="followup-card-item">
+                                <span class="followup-card-item-label">Cek Rak</span>
+                                <span class="status done">Selesai: {{ $row['rack_done_count'] ?? 0 }}</span>
+                                @if(($row['missing_rack_done'] ?? false) === true)
+                                    <span class="status overdue">Belum ada</span>
+                                @endif
+                            </div>
+                            <div class="followup-card-item">
+                                <span class="followup-card-item-label">Belum Selesai</span>
+                                @php $openCount = (int) ($row['total_open_count'] ?? 0); @endphp
+                                @if($openCount > 0)
+                                    <span class="status overdue">{{ $openCount }} task</span>
+                                @else
+                                    <span class="status done">Semua selesai</span>
+                                @endif
+                            </div>
+                            <div class="followup-card-item">
+                                <span class="followup-card-item-label">Laporan</span>
+                                @if((int) ($row['report_count'] ?? 0) > 0)
+                                    <span class="status done">{{ $row['report_count'] }} laporan</span>
+                                @else
+                                    <span class="status overdue">Belum isi</span>
+                                @endif
+                            </div>
+                        </div>
+                        @if(count($row['attention_tags'] ?? []) > 0)
+                            <div class="followup-card-tags">
+                                @foreach($row['attention_tags'] as $tag)
+                                    <span class="attention-tag">{{ $tag }}</span>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                @endforeach
             </div>
         @else
-            <div class="empty" style="margin: 0; background:#f0fdf4; border-color:#86efac; color:#166534;">
+            <div class="empty success">
                 Semua waiter aktif sudah on-track pada periode ini: tugas umum, cek rak, dan laporan sudah terpenuhi.
             </div>
         @endif
-    </div>
-
-    {{-- Statistics Cards --}}
-    <div style="
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-                gap: 15px;
-                margin-bottom: 30px;
-            ">
-        <div class="card" style="text-align: center; padding: 20px 15px;">
-            <h3 style="color: #667eea; font-size: clamp(28px, 6vw, 36px); margin-bottom: 10px;">{{ count($waiters) }}</h3>
-            <p style="color: #666; font-size: 14px;">Total Waiters</p>
-        </div>
-
-        <div class="card" style="text-align: center; padding: 20px 15px;">
-            <h3 style="color: #28a745; font-size: clamp(28px, 6vw, 36px); margin-bottom: 10px;">
-                {{ collect($waiters)->where('is_active', true)->count() }}
-            </h3>
-            <p style="color: #666; font-size: 14px;">Active Waiters</p>
-        </div>
-
-        <div class="card" style="text-align: center; padding: 20px 15px;">
-            <h3 style="color: #ffc107; font-size: clamp(28px, 6vw, 36px); margin-bottom: 10px;">
-                {{ $settings['order_timeout_minutes'] ?? 3 }}
-            </h3>
-            <p style="color: #666; font-size: 14px;">Timeout (menit)</p>
-        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
@@ -347,12 +451,12 @@
                     customRangeLabel: 'Custom Range'
                 },
                 ranges: {
-                    'Today': [moment(), moment()],
-                    'Yesterday': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
-                    'Last 7 Days': [moment().subtract(6, 'days'), moment()],
-                    'Last 30 Days': [moment().subtract(29, 'days'), moment()],
-                    'This Month': [moment().startOf('month'), moment().endOf('month')],
-                    'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+                    'Hari Ini': [moment(), moment()],
+                    'Kemarin': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+                    '7 Hari Terakhir': [moment().subtract(6, 'days'), moment()],
+                    '30 Hari Terakhir': [moment().subtract(29, 'days'), moment()],
+                    'Bulan Ini': [moment().startOf('month'), moment().endOf('month')],
+                    'Bulan Lalu': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
                 }
             });
 

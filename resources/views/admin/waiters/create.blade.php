@@ -28,6 +28,21 @@
             </div>
 
             <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">
+                    No. HP / WhatsApp <span style="color: #777; font-weight: normal;">(opsional)</span>
+                </label>
+                <input type="text" name="phone" value="{{ old('phone') }}"
+                    placeholder="08123456789"
+                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                <div style="font-size: 12px; color: #666; margin-top: 6px;">
+                    Digunakan untuk notifikasi WhatsApp tugas (jika Fonnte aktif).
+                </div>
+                @error('phone')
+                    <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">Role Waiter</label>
                 <select name="waiter_role" required
                     style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
@@ -38,6 +53,25 @@
                     Role dipakai untuk delegasi tugas berbasis role pada manajemen tugas supervisor.
                 </div>
                 @error('waiter_role')
+                    <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">Shift</label>
+                <select name="shift_id"
+                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    <option value="">Tidak ada shift</option>
+                    @foreach($shifts as $shift)
+                        <option value="{{ $shift['id'] }}" {{ old('shift_id') == $shift['id'] ? 'selected' : '' }}>
+                            {{ $shift['name'] }} ({{ $shift['clock_in_time'] }} - {{ $shift['clock_out_time'] }})
+                        </option>
+                    @endforeach
+                </select>
+                <div style="font-size:12px; color:#666; margin-top:6px;">
+                    Pilih shift kerja untuk waiter ini. Bisa diubah nanti di halaman Jadwal.
+                </div>
+                @error('shift_id')
                     <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
                 @enderror
             </div>
