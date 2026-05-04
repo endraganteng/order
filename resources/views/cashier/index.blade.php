@@ -966,7 +966,6 @@
         }
 
         loadCashierWorkersFromBackend();
-        setInterval(loadCashierWorkersFromBackend, 30000);
 
         // Tab switching
         window.switchTab = function(tab) {
@@ -1014,7 +1013,8 @@
         // ========================================
         // ORDERS LISTENER (existing logic preserved)
         // ========================================
-        const ordersRef = ref(database, 'orders');
+        const todayStartSeconds = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+        const ordersRef = query(ref(database, 'orders'), orderByChild('created_at'), startAt(todayStartSeconds));
 
         function formatOrderDateTime(unixSeconds) {
             if (!unixSeconds) {
@@ -1093,7 +1093,7 @@
             return orderCard;
         }
 
-        onValue(ordersRef, (snapshot) => {
+        function handleOrdersSnapshot(snapshot) {
             ordersContainer.innerHTML = '';
             latestOrdersCache = [];
 
@@ -1152,13 +1152,71 @@
                     ordersContainer.appendChild(renderOrderCard(order, false));
                 });
             }
+        }
+
+        // Try indexed query first, fallback to full node if index missing
+        onValue(ordersRef, handleOrdersSnapshot, (error) => {
+            console.warn('Orders query failed (missing .indexOn?), falling back to full node listener:', error.message);
+            // Fallback: listen to entire orders node without query filter
+            const fallbackRef = ref(database, 'orders');
+            onValue(fallbackRef, (snapshot) => {
+                // Wrap in a filtered snapshot-like handler
+                const now = getServerNowSeconds();
+                ordersContainer.innerHTML = '';
+                latestOrdersCache = [];
+
+                if (!snapshot.exists()) {
+                    ordersContainer.innerHTML = '<div class="no-orders">Menunggu orderan...</div>';
+                    initialLoadComplete = true;
+                    return;
+                }
+
+                let hasNewOrders = false;
+                const orders = [];
+                snapshot.forEach((childSnapshot) => {
+                    const order = childSnapshot.val();
+                    order.id = childSnapshot.key;
+                    order.created_at = normalizeUnixSeconds(order.created_at);
+                    order.expires_at = normalizeUnixSeconds(order.expires_at);
+
+                    // Client-side filter: only today's orders
+                    if (order.created_at >= todayStartSeconds) {
+                        if (initialLoadComplete && !processedOrderIds.has(childSnapshot.key)) {
+                            if (!order.expires_at || order.expires_at > now) {
+                                hasNewOrders = true;
+                            }
+                        }
+                        processedOrderIds.add(childSnapshot.key);
+                        orders.push(order);
+                    }
+                });
+
+                if (hasNewOrders) {
+                    notificationSound.play().catch(e => console.log('Audio blocked:', e));
+                    showToast('🔔 Ada Order Baru!', 'order');
+                }
+
+                initialLoadComplete = true;
+                latestOrdersCache = orders;
+
+                orders.sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0));
+
+                const activeOrders = orders.filter((order) => {
+                    return !(order.expires_at && order.expires_at < now);
+                });
+
+                if (!activeOrders.length) {
+                    ordersContainer.innerHTML = '<div class="no-orders">Tidak ada order aktif.</div>';
+                } else {
+                    activeOrders.forEach((order) => {
+                        ordersContainer.appendChild(renderOrderCard(order, false));
+                    });
+                }
+            });
         });
 
         // Expired tab uses a scoped TODAY query with pagination to avoid loading all historical data.
         loadExpiredOrdersPage(1, true);
-        setInterval(() => {
-            refreshExpiredOrdersForToday();
-        }, 20000);
 
         // Tasks moved to dedicated waiter portal. Hide badge for cashier page.
         updateBadge(0);
@@ -1262,9 +1320,52 @@
             }
         }
 
-        // Trigger sync on load and every minute
+        // Trigger sync on load
         syncDueRecurringTasks();
-        setInterval(syncDueRecurringTasks, 60000);
+
+        let workerIntervalId = null;
+        let syncIntervalId = null;
+        let expiredIntervalId = null;
+
+        function startCashierPollingIntervals() {
+            workerIntervalId = setInterval(loadCashierWorkersFromBackend, 120000);
+            syncIntervalId = setInterval(syncDueRecurringTasks, 120000);
+            expiredIntervalId = setInterval(() => {
+                refreshExpiredOrdersForToday();
+            }, 60000);
+        }
+
+        function stopCashierPollingIntervals() {
+            if (workerIntervalId) {
+                clearInterval(workerIntervalId);
+                workerIntervalId = null;
+            }
+
+            if (syncIntervalId) {
+                clearInterval(syncIntervalId);
+                syncIntervalId = null;
+            }
+
+            if (expiredIntervalId) {
+                clearInterval(expiredIntervalId);
+                expiredIntervalId = null;
+            }
+        }
+
+        startCashierPollingIntervals();
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopCashierPollingIntervals();
+                return;
+            }
+
+            loadCashierWorkersFromBackend();
+            syncDueRecurringTasks();
+            refreshExpiredOrdersForToday();
+            stopCashierPollingIntervals();
+            startCashierPollingIntervals();
+        });
 
         const connectedRef = ref(database, '.info/connected');
         const statusDiv = document.getElementById('connection-status');

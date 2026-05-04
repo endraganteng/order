@@ -19,8 +19,14 @@ class CashierController extends Controller
      */
     public function index()
     {
-        $this->firebase->generateDueRecurringTasks();
-        $this->firebase->markOverdueTasks();
+        $lastSync = (int) session('cashier_last_sync', 0);
+        $now = time();
+
+        if ($now - $lastSync >= 30) {
+            $this->firebase->generateDueRecurringTasks();
+            $this->firebase->markOverdueTasks();
+            session(['cashier_last_sync' => $now]);
+        }
 
         $cashierWorkers = $this->firebase->getActiveCashierWorkers();
 
@@ -43,6 +49,20 @@ class CashierController extends Controller
      */
     public function syncDueTasks()
     {
+        $lastSync = (int) session('cashier_last_sync', 0);
+        $now = time();
+
+        if ($now - $lastSync < 30) {
+            return response()->json([
+                'success' => true,
+                'generated' => 0,
+                'overdue' => 0,
+                'skipped' => true,
+            ]);
+        }
+
+        session(['cashier_last_sync' => $now]);
+
         $generated = $this->firebase->generateDueRecurringTasks();
         $overdue = $this->firebase->markOverdueTasks();
 
