@@ -3427,6 +3427,29 @@ class FirebaseService
         return $snapshot->getValue();
     }
 
+    /**
+     * Resolve a HH:MM attendance value into a Unix timestamp for the given date.
+     */
+    protected function resolveAttendanceTimestamp(string $date, mixed $timeValue): ?int
+    {
+        $timeString = trim((string) $timeValue);
+        if ($timeString === '') {
+            return null;
+        }
+
+        if (is_numeric($timeValue)) {
+            $numeric = (int) $timeValue;
+            if ($numeric > 0) {
+                return $numeric;
+            }
+        }
+
+        $normalized = preg_match('/^\d{2}:\d{2}$/', $timeString) ? $timeString.':00' : $timeString;
+        $timestamp = strtotime($date.' '.$normalized);
+
+        return $timestamp !== false ? $timestamp : null;
+    }
+
     public function getAttendanceByMonth(string $waiterId, string $yearMonth): array
     {
         $ref = $this->database->getReference('waiter_attendance/'.$waiterId);
@@ -3487,7 +3510,77 @@ class FirebaseService
             }
         }
 
+        if (array_key_exists('clock_in', $payload)) {
+            $payload['clock_in_timestamp'] = $this->resolveAttendanceTimestamp($date, $payload['clock_in']);
+        }
+
+        if (array_key_exists('clock_out', $payload)) {
+            $payload['clock_out_timestamp'] = $this->resolveAttendanceTimestamp($date, $payload['clock_out']);
+        }
+
         $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->update($payload);
+    }
+
+    /**
+     * Claim a durable reminder dispatch slot for one waiter/date/type.
+     */
+    public function claimTaskReminderDispatch(string $waiterId, string $date, string $type, int $cooldownSeconds, int $now, int $lockSeconds = 300): bool
+    {
+        $path = 'waiter_task_reminder_state/'.$waiterId.'/'.$date.'/'.$type;
+        $allowed = false;
+
+        $this->database->runTransaction(function ($transaction) use ($path, $cooldownSeconds, $now, $lockSeconds, &$allowed) {
+            $reference = $this->database->getReference($path);
+            $snapshot = $transaction->snapshot($reference);
+            $state = $snapshot->exists() ? (array) $snapshot->getValue() : [];
+
+            $lastSentAt = (int) ($state['last_sent_at'] ?? 0);
+            $dispatchingUntil = (int) ($state['dispatching_until'] ?? 0);
+
+            if (($lastSentAt > 0 && ($now - $lastSentAt) < $cooldownSeconds) || $dispatchingUntil > $now) {
+                $allowed = false;
+
+                return;
+            }
+
+            $allowed = true;
+            $transaction->set($reference, array_merge($state, [
+                'dispatching_until' => $now + $lockSeconds,
+                'last_attempt_at' => $now,
+                'updated_at' => $now,
+            ]));
+        });
+
+        return $allowed;
+    }
+
+    /**
+     * Persist a successful reminder send and clear any dispatch lock.
+     */
+    public function completeTaskReminderDispatch(string $waiterId, string $date, string $type, int $sentAt, array $metadata = []): void
+    {
+        $payload = [
+            'last_sent_at' => $sentAt,
+            'dispatching_until' => null,
+            'updated_at' => $sentAt,
+        ];
+
+        foreach ($metadata as $key => $value) {
+            $payload[$key] = $value;
+        }
+
+        $this->database->getReference('waiter_task_reminder_state/'.$waiterId.'/'.$date.'/'.$type)->update($payload);
+    }
+
+    /**
+     * Release a reminder dispatch lock after a failed send.
+     */
+    public function releaseTaskReminderDispatch(string $waiterId, string $date, string $type, int $releasedAt): void
+    {
+        $this->database->getReference('waiter_task_reminder_state/'.$waiterId.'/'.$date.'/'.$type)->update([
+            'dispatching_until' => null,
+            'updated_at' => $releasedAt,
+        ]);
     }
 
     /**
