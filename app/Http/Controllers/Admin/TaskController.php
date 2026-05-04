@@ -557,10 +557,6 @@ class TaskController extends Controller
     protected function indexByScope(Request $request, string $taskScope)
     {
         $taskScope = $taskScope === 'rack_check' ? 'rack_check' : 'general';
-
-        $this->firebase->generateDueRecurringWaiterTasks();
-        $overdueResult = $this->firebase->markOverdueWaiterTasks();
-        $this->sendOverdueNotifications($overdueResult['overdue_tasks'] ?? []);
         $tasks = $this->firebase->getWaiterTasks();
         $recurringTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
         $waiters = $this->firebase->getActiveWaiters();
@@ -1073,34 +1069,6 @@ class TaskController extends Controller
 
         return redirect()->route($redirectRouteName)
             ->with('success', "Tugas berhasil dibuat dan didelegasikan ke {$createdCount} waiter.");
-    }
-
-    /**
-     * Send WhatsApp notifications for newly overdue tasks.
-     */
-    protected function sendOverdueNotifications(array $overdueTasks): void
-    {
-        if (empty($overdueTasks)) {
-            return;
-        }
-
-        try {
-            foreach ($overdueTasks as $task) {
-                $waiterId = (string) ($task['assigned_waiter_id'] ?? '');
-                if ($waiterId === '') {
-                    continue;
-                }
-
-                $waiter = $this->firebase->getWaiterById($waiterId);
-                if (! $waiter) {
-                    continue;
-                }
-
-                $this->fonnte->notifyTaskOverdue($waiter, $task);
-            }
-        } catch (\Throwable $e) {
-            report($e);
-        }
     }
 
     /**
