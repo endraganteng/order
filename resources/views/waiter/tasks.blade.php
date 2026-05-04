@@ -18,17 +18,17 @@
         .top {
             background: #fff;
             border-radius: 14px;
-            padding: 16px 18px;
-            margin-bottom: 20px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 14px;
-            flex-wrap: wrap;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            gap: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+            position: relative;
         }
-        .top h1 { margin: 0; font-size: clamp(20px, 4vw, 28px); }
-        .muted { color: #6b7280; font-size: 14px; }
+        .top h1 { margin: 0; font-size: 1rem; font-weight: 700; }
+        .muted { color: #6b7280; font-size: 12px; }
         .btn {
             border: none;
             border-radius: 10px;
@@ -41,6 +41,55 @@
             justify-content: center;
         }
         .btn-logout { background: #ef4444; color: #fff; }
+        .top-menu-btn {
+            background: none;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            color: #6b7280;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .top-menu-btn:hover { background: #f3f4f6; }
+        .top-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 14px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+            min-width: 180px;
+            z-index: 200;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+        }
+        .top-dropdown.open { display: block; }
+        .top-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #374151;
+            text-decoration: none;
+            border: none;
+            background: none;
+            width: 100%;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .top-dropdown-item:hover { background: #f9fafb; }
+        .top-dropdown-item.danger { color: #ef4444; }
+        .top-dropdown-item.danger:hover { background: #fef2f2; }
+        .top-dropdown-divider { height: 1px; background: #f3f4f6; margin: 0; }
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -392,26 +441,41 @@
         .mobile-nav-btn {
             border: none;
             background: transparent;
-            padding: 10px 8px;
+            padding: 8px 4px;
             font-weight: 700;
             color: #64748b;
             cursor: pointer;
-            display: inline-flex;
+            display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 2px;
+            font-size: 11px;
+            line-height: 1.2;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+            position: relative;
         }
         .menu-badge {
-            min-width: 20px;
-            height: 20px;
-            padding: 0 6px;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
             border-radius: 999px;
-            font-size: 11px;
-            line-height: 20px;
+            font-size: 10px;
+            line-height: 16px;
             font-weight: 700;
             text-align: center;
-            background: #e2e8f0;
-            color: #1e293b;
+            background: #ef4444;
+            color: #fff;
+        }
+        .mobile-nav-btn .menu-badge {
+            position: absolute;
+            top: 2px;
+            right: 50%;
+            transform: translateX(16px);
         }
         .menu-badge.hidden {
             display: none;
@@ -419,9 +483,12 @@
         .hidden {
             display: none !important;
         }
-        .tab-btn.active .menu-badge,
-        .mobile-nav-btn.active .menu-badge {
+        .tab-btn.active .menu-badge {
             background: rgba(255, 255, 255, 0.22);
+            color: #fff;
+        }
+        .mobile-nav-btn.active .menu-badge {
+            background: #ef4444;
             color: #fff;
         }
         .rack-task-item.is-hidden {
@@ -430,8 +497,138 @@
         .mobile-nav-btn.active {
             color: #1d4ed8;
             border-top: 3px solid #1d4ed8;
-            background: #f8fbff;
+            background: #f0f5ff;
         }
+        .mobile-nav-btn .nav-icon {
+            font-size: 18px;
+            line-height: 1;
+        }
+        .mobile-nav-btn .nav-label {
+            font-size: 10px;
+            line-height: 1;
+        }
+        .product-checklist {
+            margin-top: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #f8fafc;
+        }
+        .product-checklist-header {
+            padding: 10px 12px;
+            background: #eef2ff;
+            font-weight: 700;
+            font-size: 14px;
+            color: #3730a3;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .product-checklist-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            flex-wrap: wrap;
+        }
+        .product-checklist-item:last-child {
+            border-bottom: none;
+        }
+        .product-checklist-item.checked {
+            background: #f0fdf4;
+        }
+        .product-checklist-item.shortage {
+            background: #fff7ed;
+        }
+        .product-checklist-name {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            min-width: 120px;
+        }
+        .product-checklist-qty {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+        }
+        .product-checklist-qty input {
+            width: 60px;
+            padding: 6px 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 14px;
+        }
+        .product-checklist-qty input:focus {
+            border-color: #3b82f6;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+        }
+        .product-checklist-standard {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .product-checklist-status {
+            font-size: 12px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+        .product-checklist-status.ok {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .product-checklist-status.shortage {
+            background: #ffedd5;
+            color: #9a3412;
+        }
+        .product-checklist-status.habis {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .product-checklist-item.habis {
+            background: #fef2f2;
+        }
+        .product-checklist-summary {
+            padding: 10px 12px;
+            background: #eef2ff;
+            font-size: 13px;
+            color: #4338ca;
+            border-top: 1px solid #e2e8f0;
+        }
+        .attendance-bar {
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .attendance-bar.clocked-in { background: #ecfdf5; border-color: #a7f3d0; }
+        .attendance-bar.late { background: #fff7ed; border-color: #fed7aa; }
+        .attendance-bar.clocked-out { background: #f0fdf4; border-color: #bbf7d0; }
+        .attendance-info { display: flex; flex-direction: column; gap: 2px; }
+        .attendance-shift { font-size: 12px; color: #6b7280; }
+        .attendance-status { font-weight: 700; font-size: 15px; }
+        .attendance-status.present { color: #059669; }
+        .attendance-status.late { color: #d97706; }
+        .attendance-status.not-yet { color: #6b7280; }
+        .btn-attendance {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn-attendance:disabled { background: #9ca3af; cursor: not-allowed; }
         @media (max-width: 768px) {
             body {
                 padding: 14px 14px 86px;
@@ -441,7 +638,7 @@
             }
             .mobile-nav {
                 display: grid;
-                grid-template-columns: 1fr 1fr 1fr;
+                grid-template-columns: repeat(4, 1fr);
                 position: fixed;
                 left: 0;
                 right: 0;
@@ -450,7 +647,136 @@
                 background: #ffffff;
                 border-top: 1px solid #dbe2ea;
                 box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.08);
+                padding: 4px 0 env(safe-area-inset-bottom, 4px);
             }
+        }
+        /* === BONUS DASHBOARD STYLES === */
+        #panel-bonus .bonus-container { max-width: 600px; margin: 0 auto; padding: 0; }
+        #panel-bonus .bonus-month-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 0.75rem 1rem; border-radius: 12px; margin-bottom: 1rem;
+        }
+        #panel-bonus .bonus-month-bar .bonus-month-label { font-weight: 600; font-size: 0.9rem; }
+        #panel-bonus .bonus-month-picker {
+            background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);
+            color: white; padding: 0.4rem 0.6rem; border-radius: 8px; font-size: 0.85rem; cursor: pointer;
+        }
+        #panel-bonus .bonus-month-picker::-webkit-calendar-picker-indicator { filter: invert(1); }
+
+        #panel-bonus .progress-ring-wrapper {
+            display: flex; flex-direction: column; align-items: center;
+            padding: 2rem 1rem; background: white; border-radius: 16px;
+            margin-bottom: 1rem; box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        #panel-bonus .progress-ring-container { position: relative; width: 180px; height: 180px; margin-bottom: 1rem; }
+        #panel-bonus .progress-ring-svg { transform: rotate(-90deg); width: 180px; height: 180px; }
+        #panel-bonus .progress-ring-bg { fill: none; stroke: #e8ecf0; stroke-width: 12; }
+        #panel-bonus .progress-ring-fill { fill: none; stroke-width: 12; stroke-linecap: round; transition: stroke-dashoffset 1.5s ease-in-out, stroke 0.3s; }
+        #panel-bonus .progress-ring-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+        #panel-bonus .progress-ring-percent { font-size: 2.5rem; font-weight: 800; line-height: 1; }
+        #panel-bonus .progress-ring-label { font-size: 0.8rem; color: #888; margin-top: 0.25rem; }
+        #panel-bonus .progress-tier { font-size: 0.9rem; font-weight: 600; padding: 0.3rem 1rem; border-radius: 20px; margin-top: 0.5rem; }
+
+        #panel-bonus .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
+        #panel-bonus .stat-card { background: white; border-radius: 12px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04); text-align: center; }
+        #panel-bonus .stat-value { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem; }
+        #panel-bonus .stat-label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        #panel-bonus .stat-sub { font-size: 0.7rem; color: #aaa; margin-top: 0.15rem; }
+        #panel-bonus .stat-card.penalty .stat-value { color: #e53e3e; }
+        #panel-bonus .stat-card.perfect .stat-value { color: #38a169; }
+
+        #panel-bonus .bonus-card {
+            background: white; border-radius: 12px; padding: 1.25rem;
+            margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        #panel-bonus .bonus-card-title {
+            font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; color: #444;
+            display: flex; align-items: center; gap: 0.5rem;
+        }
+
+        #panel-bonus .projected-bonus { text-align: center; padding: 1.5rem; }
+        #panel-bonus .projected-amount { font-size: 2rem; font-weight: 800; margin: 0.5rem 0; }
+        #panel-bonus .projected-tier-label { font-size: 0.85rem; color: #666; }
+        #panel-bonus .projected-note { font-size: 0.75rem; color: #999; margin-top: 0.5rem; }
+
+        #panel-bonus .explain-block { margin-bottom: 1rem; padding: 0.85rem; border-radius: 10px; background: #f8fafc; border: 1px solid #edf2f7; }
+        #panel-bonus .explain-block:last-child { margin-bottom: 0; }
+        #panel-bonus .explain-title { font-size: 0.8rem; font-weight: 700; color: #4a5568; margin-bottom: 0.4rem; }
+        #panel-bonus .explain-list { list-style: none; display: grid; gap: 0.45rem; font-size: 0.8rem; color: #4a5568; padding: 0; margin: 0; }
+        #panel-bonus .explain-line { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; line-height: 1.45; }
+        #panel-bonus .explain-line strong { white-space: nowrap; color: #2d3748; }
+
+        #panel-bonus .bonus-tier-wrapper { display: grid; gap: 0.85rem; }
+        #panel-bonus .tier-box { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+        #panel-bonus .tier-box-title { padding: 0.65rem 0.8rem; font-size: 0.78rem; font-weight: 700; background: #f7fafc; color: #4a5568; border-bottom: 1px solid #edf2f7; }
+        #panel-bonus .tier-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.65rem 0.8rem; font-size: 0.82rem; border-bottom: 1px solid #f1f5f9; }
+        #panel-bonus .tier-row:last-child { border-bottom: none; }
+        #panel-bonus .tier-row.active { border-left: 3px solid #38a169; font-weight: 700; }
+        #panel-bonus .tier-range { color: #4a5568; white-space: nowrap; }
+        #panel-bonus .tier-amount { font-weight: 700; color: #2d3748; text-align: right; margin-left: auto; }
+        #panel-bonus .tier-badge { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.3px; padding: 0.2rem 0.45rem; border-radius: 999px; }
+        #panel-bonus .total-max-note { font-size: 0.82rem; font-weight: 700; text-align: center; color: #2d3748; padding-top: 0.25rem; }
+
+        #panel-bonus .daily-points-note { list-style: none; display: grid; gap: 0.55rem; font-size: 0.8rem; color: #4a5568; line-height: 1.45; padding: 0; margin: 0; }
+        #panel-bonus .daily-points-note strong { color: #2d3748; }
+
+        #panel-bonus .category-bar-row { display: flex; align-items: center; margin-bottom: 0.75rem; gap: 0.5rem; }
+        #panel-bonus .category-bar-label { width: 80px; font-size: 0.75rem; color: #666; text-transform: capitalize; flex-shrink: 0; }
+        #panel-bonus .category-bar-track { flex: 1; height: 8px; background: #e8ecf0; border-radius: 4px; overflow: hidden; }
+        #panel-bonus .category-bar-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+        #panel-bonus .category-bar-value { width: 35px; font-size: 0.75rem; font-weight: 600; text-align: right; flex-shrink: 0; }
+
+        #panel-bonus .daily-list { max-height: 400px; overflow-y: auto; }
+        #panel-bonus .daily-item { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; }
+        #panel-bonus .daily-item:last-child { border-bottom: none; }
+        #panel-bonus .daily-date { font-size: 0.8rem; color: #666; width: 70px; flex-shrink: 0; }
+        #panel-bonus .daily-categories { display: flex; gap: 3px; flex: 1; margin: 0 0.5rem; }
+        #panel-bonus .daily-cat-dot { width: 6px; height: 20px; border-radius: 3px; flex: 1; max-width: 30px; }
+        #panel-bonus .daily-total { font-weight: 700; font-size: 0.9rem; width: 40px; text-align: right; }
+
+        #panel-bonus .penalty-item { padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0; }
+        #panel-bonus .penalty-item:last-child { border-bottom: none; }
+        #panel-bonus .penalty-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+        #panel-bonus .penalty-type { font-size: 0.8rem; font-weight: 600; color: #e53e3e; }
+        #panel-bonus .penalty-points { font-size: 0.85rem; font-weight: 700; color: #e53e3e; }
+        #panel-bonus .penalty-reason { font-size: 0.75rem; color: #888; }
+        #panel-bonus .penalty-date { font-size: 0.7rem; color: #aaa; margin-top: 0.15rem; }
+
+        #panel-bonus .sales-progress-bar { width: 100%; height: 12px; background: #e8ecf0; border-radius: 6px; overflow: hidden; margin: 0.75rem 0; }
+        #panel-bonus .sales-progress-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 1s ease; }
+        #panel-bonus .sales-stats { display: flex; justify-content: space-between; font-size: 0.8rem; color: #666; }
+
+        #panel-bonus .leaderboard-item { display: flex; align-items: center; padding: 0.6rem 0.75rem; border-radius: 8px; margin-bottom: 0.4rem; gap: 0.75rem; transition: background 0.2s; }
+        #panel-bonus .leaderboard-item.is-me { background: linear-gradient(135deg, rgba(102,126,234,0.08), rgba(118,75,162,0.08)); border: 1px solid rgba(102,126,234,0.2); }
+        #panel-bonus .leaderboard-rank { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; background: #f0f0f0; color: #666; flex-shrink: 0; }
+        #panel-bonus .leaderboard-rank.gold { background: #fef3c7; color: #d97706; }
+        #panel-bonus .leaderboard-rank.silver { background: #e5e7eb; color: #6b7280; }
+        #panel-bonus .leaderboard-rank.bronze { background: #fed7aa; color: #c2410c; }
+        #panel-bonus .leaderboard-name { flex: 1; font-size: 0.85rem; font-weight: 500; }
+        #panel-bonus .leaderboard-points { font-size: 0.85rem; font-weight: 700; color: #667eea; }
+
+        #panel-bonus .finalized-banner { background: linear-gradient(135deg, #38a169, #2f855a); color: white; border-radius: 12px; padding: 1.5rem; text-align: center; margin-bottom: 1rem; box-shadow: 0 4px 15px rgba(56,161,105,0.3); }
+        #panel-bonus .finalized-label { font-size: 0.85rem; opacity: 0.9; margin-bottom: 0.25rem; }
+        #panel-bonus .finalized-amount { font-size: 2.5rem; font-weight: 800; }
+        #panel-bonus .finalized-status { font-size: 0.75rem; opacity: 0.8; margin-top: 0.5rem; }
+
+        #panel-bonus .bonus-empty-state { text-align: center; padding: 2rem; color: #aaa; font-size: 0.85rem; }
+
+        #panel-bonus .b-color-green { color: #38a169; }
+        #panel-bonus .b-color-yellow { color: #d69e2e; }
+        #panel-bonus .b-color-orange { color: #dd6b20; }
+        #panel-bonus .b-color-red { color: #e53e3e; }
+        #panel-bonus .b-bg-green { background: #f0fff4; }
+        #panel-bonus .b-bg-yellow { background: #fffff0; }
+        #panel-bonus .b-bg-orange { background: #fffaf0; }
+        #panel-bonus .b-bg-red { background: #fff5f5; }
+
+        @keyframes bonus-ring-fill { from { stroke-dashoffset: 440; } }
+
+        @media (max-width: 420px) {
+            #panel-bonus .tier-row { flex-wrap: wrap; gap: 0.35rem 0.65rem; }
+            #panel-bonus .tier-amount { margin-left: 0; }
         }
     </style>
 </head>
@@ -459,10 +785,15 @@
     <div class="wrap">
         <div class="top">
             <div>
-                <h1>🧑‍🍳 Portal Tugas Waiter</h1>
-                <div class="muted">Login sebagai: <strong>{{ $waiterName }}</strong> ({{ $waiterEmail }})</div>
+                <h1>🧑‍🍳 {{ $waiterName }}</h1>
+                <div class="muted">{{ $waiterEmail }}</div>
             </div>
-            <a href="{{ route('waiter.logout', [], false) }}" class="btn btn-logout">Logout</a>
+            <button type="button" class="top-menu-btn" id="topMenuBtn" aria-label="Menu">⋮</button>
+            <div class="top-dropdown" id="topDropdown">
+                <div style="padding: 10px 14px; font-size: 12px; color: #9ca3af;">Login sebagai <strong style="color:#374151;">{{ $waiterName }}</strong></div>
+                <div class="top-dropdown-divider"></div>
+                <a href="{{ route('waiter.logout', [], false) }}" class="top-dropdown-item danger" onclick="return confirm('Yakin mau logout?')">🚪 Logout</a>
+            </div>
         </div>
 
         <div id="flash-success" class="alert ok{{ session('success') ? '' : ' hidden' }}">
@@ -472,10 +803,19 @@
             ❌ {{ session('error') ?? '' }}
         </div>
 
+        <div id="attendance-bar" class="attendance-bar">
+            <div class="attendance-info">
+                <span class="attendance-shift" id="attendance-shift-label">Memuat info shift...</span>
+                <span class="attendance-status not-yet" id="attendance-status-label">Memuat status absensi...</span>
+            </div>
+            <button type="button" class="btn-attendance" id="btn-attendance-action" disabled>Memuat...</button>
+        </div>
+
         <div class="portal-tabs">
             <button type="button" class="tab-btn js-tab-btn active" data-tab="rack">📦 Cek Rak <span id="badge-tab-rack" class="menu-badge js-rack-menu-badge hidden">0</span></button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="tasks">📝 Tugas <span id="badge-tab-general" class="menu-badge js-general-menu-badge hidden">0</span></button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="reports">📔 Laporan Kegiatan</button>
+            <button type="button" class="tab-btn js-tab-btn" data-tab="bonus">🏆 Bonus</button>
         </div>
 
         <section id="panel-rack" class="portal-panel active">
@@ -541,18 +881,433 @@
                 <div id="activity-report-list" class="activity-list"></div>
             </div>
         </section>
+
+        <section id="panel-bonus" class="portal-panel">
+            <div class="bonus-container">
+                <div class="bonus-month-bar">
+                    <span class="bonus-month-label">🏆 Bonus Dashboard</span>
+                    <input type="month" class="bonus-month-picker" id="bonusMonthPicker" value="{{ $bonusMonth ?? date('Y-m') }}">
+                </div>
+
+                <div id="bonus-content-area">
+                @if(!empty($bonusSummary) && ($bonusSummary['status'] ?? '') === 'finalized')
+                <div class="finalized-banner">
+                    <div class="finalized-label">Bonus Final Bulan Ini</div>
+                    <div class="finalized-amount">Rp {{ number_format($bonusSummary['bonus_amount'] ?? 0, 0, ',', '.') }}</div>
+                    <div class="finalized-status">✓ Sudah Difinalisasi</div>
+                </div>
+                @endif
+
+                @php
+                    $ringColor = '#38a169';
+                    $tierLabel = 'Excellent';
+                    $tierBg = 'b-bg-green';
+                    $tierColor = 'b-color-green';
+                    if ($percentage >= 80) {
+                        $ringColor = '#38a169'; $tierLabel = 'Excellent'; $tierBg = 'b-bg-green'; $tierColor = 'b-color-green';
+                    } elseif ($percentage >= 70) {
+                        $ringColor = '#d69e2e'; $tierLabel = 'Good'; $tierBg = 'b-bg-yellow'; $tierColor = 'b-color-yellow';
+                    } elseif ($percentage >= 60) {
+                        $ringColor = '#dd6b20'; $tierLabel = 'Average'; $tierBg = 'b-bg-orange'; $tierColor = 'b-color-orange';
+                    } else {
+                        $ringColor = '#e53e3e'; $tierLabel = 'Needs Improvement'; $tierBg = 'b-bg-red'; $tierColor = 'b-color-red';
+                    }
+                    $circumference = 2 * 3.14159 * 70;
+                    $dashoffset = $circumference - ($circumference * min($percentage, 100) / 100);
+                @endphp
+
+                <div class="progress-ring-wrapper">
+                    <div class="progress-ring-container">
+                        <svg class="progress-ring-svg" viewBox="0 0 180 180">
+                            <circle class="progress-ring-bg" cx="90" cy="90" r="70"></circle>
+                            <circle class="progress-ring-fill" cx="90" cy="90" r="70"
+                                stroke="{{ $ringColor }}"
+                                stroke-dasharray="{{ $circumference }}"
+                                stroke-dashoffset="{{ $dashoffset }}"
+                                style="animation: bonus-ring-fill 1.5s ease-in-out;"></circle>
+                        </svg>
+                        <div class="progress-ring-text">
+                            <div class="progress-ring-percent {{ $tierColor }}">{{ $percentage }}%</div>
+                            <div class="progress-ring-label">dari maksimum</div>
+                        </div>
+                    </div>
+                    <span class="progress-tier {{ $tierBg }} {{ $tierColor }}">{{ $tierLabel }}</span>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value {{ $tierColor }}">{{ $netPoints }}</div>
+                        <div class="stat-label">Total Poin</div>
+                        <div class="stat-sub">/ {{ $theoreticalMax }} maks</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ $daysScored }}</div>
+                        <div class="stat-label">Hari Dinilai</div>
+                        <div class="stat-sub">/ {{ $workingDays }} hari kerja</div>
+                    </div>
+                    <div class="stat-card perfect">
+                        <div class="stat-value">{{ $perfectDays }} ✨</div>
+                        <div class="stat-label">Perfect Days</div>
+                        <div class="stat-sub">skor sempurna</div>
+                    </div>
+                    <div class="stat-card penalty">
+                        <div class="stat-value">-{{ $totalPenalties }}</div>
+                        <div class="stat-label">Penalti</div>
+                        <div class="stat-sub">poin dikurangi</div>
+                    </div>
+                </div>
+
+                @php
+                    $bonusConfigLocal = $bonusConfig ?? [];
+                    $pointsTiersRaw = $bonusConfigLocal['point_bonus_tiers'] ?? [
+                        'tier_1' => ['min_percentage' => 80, 'bonus_amount' => 300000],
+                        'tier_2' => ['min_percentage' => 70, 'bonus_amount' => 250000],
+                        'tier_3' => ['min_percentage' => 60, 'bonus_amount' => 200000],
+                        'tier_4' => ['min_percentage' => 0, 'bonus_amount' => 0],
+                    ];
+                    $salesTiersRaw = $bonusConfigLocal['sales_bonus_tiers'] ?? [
+                        'tier_1' => ['min_percentage' => 100, 'bonus_amount' => 200000],
+                        'tier_2' => ['min_percentage' => 80, 'bonus_amount' => 150000],
+                        'tier_3' => ['min_percentage' => 60, 'bonus_amount' => 100000],
+                        'tier_4' => ['min_percentage' => 0, 'bonus_amount' => 0],
+                    ];
+
+                    $pointsTiers = collect($pointsTiersRaw)
+                        ->map(fn($tier) => ['min_percentage' => (int)($tier['min_percentage'] ?? 0), 'bonus_amount' => (int)($tier['bonus_amount'] ?? 0)])
+                        ->sortByDesc('min_percentage')->values()->all();
+
+                    $salesTiers = collect($salesTiersRaw)
+                        ->map(fn($tier) => ['min_percentage' => (int)($tier['min_percentage'] ?? 0), 'bonus_amount' => (int)($tier['bonus_amount'] ?? 0)])
+                        ->sortByDesc('min_percentage')->values()->all();
+
+                    $resolveTier = function (array $tiers, float $value) {
+                        foreach ($tiers as $idx => $tier) {
+                            if ($value >= (float)($tier['min_percentage'] ?? 0)) {
+                                return ['index' => $idx, 'tier' => $tier, 'amount' => (int)($tier['bonus_amount'] ?? 0)];
+                            }
+                        }
+                        return ['index' => null, 'tier' => null, 'amount' => 0];
+                    };
+
+                    $salesAchievedProjection = (int)($salesTarget['achieved'] ?? 0);
+                    $salesGoalProjection = (int)($salesTarget['target'] ?? 0);
+                    $salesPercentageProjection = $salesGoalProjection > 0 ? round(($salesAchievedProjection / $salesGoalProjection) * 100) : 0;
+
+                    $pointsProjection = $resolveTier($pointsTiers, $percentage);
+                    $salesProjection = $resolveTier($salesTiers, $salesPercentageProjection);
+
+                    $pointsBonusProjection = $pointsProjection['amount'];
+                    $salesBonusProjection = $salesProjection['amount'];
+                    $projectedAmount = $pointsBonusProjection + $salesBonusProjection;
+
+                    $buildTierRows = function (array $tiers) {
+                        $rows = [];
+                        foreach ($tiers as $idx => $tier) {
+                            $min = (int)($tier['min_percentage'] ?? 0);
+                            if ($idx === 0) {
+                                $label = '≥' . $min . '%';
+                            } else {
+                                $prevMin = (int)($tiers[$idx - 1]['min_percentage'] ?? 0);
+                                $upper = max($prevMin - 1, $min);
+                                $label = $min > 0 ? ($min . '-' . $upper . '%') : ('<' . $prevMin . '%');
+                            }
+                            $rows[] = ['label' => $label, 'bonus_amount' => (int)($tier['bonus_amount'] ?? 0)];
+                        }
+                        return $rows;
+                    };
+
+                    $pointsTierRows = $buildTierRows($pointsTiers);
+                    $salesTierRows = $buildTierRows($salesTiers);
+                    $maxPointsBonus = (int)collect($pointsTiers)->max('bonus_amount');
+                    $maxSalesBonus = (int)collect($salesTiers)->max('bonus_amount');
+                @endphp
+
+                <div class="bonus-card projected-bonus">
+                    <div class="bonus-card-title">💰 Proyeksi Bonus</div>
+                    <div class="projected-tier-label">Poin tugas: {{ $percentage }}% • Target penjualan: {{ $salesPercentageProjection }}%</div>
+                    <div class="projected-amount {{ $projectedAmount > 0 ? 'b-color-green' : 'b-color-red' }}">Rp {{ number_format($projectedAmount, 0, ',', '.') }}</div>
+                    <div class="projected-note">Rp {{ number_format($pointsBonusProjection, 0, ',', '.') }} (poin) + Rp {{ number_format($salesBonusProjection, 0, ',', '.') }} (penjualan)</div>
+                </div>
+
+                <div class="bonus-card">
+                    <div class="bonus-card-title">💡 Cara Kerja Poin</div>
+                    <div class="explain-block">
+                        <div class="explain-title">Poin Harian (Otomatis)</div>
+                        <ul class="explain-list">
+                            <li class="explain-line"><strong>Poin harian max</strong><span>25 poin/hari (20 + 5 perfect day bonus)</span></li>
+                            <li class="explain-line"><strong>Poin harian bulanan</strong><span>{{ 25 * $workingDays }} poin (25 × {{ $workingDays }} hari)</span></li>
+                        </ul>
+                    </div>
+                    <div class="explain-block">
+                        <div class="explain-title">Poin Bulanan (Supervisor)</div>
+                        <ul class="explain-list">
+                            <li class="explain-line"><strong>Pelayanan</strong><span>0-100% × 5 × {{ $workingDays }} = max {{ 5 * $workingDays }} poin</span></li>
+                            <li class="explain-line"><strong>Penjualan</strong><span>0-100% × 5 × {{ $workingDays }} = max {{ 5 * $workingDays }} poin</span></li>
+                        </ul>
+                    </div>
+                    <div class="explain-block">
+                        <div class="explain-title">Total</div>
+                        <ul class="explain-list">
+                            <li class="explain-line"><strong>Max bulanan</strong><span>{{ $theoreticalMax }} poin</span></li>
+                            <li class="explain-line"><strong>Poin kamu saat ini</strong><span>{{ $netPoints }} poin ({{ $percentage }}%)</span></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="bonus-card">
+                    <div class="bonus-card-title">📊 Poin Harian Kamu</div>
+                    <ul class="daily-points-note">
+                        <li><strong>Disiplin (max 5):</strong> Dari absensi - tepat waktu = 5 poin</li>
+                        <li><strong>Operasional (max 10):</strong> Dari tugas - semua selesai = 10 poin</li>
+                        <li><strong>Sikap (max 5):</strong> Submit laporan kegiatan = 5 poin</li>
+                        <li><strong>Perfect Day (+5):</strong> Bonus jika semua 3 kategori harian &gt; 0</li>
+                    </ul>
+                    <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #edf2f7;">
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #4a5568; margin-bottom: 0.4rem;">Penilaian Bulanan (oleh Supervisor)</div>
+                        <ul class="daily-points-note">
+                            <li><strong>Pelayanan (0-100%):</strong> Dinilai saat finalisasi bulanan</li>
+                            <li><strong>Penjualan (0-100%):</strong> Dinilai saat finalisasi bulanan</li>
+                        </ul>
+                    </div>
+                </div>
+                </div>
+
+                <div class="bonus-card">
+                    <div class="bonus-card-title">💰 Konversi Poin ke Bonus</div>
+                    <div class="bonus-tier-wrapper">
+                        <div class="tier-box">
+                            <div class="tier-box-title">📋 Bonus dari Poin Tugas (max Rp {{ number_format($maxPointsBonus, 0, ',', '.') }})</div>
+                            @foreach($pointsTierRows as $idx => $row)
+                                @php $isActive = $pointsProjection['index'] === $idx; @endphp
+                                <div class="tier-row {{ $isActive ? 'active b-bg-green b-color-green' : '' }}">
+                                    <span class="tier-range">{{ $row['label'] }}</span>
+                                    <span class="tier-amount">Rp {{ number_format($row['bonus_amount'], 0, ',', '.') }}</span>
+                                    @if($isActive)
+                                        <span class="tier-badge b-bg-green b-color-green">KAMU DISINI</span>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <div class="tier-box">
+                            <div class="tier-box-title">🎯 Bonus dari Target Penjualan (max Rp {{ number_format($maxSalesBonus, 0, ',', '.') }})</div>
+                            @foreach($salesTierRows as $idx => $row)
+                                @php $isActive = $salesProjection['index'] === $idx; @endphp
+                                <div class="tier-row {{ $isActive ? 'active b-bg-green b-color-green' : '' }}">
+                                    <span class="tier-range">{{ $row['label'] }}</span>
+                                    <span class="tier-amount">Rp {{ number_format($row['bonus_amount'], 0, ',', '.') }}</span>
+                                    @if($isActive)
+                                        <span class="tier-badge b-bg-green b-color-green">KAMU DISINI</span>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <div class="total-max-note">Total Maksimal: Rp {{ number_format($maxPointsBonus + $maxSalesBonus, 0, ',', '.') }}/bulan</div>
+                    </div>
+                </div>
+
+                <div class="bonus-card">
+                    <div class="bonus-card-title">📊 Poin Harian Kamu</div>
+                    <ul class="daily-points-note">
+                        <li><strong>Disiplin (max 5):</strong> Dari absensi - tepat waktu = 5 poin</li>
+                        <li><strong>Operasional (max 10):</strong> Dari tugas - semua selesai = 10 poin</li>
+                        <li><strong>Pelayanan (max 5):</strong> Penilaian supervisor</li>
+                        <li><strong>Penjualan (max 5):</strong> Default 0, ditambah supervisor jika aktif menjual/upselling</li>
+                        <li><strong>Sikap (max 5):</strong> Submit laporan kegiatan = 5 poin</li>
+                        <li><strong>Perfect Day (+5):</strong> Bonus jika semua kategori &gt; 0</li>
+                    </ul>
+                </div>
+
+                @php
+                    $dailyCategories = ['discipline' => 'Disiplin', 'operational' => 'Operasional', 'attitude' => 'Sikap'];
+                    $categoryTotals = [];
+                    $categoryMaxes = [];
+                    $cats = $bonusConfigLocal['point_categories'] ?? [];
+                    foreach ($dailyCategories as $key => $label) {
+                        $categoryTotals[$key] = 0;
+                        $categoryMaxes[$key] = (int)($cats[$key]['max_daily_points'] ?? 5);
+                    }
+                    $dayCount = max(count($monthlyPoints), 1);
+                    foreach ($monthlyPoints as $record) {
+                        foreach ($dailyCategories as $key => $label) {
+                            $categoryTotals[$key] += (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
+                        }
+                    }
+                    $categoryColors = [
+                        'discipline' => '#667eea', 'operational' => '#764ba2', 'attitude' => '#e53e3e',
+                    ];
+
+                    // Monthly scores from bonus summary
+                    $monthlyServicePct = (int)($bonusSummary['monthly_service_percentage'] ?? 0);
+                    $monthlySalesPct = (int)($bonusSummary['monthly_sales_percentage'] ?? 0);
+                    $monthlyServicePts = (int)($bonusSummary['service_points'] ?? 0);
+                    $monthlySalesPts = (int)($bonusSummary['sales_points'] ?? 0);
+                    $monthlyMaxPerCat = 5 * $workingDays;
+                @endphp
+
+                <div class="bonus-card">
+                    <div class="bonus-card-title">📊 Rata-rata Harian per Kategori</div>
+                    @foreach($dailyCategories as $key => $label)
+                        @php
+                            $avg = $dayCount > 0 ? round($categoryTotals[$key] / $dayCount, 1) : 0;
+                            $maxCat = $categoryMaxes[$key];
+                            $catPercent = $maxCat > 0 ? min(100, round(($avg / $maxCat) * 100)) : 0;
+                        @endphp
+                        <div class="category-bar-row">
+                            <span class="category-bar-label">{{ $label }}</span>
+                            <div class="category-bar-track">
+                                <div class="category-bar-fill" style="width: {{ $catPercent }}%; background: {{ $categoryColors[$key] ?? '#667eea' }};"></div>
+                            </div>
+                            <span class="category-bar-value">{{ $avg }}/{{ $maxCat }}</span>
+                        </div>
+                    @endforeach
+
+                    <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid #edf2f7;">
+                        <div style="font-size: 0.78rem; font-weight: 700; color: #4a5568; margin-bottom: 0.5rem;">Skor Bulanan (dari Supervisor)</div>
+                        <div class="category-bar-row">
+                            <span class="category-bar-label">Pelayanan</span>
+                            <div class="category-bar-track">
+                                <div class="category-bar-fill" style="width: {{ $monthlyServicePct }}%; background: #38a169;"></div>
+                            </div>
+                            <span class="category-bar-value">{{ $monthlyServicePct }}%</span>
+                        </div>
+                        <div class="category-bar-row">
+                            <span class="category-bar-label">Penjualan</span>
+                            <div class="category-bar-track">
+                                <div class="category-bar-fill" style="width: {{ $monthlySalesPct }}%; background: #d69e2e;"></div>
+                            </div>
+                            <span class="category-bar-value">{{ $monthlySalesPct }}%</span>
+                        </div>
+                        @if($monthlyServicePts > 0 || $monthlySalesPts > 0)
+                            <div style="font-size: 0.72rem; color: #64748b; margin-top: 0.4rem;">
+                                Pelayanan: {{ $monthlyServicePts }}/{{ $monthlyMaxPerCat }} poin • Penjualan: {{ $monthlySalesPts }}/{{ $monthlyMaxPerCat }} poin
+                            </div>
+                        @else
+                            <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 0.4rem; font-style: italic;">
+                                Belum dinilai — akan diisi supervisor saat finalisasi bulanan
+                            </div>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="bonus-card">
+                    <div class="bonus-card-title">📅 Riwayat Harian</div>
+                    <div class="daily-list">
+                        @php $sortedDays = collect($monthlyPoints)->sortKeysDesc()->take(10); @endphp
+                        @forelse($sortedDays as $date => $record)
+                            <div class="daily-item">
+                                <span class="daily-date">{{ \Carbon\Carbon::parse($date)->format('d M') }}</span>
+                                <div class="daily-categories">
+                                    @foreach($dailyCategories as $key => $label)
+                                        @php
+                                            $catPts = (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
+                                            $catMax = $categoryMaxes[$key];
+                                            $opacity = $catMax > 0 ? max(0.2, $catPts / $catMax) : 0.2;
+                                        @endphp
+                                        <div class="daily-cat-dot" style="background: {{ $categoryColors[$key] ?? '#667eea' }}; opacity: {{ $opacity }};"></div>
+                                    @endforeach
+                                </div>
+                                <span class="daily-total">{{ $record['daily_total'] ?? 0 }}</span>
+                            </div>
+                        @empty
+                            <div class="bonus-empty-state">Belum ada data harian</div>
+                        @endforelse
+                    </div>
+                </div>
+
+                @if(count($penalties) > 0)
+                <div class="bonus-card">
+                    <div class="bonus-card-title">⚠️ Penalti</div>
+                    @foreach($penalties as $penalty)
+                        <div class="penalty-item">
+                            <div class="penalty-header">
+                                <span class="penalty-type">{{ $penalty['type'] ?? $penalty['penalty_type'] ?? 'Pelanggaran' }}</span>
+                                <span class="penalty-points">-{{ abs((int)($penalty['points_deducted'] ?? 0)) }} poin</span>
+                            </div>
+                            <div class="penalty-reason">{{ $penalty['reason'] ?? $penalty['notes'] ?? '-' }}</div>
+                            <div class="penalty-date">{{ $penalty['date'] ?? $penalty['created_at'] ?? '' }}</div>
+                        </div>
+                    @endforeach
+                </div>
+                @endif
+
+                @if(!empty($salesTarget))
+                @php
+                    $salesAchieved = (int)($salesTarget['achieved'] ?? 0);
+                    $salesGoal = (int)($salesTarget['target'] ?? 1);
+                    $salesPercent = $salesGoal > 0 ? min(100, round(($salesAchieved / $salesGoal) * 100)) : 0;
+                @endphp
+                <div class="bonus-card">
+                    <div class="bonus-card-title">🎯 Target Penjualan</div>
+                    <div class="sales-progress-bar">
+                        <div class="sales-progress-fill" style="width: {{ $salesPercent }}%;"></div>
+                    </div>
+                    <div class="sales-stats">
+                        <span>Rp {{ number_format($salesAchieved, 0, ',', '.') }}</span>
+                        <span>{{ $salesPercent }}%</span>
+                        <span>Rp {{ number_format($salesGoal, 0, ',', '.') }}</span>
+                    </div>
+                </div>
+                @endif
+
+                @if(!empty($leaderboard) && !empty($leaderboard['rankings']))
+                <div class="bonus-card">
+                    <div class="bonus-card-title">🏅 Leaderboard</div>
+                    @php $topRankings = array_slice($leaderboard['rankings'], 0, 5); @endphp
+                    @foreach($topRankings as $idx => $entry)
+                        @php
+                            $rankNum = $idx + 1;
+                            $rankClass = match($rankNum) { 1 => 'gold', 2 => 'silver', 3 => 'bronze', default => '' };
+                            $isMe = ($entry['waiter_id'] ?? '') === $waiterId;
+                        @endphp
+                        <div class="leaderboard-item {{ $isMe ? 'is-me' : '' }}">
+                            <div class="leaderboard-rank {{ $rankClass }}">{{ $rankNum }}</div>
+                            <div class="leaderboard-name">{{ $entry['waiter_name'] ?? 'Waiter' }}{{ $isMe ? ' (Anda)' : '' }}</div>
+                            <div class="leaderboard-points">{{ $entry['total_points'] ?? $entry['net_points'] ?? 0 }} pts</div>
+                        </div>
+                    @endforeach
+
+                    @if($myRank && ($myRank['rank'] ?? 0) > 5)
+                        <div style="text-align: center; padding: 0.5rem; color: #aaa; font-size: 0.75rem;">···</div>
+                        <div class="leaderboard-item is-me">
+                            <div class="leaderboard-rank">{{ $myRank['rank'] ?? '?' }}</div>
+                            <div class="leaderboard-name">{{ $waiterName }} (Anda)</div>
+                            <div class="leaderboard-points">{{ $myRank['total_points'] ?? $myRank['net_points'] ?? 0 }} pts</div>
+                        </div>
+                    @endif
+                </div>
+                @endif
+                </div>{{-- end #bonus-content-area --}}
+            </div>
+        </section>
     </div>
 
     <nav class="mobile-nav" id="waiter-mobile-nav" aria-label="Menu Portal Waiter Mobile">
-        <button type="button" class="mobile-nav-btn js-tab-btn active" data-tab="rack">📦 Cek Rak <span id="badge-mobile-rack" class="menu-badge js-rack-menu-badge hidden">0</span></button>
-        <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="tasks">📝 Tugas <span id="badge-mobile-general" class="menu-badge js-general-menu-badge hidden">0</span></button>
-        <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="reports">📔 Laporan</button>
+        <button type="button" class="mobile-nav-btn js-tab-btn active" data-tab="rack">
+            <span class="nav-icon">📦</span>
+            <span class="nav-label">Cek Rak</span>
+            <span id="badge-mobile-rack" class="menu-badge js-rack-menu-badge hidden">0</span>
+        </button>
+        <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="tasks">
+            <span class="nav-icon">📝</span>
+            <span class="nav-label">Tugas</span>
+            <span id="badge-mobile-general" class="menu-badge js-general-menu-badge hidden">0</span>
+        </button>
+        <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="reports">
+            <span class="nav-icon">📔</span>
+            <span class="nav-label">Laporan</span>
+        </button>
+        <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="bonus">
+            <span class="nav-icon">🏆</span>
+            <span class="nav-label">Bonus</span>
+        </button>
     </nav>
 
     <div id="scanner-modal" class="scanner-modal" aria-hidden="true">
         <div class="scanner-box">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                <strong>📷 Scan QR Code Rak</strong>
+                <strong id="scanner-modal-title">📷 Scan QR Code Rak</strong>
                 <div style="display:flex; align-items:center; gap:8px;">
                     <button type="button" id="scanner-flash-btn" class="btn btn-flash hidden" disabled>🔦 Nyalakan Flash</button>
                     <button type="button" id="scanner-close-btn" class="btn" style="background:#ef4444;color:#fff;padding:6px 10px;">Tutup</button>
@@ -581,6 +1336,14 @@
         'pendingTasks' => $pendingTasks,
         'taskHistory' => $taskHistory,
         'activityReports' => $activityReports ?? [],
+        'rackProductsMap' => $rackProductsMap ?? [],
+        'todayAttendance' => $todayAttendance ?? null,
+        'waiterShift' => $waiterShift ?? null,
+        'shiftStartTime' => $shiftStartTime ?? null,
+        'attendanceClockInUrl' => route('waiter.attendance.clock_in', [], false),
+        'attendanceClockOutUrl' => route('waiter.attendance.clock_out', [], false),
+        'attendanceStatusUrl' => route('waiter.attendance.status', [], false),
+        'bonusApiUrl' => route('waiter.bonus.api', [], false),
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
 
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -590,6 +1353,7 @@
         const context = contextEl ? JSON.parse(contextEl.textContent || '{}') : {};
 
         const waiterId = String(context.waiterId || '');
+        const shiftStartTime = context.shiftStartTime || null;
         const rackPendingCountEl = document.getElementById('rack-pending-count');
         const rackPendingContainer = document.getElementById('rack-pending-container');
         const generalPendingCountEl = document.getElementById('general-pending-count');
@@ -614,12 +1378,29 @@
         const syncDueUrl = "{{ route('waiter.task.sync_due', [], false) }}";
         const activityStoreUrl = "{{ route('waiter.activity.store', [], false) }}";
 
+        // === TOP MENU DROPDOWN ===
+        (function() {
+            const menuBtn = document.getElementById('topMenuBtn');
+            const dropdown = document.getElementById('topDropdown');
+            if (menuBtn && dropdown) {
+                menuBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    dropdown.classList.toggle('open');
+                });
+                document.addEventListener('click', function() {
+                    dropdown.classList.remove('open');
+                });
+                dropdown.addEventListener('click', function(e) { e.stopPropagation(); });
+            }
+        })();
+
         const tabButtons = Array.from(document.querySelectorAll('.js-tab-btn'));
         const rackMenuBadgeEls = Array.from(document.querySelectorAll('.js-rack-menu-badge'));
         const generalMenuBadgeEls = Array.from(document.querySelectorAll('.js-general-menu-badge'));
         const panelRack = document.getElementById('panel-rack');
         const panelTasks = document.getElementById('panel-tasks');
         const panelReports = document.getElementById('panel-reports');
+        const panelBonus = document.getElementById('panel-bonus');
         const reportDateLabelEl = document.getElementById('report-date-label');
         const activityFormEl = document.getElementById('activity-report-form');
         const activityTextEl = document.getElementById('activity-text');
@@ -631,6 +1412,7 @@
         const stockReportItemsByTask = new Map();
         const noteDraftByTask = new Map();
         const photoProofByTask = new Map();
+        const productChecklistByTask = new Map();
         let activeScannerTaskId = '';
         let activeScannerTaskLabel = '';
         let activeScannerExpectedBarcode = '';
@@ -647,6 +1429,7 @@
         ];
         let reportDate = String(context.reportDate || new Date().toISOString().slice(0, 10));
         let activityReports = Array.isArray(context.activityReports) ? context.activityReports : [];
+        let rackProductsMap = context.rackProductsMap && typeof context.rackProductsMap === 'object' ? context.rackProductsMap : {};
         let syncDueInFlight = false;
         let syncDueCooldownUntil = 0;
         let syncDueBackoffMs = 0;
@@ -655,6 +1438,241 @@
         let pollCooldownUntil = 0;
         let pollBackoffMs = 0;
         let rackSearchKeyword = '';
+
+        // === ATTENDANCE STATE & ELEMENTS ===
+        const attendanceBarEl = document.getElementById('attendance-bar');
+        const attendanceShiftLabelEl = document.getElementById('attendance-shift-label');
+        const attendanceStatusLabelEl = document.getElementById('attendance-status-label');
+        const btnAttendanceAction = document.getElementById('btn-attendance-action');
+        const scannerModalTitleEl = document.getElementById('scanner-modal-title');
+        const attendanceClockInUrl = context.attendanceClockInUrl || '';
+        const attendanceClockOutUrl = context.attendanceClockOutUrl || '';
+        const attendanceStatusUrl = context.attendanceStatusUrl || '';
+
+        let attendanceState = {
+            clock_in: null,
+            clock_out: null,
+            clock_in_time: null,
+            clock_out_time: null,
+            status: null,
+            shift: context.waiterShift || null,
+            late_minutes: 0,
+        };
+        let attendanceScanMode = null; // 'clock_in' or 'clock_out'
+
+        function formatAttendanceTime(value) {
+            if (!value) return '-';
+            const num = Number(value);
+            if (Number.isFinite(num) && num > 1000000000) {
+                const d = new Date(num * 1000);
+                return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            }
+            return String(value);
+        }
+
+        function renderAttendanceBar() {
+            if (!attendanceBarEl) return;
+
+            const shift = attendanceState.shift;
+            const shiftName = shift ? (shift.name || 'Shift') : 'Belum ada shift';
+            const shiftTime = shift ? `${shift.start_time || '?'} - ${shift.end_time || '?'}` : '';
+            if (attendanceShiftLabelEl) {
+                attendanceShiftLabelEl.textContent = shiftTime ? `${shiftName} (${shiftTime})` : shiftName;
+            }
+
+            attendanceBarEl.classList.remove('clocked-in', 'late', 'clocked-out');
+            if (attendanceStatusLabelEl) {
+                attendanceStatusLabelEl.classList.remove('present', 'late', 'not-yet');
+            }
+
+            if (attendanceState.clock_out) {
+                const outTime = attendanceState.clock_out_time || attendanceState.clock_out;
+                attendanceBarEl.classList.add('clocked-out');
+                if (attendanceStatusLabelEl) {
+                    attendanceStatusLabelEl.classList.add('present');
+                    attendanceStatusLabelEl.textContent = `Sudah Pulang (${formatAttendanceTime(outTime)})`;
+                }
+                if (btnAttendanceAction) {
+                    btnAttendanceAction.textContent = 'Selesai Hari Ini';
+                    btnAttendanceAction.disabled = true;
+                }
+            } else if (attendanceState.clock_in) {
+                const inTime = attendanceState.clock_in_time || attendanceState.clock_in;
+                if (attendanceState.late_minutes > 0) {
+                    attendanceBarEl.classList.add('late');
+                    if (attendanceStatusLabelEl) {
+                        attendanceStatusLabelEl.classList.add('late');
+                        attendanceStatusLabelEl.textContent = `Terlambat (${formatAttendanceTime(inTime)}, +${attendanceState.late_minutes} menit)`;
+                    }
+                } else {
+                    attendanceBarEl.classList.add('clocked-in');
+                    if (attendanceStatusLabelEl) {
+                        attendanceStatusLabelEl.classList.add('present');
+                        attendanceStatusLabelEl.textContent = `Sudah Masuk (${formatAttendanceTime(inTime)})`;
+                    }
+                }
+                if (btnAttendanceAction) {
+                    btnAttendanceAction.textContent = '📷 Scan Absen Pulang';
+                    btnAttendanceAction.disabled = false;
+                }
+            } else {
+                if (attendanceStatusLabelEl) {
+                    attendanceStatusLabelEl.classList.add('not-yet');
+                    attendanceStatusLabelEl.textContent = 'Belum Absen Masuk';
+                }
+                if (btnAttendanceAction) {
+                    btnAttendanceAction.textContent = '📷 Scan Absen Masuk';
+                    btnAttendanceAction.disabled = false;
+                }
+            }
+        }
+
+        function initAttendanceFromContext() {
+            const att = context.todayAttendance;
+            if (att && typeof att === 'object') {
+                attendanceState.clock_in = att.clock_in || null;
+                attendanceState.clock_out = att.clock_out || null;
+                attendanceState.clock_in_time = att.clock_in_time || null;
+                attendanceState.clock_out_time = att.clock_out_time || null;
+                attendanceState.status = att.status || null;
+                attendanceState.late_minutes = Number(att.late_minutes || 0);
+            }
+            attendanceState.shift = context.waiterShift || null;
+            renderAttendanceBar();
+        }
+
+        async function loadAttendanceStatus() {
+            if (!attendanceStatusUrl) return;
+            try {
+                const res = await fetch(attendanceStatusUrl, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.attendance && typeof data.attendance === 'object') {
+                    attendanceState.clock_in = data.attendance.clock_in || null;
+                    attendanceState.clock_out = data.attendance.clock_out || null;
+                    attendanceState.clock_in_time = data.attendance.clock_in_time || null;
+                    attendanceState.clock_out_time = data.attendance.clock_out_time || null;
+                    attendanceState.status = data.attendance.status || null;
+                    attendanceState.late_minutes = Number(data.attendance.late_minutes || 0);
+                }
+                if (data.shift) {
+                    attendanceState.shift = data.shift;
+                }
+                renderAttendanceBar();
+            } catch (e) {
+                console.log('loadAttendanceStatus failed', e);
+            }
+        }
+
+        async function startAttendanceScan() {
+            if (attendanceState.clock_out) return;
+            attendanceScanMode = attendanceState.clock_in ? 'clock_out' : 'clock_in';
+
+            if (scannerModalTitleEl) {
+                scannerModalTitleEl.textContent = '📷 Scan QR Code Absensi';
+            }
+            scannerTaskMetaEl.textContent = attendanceScanMode === 'clock_in'
+                ? 'Scan QR code absensi untuk MASUK'
+                : 'Scan QR code absensi untuk PULANG';
+            scannerFeedbackEl.textContent = 'Arahkan kamera ke QR code absensi.';
+            scannerModalEl.style.display = 'flex';
+            scannerModalEl.setAttribute('aria-hidden', 'false');
+            resetScannerTorchState();
+            updateScannerFlashButton();
+
+            activeScannerTaskId = '__ATTENDANCE__';
+            activeScannerTaskLabel = attendanceScanMode === 'clock_in' ? 'Absen Masuk' : 'Absen Pulang';
+            activeScannerExpectedBarcode = '';
+
+            if (typeof Html5Qrcode === 'undefined') {
+                scannerFeedbackEl.textContent = 'Library scanner belum termuat. Refresh halaman.';
+                return;
+            }
+
+            if (!scannerInstance) {
+                scannerInstance = new Html5Qrcode(scannerReaderElId);
+            }
+
+            await stopScannerIfRunning();
+
+            try {
+                const formats = typeof Html5QrcodeSupportedFormats !== 'undefined'
+                    ? [Html5QrcodeSupportedFormats.QR_CODE]
+                    : undefined;
+
+                await scannerInstance.start(
+                    { facingMode: 'environment' },
+                    {
+                        fps: 10,
+                        qrbox: { width: 280, height: 280 },
+                        ...(formats ? { formatsToSupport: formats } : {}),
+                    },
+                    async (decodedText) => {
+                        if (activeScannerTaskId !== '__ATTENDANCE__') return;
+
+                        const cleanValue = String(decodedText || '').trim();
+                        if (!cleanValue.toUpperCase().startsWith('ATTENDANCE:')) {
+                            scannerFeedbackEl.textContent = '❌ Bukan QR code absensi. Cari QR code dengan label ABSENSI.';
+                            return;
+                        }
+
+                        scannerFeedbackEl.textContent = '⏳ Memproses absensi...';
+                        await closeScannerModal();
+                        await submitAttendanceScan(cleanValue);
+                    },
+                    () => {}
+                );
+
+                scannerRunning = true;
+                syncScannerTorchStateFromTrack();
+                if (!scannerTorchSupported) {
+                    scannerFeedbackEl.textContent = 'Scanner aktif. Flash tidak tersedia, lanjut scan dengan pencahayaan normal.';
+                }
+            } catch (error) {
+                resetScannerTorchState();
+                updateScannerFlashButton();
+                scannerFeedbackEl.textContent = `Gagal menyalakan kamera: ${error?.message || 'Unknown error'}`;
+            }
+        }
+
+        async function submitAttendanceScan(scannedValue) {
+            const url = attendanceScanMode === 'clock_in' ? attendanceClockInUrl : attendanceClockOutUrl;
+            if (!url) {
+                showFlash('error', 'URL absensi belum dikonfigurasi.');
+                attendanceScanMode = null;
+                return;
+            }
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ scanned_value: scannedValue }),
+                });
+
+                const payload = await response.json();
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.message || 'Gagal memproses absensi.');
+                }
+
+                showFlash('success', payload?.message || (attendanceScanMode === 'clock_in' ? 'Absen masuk berhasil!' : 'Absen pulang berhasil!'));
+                await loadAttendanceStatus();
+            } catch (error) {
+                showFlash('error', error?.message || 'Gagal memproses absensi.');
+            } finally {
+                attendanceScanMode = null;
+            }
+        }
+        // === END ATTENDANCE ===
 
         const MIN_SYNC_DUE_INTERVAL_MS = 5000;
 
@@ -816,12 +1834,13 @@
         }
 
         function setActiveTab(tab) {
-            const allowedTabs = ['rack', 'tasks', 'reports'];
+            const allowedTabs = ['rack', 'tasks', 'reports', 'bonus'];
             const targetTab = allowedTabs.includes(tab) ? tab : 'rack';
 
             panelRack.classList.toggle('active', targetTab === 'rack');
             panelTasks.classList.toggle('active', targetTab === 'tasks');
             panelReports.classList.toggle('active', targetTab === 'reports');
+            panelBonus.classList.toggle('active', targetTab === 'bonus');
 
             tabButtons.forEach((button) => {
                 const isMatch = String(button.getAttribute('data-tab') || '') === targetTab;
@@ -936,7 +1955,7 @@
                 return false;
             }
 
-            return active.matches('.js-stock-report, .js-complete-form input[name="note"], .js-photo-proof, .js-rack-search');
+            return active.matches('.js-stock-report, .js-complete-form input[name="note"], .js-photo-proof, .js-rack-search, .js-product-qty');
         }
 
         function normalizeSearchKeyword(value) {
@@ -1119,6 +2138,62 @@
             const existingPhotoProof = photoProofByTask.get(task.id) || null;
             const existingPhotoDataUrl = String(existingPhotoProof?.dataUrl || '');
             const rackTargetScope = String(task.rack_target_scope || 'single');
+            const rackId = String(task.rack_id || '');
+            const rackProducts = rackId && rackProductsMap[rackId] ? rackProductsMap[rackId] : [];
+            const hasRackProducts = rackProducts.length > 0;
+            const existingChecklist = productChecklistByTask.get(task.id) || {};
+
+            let productChecklistBlock = '';
+            if (requiresScan && existingScan && hasRackProducts) {
+                const checklistItems = rackProducts.map((product) => {
+                    const productData = existingChecklist[product.id] || {};
+                    const isFilled = Boolean(productData.filled);
+                    const actualQty = Number(productData.actual_qty || 0);
+                    const standardQty = Number(product.standard_qty || 0);
+                    const qtyInputValue = isFilled ? String(actualQty) : '';
+                    let itemClass = '';
+                    let statusHtml = '';
+                    if (isFilled) {
+                        if (actualQty === 0) {
+                            itemClass = 'habis';
+                            statusHtml = '<span class="product-checklist-status habis">Habis</span>';
+                        } else if (actualQty < standardQty) {
+                            itemClass = 'shortage';
+                            statusHtml = `<span class="product-checklist-status shortage">Kurang ${standardQty - actualQty}</span>`;
+                        } else {
+                            itemClass = 'checked';
+                            statusHtml = '<span class="product-checklist-status ok">OK</span>';
+                        }
+                    }
+
+                    return `<div class="product-checklist-item ${itemClass}">
+                        <div class="product-checklist-name">${escapeHtml(product.name)}</div>
+                        <div class="product-checklist-qty">
+                            <input type="number" class="js-product-qty" data-task-id="${escapeAttr(task.id)}" data-product-id="${escapeAttr(product.id)}" value="${qtyInputValue}" min="0" placeholder="Qty">
+                            <span class="product-checklist-standard">/ ${standardQty} ${escapeHtml(product.unit)}</span>
+                        </div>
+                        ${statusHtml}
+                    </div>`;
+                }).join('');
+
+                const filledCount = Object.values(existingChecklist).filter(v => v.filled).length;
+                const shortageCount = Object.values(existingChecklist).filter(v => v.filled && v.actual_qty < (v.standard_qty || 0)).length;
+                const habisCount = Object.values(existingChecklist).filter(v => v.filled && v.actual_qty === 0).length;
+                let summaryText = `${filledCount}/${rackProducts.length} produk diisi`;
+                if (shortageCount > 0) {
+                    summaryText += ` \u2022 ${shortageCount} produk kurang`;
+                }
+                if (habisCount > 0) {
+                    summaryText += ` \u2022 ${habisCount} habis`;
+                }
+
+                productChecklistBlock = `<div class="product-checklist" data-task-id="${escapeAttr(task.id)}">
+                    <div class="product-checklist-header">\ud83d\udccb Checklist Produk Rak (${rackProducts.length} produk)</div>
+                    ${checklistItems}
+                    <div class="product-checklist-summary">${summaryText}</div>
+                </div>`;
+            }
+
             const stockReportBlock = existingScan
                 ? `<label class="meta" style="display:block; margin-top: 8px; margin-bottom: 4px; color:#111827; font-weight:600;">Laporan Barang Menipis/Habis (Opsional)</label>
                     <textarea class="input js-stock-report" name="stock_report_items" data-task-id="${escapeAttr(task.id)}" maxlength="2000" placeholder="Jika ada barang menipis/habis, tulis di sini. Boleh dikosongkan jika tidak ada.">${escapeHtml(existingStockReport)}</textarea>
@@ -1158,7 +2233,7 @@
                         <div class="meta" style="font-size:12px;color:${existingScan ? '#166534' : '#9a3412'};" data-scan-status>
                             ${existingScan ? `✅ QR code ter-scan: <code>${escapeHtml(existingScan)}</code>` : '⚠️ Belum scan QR code rak.'}
                         </div>
-                        ${stockReportBlock}
+                        ${hasRackProducts ? productChecklistBlock : stockReportBlock}
                     </div>`
                 : '';
             const defaultMetaBlock = requiresScan
@@ -1263,6 +2338,11 @@
                     photoProofByTask.delete(taskId);
                 }
             }
+            for (const taskId of Array.from(productChecklistByTask.keys())) {
+                if (!pendingTaskIds.has(taskId)) {
+                    productChecklistByTask.delete(taskId);
+                }
+            }
 
             const rackTasks = pendingTasks.filter((task) => isRackScanTask(task));
             const generalTasks = pendingTasks.filter((task) => !isRackScanTask(task));
@@ -1277,10 +2357,22 @@
             }
             updateMenuBadge(generalMenuBadgeEls, generalTasks.length);
 
+            // Build shift-not-started message if applicable
+            var shiftNotStartedMsg = '';
+            if (shiftStartTime && !rackTasks.length && !generalTasks.length) {
+                var now = new Date();
+                var parts = shiftStartTime.split(':');
+                var shiftHour = parseInt(parts[0], 10);
+                var shiftMin = parseInt(parts[1], 10);
+                if (now.getHours() < shiftHour || (now.getHours() === shiftHour && now.getMinutes() < shiftMin)) {
+                    shiftNotStartedMsg = '<div class="empty" style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:16px;border-radius:8px;text-align:center;">Shift Anda dimulai pukul ' + shiftStartTime + '. Tugas akan muncul saat shift dimulai.</div>';
+                }
+            }
+
             if (rackPendingContainer) {
                 rackPendingContainer.innerHTML = rackTasks.length
                     ? renderRackTaskGroupSection(rackTasks)
-                    : '<div class="empty">Tidak ada tugas cek rak aktif saat ini.</div>';
+                    : (shiftNotStartedMsg || '<div class="empty">Tidak ada tugas cek rak aktif saat ini.</div>');
                 applyRackSearchFilterInPlace();
             }
 
@@ -1292,7 +2384,7 @@
                         generalTasks,
                         'Tidak ada tugas umum aktif saat ini.'
                     )
-                    : '<div class="empty">Tidak ada tugas umum aktif saat ini.</div>';
+                    : (shiftNotStartedMsg || '<div class="empty">Tidak ada tugas umum aktif saat ini.</div>');
             }
         }
 
@@ -1326,13 +2418,23 @@
                             ? `<span style="color:#166534;">✅ ${escapeHtml(task.completed_scanned_barcode)}</span>`
                             : '<span style="color:#9a3412;">(wajib scan)</span>')
                         : '-'}</td>
-                    <td>${isRackScanTask(task)
-                        ? (task.completed_no_out_of_stock
-                            ? '<span style="color:#166534;">✅ Tidak ada barang habis</span>'
-                            : (task.completed_stock_report
-                                ? `<span style="color:#9a3412;">⚠️ ${escapeHtml(task.completed_stock_report)}</span>`
-                                : '<span style="color:#9ca3af;">-</span>'))
-                        : '-'}</td>
+                    <td>${task.completed_product_checklist
+                        ? (() => {
+                            const items = Object.values(task.completed_product_checklist);
+                            const total = items.length;
+                            const checked = items.filter(i => i.checked).length;
+                            const shortages = items.filter(i => i.is_shortage).length;
+                            return shortages > 0
+                                ? `<span style="color:#9a3412;">\u26a0\ufe0f ${checked}/${total} dicek, ${shortages} kurang</span>`
+                                : `<span style="color:#166534;">\u2705 ${checked}/${total} produk OK</span>`;
+                        })()
+                        : (isRackScanTask(task)
+                            ? (task.completed_no_out_of_stock
+                                ? '<span style="color:#166534;">✅ Tidak ada barang habis</span>'
+                                : (task.completed_stock_report
+                                    ? `<span style="color:#9a3412;">⚠️ ${escapeHtml(task.completed_stock_report)}</span>`
+                                    : '<span style="color:#9ca3af;">-</span>'))
+                            : '-')}</td>
                     <td>${task.completed_photo_proof_url
                         ? `<button type="button" class="btn-photo-view js-photo-view" data-task-id="${escapeAttr(task.id)}">📷 Lihat Foto</button>`
                         : (task.requires_photo_proof
@@ -1380,6 +2482,10 @@
                 ...(Array.isArray(payload?.pending_tasks) ? payload.pending_tasks : []),
                 ...(Array.isArray(payload?.task_history) ? payload.task_history : []),
             ];
+
+            if (payload && typeof payload === 'object' && payload.rack_products_map) {
+                rackProductsMap = payload.rack_products_map;
+            }
 
             if (isPendingFormInputActive()) {
                 pendingRenderDeferred = true;
@@ -1539,6 +2645,26 @@
             submitButton.disabled = true;
 
             const scannedBarcode = String(scannedBarcodeByTask.get(taskId) || '');
+            const rawChecklist = productChecklistByTask.get(taskId) || null;
+            let productChecklistJson = null;
+            if (rawChecklist && Object.keys(rawChecklist).length > 0) {
+                const serialized = {};
+                for (const [productId, entry] of Object.entries(rawChecklist)) {
+                    if (entry && entry.filled) {
+                        serialized[productId] = {
+                            checked: true,
+                            actual_qty: Number(entry.actual_qty || 0),
+                            standard_qty: Number(entry.standard_qty || 0),
+                            product_name: String(entry.product_name || ''),
+                            product_unit: String(entry.product_unit || 'pcs'),
+                            is_shortage: Boolean(entry.is_shortage),
+                        };
+                    }
+                }
+                productChecklistJson = Object.keys(serialized).length > 0
+                    ? JSON.stringify(serialized)
+                    : null;
+            }
 
             try {
                 const completeUrl = completeUrlTemplate.replace('__TASK_ID__', encodeURIComponent(taskId));
@@ -1555,6 +2681,7 @@
                         scanned_barcode: scannedBarcode,
                         stock_report_items: stockReportItems,
                         photo_proof_data_url: photoProofDataUrl,
+                        product_checklist: productChecklistJson,
                     }),
                 });
 
@@ -1567,6 +2694,7 @@
                 stockReportItemsByTask.delete(taskId);
                 noteDraftByTask.delete(taskId);
                 photoProofByTask.delete(taskId);
+                productChecklistByTask.delete(taskId);
                 showFlash('success', payload?.message || 'Tugas berhasil diverifikasi sebagai selesai.');
             } catch (error) {
                 showFlash('error', error?.message || 'Gagal memverifikasi tugas.');
@@ -1717,6 +2845,10 @@
             activeScannerTaskLabel = taskLabel;
             activeScannerExpectedBarcode = normalizeBarcodeValue(expectedBarcode);
 
+            if (scannerModalTitleEl) {
+                scannerModalTitleEl.textContent = '📷 Scan QR Code Rak';
+            }
+
             if (activeScannerExpectedBarcode === '') {
                 showFlash('error', 'QR code rak target belum terkonfigurasi pada task ini. Hubungi supervisor.');
                 activeScannerTaskId = '';
@@ -1862,6 +2994,33 @@
                     return;
                 }
 
+                const productQtyInput = event.target.closest('.js-product-qty');
+                if (productQtyInput) {
+                    const taskId = String(productQtyInput.getAttribute('data-task-id') || '');
+                    const productId = String(productQtyInput.getAttribute('data-product-id') || '');
+                    if (taskId && productId) {
+                        const checklist = productChecklistByTask.get(taskId) || {};
+                        const rawValue = String(productQtyInput.value || '').trim();
+                        const isFilled = rawValue !== '';
+                        const actualQty = Math.max(0, parseInt(rawValue) || 0);
+                        const rackId = String((waiterTasks.find(t => String(t?.id || '') === taskId) || {}).rack_id || '');
+                        const rackProducts = rackProductsMap[rackId] || [];
+                        const product = rackProducts.find(p => p.id === productId);
+                        const standardQty = product ? Number(product.standard_qty || 0) : Number(checklist[productId]?.standard_qty || 0);
+                        checklist[productId] = {
+                            actual_qty: actualQty,
+                            standard_qty: standardQty,
+                            product_name: product ? (product.name || '') : (checklist[productId]?.product_name || ''),
+                            product_unit: product ? (product.unit || 'pcs') : (checklist[productId]?.product_unit || 'pcs'),
+                            filled: isFilled,
+                            checked: isFilled,
+                            is_shortage: isFilled && actualQty < standardQty,
+                        };
+                        productChecklistByTask.set(taskId, checklist);
+                    }
+                    return;
+                }
+
                 const noteField = event.target.closest('.js-complete-form input[name="note"]');
                 if (!noteField) {
                     return;
@@ -1876,6 +3035,34 @@
             });
 
             container.addEventListener('change', async (event) => {
+                const productQtyInput = event.target.closest('.js-product-qty');
+                if (productQtyInput) {
+                    const taskId = String(productQtyInput.getAttribute('data-task-id') || '');
+                    const productId = String(productQtyInput.getAttribute('data-product-id') || '');
+                    if (taskId && productId) {
+                        const checklist = productChecklistByTask.get(taskId) || {};
+                        const rawValue = String(productQtyInput.value || '').trim();
+                        const isFilled = rawValue !== '';
+                        const actualQty = Math.max(0, parseInt(rawValue) || 0);
+                        const rackId = String((waiterTasks.find(t => String(t?.id || '') === taskId) || {}).rack_id || '');
+                        const rackProducts = rackProductsMap[rackId] || [];
+                        const product = rackProducts.find(p => p.id === productId);
+                        const standardQty = product ? Number(product.standard_qty || 0) : Number(checklist[productId]?.standard_qty || 0);
+                        checklist[productId] = {
+                            actual_qty: actualQty,
+                            standard_qty: standardQty,
+                            product_name: product ? (product.name || '') : (checklist[productId]?.product_name || ''),
+                            product_unit: product ? (product.unit || 'pcs') : (checklist[productId]?.product_unit || 'pcs'),
+                            filled: isFilled,
+                            checked: isFilled,
+                            is_shortage: isFilled && actualQty < standardQty,
+                        };
+                        productChecklistByTask.set(taskId, checklist);
+                        renderAllTasks();
+                    }
+                    return;
+                }
+
                 const photoInput = event.target.closest('.js-photo-proof');
                 if (!photoInput) {
                     return;
@@ -1984,6 +3171,10 @@
             await toggleScannerTorch();
         });
 
+        btnAttendanceAction?.addEventListener('click', async () => {
+            await startAttendanceScan();
+        });
+
         scannerModalEl.addEventListener('click', async (event) => {
             if (event.target === scannerModalEl) {
                 await closeScannerModal();
@@ -2005,6 +3196,234 @@
                 closePhotoPreviewModal();
             }
         });
+
+        // === BONUS MONTH PICKER AJAX ===
+        const bonusApiUrl = context.bonusApiUrl || '';
+        const bonusMonthPickerEl = document.getElementById('bonusMonthPicker');
+        const bonusContentArea = document.getElementById('bonus-content-area');
+
+        function formatRupiah(num) {
+            return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+        }
+
+        function formatDateShort(dateStr) {
+            try {
+                const d = new Date(dateStr + 'T00:00:00');
+                return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+            } catch (e) { return dateStr; }
+        }
+
+        async function loadBonusData(month) {
+            if (!bonusApiUrl || !bonusContentArea) return;
+
+            bonusContentArea.style.opacity = '0.5';
+            bonusContentArea.style.pointerEvents = 'none';
+
+            try {
+                const resp = await fetch(bonusApiUrl + '?month=' + encodeURIComponent(month), {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                });
+
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+
+                const totalEarned = Number(data.total_earned || 0);
+                const totalPenalties = Number(data.total_penalties || 0);
+                const netPoints = Number(data.net_points || 0);
+                const percentage = Number(data.percentage || 0);
+                const perfectDays = Number(data.perfect_days || 0);
+                const monthlyPoints = data.monthly_points || {};
+                const penalties = data.penalties || [];
+                const salesTarget = data.sales_target || {};
+                const leaderboard = data.leaderboard || {};
+
+                const daysScored = Object.keys(monthlyPoints).length;
+
+                // Determine tier color
+                let ringColor = '#e53e3e', tierLabel = 'Needs Improvement', tierColorClass = 'b-color-red', tierBgClass = 'b-bg-red';
+                if (percentage >= 80) { ringColor = '#38a169'; tierLabel = 'Excellent'; tierColorClass = 'b-color-green'; tierBgClass = 'b-bg-green'; }
+                else if (percentage >= 70) { ringColor = '#d69e2e'; tierLabel = 'Good'; tierColorClass = 'b-color-yellow'; tierBgClass = 'b-bg-yellow'; }
+                else if (percentage >= 60) { ringColor = '#dd6b20'; tierLabel = 'Average'; tierColorClass = 'b-color-orange'; tierBgClass = 'b-bg-orange'; }
+
+                const circumference = 2 * Math.PI * 70;
+                const dashoffset = circumference - (circumference * Math.min(percentage, 100) / 100);
+
+                // Sales
+                const salesAchieved = Number(salesTarget.achieved || 0);
+                const salesGoal = Number(salesTarget.target || 1);
+                const salesPercent = salesGoal > 0 ? Math.min(100, Math.round((salesAchieved / salesGoal) * 100)) : 0;
+
+                // Category averages
+                const catKeys = ['discipline', 'operational', 'service', 'sales', 'attitude'];
+                const catLabels = { discipline: 'Disiplin', operational: 'Operasional', service: 'Service', sales: 'Sales', attitude: 'Attitude' };
+                const catColors = { discipline: '#667eea', operational: '#764ba2', service: '#38a169', sales: '#d69e2e', attitude: '#e53e3e' };
+                const catMaxes = { discipline: 5, operational: 10, service: 5, sales: 5, attitude: 5 };
+                const catTotals = {};
+                catKeys.forEach(k => catTotals[k] = 0);
+                const dayCountAjax = Math.max(Object.keys(monthlyPoints).length, 1);
+                Object.values(monthlyPoints).forEach(rec => {
+                    catKeys.forEach(k => {
+                        catTotals[k] += Number((rec.categories && rec.categories[k] && rec.categories[k].points) || rec[k] || 0);
+                    });
+                });
+
+                // Build category bars HTML
+                let catBarsHtml = '';
+                catKeys.forEach(k => {
+                    const avg = (catTotals[k] / dayCountAjax).toFixed(1);
+                    const maxC = catMaxes[k];
+                    const pct = maxC > 0 ? Math.min(100, Math.round((avg / maxC) * 100)) : 0;
+                    catBarsHtml += `<div class="category-bar-row">
+                        <span class="category-bar-label">${catLabels[k]}</span>
+                        <div class="category-bar-track"><div class="category-bar-fill" style="width:${pct}%;background:${catColors[k]};"></div></div>
+                        <span class="category-bar-value">${avg}/${maxC}</span>
+                    </div>`;
+                });
+
+                // Build daily history HTML (last 10 days)
+                const sortedDates = Object.keys(monthlyPoints).sort().reverse().slice(0, 10);
+                let dailyHtml = '';
+                if (sortedDates.length === 0) {
+                    dailyHtml = '<div class="bonus-empty-state">Belum ada data harian</div>';
+                } else {
+                    sortedDates.forEach(date => {
+                        const rec = monthlyPoints[date];
+                        let dotsHtml = '';
+                        catKeys.forEach(k => {
+                            const pts = Number((rec.categories && rec.categories[k] && rec.categories[k].points) || rec[k] || 0);
+                            const maxC = catMaxes[k];
+                            const opacity = maxC > 0 ? Math.max(0.2, pts / maxC) : 0.2;
+                            dotsHtml += `<div class="daily-cat-dot" style="background:${catColors[k]};opacity:${opacity};"></div>`;
+                        });
+                        dailyHtml += `<div class="daily-item">
+                            <span class="daily-date">${formatDateShort(date)}</span>
+                            <div class="daily-categories">${dotsHtml}</div>
+                            <span class="daily-total">${rec.daily_total || 0}</span>
+                        </div>`;
+                    });
+                }
+
+                // Build penalties HTML
+                let penaltiesHtml = '';
+                if (penalties.length > 0) {
+                    penaltiesHtml = `<div class="bonus-card"><div class="bonus-card-title">⚠️ Penalti</div>`;
+                    penalties.forEach(p => {
+                        penaltiesHtml += `<div class="penalty-item">
+                            <div class="penalty-header">
+                                <span class="penalty-type">${p.type || p.penalty_type || 'Pelanggaran'}</span>
+                                <span class="penalty-points">-${Math.abs(Number(p.points_deducted || 0))} poin</span>
+                            </div>
+                            <div class="penalty-reason">${p.reason || p.notes || '-'}</div>
+                            <div class="penalty-date">${p.date || p.created_at || ''}</div>
+                        </div>`;
+                    });
+                    penaltiesHtml += '</div>';
+                }
+
+                // Build sales HTML
+                let salesHtml = '';
+                if (salesTarget && (salesTarget.target || salesTarget.achieved)) {
+                    salesHtml = `<div class="bonus-card">
+                        <div class="bonus-card-title">🎯 Target Penjualan</div>
+                        <div class="sales-progress-bar"><div class="sales-progress-fill" style="width:${salesPercent}%;"></div></div>
+                        <div class="sales-stats">
+                            <span>${formatRupiah(salesAchieved)}</span>
+                            <span>${salesPercent}%</span>
+                            <span>${formatRupiah(salesGoal)}</span>
+                        </div>
+                    </div>`;
+                }
+
+                // Build leaderboard HTML
+                let leaderboardHtml = '';
+                if (leaderboard && leaderboard.rankings && leaderboard.rankings.length > 0) {
+                    leaderboardHtml = `<div class="bonus-card"><div class="bonus-card-title">🏅 Leaderboard</div>`;
+                    const top5 = leaderboard.rankings.slice(0, 5);
+                    top5.forEach((entry, idx) => {
+                        const rankNum = idx + 1;
+                        const rankClass = rankNum === 1 ? 'gold' : rankNum === 2 ? 'silver' : rankNum === 3 ? 'bronze' : '';
+                        const isMe = (entry.waiter_id || '') === waiterId;
+                        leaderboardHtml += `<div class="leaderboard-item ${isMe ? 'is-me' : ''}">
+                            <div class="leaderboard-rank ${rankClass}">${rankNum}</div>
+                            <div class="leaderboard-name">${entry.waiter_name || 'Waiter'}${isMe ? ' (Anda)' : ''}</div>
+                            <div class="leaderboard-points">${entry.total_points || entry.net_points || 0} pts</div>
+                        </div>`;
+                    });
+                    leaderboardHtml += '</div>';
+                }
+
+                bonusContentArea.innerHTML = `
+                    <div class="progress-ring-wrapper">
+                        <div class="progress-ring-container">
+                            <svg class="progress-ring-svg" viewBox="0 0 180 180">
+                                <circle class="progress-ring-bg" cx="90" cy="90" r="70"></circle>
+                                <circle class="progress-ring-fill" cx="90" cy="90" r="70"
+                                    stroke="${ringColor}"
+                                    stroke-dasharray="${circumference}"
+                                    stroke-dashoffset="${dashoffset}"
+                                    style="animation: bonus-ring-fill 1.5s ease-in-out;"></circle>
+                            </svg>
+                            <div class="progress-ring-text">
+                                <div class="progress-ring-percent ${tierColorClass}">${percentage}%</div>
+                                <div class="progress-ring-label">dari maksimum</div>
+                            </div>
+                        </div>
+                        <span class="progress-tier ${tierBgClass} ${tierColorClass}">${tierLabel}</span>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value ${tierColorClass}">${netPoints}</div>
+                            <div class="stat-label">Total Poin</div>
+                            <div class="stat-sub">saat ini</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${daysScored}</div>
+                            <div class="stat-label">Hari Dinilai</div>
+                            <div class="stat-sub">bulan ini</div>
+                        </div>
+                        <div class="stat-card perfect">
+                            <div class="stat-value">${perfectDays} ✨</div>
+                            <div class="stat-label">Perfect Days</div>
+                            <div class="stat-sub">skor sempurna</div>
+                        </div>
+                        <div class="stat-card penalty">
+                            <div class="stat-value">-${totalPenalties}</div>
+                            <div class="stat-label">Penalti</div>
+                            <div class="stat-sub">poin dikurangi</div>
+                        </div>
+                    </div>
+
+                    <div class="bonus-card">
+                        <div class="bonus-card-title">📊 Rata-rata per Kategori</div>
+                        ${catBarsHtml}
+                    </div>
+
+                    <div class="bonus-card">
+                        <div class="bonus-card-title">📅 Riwayat Harian</div>
+                        <div class="daily-list">${dailyHtml}</div>
+                    </div>
+
+                    ${penaltiesHtml}
+                    ${salesHtml}
+                    ${leaderboardHtml}
+                `;
+            } catch (err) {
+                console.error('Failed to load bonus data:', err);
+                showFlash('error', 'Gagal memuat data bonus. Coba lagi.');
+            } finally {
+                bonusContentArea.style.opacity = '1';
+                bonusContentArea.style.pointerEvents = '';
+            }
+        }
+
+        if (bonusMonthPickerEl) {
+            bonusMonthPickerEl.addEventListener('change', function() {
+                const month = this.value;
+                if (month) loadBonusData(month);
+            });
+        }
 
         tabButtons.forEach((button) => {
             button.addEventListener('click', () => {
@@ -2034,9 +3453,26 @@
         setActiveTab('rack');
         renderAllTasks();
         renderActivityReports();
+        initAttendanceFromContext();
+        loadAttendanceStatus();
         syncDueTasks();
-        setInterval(pollTasks, 5000);
-        setInterval(syncDueTasks, 60000);
+        let pollIntervalId = setInterval(pollTasks, 30000);
+        let syncIntervalId = setInterval(syncDueTasks, 120000);
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearInterval(pollIntervalId);
+                clearInterval(syncIntervalId);
+                pollIntervalId = null;
+                syncIntervalId = null;
+            } else {
+                // Immediately poll on return, then resume intervals
+                pollTasks();
+                syncDueTasks();
+                pollIntervalId = setInterval(pollTasks, 30000);
+                syncIntervalId = setInterval(syncDueTasks, 120000);
+            }
+        });
     </script>
 </body>
 
