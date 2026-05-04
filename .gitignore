@@ -26,3 +26,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+.playwright-mcp/
+*.xlsx
+*.png
+*.bak
