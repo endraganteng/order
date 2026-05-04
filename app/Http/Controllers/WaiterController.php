@@ -100,15 +100,6 @@ class WaiterController extends Controller
         $waiterName = (string) session('waiter_name', 'Waiter');
         $reportDate = date('Y-m-d');
 
-        // Cooldown guard: run heavy ops max once per 60s per session
-        $lastGenerated = (int) session('waiter_last_generated_at', 0);
-        if (time() - $lastGenerated >= 60) {
-            $this->firebase->generateDueRecurringWaiterTasks();
-            $overdueResult = $this->firebase->markOverdueWaiterTasks();
-            $this->sendOverdueNotifications($overdueResult['overdue_tasks'] ?? []);
-            session()->put('waiter_last_generated_at', time());
-        }
-
         $taskBuckets = $this->buildWaiterTaskBuckets($waiterId);
         $activityReports = $this->buildWaiterActivityReports($waiterId, $reportDate);
         $rackProductsMap = $this->firebase->getAllRackProductsMap();
@@ -117,36 +108,24 @@ class WaiterController extends Controller
 
         // Bonus dashboard data
         $bonusMonth = date('Y-m');
-        $bonusConfig = $this->bonus->getBonusConfig();
-        $monthlyPoints = $this->firebase->getMonthlyDailyPoints($waiterId, $bonusMonth);
-        $penalties = $this->bonus->getPenaltiesByMonth($bonusMonth, $waiterId);
-        $salesTarget = $this->bonus->getSalesTarget($waiterId, $bonusMonth);
-        $bonusSummary = $this->bonus->getMonthlyBonusSummary($waiterId, $bonusMonth);
-        $leaderboard = $this->bonus->getLeaderboard($bonusMonth);
-
-        $totalEarned = 0;
-        $totalPenalties = 0;
-        $daysScored = 0;
-        $perfectDays = 0;
-
-        foreach ($monthlyPoints as $date => $record) {
-            $totalEarned += (int) ($record['daily_total'] ?? 0);
-            $daysScored++;
-            if (! empty($record['perfect_day_bonus']) && $record['perfect_day_bonus'] > 0) {
-                $perfectDays++;
-            }
-        }
-
-        foreach ($penalties as $penalty) {
-            $totalPenalties += abs((int) ($penalty['points_deducted'] ?? 0));
-        }
-
-        $netPoints = $totalEarned - $totalPenalties;
-        $workingDays = (int) ($bonusConfig['working_days_per_month'] ?? 26);
-        $perfectDayBonus = (int) ($bonusConfig['perfect_day_bonus'] ?? 5);
-        $dailyMax = (int) ($bonusConfig['daily_max_points'] ?? 30);
-        $theoreticalMax = ($dailyMax + $perfectDayBonus) * $workingDays;
-        $percentage = $theoreticalMax > 0 ? round(($netPoints / $theoreticalMax) * 100, 1) : 0;
+        $bonusProgress = $this->bonus->getWaiterMonthlyProgress($waiterId, $bonusMonth);
+        $bonusConfig = $bonusProgress['config'];
+        $monthlyPoints = $bonusProgress['monthly_points'];
+        $penalties = $bonusProgress['penalties'];
+        $salesTarget = $bonusProgress['sales_target'];
+        $bonusSummary = $bonusProgress['bonus_summary'];
+        $leaderboard = $bonusProgress['leaderboard'];
+        $totalEarned = (int) $bonusProgress['total_earned'];
+        $totalPenalties = (int) $bonusProgress['total_penalties'];
+        $netPoints = (int) $bonusProgress['net_points'];
+        $daysScored = (int) $bonusProgress['days_scored'];
+        $perfectDays = (int) $bonusProgress['perfect_days'];
+        $percentage = (float) $bonusProgress['percentage'];
+        $theoreticalMax = (int) $bonusProgress['theoretical_max'];
+        $workingDays = (int) $bonusProgress['working_days'];
+        $dailyMaxWithPerfect = (int) $bonusProgress['daily_max_with_perfect'];
+        $monthlyServiceMax = (int) $bonusProgress['monthly_service_max'];
+        $monthlySalesMax = (int) $bonusProgress['monthly_sales_max'];
 
         $myRank = null;
         if ($leaderboard && ! empty($leaderboard['rankings'])) {
@@ -187,6 +166,9 @@ class WaiterController extends Controller
             'percentage' => $percentage,
             'theoreticalMax' => $theoreticalMax,
             'workingDays' => $workingDays,
+            'dailyMaxWithPerfect' => $dailyMaxWithPerfect,
+            'monthlyServiceMax' => $monthlyServiceMax,
+            'monthlySalesMax' => $monthlySalesMax,
         ]);
     }
 
@@ -210,31 +192,18 @@ class WaiterController extends Controller
     }
 
     /**
-     * Generate due recurring tasks for waiter portal polling.
+     * Refresh waiter portal data for polling.
      */
     public function syncDueTasks()
     {
         $waiterId = (string) session('waiter_id');
         $reportDate = date('Y-m-d');
-        $generated = $this->firebase->generateDueRecurringWaiterTasks();
-        $overdueResult = $this->firebase->markOverdueWaiterTasks();
-        $this->sendOverdueNotifications($overdueResult['overdue_tasks'] ?? []);
         $taskBuckets = $this->buildWaiterTaskBuckets($waiterId);
         $activityReports = $this->buildWaiterActivityReports($waiterId, $reportDate);
-
-        // Send periodic task reminders via WhatsApp
-        try {
-            $attendance = $this->firebase->getAttendanceByDate($waiterId, $reportDate);
-            $this->fonnte->sendTaskReminders($waiterId, $taskBuckets['pending_tasks'], $attendance);
-        } catch (\Throwable $e) {
-            report($e);
-        }
 
         return response()->json([
             'success' => true,
             'report_date' => $reportDate,
-            'generated' => $generated,
-            'overdue' => $overdueResult['count'],
             'pending_tasks' => $taskBuckets['pending_tasks'],
             'task_history' => $taskBuckets['task_history'],
             'activity_reports' => $activityReports,
@@ -293,7 +262,7 @@ class WaiterController extends Controller
                 'attitude' => $autoScores['attitude'],
             ];
 
-            $bonusService->scoreDailyPoints($waiterId, $today, $categoryScores, 'Auto-scored on activity report');
+            $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on activity report', $autoScores['auto_details'] ?? []);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -379,7 +348,7 @@ class WaiterController extends Controller
                 'attitude' => $autoScores['attitude'],
             ];
 
-            $bonusService->scoreDailyPoints($waiterId, $today, $categoryScores, 'Auto-scored on task completion');
+            $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on task completion', $autoScores['auto_details'] ?? []);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -474,7 +443,7 @@ class WaiterController extends Controller
                     'attitude' => $autoScores['attitude'],
                 ];
 
-                $bonusService->scoreDailyPoints($waiterId, $today, $categoryScores, 'Auto-scored on clock-in');
+                $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on clock-in', $autoScores['auto_details'] ?? []);
             } catch (\Throwable $e) {
                 report($e);
             }

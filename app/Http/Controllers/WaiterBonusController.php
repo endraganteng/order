@@ -25,38 +25,25 @@ class WaiterBonusController extends Controller
         $waiterId = session('waiter_id');
         $waiterName = session('waiter_name', 'Waiter');
         $month = $request->get('month', date('Y-m'));
+        $progress = $this->bonus->getWaiterMonthlyProgress((string) $waiterId, $month);
         
-        $config = $this->bonus->getBonusConfig();
-        $monthlyPoints = $this->firebase->getMonthlyDailyPoints($waiterId, $month);
-        $penalties = $this->bonus->getPenaltiesByMonth($month, $waiterId);
-        $salesTarget = $this->bonus->getSalesTarget($waiterId, $month);
-        $bonusSummary = $this->bonus->getMonthlyBonusSummary($waiterId, $month);
-        $leaderboard = $this->bonus->getLeaderboard($month);
-        
-        // Calculate current stats
-        $totalEarned = 0;
-        $totalPenalties = 0;
-        $daysScored = 0;
-        $perfectDays = 0;
-        
-        foreach ($monthlyPoints as $date => $record) {
-            $totalEarned += (int)($record['daily_total'] ?? 0);
-            $daysScored++;
-            if (!empty($record['perfect_day_bonus']) && $record['perfect_day_bonus'] > 0) {
-                $perfectDays++;
-            }
-        }
-        
-        foreach ($penalties as $penalty) {
-            $totalPenalties += abs((int)($penalty['points_deducted'] ?? 0));
-        }
-        
-        $netPoints = $totalEarned - $totalPenalties;
-        $workingDays = (int)($config['working_days_per_month'] ?? 26);
-        $perfectDayBonus = (int)($config['perfect_day_bonus'] ?? 5);
-        $dailyMax = (int)($config['daily_max_points'] ?? 30);
-        $theoreticalMax = ($dailyMax + $perfectDayBonus) * $workingDays;
-        $percentage = $theoreticalMax > 0 ? round(($netPoints / $theoreticalMax) * 100, 1) : 0;
+        $config = $progress['config'];
+        $monthlyPoints = $progress['monthly_points'];
+        $penalties = $progress['penalties'];
+        $salesTarget = $progress['sales_target'];
+        $bonusSummary = $progress['bonus_summary'];
+        $leaderboard = $progress['leaderboard'];
+        $totalEarned = (int) $progress['total_earned'];
+        $totalPenalties = (int) $progress['total_penalties'];
+        $netPoints = (int) $progress['net_points'];
+        $daysScored = (int) $progress['days_scored'];
+        $perfectDays = (int) $progress['perfect_days'];
+        $percentage = (float) $progress['percentage'];
+        $theoreticalMax = (int) $progress['theoretical_max'];
+        $workingDays = (int) $progress['working_days'];
+        $dailyMaxWithPerfect = (int) $progress['daily_max_with_perfect'];
+        $monthlyServiceMax = (int) $progress['monthly_service_max'];
+        $monthlySalesMax = (int) $progress['monthly_sales_max'];
         
         // Find waiter's rank in leaderboard
         $myRank = null;
@@ -74,7 +61,7 @@ class WaiterBonusController extends Controller
             'monthlyPoints', 'penalties', 'salesTarget', 'bonusSummary',
             'leaderboard', 'myRank',
             'totalEarned', 'totalPenalties', 'netPoints', 'daysScored', 'perfectDays',
-            'percentage', 'theoreticalMax', 'workingDays'
+            'percentage', 'theoreticalMax', 'workingDays', 'dailyMaxWithPerfect', 'monthlyServiceMax', 'monthlySalesMax'
         ));
     }
 
@@ -85,42 +72,23 @@ class WaiterBonusController extends Controller
     {
         $waiterId = session('waiter_id');
         $month = $request->get('month', date('Y-m'));
-        
-        $config = $this->bonus->getBonusConfig();
-        $monthlyPoints = $this->firebase->getMonthlyDailyPoints($waiterId, $month);
-        $penalties = $this->bonus->getPenaltiesByMonth($month, $waiterId);
-        $salesTarget = $this->bonus->getSalesTarget($waiterId, $month);
-        $leaderboard = $this->bonus->getLeaderboard($month);
-        
-        $totalEarned = 0;
-        $totalPenalties = 0;
-        $perfectDays = 0;
-        
-        foreach ($monthlyPoints as $record) {
-            $totalEarned += (int)($record['daily_total'] ?? 0);
-            if (!empty($record['perfect_day_bonus']) && $record['perfect_day_bonus'] > 0) {
-                $perfectDays++;
-            }
-        }
-        foreach ($penalties as $penalty) {
-            $totalPenalties += abs((int)($penalty['points_deducted'] ?? 0));
-        }
-        
-        $netPoints = $totalEarned - $totalPenalties;
-        $workingDays = (int)($config['working_days_per_month'] ?? 26);
-        $theoreticalMax = ((int)($config['daily_max_points'] ?? 30) + (int)($config['perfect_day_bonus'] ?? 5)) * $workingDays;
-        $percentage = $theoreticalMax > 0 ? round(($netPoints / $theoreticalMax) * 100, 1) : 0;
+        $progress = $this->bonus->getWaiterMonthlyProgress((string) $waiterId, $month);
         
         return response()->json([
-            'total_earned' => $totalEarned,
-            'total_penalties' => $totalPenalties,
-            'net_points' => $netPoints,
-            'percentage' => $percentage,
-            'perfect_days' => $perfectDays,
-            'monthly_points' => $monthlyPoints,
-            'penalties' => $penalties,
-            'sales_target' => $salesTarget,
-            'leaderboard' => $leaderboard,
+            'total_earned' => $progress['total_earned'],
+            'total_penalties' => $progress['total_penalties'],
+            'net_points' => $progress['net_points'],
+            'percentage' => $progress['percentage'],
+            'perfect_days' => $progress['perfect_days'],
+            'monthly_points' => $progress['monthly_points'],
+            'penalties' => $progress['penalties'],
+            'sales_target' => $progress['sales_target'],
+            'leaderboard' => $progress['leaderboard'],
+            'theoretical_max' => $progress['theoretical_max'],
+            'working_days' => $progress['working_days'],
+            'daily_max_with_perfect' => $progress['daily_max_with_perfect'],
+            'monthly_service_max' => $progress['monthly_service_max'],
+            'monthly_sales_max' => $progress['monthly_sales_max'],
         ]);
     }
 }

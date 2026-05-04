@@ -694,8 +694,8 @@
             <div class="card-title">💡 Cara Kerja Poin</div>
             <div class="explain-block">
                 <ul class="explain-list">
-                    <li class="explain-line"><strong>Poin harian max</strong><span>35 poin/hari (30 + 5 perfect day bonus)</span></li>
-                    <li class="explain-line"><strong>Poin bulanan max</strong><span>{{ $theoreticalMax }} poin (35 × {{ $workingDays }} hari)</span></li>
+                    <li class="explain-line"><strong>Poin harian max</strong><span>{{ $dailyMaxWithPerfect }} poin/hari (termasuk perfect day bonus)</span></li>
+                    <li class="explain-line"><strong>Poin bulanan max</strong><span>{{ $theoreticalMax }} poin ({{ $dailyMaxWithPerfect * $workingDays }} harian + {{ $monthlyServiceMax }} pelayanan + {{ $monthlySalesMax }} penjualan)</span></li>
                     <li class="explain-line"><strong>Poin kamu saat ini</strong><span>{{ $netPoints }} poin ({{ $percentage }}%)</span></li>
                 </ul>
             </div>

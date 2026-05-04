@@ -1034,15 +1034,15 @@
                     <div class="explain-block">
                         <div class="explain-title">Poin Harian (Otomatis)</div>
                         <ul class="explain-list">
-                            <li class="explain-line"><strong>Poin harian max</strong><span>25 poin/hari (20 + 5 perfect day bonus)</span></li>
-                            <li class="explain-line"><strong>Poin harian bulanan</strong><span>{{ 25 * $workingDays }} poin (25 × {{ $workingDays }} hari)</span></li>
+                            <li class="explain-line"><strong>Poin harian max</strong><span>{{ $dailyMaxWithPerfect }} poin/hari (termasuk perfect day bonus)</span></li>
+                            <li class="explain-line"><strong>Poin harian bulanan</strong><span>{{ $dailyMaxWithPerfect * $workingDays }} poin ({{ $dailyMaxWithPerfect }} × {{ $workingDays }} hari)</span></li>
                         </ul>
                     </div>
                     <div class="explain-block">
                         <div class="explain-title">Poin Bulanan (Supervisor)</div>
                         <ul class="explain-list">
-                            <li class="explain-line"><strong>Pelayanan</strong><span>0-100% × 5 × {{ $workingDays }} = max {{ 5 * $workingDays }} poin</span></li>
-                            <li class="explain-line"><strong>Penjualan</strong><span>0-100% × 5 × {{ $workingDays }} = max {{ 5 * $workingDays }} poin</span></li>
+                            <li class="explain-line"><strong>Pelayanan</strong><span>0-100% × max harian × {{ $workingDays }} = max {{ $monthlyServiceMax }} poin</span></li>
+                            <li class="explain-line"><strong>Penjualan</strong><span>0-100% × max harian × {{ $workingDays }} = max {{ $monthlySalesMax }} poin</span></li>
                         </ul>
                     </div>
                     <div class="explain-block">
