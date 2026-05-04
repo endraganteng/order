@@ -71,6 +71,7 @@ class BonusController extends Controller
             ],
             'penalty_types' => [
                 'late_arrival' => ['label' => 'Terlambat masuk', 'points' => -5],
+                'absent' => ['label' => 'Tidak hadir / no-show', 'points' => -15],
                 'mandatory_task_missed' => ['label' => 'Tugas wajib tidak dikerjakan', 'points' => -10],
                 'careless_work' => ['label' => 'Tugas dikerjakan asal-asalan', 'points' => -10],
                 'missing_photo_proof' => ['label' => 'Bukti foto tidak ada', 'points' => -5],
@@ -172,7 +173,7 @@ class BonusController extends Controller
             'notes' => 'nullable|string|max:500',
         ]);
 
-        $result = $this->bonus->scoreDailyPoints(
+        $result = $this->bonus->saveAdminDailyScore(
             $request->waiter_id,
             $request->date,
             [
@@ -315,6 +316,11 @@ class BonusController extends Controller
             (int)$request->service_percentage,
             (int)$request->sales_percentage
         );
+
+        if (($result['already_finalized'] ?? false) === true) {
+            return response()->json($result, 409);
+        }
+
         return response()->json($result);
     }
 

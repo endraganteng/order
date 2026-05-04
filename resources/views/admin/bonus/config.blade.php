@@ -26,7 +26,7 @@
             </div>
             <div class="form-group">
                 <label for="daily_max_points">Maksimal Poin Harian (Total)</label>
-                <input type="number" id="daily_max_points" name="daily_max_points" value="{{ $config['daily_max_points'] ?? 30 }}" class="form-control" required readonly>
+                <input type="number" id="daily_max_points" name="daily_max_points" value="{{ $config['daily_max_points'] ?? 20 }}" class="form-control" required readonly>
             </div>
         </div>
 
@@ -63,7 +63,7 @@
                         </tr>
                         <tr class="font-weight-bold bg-light">
                             <td>Total Poin Harian</td>
-                            <td><span id="totalPointsDisplay">{{ $config['daily_max_points'] ?? 30 }}</span></td>
+                            <td><span id="totalPointsDisplay">{{ $config['daily_max_points'] ?? 20 }}</span></td>
                         </tr>
                     </tbody>
                 </table>
@@ -157,29 +157,34 @@
                     </thead>
                     <tbody>
                         <tr>
+                            <td><span class="badge badge-danger">Tidak Hadir / No-show</span></td>
+                            <td>-15 poin</td>
+                            <td>Otomatis dari audit absensi terjadwal</td>
+                        </tr>
+                        <tr>
                             <td><span class="badge badge-danger">Keterlambatan</span></td>
-                            <td>-2 poin / 10 menit</td>
-                            <td>Otomatis dari absensi</td>
+                            <td>-5 poin</td>
+                            <td>Otomatis saat status absensi terlambat</td>
                         </tr>
                         <tr>
                             <td><span class="badge badge-danger">Tugas Wajib Terlewat</span></td>
-                            <td>-5 poin</td>
-                            <td>Tidak melaporkan stock/uang</td>
+                            <td>-10 poin</td>
+                            <td>Otomatis saat tugas wajib menjadi overdue</td>
                         </tr>
                         <tr>
                             <td><span class="badge badge-warning">Kerja Kurang Teliti</span></td>
-                            <td>-3 poin</td>
-                            <td>Kesalahan minor</td>
+                            <td>-10 poin</td>
+                            <td>Penalti manual untuk pekerjaan asal-asalan</td>
                         </tr>
                         <tr>
                             <td><span class="badge badge-warning">Bukti Foto Kurang</span></td>
-                            <td>-2 poin</td>
-                            <td>Foto bukti tidak jelas/lengkap</td>
+                            <td>-5 poin</td>
+                            <td>Penalti manual saat bukti foto tidak ada/lengkap</td>
                         </tr>
                         <tr>
                             <td><span class="badge badge-danger">Komplain Valid</span></td>
-                            <td>-5 poin</td>
-                            <td>Komplain dari pelanggan</td>
+                            <td>-10 poin</td>
+                            <td>Penalti manual untuk komplain pelanggan yang valid</td>
                         </tr>
                     </tbody>
                 </table>

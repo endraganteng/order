@@ -228,7 +228,7 @@
                             <div class="actions">
                                 <button type="button" class="btn btn-info btn-sm btn-calculate" data-id="{{ $row['waiter_id'] }}">Hitung</button>
                                 <button type="button" class="btn btn-warning btn-sm btn-override" data-id="{{ $row['waiter_id'] }}" data-name="{{ $row['waiter_name'] }}">Override</button>
-                                <button type="button" class="btn btn-success btn-sm btn-finalize" data-id="{{ $row['waiter_id'] }}">Finalisasi</button>
+                                <button type="button" class="btn btn-success btn-sm btn-finalize" data-id="{{ $row['waiter_id'] }}" {{ $row['status'] === 'finalized' ? 'disabled' : '' }}>Finalisasi</button>
                             </div>
                         </td>
                     </tr>
@@ -266,7 +266,7 @@
                 <div class="actions">
                     <button type="button" class="btn btn-info btn-sm btn-calculate" data-id="{{ $row['waiter_id'] }}">Hitung</button>
                     <button type="button" class="btn btn-warning btn-sm btn-override" data-id="{{ $row['waiter_id'] }}" data-name="{{ $row['waiter_name'] }}">Override</button>
-                    <button type="button" class="btn btn-success btn-sm btn-finalize" data-id="{{ $row['waiter_id'] }}">Finalisasi</button>
+                    <button type="button" class="btn btn-success btn-sm btn-finalize" data-id="{{ $row['waiter_id'] }}" {{ $row['status'] === 'finalized' ? 'disabled' : '' }}>Finalisasi</button>
                 </div>
             </div>
         @endforeach
@@ -512,14 +512,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (serviceInput && servicePreview) {
             const pct = Math.max(0, Math.min(100, parseInt(serviceInput.value) || 0));
-            const pts = Math.round((pct / 100) * 5 * workingDays);
+            const pts = Math.round((pct / 100) * monthlyServiceMax);
             servicePreview.textContent = pts;
         }
         if (salesInput && salesPreview) {
             const pct = Math.max(0, Math.min(100, parseInt(salesInput.value) || 0));
-            const pts = Math.round((pct / 100) * 5 * workingDays);
+            const pts = Math.round((pct / 100) * monthlySalesMax);
             salesPreview.textContent = pts;
         }
+    }
+
+    function syncFinalizeButtons(waiterId, rowData) {
+        const finalized = String(rowData.status || '') === 'finalized';
+        document.querySelectorAll('.btn-finalize[data-id="' + waiterId + '"]').forEach(function (btn) {
+            btn.disabled = finalized;
+        });
     }
 
     // Attach listeners to percentage inputs
@@ -597,6 +604,7 @@ document.addEventListener('DOMContentLoaded', function () {
             salesInput.value = rowData.monthly_sales_percentage;
         }
         updatePointsPreview(waiterId);
+        syncFinalizeButtons(waiterId, rowData);
 
         refreshKpi();
     }
@@ -663,7 +671,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         const rowData = parseSummaryFromResponse(data, waiterId);
-        rowData.status = 'finalized';
         applyRowData(waiterId, rowData);
     }
 
