@@ -56,6 +56,7 @@ class BonusService
 
             'penalty_types' => [
                 'late_arrival'          => ['label' => 'Terlambat masuk', 'points' => -5],
+                'absent'                => ['label' => 'Tidak hadir / no-show', 'points' => -15],
                 'mandatory_task_missed' => ['label' => 'Tugas wajib tidak dikerjakan', 'points' => -10],
                 'careless_work'         => ['label' => 'Tugas dikerjakan asal-asalan', 'points' => -10],
                 'missing_photo_proof'   => ['label' => 'Bukti foto tidak ada', 'points' => -5],
@@ -78,6 +79,103 @@ class BonusService
 
             'sales_target_roles' => ['bird_specialist', 'fishing_specialist'],
         ];
+    }
+
+    /**
+     * Get the configured max points for a category.
+     */
+    protected function getCategoryMaxPoints(array $config, string $categoryKey, int $default = 0): int
+    {
+        return (int) ($config['point_categories'][$categoryKey]['max_daily_points'] ?? $default);
+    }
+
+    /**
+     * Build the canonical monthly points capacity breakdown.
+     */
+    public function getMonthlyPointsCapacity(?array $config = null): array
+    {
+        $config ??= $this->getBonusConfig();
+
+        $workingDays = (int) ($config['working_days_per_month'] ?? 26);
+        $dailyMaxPoints = (int) ($config['daily_max_points'] ?? 20);
+        $perfectDayBonus = (int) ($config['perfect_day_bonus'] ?? 5);
+        $dailyMaxWithPerfect = $dailyMaxPoints + $perfectDayBonus;
+        $monthlyServiceMaxPerDay = $this->getCategoryMaxPoints($config, 'service', 5);
+        $monthlySalesMaxPerDay = $this->getCategoryMaxPoints($config, 'sales', 5);
+        $monthlyServiceMax = $monthlyServiceMaxPerDay * $workingDays;
+        $monthlySalesMax = $monthlySalesMaxPerDay * $workingDays;
+
+        return [
+            'working_days' => $workingDays,
+            'daily_max_points' => $dailyMaxPoints,
+            'perfect_day_bonus' => $perfectDayBonus,
+            'daily_max_with_perfect' => $dailyMaxWithPerfect,
+            'monthly_service_max_per_day' => $monthlyServiceMaxPerDay,
+            'monthly_sales_max_per_day' => $monthlySalesMaxPerDay,
+            'monthly_service_max' => $monthlyServiceMax,
+            'monthly_sales_max' => $monthlySalesMax,
+            'theoretical_max' => ($dailyMaxWithPerfect * $workingDays) + $monthlyServiceMax + $monthlySalesMax,
+        ];
+    }
+
+    /**
+     * Build canonical waiter-facing monthly progress data.
+     */
+    public function getWaiterMonthlyProgress(string $waiterId, string $month): array
+    {
+        $config = $this->getBonusConfig();
+        $capacity = $this->getMonthlyPointsCapacity($config);
+        $monthlyPoints = $this->getMonthlyDailyPoints($waiterId, $month);
+        $penalties = $this->getPenaltiesByMonth($month, $waiterId);
+        $salesTarget = $this->getSalesTarget($waiterId, $month);
+        $bonusSummary = $this->getMonthlyBonusSummary($waiterId, $month);
+        $leaderboard = $this->getLeaderboard($month);
+
+        $totalEarned = 0;
+        $penaltySignedTotal = 0;
+        $totalPenalties = 0;
+        $daysScored = 0;
+        $perfectDays = 0;
+
+        foreach ($monthlyPoints as $record) {
+            $record = (array) $record;
+            $totalEarned += (int) ($record['daily_total'] ?? 0);
+            $daysScored++;
+
+            if ((int) ($record['perfect_day_bonus'] ?? 0) > 0) {
+                $perfectDays++;
+            }
+        }
+
+        foreach ($penalties as $penalty) {
+            $pointsDeducted = (int) ($penalty['points_deducted'] ?? 0);
+            $penaltySignedTotal += $pointsDeducted;
+            $totalPenalties += abs($pointsDeducted);
+        }
+
+        $servicePoints = (int) ($bonusSummary['service_points'] ?? 0);
+        $salesPoints = (int) ($bonusSummary['sales_points'] ?? 0);
+        $netPoints = max(0, $totalEarned + $servicePoints + $salesPoints + $penaltySignedTotal);
+        $theoreticalMax = (int) $capacity['theoretical_max'];
+        $percentage = $theoreticalMax > 0 ? round(($netPoints / $theoreticalMax) * 100, 1) : 0.0;
+
+        return [
+            'config' => $config,
+            'monthly_points' => $monthlyPoints,
+            'penalties' => $penalties,
+            'sales_target' => $salesTarget,
+            'bonus_summary' => $bonusSummary,
+            'leaderboard' => $leaderboard,
+            'total_earned' => $totalEarned,
+            'total_penalties' => $totalPenalties,
+            'penalty_signed_total' => $penaltySignedTotal,
+            'service_points' => $servicePoints,
+            'sales_points' => $salesPoints,
+            'net_points' => $netPoints,
+            'days_scored' => $daysScored,
+            'perfect_days' => $perfectDays,
+            'percentage' => $percentage,
+        ] + $capacity;
     }
 
     /**
@@ -104,10 +202,23 @@ class BonusService
      * @param  string  $notes
      * @return array
      */
-    public function scoreDailyPoints(string $waiterId, string $date, array $categoryScores, string $notes = ''): array
+    public function scoreDailyPoints(string $waiterId, string $date, array $categoryScores, string $notes = '', array $metadata = []): array
     {
         $config = $this->getBonusConfig();
         $categories = $config['point_categories'] ?? [];
+        $existingRecord = $this->getDailyPoints($waiterId, $date);
+
+        if (($metadata['preserve_admin_override'] ?? false) && ! empty($existingRecord['admin_override'])) {
+            return [
+                'success' => true,
+                'skipped' => true,
+                'message' => 'Skipped auto-score because record is admin overridden.',
+                'daily_total' => (int) ($existingRecord['daily_total'] ?? 0),
+                'categories' => (array) ($existingRecord['categories'] ?? []),
+                'raw_total' => (int) ($existingRecord['raw_total'] ?? 0),
+                'perfect_day_bonus' => (int) ($existingRecord['perfect_day_bonus'] ?? 0),
+            ];
+        }
 
         $validated = [];
         $rawTotal = 0;
@@ -136,7 +247,20 @@ class BonusService
             'daily_total'       => $dailyTotal,
             'notes'             => $notes,
             'scored_at'         => time(),
+            'updated_at'        => time(),
+            'score_source'      => (string) ($metadata['score_source'] ?? 'manual'),
+            'admin_override'    => (bool) ($metadata['admin_override'] ?? false),
         ];
+
+        if (isset($metadata['auto_details']) && is_array($metadata['auto_details'])) {
+            $record['auto_details'] = $metadata['auto_details'];
+        }
+
+        if ($existingRecord && isset($existingRecord['created_at'])) {
+            $record['created_at'] = (int) $existingRecord['created_at'];
+        } else {
+            $record['created_at'] = time();
+        }
 
         $this->database->getReference('waiter_daily_points/' . $waiterId . '/' . $date)->set($record);
 
@@ -148,6 +272,24 @@ class BonusService
             'raw_total'        => $rawTotal,
             'perfect_day_bonus' => $perfectDayBonus,
         ];
+    }
+
+    public function saveAdminDailyScore(string $waiterId, string $date, array $categoryScores, string $notes = ''): array
+    {
+        return $this->scoreDailyPoints($waiterId, $date, $categoryScores, $notes, [
+            'score_source' => 'admin',
+            'admin_override' => true,
+        ]);
+    }
+
+    public function saveAutoDailyScore(string $waiterId, string $date, array $categoryScores, string $notes = '', array $autoDetails = []): array
+    {
+        return $this->scoreDailyPoints($waiterId, $date, $categoryScores, $notes, [
+            'score_source' => 'auto',
+            'admin_override' => false,
+            'preserve_admin_override' => true,
+            'auto_details' => $autoDetails,
+        ]);
     }
 
     /**
@@ -426,7 +568,27 @@ class BonusService
         }
 
         // -----------------------------------------------------------------
-        //  2. MANDATORY TASK MISSED — from overdue tasks
+        //  2. ABSENT / NO-SHOW — from explicit attendance status
+        // -----------------------------------------------------------------
+        if (($attendance['status'] ?? '') === 'absent') {
+            $key = 'absent_';
+            if (! in_array($key, $existingKeys, true)) {
+                $result = $this->applyPenalty([
+                    'waiter_id'   => $waiterId,
+                    'waiter_name' => $waiterName,
+                    'penalty_type' => 'absent',
+                    'date'        => $date,
+                    'reason'      => 'Tidak hadir pada hari kerja (otomatis dari absensi)',
+                    'related_task_id' => '',
+                ]);
+                if ($result['success'] ?? false) {
+                    $applied[] = $result;
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------
+        //  3. MANDATORY TASK MISSED — from overdue tasks
         // -----------------------------------------------------------------
         $overdueTasks = array_filter($waiterTasks, function ($task) {
             return ($task['status'] ?? '') === 'overdue';
@@ -593,18 +755,13 @@ class BonusService
     public function calculateMonthlyBonus(string $waiterId, string $month, ?int $monthlyServicePercentage = null, ?int $monthlySalesPercentage = null): array
     {
         $config = $this->getBonusConfig();
-        $workingDays = (int) ($config['working_days_per_month'] ?? 26);
-        $dailyMaxWithPerfect = (int) ($config['daily_max_points'] ?? 20) + (int) ($config['perfect_day_bonus'] ?? 5);
+        $capacity = $this->getMonthlyPointsCapacity($config);
+        $workingDays = (int) $capacity['working_days'];
         $maxBonusTotal = (int) ($config['total_bonus_pool'] ?? 500000);
 
-        // Monthly category max per day (service and sales each max 5/day equivalent)
-        $monthlyServiceMaxPerDay = 5;
-        $monthlySalesMaxPerDay = 5;
-
-        // Theoretical max = daily auto max + monthly service + monthly sales
-        $theoreticalMax = ($dailyMaxWithPerfect * $workingDays)
-            + ($monthlyServiceMaxPerDay * $workingDays)
-            + ($monthlySalesMaxPerDay * $workingDays);
+        $monthlyServiceMaxPerDay = (int) $capacity['monthly_service_max_per_day'];
+        $monthlySalesMaxPerDay = (int) $capacity['monthly_sales_max_per_day'];
+        $theoreticalMax = (int) $capacity['theoretical_max'];
 
         // --- Read existing monthly percentages from summary if not provided ---
         if ($monthlyServicePercentage === null || $monthlySalesPercentage === null) {
@@ -738,13 +895,38 @@ class BonusService
      */
     public function finalizeMonthlyBonus(string $waiterId, string $month, ?int $monthlyServicePercentage = null, ?int $monthlySalesPercentage = null): array
     {
-        $summary = $this->calculateMonthlyBonus($waiterId, $month, $monthlyServicePercentage, $monthlySalesPercentage);
-        $summary['status'] = 'finalized';
-        $summary['finalized_at'] = time();
+        $path = 'waiter_bonus_summary/' . $waiterId . '/' . $month;
+        $finalizedSummary = null;
+        $alreadyFinalized = false;
 
-        $this->database->getReference('waiter_bonus_summary/' . $waiterId . '/' . $month)->set($summary);
+        $this->database->runTransaction(function ($transaction) use ($path, $waiterId, $month, $monthlyServicePercentage, $monthlySalesPercentage, &$finalizedSummary, &$alreadyFinalized) {
+            $reference = $this->database->getReference($path);
+            $snapshot = $transaction->snapshot($reference);
+            $existing = $snapshot->exists() ? (array) $snapshot->getValue() : null;
 
-        return $summary;
+            if (($existing['status'] ?? '') === 'finalized') {
+                $alreadyFinalized = true;
+                $finalizedSummary = $existing;
+
+                return;
+            }
+
+            $summary = $this->calculateMonthlyBonus($waiterId, $month, $monthlyServicePercentage, $monthlySalesPercentage);
+            $summary['status'] = 'finalized';
+            $summary['finalized_at'] = time();
+            $transaction->set($reference, $summary);
+            $finalizedSummary = $summary;
+        });
+
+        if ($alreadyFinalized) {
+            return array_merge($finalizedSummary ?? [], [
+                'success' => false,
+                'already_finalized' => true,
+                'message' => 'Bonus bulan ini sudah difinalisasi.',
+            ]);
+        }
+
+        return array_merge($finalizedSummary ?? [], ['success' => true]);
     }
 
     /**
