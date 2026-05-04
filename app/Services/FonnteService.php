@@ -108,43 +108,39 @@ class FonnteService
      * - General tasks: every 1 hour after shift start
      * - Rack check tasks: every 2 hours after clock-in
      *
-     * Uses session-based cooldown to avoid spamming.
+     * Uses Firebase-backed durable cooldown state to avoid spamming.
      */
-    public function sendTaskReminders(string $waiterId, array $pendingTasks, ?array $attendance): void
+    public function sendTaskReminders(string $waiterId, array $pendingTasks, ?array $attendance, ?string $date = null): array
     {
-        if (!$this->isEnabled() || empty($pendingTasks)) {
-            return;
+        $date ??= date('Y-m-d');
+        $now = time();
+
+        if (! $this->isEnabled() || empty($pendingTasks)) {
+            return ['sent' => []];
         }
 
         $waiter = $this->firebase->getWaiterById($waiterId);
         $phone = $waiter['phone'] ?? null;
-        if (!$phone) {
-            return;
+        if (! $phone) {
+            return ['sent' => []];
         }
 
-        // Determine clock-in time
-        $clockInTs = null;
-        if ($attendance && !empty($attendance['clock_in'])) {
-            $clockInTs = (int) $attendance['clock_in'];
+        $clockInTs = $this->resolveClockInTimestamp($attendance, $date);
+
+        if (! $clockInTs) {
+            return ['sent' => []];
         }
 
-        // If not clocked in yet, no reminders
-        if (!$clockInTs) {
-            return;
-        }
-
-        $now = time();
         $hoursSinceClockIn = ($now - $clockInTs) / 3600;
-
-        // Get last reminder timestamps from session
-        $lastReminders = session('fonnte_task_reminders', []);
 
         $generalPending = [];
         $rackPending = [];
 
         foreach ($pendingTasks as $task) {
             $status = $task['status'] ?? 'pending';
-            if ($status !== 'pending') continue;
+            if ($status !== 'pending') {
+                continue;
+            }
 
             $taskType = $task['task_type'] ?? 'general';
             if ($taskType === 'rack_check') {
@@ -154,55 +150,96 @@ class FonnteService
             }
         }
 
-        // General tasks: remind every 1 hour
-        if (!empty($generalPending)) {
-            $lastGeneralReminder = (int) ($lastReminders['general'] ?? 0);
-            $hoursSinceLastReminder = $lastGeneralReminder > 0 ? ($now - $lastGeneralReminder) / 3600 : 999;
+        $sent = [];
 
-            // Send if: at least 1 hour since clock-in AND at least 1 hour since last reminder
-            if ($hoursSinceClockIn >= 1 && $hoursSinceLastReminder >= 1) {
-                $count = count($generalPending);
-                $taskNames = array_slice(array_map(fn($t) => $t['title'] ?? 'Tugas', $generalPending), 0, 3);
-                $list = implode("\n", array_map(fn($n) => "  \xE2\x80\xA2 {$n}", $taskNames));
-                if ($count > 3) {
-                    $list .= "\n  ... dan " . ($count - 3) . " tugas lainnya";
-                }
+        if (! empty($generalPending) && $hoursSinceClockIn >= 1) {
+            $count = count($generalPending);
+            $taskNames = array_slice(array_map(fn ($task) => $task['title'] ?? 'Tugas', $generalPending), 0, 3);
+            $list = implode("\n", array_map(fn ($name) => "  \xE2\x80\xA2 {$name}", $taskNames));
+            if ($count > 3) {
+                $list .= "\n  ... dan ".($count - 3).' tugas lainnya';
+            }
 
-                $message = "\xE2\x8F\xB0 *PENGINGAT TUGAS*\n\n";
-                $message .= "Kamu masih punya *{$count} tugas umum* yang belum selesai:\n\n";
-                $message .= $list . "\n\n";
-                $message .= "Segera kerjakan ya!";
+            $message = "\xE2\x8F\xB0 *PENGINGAT TUGAS*\n\n";
+            $message .= "Kamu masih punya *{$count} tugas umum* yang belum selesai:\n\n";
+            $message .= $list."\n\n";
+            $message .= 'Segera kerjakan ya!';
 
-                $this->sendMessage($phone, $message);
-                $lastReminders['general'] = $now;
+            if ($this->dispatchReminder($waiterId, $date, 'general', 3600, $phone, $message, [
+                'pending_count' => $count,
+            ], $now)) {
+                $sent[] = 'general';
             }
         }
 
-        // Rack check tasks: remind every 2 hours
-        if (!empty($rackPending)) {
-            $lastRackReminder = (int) ($lastReminders['rack_check'] ?? 0);
-            $hoursSinceLastReminder = $lastRackReminder > 0 ? ($now - $lastRackReminder) / 3600 : 999;
+        if (! empty($rackPending) && $hoursSinceClockIn >= 2) {
+            $count = count($rackPending);
+            $rackNames = array_slice(array_map(fn ($task) => $task['rack_name'] ?? $task['title'] ?? 'Rak', $rackPending), 0, 3);
+            $list = implode("\n", array_map(fn ($name) => "  \xE2\x80\xA2 {$name}", $rackNames));
+            if ($count > 3) {
+                $list .= "\n  ... dan ".($count - 3).' rak lainnya';
+            }
 
-            // Send if: at least 2 hours since clock-in AND at least 2 hours since last reminder
-            if ($hoursSinceClockIn >= 2 && $hoursSinceLastReminder >= 2) {
-                $count = count($rackPending);
-                $rackNames = array_slice(array_map(fn($t) => $t['rack_name'] ?? $t['title'] ?? 'Rak', $rackPending), 0, 3);
-                $list = implode("\n", array_map(fn($n) => "  \xE2\x80\xA2 {$n}", $rackNames));
-                if ($count > 3) {
-                    $list .= "\n  ... dan " . ($count - 3) . " rak lainnya";
-                }
+            $message = "\xF0\x9F\x94\x8D *PENGINGAT CEK RAK*\n\n";
+            $message .= "Kamu masih punya *{$count} rak* yang belum dicek:\n\n";
+            $message .= $list."\n\n";
+            $message .= 'Jangan lupa scan QR dan isi checklist produk!';
 
-                $message = "\xF0\x9F\x94\x8D *PENGINGAT CEK RAK*\n\n";
-                $message .= "Kamu masih punya *{$count} rak* yang belum dicek:\n\n";
-                $message .= $list . "\n\n";
-                $message .= "Jangan lupa scan QR dan isi checklist produk!";
-
-                $this->sendMessage($phone, $message);
-                $lastReminders['rack_check'] = $now;
+            if ($this->dispatchReminder($waiterId, $date, 'rack_check', 7200, $phone, $message, [
+                'pending_count' => $count,
+            ], $now)) {
+                $sent[] = 'rack_check';
             }
         }
 
-        // Save updated timestamps to session
-        session()->put('fonnte_task_reminders', $lastReminders);
+        return ['sent' => $sent];
+    }
+
+    protected function resolveClockInTimestamp(?array $attendance, string $date): ?int
+    {
+        if (! $attendance) {
+            return null;
+        }
+
+        $timestamp = (int) ($attendance['clock_in_timestamp'] ?? 0);
+        if ($timestamp > 0) {
+            return $timestamp;
+        }
+
+        $clockIn = trim((string) ($attendance['clock_in'] ?? ''));
+        if ($clockIn === '') {
+            return null;
+        }
+
+        $normalized = preg_match('/^\d{2}:\d{2}$/', $clockIn) ? $clockIn.':00' : $clockIn;
+        $resolved = strtotime($date.' '.$normalized);
+
+        return $resolved !== false ? $resolved : null;
+    }
+
+    protected function dispatchReminder(string $waiterId, string $date, string $type, int $cooldownSeconds, string $phone, string $message, array $metadata, int $now): bool
+    {
+        $claimed = $this->firebase->claimTaskReminderDispatch($waiterId, $date, $type, $cooldownSeconds, $now);
+        if (! $claimed) {
+            return false;
+        }
+
+        try {
+            $result = $this->sendMessage($phone, $message);
+            if (! is_array($result) || ! ($result['status'] ?? false)) {
+                $this->firebase->releaseTaskReminderDispatch($waiterId, $date, $type, $now);
+
+                return false;
+            }
+
+            $this->firebase->completeTaskReminderDispatch($waiterId, $date, $type, $now, $metadata);
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->firebase->releaseTaskReminderDispatch($waiterId, $date, $type, $now);
+            report($e);
+
+            return false;
+        }
     }
 }
