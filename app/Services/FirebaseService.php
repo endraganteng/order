@@ -50,7 +50,7 @@ class FirebaseService
     /**
      * Add new waiter account (with optional password hash).
      */
-    public function addAllowedEmailWithPassword($email, $name, $passwordHash = null, $waiterRole = 'pelayan')
+    public function addAllowedEmailWithPassword($email, $name, $passwordHash = null, $waiterRole = 'pelayan', $shiftId = null, $phone = null)
     {
         $payload = [
             'email' => strtolower(trim((string) $email)),
@@ -62,6 +62,14 @@ class FirebaseService
 
         if ($passwordHash) {
             $payload['password_hash'] = $passwordHash;
+        }
+
+        if ($shiftId) {
+            $payload['shift_id'] = $shiftId;
+        }
+
+        if ($phone) {
+            $payload['phone'] = trim((string) $phone);
         }
 
         $this->database->getReference('allowed_waiters')->push($payload);
@@ -359,6 +367,586 @@ class FirebaseService
     }
 
     /**
+     * =========================================================================
+     *  PRODUCT CATEGORIES
+     * =========================================================================
+     */
+
+    /**
+     * Get all product categories.
+     */
+    public function getProductCategories()
+    {
+        $reference = $this->database->getReference('product_categories');
+        $snapshot = $reference->getSnapshot();
+
+        $categories = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $category) {
+                $categories[] = array_merge(['id' => $key], $category);
+            }
+        }
+
+        usort($categories, function ($a, $b) {
+            return ($a['sort_order'] ?? 999) <=> ($b['sort_order'] ?? 999)
+                ?: ($a['name'] ?? '') <=> ($b['name'] ?? '');
+        });
+
+        return $categories;
+    }
+
+    /**
+     * Get active product categories.
+     */
+    public function getActiveProductCategories()
+    {
+        return array_values(array_filter($this->getProductCategories(), function ($cat) {
+            return ($cat['is_active'] ?? true) !== false;
+        }));
+    }
+
+    /**
+     * Get product category by id.
+     */
+    public function getProductCategoryById($id)
+    {
+        $reference = $this->database->getReference('product_categories/'.$id);
+        $snapshot = $reference->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return null;
+        }
+
+        return array_merge(['id' => $id], $snapshot->getValue());
+    }
+
+    /**
+     * Create product category.
+     */
+    public function createProductCategory(array $data)
+    {
+        $payload = [
+            'name' => trim((string) ($data['name'] ?? '')),
+            'description' => trim((string) ($data['description'] ?? '')),
+            'sort_order' => max(0, (int) ($data['sort_order'] ?? 0)),
+            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'created_at' => time(),
+            'updated_at' => time(),
+        ];
+
+        $created = $this->database->getReference('product_categories')->push($payload);
+
+        return array_merge(['id' => $created->getKey()], $payload);
+    }
+
+    /**
+     * Update product category.
+     */
+    public function updateProductCategory($id, array $data)
+    {
+        $payload = [
+            'name' => trim((string) ($data['name'] ?? '')),
+            'description' => trim((string) ($data['description'] ?? '')),
+            'sort_order' => max(0, (int) ($data['sort_order'] ?? 0)),
+            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'updated_at' => time(),
+        ];
+
+        $this->database->getReference('product_categories/'.$id)->update($payload);
+    }
+
+    /**
+     * Delete product category. Unlinks products (sets category_id to null).
+     */
+    public function deleteProductCategory($id)
+    {
+        // Unlink products that reference this category
+        $productsRef = $this->database->getReference('rack_products');
+        $productsSnap = $productsRef->getSnapshot();
+
+        if ($productsSnap->exists()) {
+            $updates = [];
+            foreach ($productsSnap->getValue() as $productId => $product) {
+                if (($product['category_id'] ?? null) === $id) {
+                    $updates[$productId.'/category_id'] = null;
+                }
+            }
+            if (! empty($updates)) {
+                $productsRef->update($updates);
+            }
+        }
+
+        $this->database->getReference('product_categories/'.$id)->remove();
+    }
+
+    /**
+     * =========================================================================
+     *  MASTER PRODUCTS
+     * =========================================================================
+     */
+
+    /**
+     * Get all master products.
+     */
+    public function getProducts()
+    {
+        $reference = $this->database->getReference('rack_products');
+        $snapshot = $reference->getSnapshot();
+
+        $products = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $product) {
+                $products[] = array_merge(['id' => $key], $product);
+            }
+        }
+
+        usort($products, function ($a, $b) {
+            return ($a['name'] ?? '') <=> ($b['name'] ?? '');
+        });
+
+        return $products;
+    }
+
+    /**
+     * Get active master products.
+     */
+    public function getActiveProducts()
+    {
+        return array_values(array_filter($this->getProducts(), function ($product) {
+            return ($product['is_active'] ?? true) !== false;
+        }));
+    }
+
+    /**
+     * Get product by id.
+     */
+    public function getProductById($id)
+    {
+        $reference = $this->database->getReference('rack_products/'.$id);
+        $snapshot = $reference->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return null;
+        }
+
+        return array_merge(['id' => $id], $snapshot->getValue());
+    }
+
+    /**
+     * Create master product.
+     */
+    public function createProduct(array $data)
+    {
+        $categoryId = isset($data['category_id']) && $data['category_id'] !== '' ? (string) $data['category_id'] : null;
+
+        $payload = [
+            'name' => trim((string) ($data['name'] ?? '')),
+            'category_id' => $categoryId,
+            'standard_qty' => max(0, (int) ($data['standard_qty'] ?? 0)),
+            'unit' => trim((string) ($data['unit'] ?? 'pcs')),
+            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'created_at' => time(),
+            'updated_at' => time(),
+        ];
+
+        $created = $this->database->getReference('rack_products')->push($payload);
+
+        return array_merge(['id' => $created->getKey()], $payload);
+    }
+
+    /**
+     * Update master product.
+     */
+    public function updateProduct($id, array $data)
+    {
+        $categoryId = isset($data['category_id']) && $data['category_id'] !== '' ? (string) $data['category_id'] : null;
+
+        $payload = [
+            'name' => trim((string) ($data['name'] ?? '')),
+            'category_id' => $categoryId,
+            'standard_qty' => max(0, (int) ($data['standard_qty'] ?? 0)),
+            'unit' => trim((string) ($data['unit'] ?? 'pcs')),
+            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'updated_at' => time(),
+        ];
+
+        $this->database->getReference('rack_products/'.$id)->update($payload);
+    }
+
+    /**
+     * Delete master product and remove all rack assignments.
+     */
+    public function deleteProduct($id)
+    {
+        $racksReference = $this->database->getReference('waiter_racks');
+        $racksSnapshot = $racksReference->getSnapshot();
+
+        if ($racksSnapshot->exists()) {
+            $updates = [];
+
+            foreach ($racksSnapshot->getValue() as $rackId => $rack) {
+                $rackProducts = $rack['products'] ?? [];
+                if (! is_array($rackProducts) || ! array_key_exists($id, $rackProducts)) {
+                    continue;
+                }
+
+                $updates[$rackId.'/products/'.$id] = null;
+            }
+
+            if (! empty($updates)) {
+                $racksReference->update($updates);
+            }
+        }
+
+        $this->database->getReference('rack_products/'.$id)->remove();
+    }
+
+    /**
+     * Reset (delete) ALL master products and their rack assignments.
+     * Optionally also reset all product categories.
+     */
+    public function resetAllProducts(bool $resetCategories = false): array
+    {
+        $deleted = 0;
+        $categoriesDeleted = 0;
+
+        // 1. Remove all product assignments from racks
+        $racksSnapshot = $this->database->getReference('waiter_racks')->getSnapshot();
+        if ($racksSnapshot->exists()) {
+            $updates = [];
+            foreach ($racksSnapshot->getValue() as $rackId => $rack) {
+                if (!empty($rack['products']) && is_array($rack['products'])) {
+                    $updates[$rackId . '/products'] = null;
+                }
+            }
+            if (!empty($updates)) {
+                $this->database->getReference('waiter_racks')->update($updates);
+            }
+        }
+
+        // 2. Count and remove all master products
+        $productsSnapshot = $this->database->getReference('rack_products')->getSnapshot();
+        if ($productsSnapshot->exists()) {
+            $deleted = count($productsSnapshot->getValue());
+            $this->database->getReference('rack_products')->remove();
+        }
+
+        // 3. Optionally remove all categories
+        if ($resetCategories) {
+            $categoriesSnapshot = $this->database->getReference('product_categories')->getSnapshot();
+            if ($categoriesSnapshot->exists()) {
+                $categoriesDeleted = count($categoriesSnapshot->getValue());
+                $this->database->getReference('product_categories')->remove();
+            }
+        }
+
+        return [
+            'success' => true,
+            'deleted' => $deleted,
+            'categories_deleted' => $categoriesDeleted,
+        ];
+    }
+
+    /**
+     * Import products from Excel file (Olsera format).
+     * Reads name (col A) and category (col D).
+     * Auto-creates categories that don't exist yet.
+     * Skips duplicate product names (case-insensitive).
+     */
+    public function importProductsFromExcel(string $filePath, int $defaultStandardQty = 0): array
+    {
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
+        $worksheet = $spreadsheet->getActiveSheet();
+        $rows = $worksheet->toArray(null, true, true, false);
+
+        $existingCategories = [];
+        foreach ($this->getProductCategories() as $cat) {
+            $existingCategories[mb_strtolower(trim($cat['name']))] = (string) $cat['id'];
+        }
+
+        $existingProductNames = [];
+        foreach ($this->getProducts() as $product) {
+            $existingProductNames[mb_strtolower(trim($product['name']))] = true;
+        }
+
+        $imported = 0;
+        $skipped = 0;
+        $categoriesCreated = 0;
+        $errors = [];
+
+        for ($i = 1; $i < count($rows); $i++) {
+            $row = $rows[$i];
+            $baseName = isset($row[0]) ? trim((string) $row[0]) : '';
+            $categoryName = isset($row[3]) ? trim((string) $row[3]) : '';
+            $variantNames = isset($row[5]) ? trim((string) $row[5]) : '';
+
+            if ($baseName === '') {
+                continue;
+            }
+
+            $name = $variantNames !== '' ? $baseName . ' - ' . $variantNames : $baseName;
+
+            $nameLower = mb_strtolower($name);
+            if (isset($existingProductNames[$nameLower])) {
+                $skipped++;
+                continue;
+            }
+
+            // Resolve category
+            $categoryId = null;
+            if ($categoryName !== '') {
+                $catLower = mb_strtolower($categoryName);
+                if (isset($existingCategories[$catLower])) {
+                    $categoryId = $existingCategories[$catLower];
+                } else {
+                    // Auto-create category
+                    try {
+                        $newCat = $this->createProductCategory([
+                            'name' => $categoryName,
+                            'description' => '',
+                            'sort_order' => 0,
+                            'is_active' => true,
+                        ]);
+                        $categoryId = (string) $newCat['id'];
+                        $existingCategories[$catLower] = $categoryId;
+                        $categoriesCreated++;
+                    } catch (\Throwable $e) {
+                        $errors[] = "Baris " . ($i + 1) . ": Gagal buat kategori '{$categoryName}'";
+                        continue;
+                    }
+                }
+            }
+
+            // Create product
+            try {
+                $this->createProduct([
+                    'name' => $name,
+                    'category_id' => $categoryId,
+                    'standard_qty' => $defaultStandardQty,
+                    'unit' => 'pcs',
+                    'is_active' => true,
+                ]);
+                $existingProductNames[$nameLower] = true;
+                $imported++;
+            } catch (\Throwable $e) {
+                $errors[] = "Baris " . ($i + 1) . ": Gagal import '{$name}'";
+                $skipped++;
+            }
+        }
+
+        return [
+            'success' => true,
+            'total' => $imported + $skipped,
+            'imported' => $imported,
+            'skipped' => $skipped,
+            'categories_created' => $categoriesCreated,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Get products assigned to one rack.
+     */
+    public function getRackProducts($rackId)
+    {
+        $reference = $this->database->getReference('waiter_racks/'.$rackId.'/products');
+        $snapshot = $reference->getSnapshot();
+
+        $masterMap = [];
+        foreach ($this->getProducts() as $product) {
+            $masterMap[(string) ($product['id'] ?? '')] = $product;
+        }
+
+        $products = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $productId => $assignment) {
+                $productId = trim((string) $productId);
+                if ($productId === '' || ! isset($masterMap[$productId])) {
+                    continue;
+                }
+
+                $masterProduct = $masterMap[$productId];
+                $products[] = [
+                    'id' => $productId,
+                    'name' => (string) ($masterProduct['name'] ?? ''),
+                    'standard_qty' => isset($assignment['standard_qty'])
+                        ? max(0, (int) $assignment['standard_qty'])
+                        : max(0, (int) ($masterProduct['standard_qty'] ?? 0)),
+                    'unit' => (string) ($masterProduct['unit'] ?? 'pcs'),
+                    'is_active' => ($masterProduct['is_active'] ?? true) !== false,
+                    'assigned_at' => $assignment['assigned_at'] ?? null,
+                    'updated_at' => $assignment['updated_at'] ?? null,
+                ];
+            }
+        }
+
+        usort($products, function ($a, $b) {
+            return ($a['name'] ?? '') <=> ($b['name'] ?? '');
+        });
+
+        return $products;
+    }
+
+    /**
+     * Assign products to one rack.
+     */
+    public function assignProductsToRack($rackId, array $productAssignments)
+    {
+        $reference = $this->database->getReference('waiter_racks/'.$rackId.'/products');
+        $existingSnapshot = $reference->getSnapshot();
+        $existingProducts = $existingSnapshot->exists() ? (array) $existingSnapshot->getValue() : [];
+
+        $masterMap = [];
+        foreach ($this->getProducts() as $product) {
+            $productId = trim((string) ($product['id'] ?? ''));
+            if ($productId === '') {
+                continue;
+            }
+
+            $masterMap[$productId] = $product;
+        }
+
+        $now = time();
+        $payload = [];
+
+        foreach ($productAssignments as $productId => $assignment) {
+            $productId = trim((string) $productId);
+            if ($productId === '' || ! isset($masterMap[$productId])) {
+                continue;
+            }
+
+            $masterProduct = $masterMap[$productId];
+            $standardQty = isset($assignment['standard_qty'])
+                ? max(0, (int) $assignment['standard_qty'])
+                : max(0, (int) ($masterProduct['standard_qty'] ?? 0));
+
+            $payload[$productId] = [
+                'product_id' => $productId,
+                'standard_qty' => $standardQty,
+                'assigned_at' => $existingProducts[$productId]['assigned_at'] ?? $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        $reference->set($payload);
+    }
+
+    /**
+     * Bulk assign multiple products to multiple racks at once.
+     *
+     * @param array $assignments  [ rackId => [ productId => ['standard_qty' => int], ... ], ... ]
+     */
+    public function bulkAssignProductsToRacks(array $assignments)
+    {
+        $masterMap = [];
+        foreach ($this->getProducts() as $product) {
+            $productId = trim((string) ($product['id'] ?? ''));
+            if ($productId !== '') {
+                $masterMap[$productId] = $product;
+            }
+        }
+
+        $rackIds = array_keys($assignments);
+        $now = time();
+
+        foreach ($rackIds as $rackId) {
+            $rackId = trim((string) $rackId);
+            if ($rackId === '') {
+                continue;
+            }
+
+            $reference = $this->database->getReference('waiter_racks/' . $rackId . '/products');
+            $existingSnapshot = $reference->getSnapshot();
+            $existingProducts = $existingSnapshot->exists() ? (array) $existingSnapshot->getValue() : [];
+
+            $productAssignments = $assignments[$rackId] ?? [];
+            $payload = $existingProducts;
+
+            foreach ($productAssignments as $productId => $assignment) {
+                $productId = trim((string) $productId);
+                if ($productId === '' || ! isset($masterMap[$productId])) {
+                    continue;
+                }
+
+                $masterProduct = $masterMap[$productId];
+                $standardQty = isset($assignment['standard_qty'])
+                    ? max(0, (int) $assignment['standard_qty'])
+                    : max(0, (int) ($masterProduct['standard_qty'] ?? 0));
+
+                $payload[$productId] = [
+                    'product_id' => $productId,
+                    'standard_qty' => $standardQty,
+                    'assigned_at' => $existingProducts[$productId]['assigned_at'] ?? $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            $reference->set($payload);
+        }
+    }
+
+    /**
+     * Get map of rack => assigned products for all active racks.
+     */
+    public function getAllRackProductsMap()
+    {
+        // Read master products ONCE (avoids N+1 from getRackProducts calling getProducts per rack)
+        $masterMap = [];
+        foreach ($this->getProducts() as $product) {
+            $masterMap[(string) ($product['id'] ?? '')] = $product;
+        }
+
+        $map = [];
+
+        // getActiveRacks() reads the full waiter_racks node which includes products sub-nodes
+        foreach ($this->getActiveRacks() as $rack) {
+            $rackId = trim((string) ($rack['id'] ?? ''));
+            if ($rackId === '') {
+                continue;
+            }
+
+            $rackProducts = $rack['products'] ?? [];
+            if (! is_array($rackProducts)) {
+                $map[$rackId] = [];
+                continue;
+            }
+
+            $products = [];
+            foreach ($rackProducts as $productId => $assignment) {
+                $productId = trim((string) $productId);
+                if ($productId === '' || ! isset($masterMap[$productId])) {
+                    continue;
+                }
+
+                $masterProduct = $masterMap[$productId];
+                if (($masterProduct['is_active'] ?? true) === false) {
+                    continue;
+                }
+
+                $products[] = [
+                    'id' => $productId,
+                    'name' => (string) ($masterProduct['name'] ?? ''),
+                    'standard_qty' => isset($assignment['standard_qty'])
+                        ? max(0, (int) $assignment['standard_qty'])
+                        : max(0, (int) ($masterProduct['standard_qty'] ?? 0)),
+                    'unit' => (string) ($masterProduct['unit'] ?? 'pcs'),
+                    'is_active' => true,
+                    'assigned_at' => $assignment['assigned_at'] ?? null,
+                    'updated_at' => $assignment['updated_at'] ?? null,
+                ];
+            }
+
+            usort($products, function ($a, $b) {
+                return ($a['name'] ?? '') <=> ($b['name'] ?? '');
+            });
+
+            $map[$rackId] = $products;
+        }
+
+        return $map;
+    }
+
+    /**
      * Get app settings
      */
     public function getSettings()
@@ -401,6 +989,47 @@ class FirebaseService
         }
 
         return $orders;
+    }
+
+    /**
+     * Get orders filtered by date range using Firebase query.
+     * Much more efficient than getOrders() when you only need a specific period.
+     *
+     * @param  int  $startTimestamp  Unix timestamp for range start (inclusive)
+     * @param  int  $endTimestamp    Unix timestamp for range end (inclusive)
+     * @return array
+     */
+    public function getOrdersByDateRange(int $startTimestamp, int $endTimestamp): array
+    {
+        $reference = $this->database->getReference('orders')
+            ->orderByChild('created_at')
+            ->startAt($startTimestamp)
+            ->endAt($endTimestamp);
+
+        $snapshot = $reference->getSnapshot();
+
+        $orders = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $order) {
+                $orders[] = array_merge(['id' => $key], (array) $order);
+            }
+        }
+
+        return $orders;
+    }
+
+    /**
+     * Get orders for a specific date (convenience wrapper).
+     *
+     * @param  string  $date  Format 'Y-m-d'
+     * @return array
+     */
+    public function getOrdersByDate(string $date): array
+    {
+        $startOfDay = strtotime($date . ' 00:00:00');
+        $endOfDay   = strtotime($date . ' 23:59:59');
+
+        return $this->getOrdersByDateRange($startOfDay, $endOfDay);
     }
 
     /**
@@ -559,6 +1188,7 @@ class FirebaseService
         $selectedWaiterIds = $data['selected_waiter_ids'] ?? [];
         $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId, $assignedWaiterRole, $selectedWaiterIds);
         $count = 0;
+        $createdEntries = [];
 
         foreach ($targetWaiters as $waiter) {
             $taskData = $this->buildWaiterTaskPayload($data, $waiter, [
@@ -572,10 +1202,11 @@ class FirebaseService
             ]);
 
             $this->database->getReference('waiter_tasks')->push($taskData);
+            $createdEntries[] = ['waiter' => $waiter, 'task' => $taskData];
             $count++;
         }
 
-        return $count;
+        return ['count' => $count, 'entries' => $createdEntries];
     }
 
     /**
@@ -605,9 +1236,46 @@ class FirebaseService
      */
     public function getWaiterTasksByWaiterId($waiterId)
     {
-        return array_values(array_filter($this->getWaiterTasks(), function ($task) use ($waiterId) {
-            return (string) ($task['assigned_waiter_id'] ?? '') === (string) $waiterId;
-        }));
+        $reference = $this->database->getReference('waiter_tasks')
+            ->orderByChild('assigned_waiter_id')
+            ->equalTo((string) $waiterId);
+        $snapshot = $reference->getSnapshot();
+
+        $tasks = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $task) {
+                $tasks[] = array_merge(['id' => $key], $task);
+            }
+        }
+
+        usort($tasks, function ($a, $b) {
+            return ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0);
+        });
+
+        return $tasks;
+    }
+
+    /**
+     * Get waiter tasks for a specific date only (uses scheduled_for_date query).
+     * More efficient than getWaiterTasksByWaiterId + PHP filter for single-date lookups.
+     */
+    public function getWaiterTasksForDate(string $waiterId, string $date): array
+    {
+        $reference = $this->database->getReference('waiter_tasks')
+            ->orderByChild('scheduled_for_date')
+            ->equalTo($date);
+        $snapshot = $reference->getSnapshot();
+
+        $tasks = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $task) {
+                if (($task['assigned_waiter_id'] ?? '') === $waiterId) {
+                    $tasks[] = array_merge(['id' => $key], $task);
+                }
+            }
+        }
+
+        return $tasks;
     }
 
     /**
@@ -682,10 +1350,25 @@ class FirebaseService
     {
         $date = $this->normalizeReportDate($reportDate);
 
-        return array_values(array_filter($this->getWaiterActivityReports(), function ($report) use ($waiterId, $date) {
-            return (string) ($report['waiter_id'] ?? '') === (string) $waiterId
-                && (string) ($report['report_date'] ?? '') === $date;
-        }));
+        $reference = $this->database->getReference('waiter_activity_reports')
+            ->orderByChild('waiter_id')
+            ->equalTo((string) $waiterId);
+        $snapshot = $reference->getSnapshot();
+
+        $reports = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $report) {
+                if ((string) ($report['report_date'] ?? '') === $date) {
+                    $reports[] = array_merge(['id' => $key], $report);
+                }
+            }
+        }
+
+        usort($reports, function ($a, $b) {
+            return ((int) ($b['created_at'] ?? 0)) <=> ((int) ($a['created_at'] ?? 0));
+        });
+
+        return $reports;
     }
 
     /**
@@ -713,7 +1396,8 @@ class FirebaseService
         $scannedBarcode = null,
         $stockReportItems = null,
         $noOutOfStock = false,
-        $photoProofDataUrl = null
+        $photoProofDataUrl = null,
+        $productChecklist = null
     ) {
         $taskReference = $this->database->getReference('waiter_tasks/'.$taskId);
         $snapshot = $taskReference->getSnapshot();
@@ -877,6 +1561,32 @@ class FirebaseService
             $updates['completed_stock_report_items'] = $hasStockReportText ? $parsedStockReportItems : [];
             $updates['completed_no_out_of_stock'] = $noOutOfStockChecked || ! $hasStockReportText;
             $updates['stock_reported_at'] = $now;
+        }
+
+        // Product checklist handling for rack_check tasks
+        if ($taskType === 'rack_check' && is_array($productChecklist) && count($productChecklist) > 0) {
+            $validatedChecklist = [];
+            foreach ($productChecklist as $productId => $checkData) {
+                $productId = trim((string) $productId);
+                if ($productId === '') {
+                    continue;
+                }
+                $checked = (bool) ($checkData['checked'] ?? false);
+                $actualQty = max(0, (int) ($checkData['actual_qty'] ?? 0));
+                $standardQty = max(0, (int) ($checkData['standard_qty'] ?? 0));
+                $validatedChecklist[$productId] = [
+                    'checked' => $checked,
+                    'actual_qty' => $actualQty,
+                    'standard_qty' => $standardQty,
+                    'is_shortage' => $checked && $actualQty < $standardQty,
+                    'product_name' => trim((string) ($checkData['product_name'] ?? '')),
+                    'product_unit' => trim((string) ($checkData['product_unit'] ?? 'pcs')),
+                ];
+            }
+            if (count($validatedChecklist) > 0) {
+                $updates['completed_product_checklist'] = $validatedChecklist;
+                $updates['product_checklist_completed_at'] = $now;
+            }
         }
 
         if ($requiresPhotoProof || $validatedPhotoProofDataUrl !== '') {
@@ -1094,6 +1804,19 @@ class FirebaseService
                 continue;
             }
 
+            // Filter out waiters who are off today (not scheduled to work)
+            $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($todayDate) {
+                $wId = $waiter['id'] ?? '';
+                if ($wId === '') {
+                    return true;
+                }
+                return $this->isWorkingDay($wId, $todayDate);
+            }));
+
+            if (empty($targetWaiters)) {
+                continue;
+            }
+
             if ($isRackRollingTemplate) {
                 usort($targetWaiters, function ($a, $b) {
                     $nameCompare = strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
@@ -1193,22 +1916,24 @@ class FirebaseService
      */
     public function markOverdueWaiterTasks()
     {
-        $reference = $this->database->getReference('waiter_tasks');
+        $reference = $this->database->getReference('waiter_tasks')
+            ->orderByChild('status')
+            ->equalTo('pending');
         $snapshot = $reference->getSnapshot();
 
         if (! $snapshot->exists()) {
-            return 0;
+            return ['count' => 0, 'overdue_tasks' => []];
         }
 
         $now = time();
         $updates = [];
         $overdueCount = 0;
+        $overdueTasks = [];
+        $baseRef = $this->database->getReference('waiter_tasks');
 
         foreach ($snapshot->getValue() as $taskId => $task) {
-            $status = $task['status'] ?? 'pending';
             $deadlineAt = (int) ($task['deadline_at'] ?? 0);
-
-            if ($status !== 'pending' || $deadlineAt <= 0 || $now <= $deadlineAt) {
+            if ($deadlineAt <= 0 || $now <= $deadlineAt) {
                 continue;
             }
 
@@ -1217,14 +1942,68 @@ class FirebaseService
             if (empty($task['completed_note'])) {
                 $updates[$taskId.'/completed_note'] = 'Auto: batas waktu habis';
             }
+            $overdueTasks[] = array_merge(['id' => $taskId], $task);
             $overdueCount++;
         }
 
         if (! empty($updates)) {
-            $reference->update($updates);
+            $baseRef->update($updates);
         }
 
-        return $overdueCount;
+        // Auto-apply penalties for newly overdue tasks
+        if ($overdueCount > 0) {
+            try {
+                $bonusService = app(\App\Services\BonusService::class);
+                $today = date('Y-m-d');
+                $month = substr($today, 0, 7);
+
+                // Batch fetch ALL penalties for this month ONCE (not per-waiter)
+                $allMonthPenalties = $bonusService->getPenaltiesByMonth($month);
+
+                // Build lookup: "taskId::waiterId" => true for existing mandatory_task_missed penalties
+                $existingPenaltyKeys = [];
+                foreach ($allMonthPenalties as $p) {
+                    if (($p['penalty_type'] ?? '') === 'mandatory_task_missed') {
+                        $key = ($p['related_task_id'] ?? '') . '::' . ($p['waiter_id'] ?? '');
+                        $existingPenaltyKeys[$key] = true;
+                    }
+                }
+
+                foreach ($snapshot->getValue() as $taskId => $task) {
+                    $deadlineAt = (int) ($task['deadline_at'] ?? 0);
+                    if ($deadlineAt <= 0 || $now <= $deadlineAt) {
+                        continue;
+                    }
+
+                    $waiterId = (string) ($task['assigned_waiter_id'] ?? '');
+                    $waiterName = (string) ($task['assigned_waiter_name'] ?? '');
+                    $taskTitle = (string) ($task['title'] ?? 'Tugas');
+
+                    if ($waiterId === '') {
+                        continue;
+                    }
+
+                    // Check if penalty already exists using pre-built lookup
+                    $penaltyKey = $taskId . '::' . $waiterId;
+                    if (isset($existingPenaltyKeys[$penaltyKey])) {
+                        continue;
+                    }
+
+                    $bonusService->applyPenalty([
+                        'waiter_id' => $waiterId,
+                        'waiter_name' => $waiterName,
+                        'penalty_type' => 'mandatory_task_missed',
+                        'date' => $today,
+                        'reason' => 'Tugas "'.$taskTitle.'" tidak dikerjakan tepat waktu (otomatis)',
+                        'related_task_id' => $taskId,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return ['count' => $overdueCount, 'overdue_tasks' => $overdueTasks];
     }
 
     /**
@@ -1381,6 +2160,8 @@ class FirebaseService
             'completed_stock_report_items' => [],
             'completed_no_out_of_stock' => null,
             'stock_reported_at' => null,
+            'completed_product_checklist' => null,
+            'product_checklist_completed_at' => null,
             'completed_photo_proof_url' => null,
             'completed_photo_proof_mime_type' => null,
             'completed_photo_proof_size_bytes' => null,
@@ -1603,7 +2384,10 @@ class FirebaseService
      */
     protected function getExistingWaiterRecurringMapForDate($date)
     {
-        $reference = $this->database->getReference('waiter_tasks');
+        // Query only tasks for this specific date (requires .indexOn: scheduled_for_date)
+        $reference = $this->database->getReference('waiter_tasks')
+            ->orderByChild('scheduled_for_date')
+            ->equalTo($date);
         $snapshot = $reference->getSnapshot();
         $map = [];
 
@@ -1613,9 +2397,8 @@ class FirebaseService
 
         foreach ($snapshot->getValue() as $task) {
             $sourceTemplateId = $task['source_template_id'] ?? null;
-            $scheduledDate = $task['scheduled_for_date'] ?? null;
             $assignedWaiterId = $task['assigned_waiter_id'] ?? null;
-            if (! $sourceTemplateId || ! $assignedWaiterId || $scheduledDate !== $date) {
+            if (! $sourceTemplateId || ! $assignedWaiterId) {
                 continue;
             }
 
@@ -1960,7 +2743,9 @@ class FirebaseService
      */
     public function markOverdueTasks()
     {
-        $reference = $this->database->getReference('cashier_tasks');
+        $reference = $this->database->getReference('cashier_tasks')
+            ->orderByChild('status')
+            ->equalTo('pending');
         $snapshot = $reference->getSnapshot();
 
         if (! $snapshot->exists()) {
@@ -1970,12 +2755,11 @@ class FirebaseService
         $now = time();
         $updates = [];
         $overdueCount = 0;
+        $baseRef = $this->database->getReference('cashier_tasks');
 
         foreach ($snapshot->getValue() as $taskId => $task) {
-            $status = $task['status'] ?? 'pending';
             $deadlineAt = (int) ($task['deadline_at'] ?? 0);
-
-            if ($status !== 'pending' || $deadlineAt <= 0 || $now <= $deadlineAt) {
+            if ($deadlineAt <= 0 || $now <= $deadlineAt) {
                 continue;
             }
 
@@ -1988,7 +2772,7 @@ class FirebaseService
         }
 
         if (! empty($updates)) {
-            $reference->update($updates);
+            $baseRef->update($updates);
         }
 
         return $overdueCount;
@@ -2025,7 +2809,9 @@ class FirebaseService
      */
     protected function hasPendingRecurringInstanceForDate($templateId, $date)
     {
-        $reference = $this->database->getReference('cashier_tasks');
+        $reference = $this->database->getReference('cashier_tasks')
+            ->orderByChild('source_template_id')
+            ->equalTo($templateId);
         $snapshot = $reference->getSnapshot();
 
         if (! $snapshot->exists()) {
@@ -2033,11 +2819,7 @@ class FirebaseService
         }
 
         foreach ($snapshot->getValue() as $task) {
-            $sourceTemplateId = $task['source_template_id'] ?? null;
-            $scheduledDate = $task['scheduled_for_date'] ?? null;
-            $status = $task['status'] ?? 'pending';
-
-            if ($sourceTemplateId === $templateId && $scheduledDate === $date && $status === 'pending') {
+            if (($task['scheduled_for_date'] ?? null) === $date && ($task['status'] ?? 'pending') === 'pending') {
                 return true;
             }
         }
@@ -2050,7 +2832,9 @@ class FirebaseService
      */
     protected function hasDoneRecurringInstanceForDate($templateId, $date)
     {
-        $reference = $this->database->getReference('cashier_tasks');
+        $reference = $this->database->getReference('cashier_tasks')
+            ->orderByChild('source_template_id')
+            ->equalTo($templateId);
         $snapshot = $reference->getSnapshot();
 
         if (! $snapshot->exists()) {
@@ -2058,11 +2842,7 @@ class FirebaseService
         }
 
         foreach ($snapshot->getValue() as $task) {
-            $sourceTemplateId = $task['source_template_id'] ?? null;
-            $scheduledDate = $task['scheduled_for_date'] ?? null;
-            $status = $task['status'] ?? 'pending';
-
-            if ($sourceTemplateId === $templateId && $scheduledDate === $date && $status === 'done') {
+            if (($task['scheduled_for_date'] ?? null) === $date && ($task['status'] ?? 'pending') === 'done') {
                 return true;
             }
         }
@@ -2075,7 +2855,9 @@ class FirebaseService
      */
     protected function syncPendingRecurringInstancesForDate($templateId, $date, array $template)
     {
-        $reference = $this->database->getReference('cashier_tasks');
+        $reference = $this->database->getReference('cashier_tasks')
+            ->orderByChild('source_template_id')
+            ->equalTo($templateId);
         $snapshot = $reference->getSnapshot();
 
         if (! $snapshot->exists()) {
@@ -2090,13 +2872,13 @@ class FirebaseService
         }
 
         $updates = [];
+        $baseRef = $this->database->getReference('cashier_tasks');
 
         foreach ($snapshot->getValue() as $taskId => $task) {
-            $sourceTemplateId = $task['source_template_id'] ?? null;
             $scheduledDate = $task['scheduled_for_date'] ?? null;
             $status = $task['status'] ?? 'pending';
 
-            if ($sourceTemplateId !== $templateId || $scheduledDate !== $date || $status !== 'pending') {
+            if ($scheduledDate !== $date || $status !== 'pending') {
                 continue;
             }
 
@@ -2111,7 +2893,7 @@ class FirebaseService
         }
 
         if (! empty($updates)) {
-            $reference->update($updates);
+            $baseRef->update($updates);
         }
     }
 
@@ -2272,5 +3054,791 @@ class FirebaseService
         }
 
         return false;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  ATTENDANCE SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Get the current attendance QR code value. If none exists, generate one.
+     */
+    public function getAttendanceQrCode(): string
+    {
+        $ref = $this->database->getReference('attendance_config/qr_code_value');
+        $snapshot = $ref->getSnapshot();
+
+        if ($snapshot->exists() && trim((string) $snapshot->getValue()) !== '') {
+            return (string) $snapshot->getValue();
+        }
+
+        return $this->regenerateAttendanceQrCode();
+    }
+
+    /**
+     * Regenerate the attendance QR code with a new random value.
+     */
+    public function regenerateAttendanceQrCode(): string
+    {
+        $value = 'ATTENDANCE:'.bin2hex(random_bytes(8));
+
+        $this->database->getReference('attendance_config')->update([
+            'qr_code_value' => $value,
+            'updated_at' => time(),
+        ]);
+
+        return $value;
+    }
+
+    /**
+     * Verify a scanned QR code value against the stored attendance QR code.
+     */
+    public function verifyAttendanceQrCode(string $scannedValue): bool
+    {
+        $stored = $this->getAttendanceQrCode();
+
+        return $scannedValue === $stored;
+    }
+
+    /**
+     * Record clock-in for a waiter.
+     */
+    public function clockIn(string $waiterId, string $method = 'qr_scan'): array
+    {
+        $today = date('Y-m-d');
+        $now = date('H:i');
+
+        // Check if already clocked in today
+        $existing = $this->getAttendanceByDate($waiterId, $today);
+        if ($existing && ! empty($existing['clock_in'])) {
+            return [
+                'success' => false,
+                'message' => 'Sudah absen masuk hari ini pada '.$existing['clock_in'],
+            ];
+        }
+
+        // Get waiter data
+        $waiter = $this->getWaiterById($waiterId);
+        if (! $waiter) {
+            return ['success' => false, 'message' => 'Data waiter tidak ditemukan'];
+        }
+
+        // Determine late status based on today's schedule template (not static shift_id)
+        $status = 'present';
+        $lateMinutes = 0;
+        $shift = $this->getWaiterShiftForDate($waiterId, $today);
+
+        if ($shift) {
+            $clockInTime = $shift['clock_in_time'] ?? null;
+            $tolerance = (int) ($shift['late_tolerance_minutes'] ?? 0);
+
+            if ($clockInTime) {
+                $expectedTimestamp = strtotime($today.' '.$clockInTime);
+                $toleranceTimestamp = $expectedTimestamp + ($tolerance * 60);
+                $actualTimestamp = strtotime($today.' '.$now);
+
+                if ($actualTimestamp > $toleranceTimestamp) {
+                    $status = 'late';
+                    $lateMinutes = (int) round(($actualTimestamp - $expectedTimestamp) / 60);
+                }
+            }
+        }
+
+        $record = [
+            'clock_in' => $now,
+            'clock_in_timestamp' => time(),
+            'status' => $status,
+            'late_minutes' => $lateMinutes,
+            'method' => $method,
+            'note' => '',
+            'updated_at' => time(),
+        ];
+
+        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$today)->update($record);
+
+        return [
+            'success' => true,
+            'message' => $status === 'late'
+                ? 'Absen masuk tercatat (terlambat '.$lateMinutes.' menit)'
+                : 'Absen masuk tercatat tepat waktu',
+            'status' => $status,
+            'late_minutes' => $lateMinutes,
+        ];
+    }
+
+    /**
+     * Record clock-out for a waiter.
+     */
+    public function clockOut(string $waiterId, string $method = 'qr_scan'): array
+    {
+        $today = date('Y-m-d');
+        $now = date('H:i');
+
+        $existing = $this->getAttendanceByDate($waiterId, $today);
+
+        if (! $existing || empty($existing['clock_in'])) {
+            return ['success' => false, 'message' => 'Belum absen masuk hari ini'];
+        }
+
+        if (! empty($existing['clock_out'])) {
+            return [
+                'success' => false,
+                'message' => 'Sudah absen keluar hari ini pada '.$existing['clock_out'],
+            ];
+        }
+
+        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$today)->update([
+            'clock_out' => $now,
+            'clock_out_timestamp' => time(),
+            'updated_at' => time(),
+        ]);
+
+        return ['success' => true, 'message' => 'Absen keluar tercatat pada '.$now];
+    }
+
+    // ===================================================================
+    // SHIFT MANAGEMENT
+    // ===================================================================
+
+    public function getShifts()
+    {
+        $reference = $this->database->getReference('work_shifts');
+        $snapshot = $reference->getSnapshot();
+
+        $shifts = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $shift) {
+                $shifts[] = array_merge(['id' => $key], $shift);
+            }
+        }
+
+        usort($shifts, function ($a, $b) {
+            return ($a['name'] ?? '') <=> ($b['name'] ?? '');
+        });
+
+        return $shifts;
+    }
+
+    public function getActiveShifts()
+    {
+        return array_values(array_filter($this->getShifts(), function ($shift) {
+            return ($shift['is_active'] ?? true) !== false;
+        }));
+    }
+
+    public function getShiftById($id)
+    {
+        $reference = $this->database->getReference('work_shifts/'.$id);
+        $snapshot = $reference->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return null;
+        }
+
+        return array_merge(['id' => $id], $snapshot->getValue());
+    }
+
+    public function createShift(array $data)
+    {
+        $payload = [
+            'name' => trim((string) ($data['name'] ?? '')),
+            'clock_in_time' => trim((string) ($data['clock_in_time'] ?? '08:00')),
+            'clock_out_time' => trim((string) ($data['clock_out_time'] ?? '17:00')),
+            'late_tolerance_minutes' => max(0, (int) ($data['late_tolerance_minutes'] ?? 15)),
+            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'created_at' => time(),
+            'updated_at' => time(),
+        ];
+
+        $created = $this->database->getReference('work_shifts')->push($payload);
+
+        return array_merge(['id' => $created->getKey()], $payload);
+    }
+
+    public function updateShift($id, array $data)
+    {
+        $payload = [
+            'name' => trim((string) ($data['name'] ?? '')),
+            'clock_in_time' => trim((string) ($data['clock_in_time'] ?? '08:00')),
+            'clock_out_time' => trim((string) ($data['clock_out_time'] ?? '17:00')),
+            'late_tolerance_minutes' => max(0, (int) ($data['late_tolerance_minutes'] ?? 15)),
+            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'updated_at' => time(),
+        ];
+
+        $this->database->getReference('work_shifts/'.$id)->update($payload);
+    }
+
+    public function deleteShift($id)
+    {
+        $waitersRef = $this->database->getReference('allowed_waiters');
+        $waitersSnap = $waitersRef->getSnapshot();
+
+        if ($waitersSnap->exists()) {
+            $updates = [];
+            foreach ($waitersSnap->getValue() as $waiterId => $waiter) {
+                if (($waiter['shift_id'] ?? null) === $id) {
+                    $updates[$waiterId.'/shift_id'] = null;
+                }
+            }
+            if (! empty($updates)) {
+                $waitersRef->update($updates);
+            }
+        }
+
+        $this->database->getReference('work_shifts/'.$id)->remove();
+    }
+
+    // ===================================================================
+    // SCHEDULE TEMPLATE (permanent, no per-week)
+    // ===================================================================
+
+    /**
+     * In-memory cache for schedule template (avoids repeated Firebase reads within same request).
+     */
+    private ?array $scheduleTemplateCache = null;
+
+    /**
+     * Get schedule template for all waiters.
+     * Returns: ['waiter_id' => ['monday' => 'shift_id'|'off', ...], ...]
+     * Cached per-request to avoid N+1 reads.
+     */
+    public function getScheduleTemplate(): array
+    {
+        if ($this->scheduleTemplateCache !== null) {
+            return $this->scheduleTemplateCache;
+        }
+
+        $ref = $this->database->getReference('waiter_schedule_template');
+        $snapshot = $ref->getSnapshot();
+        if (!$snapshot->exists()) {
+            $this->scheduleTemplateCache = [];
+            return [];
+        }
+
+        $this->scheduleTemplateCache = $snapshot->getValue();
+        return $this->scheduleTemplateCache;
+    }
+
+    /**
+     * Save entire schedule template for all waiters.
+     * $schedule = ['waiter_id' => ['monday' => 'shift_id'|'off', ...], ...]
+     */
+    public function saveScheduleTemplate(array $schedule): void
+    {
+        $payload = [];
+        $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+        foreach ($schedule as $waiterId => $dayAssignments) {
+            foreach ($days as $day) {
+                $payload[$waiterId][$day] = $dayAssignments[$day] ?? 'off';
+            }
+            $payload[$waiterId]['updated_at'] = time();
+        }
+
+        $this->database->getReference('waiter_schedule_template')->set($payload);
+        $this->scheduleTemplateCache = null; // Invalidate cache
+    }
+
+    /**
+     * Get waiter's shift for a specific date (from template).
+     * Returns the shift data array or null if day off / no schedule.
+     */
+    public function getWaiterShiftForDate(string $waiterId, string $date): ?array
+    {
+        $dayOfWeek = strtolower(date('l', strtotime($date))); // monday, tuesday, etc.
+        $template = $this->getScheduleTemplate();
+        $shiftId = $template[$waiterId][$dayOfWeek] ?? null;
+
+        if (!$shiftId || $shiftId === 'off') {
+            return null;
+        }
+
+        return $this->getShiftById($shiftId);
+    }
+
+    /**
+     * Check if a waiter is working on a specific date (from template).
+     */
+    public function isWorkingDay(string $waiterId, string $date): bool
+    {
+        $dayOfWeek = strtolower(date('l', strtotime($date)));
+        $template = $this->getScheduleTemplate();
+        $shiftId = $template[$waiterId][$dayOfWeek] ?? null;
+
+        return $shiftId !== null && $shiftId !== 'off';
+    }
+
+    /**
+     * BACKWARD COMPAT: Get waiter's shift for TODAY.
+     */
+    public function getWaiterShift(string $waiterId): ?array
+    {
+        return $this->getWaiterShiftForDate($waiterId, date('Y-m-d'));
+    }
+
+    /**
+     * BACKWARD COMPAT: Get waiter schedule as boolean map.
+     */
+    public function getWaiterSchedule(string $waiterId, ?string $weekKey = null): array
+    {
+        $template = $this->getScheduleTemplate();
+        $waiterSchedule = $template[$waiterId] ?? [];
+
+        $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        $result = [];
+        foreach ($days as $day) {
+            $val = $waiterSchedule[$day] ?? null;
+            $result[$day] = ($val !== null && $val !== 'off');
+        }
+
+        return $result;
+    }
+
+    /**
+     * BACKWARD COMPAT: Get all waiter schedules as boolean maps.
+     */
+    public function getAllWaiterSchedules(?string $weekKey = null): array
+    {
+        $template = $this->getScheduleTemplate();
+        $result = [];
+
+        $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        foreach ($template as $waiterId => $waiterSchedule) {
+            if (!is_array($waiterSchedule)) continue;
+            foreach ($days as $day) {
+                $val = $waiterSchedule[$day] ?? null;
+                $result[$waiterId][$day] = ($val !== null && $val !== 'off');
+            }
+        }
+
+        return $result;
+    }
+
+    public function getAttendanceByDate(string $waiterId, string $date): ?array
+    {
+        $ref = $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date);
+        $snapshot = $ref->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return null;
+        }
+
+        return $snapshot->getValue();
+    }
+
+    public function getAttendanceByMonth(string $waiterId, string $yearMonth): array
+    {
+        $ref = $this->database->getReference('waiter_attendance/'.$waiterId);
+        $snapshot = $ref->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return [];
+        }
+
+        $all = $snapshot->getValue();
+        $filtered = [];
+        $prefix = $yearMonth.'-';
+
+        foreach ($all as $date => $record) {
+            if (strpos($date, $prefix) === 0) {
+                $filtered[$date] = $record;
+            }
+        }
+
+        ksort($filtered);
+
+        return $filtered;
+    }
+
+    /**
+     * Get all waiters' attendance for a specific date.
+     */
+    public function getAllAttendanceByDate(string $date): array
+    {
+        $ref = $this->database->getReference('waiter_attendance');
+        $snapshot = $ref->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($snapshot->getValue() as $waiterId => $dates) {
+            if (isset($dates[$date]) && is_array($dates[$date])) {
+                $result[$waiterId] = $dates[$date];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Admin override: update attendance record for a waiter on a date.
+     */
+    public function updateAttendance(string $waiterId, string $date, array $data): void
+    {
+        $allowed = ['clock_in', 'clock_out', 'status', 'late_minutes', 'note'];
+        $payload = ['updated_at' => time(), 'method' => 'admin_override'];
+
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $data)) {
+                $payload[$field] = $data[$field];
+            }
+        }
+
+        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->update($payload);
+    }
+
+    /**
+     * Delete attendance record for a waiter on a date.
+     */
+    public function deleteAttendance(string $waiterId, string $date): void
+    {
+        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->remove();
+    }
+
+    /**
+     * Get attendance summary for a waiter in a given month.
+     */
+    public function getAttendanceSummary(string $waiterId, string $yearMonth): array
+    {
+        $records = $this->getAttendanceByMonth($waiterId, $yearMonth);
+        $schedule = $this->getWaiterSchedule($waiterId);
+
+        $year = (int) substr($yearMonth, 0, 4);
+        $month = (int) substr($yearMonth, 5, 2);
+        $daysInMonth = (int) date('t', mktime(0, 0, 0, $month, 1, $year));
+        $today = date('Y-m-d');
+
+        $summary = [
+            'total_days_worked' => 0,
+            'total_on_time' => 0,
+            'total_late' => 0,
+            'total_absent' => 0,
+            'total_day_off' => 0,
+            'total_sick' => 0,
+        ];
+
+        $dayMap = [1 => 'monday', 2 => 'tuesday', 3 => 'wednesday', 4 => 'thursday', 5 => 'friday', 6 => 'saturday', 7 => 'sunday'];
+
+        for ($d = 1; $d <= $daysInMonth; $d++) {
+            $dateStr = sprintf('%04d-%02d-%02d', $year, $month, $d);
+
+            // Skip future dates
+            if ($dateStr > $today) {
+                break;
+            }
+
+            $dayOfWeek = (int) date('N', strtotime($dateStr));
+            $dayName = $dayMap[$dayOfWeek] ?? '';
+
+            // Check if scheduled to work
+            $isWorkDay = true;
+            if ($schedule && $dayName !== '') {
+                $isWorkDay = ! empty($schedule[$dayName]);
+            }
+
+            $record = $records[$dateStr] ?? null;
+
+            if (! $isWorkDay) {
+                $summary['total_day_off']++;
+                continue;
+            }
+
+            if (! $record || empty($record['clock_in'])) {
+                // Check if status was manually set
+                $manualStatus = $record['status'] ?? null;
+                if ($manualStatus === 'sick') {
+                    $summary['total_sick']++;
+                } elseif ($manualStatus === 'day_off') {
+                    $summary['total_day_off']++;
+                } else {
+                    $summary['total_absent']++;
+                }
+                continue;
+            }
+
+            $status = $record['status'] ?? 'present';
+            $summary['total_days_worked']++;
+
+            if ($status === 'late') {
+                $summary['total_late']++;
+            } elseif ($status === 'sick') {
+                $summary['total_sick']++;
+                $summary['total_days_worked']--;
+            } elseif ($status === 'day_off') {
+                $summary['total_day_off']++;
+                $summary['total_days_worked']--;
+            } else {
+                $summary['total_on_time']++;
+            }
+        }
+
+        return $summary;
+    }
+
+    // ===== BONUS SYSTEM METHODS =====
+
+    /**
+     * Get bonus configuration
+     */
+    public function getBonusConfig(): array
+    {
+        $snapshot = $this->database->getReference('bonus_config')->getSnapshot();
+        return $snapshot->exists() ? $snapshot->getValue() : [];
+    }
+
+    /**
+     * Update bonus configuration
+     */
+    public function updateBonusConfig(array $data): void
+    {
+        $data['updated_at'] = time();
+        $this->database->getReference('bonus_config')->set($data);
+    }
+
+    /**
+     * Save daily points for a waiter
+     */
+    public function saveDailyPoints(string $waiterId, string $date, array $data): void
+    {
+        $data['updated_at'] = time();
+        $this->database->getReference("waiter_daily_points/{$waiterId}/{$date}")->set($data);
+    }
+
+    /**
+     * Get daily points for a waiter on a specific date
+     */
+    public function getDailyPoints(string $waiterId, string $date): ?array
+    {
+        $snapshot = $this->database->getReference("waiter_daily_points/{$waiterId}/{$date}")->getSnapshot();
+        return $snapshot->exists() ? $snapshot->getValue() : null;
+    }
+
+    /**
+     * Get all daily points for a waiter in a month
+     */
+    public function getMonthlyDailyPoints(string $waiterId, string $month): array
+    {
+        $snapshot = $this->database->getReference("waiter_daily_points/{$waiterId}")->getSnapshot();
+        if (!$snapshot->exists()) return [];
+        
+        $allDays = $snapshot->getValue();
+        $result = [];
+        foreach ($allDays as $date => $record) {
+            if (str_starts_with($date, $month)) {
+                $result[$date] = $record;
+            }
+        }
+        ksort($result);
+        return $result;
+    }
+
+    /**
+     * Get all waiters' daily points for a specific date
+     */
+    public function getAllDailyPointsByDate(string $date): array
+    {
+        $snapshot = $this->database->getReference('waiter_daily_points')->getSnapshot();
+        if (!$snapshot->exists()) return [];
+        
+        $all = $snapshot->getValue();
+        $result = [];
+        foreach ($all as $waiterId => $days) {
+            if (isset($days[$date])) {
+                $result[$waiterId] = $days[$date];
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Create a penalty record
+     */
+    public function createPenalty(array $data): string
+    {
+        $ref = $this->database->getReference('waiter_penalties')->push($data);
+        return $ref->getKey();
+    }
+
+    /**
+     * Get all penalties, optionally filtered by month and/or waiter
+     */
+    public function getPenalties(?string $month = null, ?string $waiterId = null): array
+    {
+        $snapshot = $this->database->getReference('waiter_penalties')->getSnapshot();
+        if (!$snapshot->exists()) return [];
+        
+        $all = $snapshot->getValue();
+        $result = [];
+        foreach ($all as $id => $penalty) {
+            if ($month && ($penalty['month'] ?? '') !== $month) continue;
+            if ($waiterId && ($penalty['waiter_id'] ?? '') !== $waiterId) continue;
+            $penalty['id'] = $id;
+            $result[] = $penalty;
+        }
+        
+        // Sort by date desc
+        usort($result, fn($a, $b) => strcmp($b['date'] ?? '', $a['date'] ?? ''));
+        return $result;
+    }
+
+    /**
+     * Delete a penalty
+     */
+    public function deletePenalty(string $penaltyId): void
+    {
+        $this->database->getReference("waiter_penalties/{$penaltyId}")->remove();
+    }
+
+    /**
+     * Get a single penalty by ID
+     */
+    public function getPenaltyById(string $penaltyId): ?array
+    {
+        $snapshot = $this->database->getReference("waiter_penalties/{$penaltyId}")->getSnapshot();
+        if (!$snapshot->exists()) return null;
+        $data = $snapshot->getValue();
+        $data['id'] = $penaltyId;
+        return $data;
+    }
+
+    /**
+     * Save sales target for a waiter/month
+     */
+    public function saveSalesTarget(string $waiterId, string $month, array $data): void
+    {
+        $data['last_updated_at'] = time();
+        $this->database->getReference("waiter_sales_targets/{$waiterId}/{$month}")->update($data);
+    }
+
+    /**
+     * Get sales target for a waiter/month
+     */
+    public function getSalesTarget(string $waiterId, string $month): ?array
+    {
+        $snapshot = $this->database->getReference("waiter_sales_targets/{$waiterId}/{$month}")->getSnapshot();
+        return $snapshot->exists() ? $snapshot->getValue() : null;
+    }
+
+    /**
+     * Get all sales targets for a month
+     */
+    public function getAllSalesTargets(string $month): array
+    {
+        $snapshot = $this->database->getReference('waiter_sales_targets')->getSnapshot();
+        if (!$snapshot->exists()) return [];
+        
+        $all = $snapshot->getValue();
+        $result = [];
+        foreach ($all as $waiterId => $months) {
+            if (isset($months[$month])) {
+                $target = $months[$month];
+                $target['waiter_id'] = $waiterId;
+                $result[] = $target;
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Record daily sales for a waiter
+     */
+    public function recordDailySales(string $waiterId, string $month, string $date, array $salesData): void
+    {
+        $this->database->getReference("waiter_sales_targets/{$waiterId}/{$month}/daily_sales/{$date}")->set($salesData);
+        
+        // Recalculate current_achievement
+        $snapshot = $this->database->getReference("waiter_sales_targets/{$waiterId}/{$month}/daily_sales")->getSnapshot();
+        $totalAchievement = 0;
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $day => $record) {
+                $totalAchievement += (int)($record['amount'] ?? 0);
+            }
+        }
+        
+        $targetSnapshot = $this->database->getReference("waiter_sales_targets/{$waiterId}/{$month}/target_amount")->getSnapshot();
+        $targetAmount = $targetSnapshot->exists() ? (int)$targetSnapshot->getValue() : 0;
+        $percentage = $targetAmount > 0 ? round(($totalAchievement / $targetAmount) * 100, 1) : 0;
+        
+        $this->database->getReference("waiter_sales_targets/{$waiterId}/{$month}")->update([
+            'current_achievement' => $totalAchievement,
+            'achievement_percentage' => $percentage,
+            'last_updated_at' => time(),
+        ]);
+    }
+
+    /**
+     * Save monthly bonus summary
+     */
+    public function saveBonusSummary(string $waiterId, string $month, array $data): void
+    {
+        $data['updated_at'] = time();
+        $this->database->getReference("waiter_bonus_summary/{$waiterId}/{$month}")->set($data);
+    }
+
+    /**
+     * Get monthly bonus summary for a waiter
+     */
+    public function getBonusSummary(string $waiterId, string $month): ?array
+    {
+        $snapshot = $this->database->getReference("waiter_bonus_summary/{$waiterId}/{$month}")->getSnapshot();
+        return $snapshot->exists() ? $snapshot->getValue() : null;
+    }
+
+    /**
+     * Get all bonus summaries for a month
+     */
+    public function getAllBonusSummaries(string $month): array
+    {
+        $snapshot = $this->database->getReference('waiter_bonus_summary')->getSnapshot();
+        if (!$snapshot->exists()) return [];
+        
+        $all = $snapshot->getValue();
+        $result = [];
+        foreach ($all as $waiterId => $months) {
+            if (isset($months[$month])) {
+                $summary = $months[$month];
+                $summary['waiter_id'] = $waiterId;
+                $result[] = $summary;
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Save leaderboard for a month
+     */
+    public function saveLeaderboard(string $month, array $data): void
+    {
+        $data['last_calculated_at'] = time();
+        $this->database->getReference("waiter_leaderboard/{$month}")->set($data);
+    }
+
+    /**
+     * Get leaderboard for a month
+     */
+    public function getLeaderboard(string $month): ?array
+    {
+        $snapshot = $this->database->getReference("waiter_leaderboard/{$month}")->getSnapshot();
+        return $snapshot->exists() ? $snapshot->getValue() : null;
+    }
+
+    /**
+     * Get waiter specialist role
+     */
+    public function getWaiterSpecialistRole(string $waiterId): ?string
+    {
+        $snapshot = $this->database->getReference("allowed_waiters/{$waiterId}/specialist_role")->getSnapshot();
+        return $snapshot->exists() ? $snapshot->getValue() : null;
+    }
+
+    /**
+     * Update waiter specialist role
+     */
+    public function updateWaiterSpecialistRole(string $waiterId, ?string $role): void
+    {
+        $this->database->getReference("allowed_waiters/{$waiterId}/specialist_role")->set($role);
     }
 }
