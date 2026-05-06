@@ -17,6 +17,8 @@ class UpdateRecurringTaskRequest extends FormRequest
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'priority' => 'required|in:urgent,normal,low',
+            'category_id' => 'nullable|string|max:100',
+            'category_name' => 'nullable|string|max:100',
             'schedule_time' => 'required|date_format:H:i',
             'time_limit_minutes' => 'required|integer|min:1|max:1440',
             'is_active' => 'nullable|boolean',

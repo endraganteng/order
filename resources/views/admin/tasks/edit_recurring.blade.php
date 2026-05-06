@@ -67,6 +67,22 @@
                 </select>
             </div>
 
+            <div style="margin-bottom: 20px;">
+                <label for="category_id" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                    Kategori Tugas <span style="font-weight: 400; color: #999;">(opsional)</span>
+                </label>
+                <select id="category_id" name="category_id" onchange="updateCategoryName(this)"
+                    style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                    <option value="">- Tanpa Kategori -</option>
+                    @foreach(($categories ?? []) as $cat)
+                        <option value="{{ $cat['id'] }}" data-name="{{ $cat['name'] }}" {{ ($template['category_id'] ?? '') === $cat['id'] ? 'selected' : '' }}>
+                            {{ $cat['name'] }}
+                        </option>
+                    @endforeach
+                </select>
+                <input type="hidden" id="category_name" name="category_name" value="{{ $template['category_name'] ?? '' }}">
+            </div>
+
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px;">
                 <div style="grid-column: 1 / -1;">
                     @php $recurrenceType = old('recurrence_type', $template['recurrence_type'] ?? 'daily'); @endphp
@@ -189,3 +205,12 @@
         toggleRecurrenceDetailFields();
     </script>
 @endsection
+
+@push('scripts')
+<script>
+function updateCategoryName(selectEl) {
+    const selected = selectEl.options[selectEl.selectedIndex];
+    document.getElementById('category_name').value = selected.dataset.name || '';
+}
+</script>
+@endpush

@@ -55,6 +55,7 @@
                         </td>
                         <td>{{ isset($waiter['created_at']) ? date('d/m/Y H:i', $waiter['created_at']) : '-' }}</td>
                         <td>
+                            <a href="{{ route('admin.waiters.performance', $waiter['id']) }}" class="btn" style="padding: 6px 12px; font-size: 12px; background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;">📊</a>
                             <a href="{{ route('admin.waiters.edit', $waiter['id']) }}" class="btn btn-warning"
                                 style="padding: 6px 12px; font-size: 12px;">Edit</a>
                             <form method="POST" action="{{ route('admin.waiters.destroy', $waiter['id']) }}"

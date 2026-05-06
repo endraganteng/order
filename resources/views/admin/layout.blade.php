@@ -1024,8 +1024,10 @@
                 <div class="nav-group">
                     <div class="nav-group-title">Operasional</div>
                     <div class="nav-links">
+                        <a class="nav-link {{ request()->routeIs('admin.tasks.live') ? 'is-active' : '' }}" href="{{ route('admin.tasks.live') }}">📡 Live Monitor</a>
                         <a class="nav-link {{ request()->routeIs('admin.tasks.index') ? 'is-active' : '' }}" href="{{ route('admin.tasks.index') }}">📝 Tugas Umum</a>
                         <a class="nav-link {{ request()->routeIs('admin.tasks.rack.*') ? 'is-active' : '' }}" href="{{ route('admin.tasks.rack.index') }}">📦 Cek Rak</a>
+                        <a class="nav-link {{ request()->routeIs('admin.restock.*') ? 'is-active' : '' }}" href="{{ route('admin.restock.index') }}">📦 Restock & PO</a>
                         <a class="nav-link {{ request()->routeIs('admin.attendance.*') ? 'is-active' : '' }}" href="{{ route('admin.attendance.index') }}">📋 Absensi</a>
                         <a class="nav-link {{ request()->routeIs('admin.cleanup') ? 'is-active' : '' }}" href="{{ route('admin.cleanup') }}">🧹 Cleanup</a>
                     </div>
@@ -1046,6 +1048,7 @@
                 <div class="nav-group">
                     <div class="nav-group-title">Sistem</div>
                     <div class="nav-links">
+                        <a class="nav-link {{ request()->routeIs('admin.audit_log.*') ? 'is-active' : '' }}" href="{{ route('admin.audit_log.index') }}">📜 Audit Log</a>
                         <a class="nav-link {{ request()->routeIs('admin.settings') ? 'is-active' : '' }}" href="{{ route('admin.settings') }}">⚙️ Settings</a>
                         <a class="nav-link is-danger" href="{{ route('admin.logout') }}">🚪 Logout</a>
                     </div>

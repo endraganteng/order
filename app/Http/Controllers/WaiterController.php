@@ -105,6 +105,7 @@ class WaiterController extends Controller
         $rackProductsMap = $this->firebase->getAllRackProductsMap();
         $todayAttendance = $this->firebase->getAttendanceByDate($waiterId, date('Y-m-d'));
         $waiterShift = $this->firebase->getWaiterShift($waiterId);
+        $handoverNotes = $this->firebase->getLatestHandoverNotes();
 
         // Bonus dashboard data
         $bonusMonth = date('Y-m');
@@ -149,6 +150,7 @@ class WaiterController extends Controller
             'todayAttendance' => $todayAttendance,
             'waiterShift' => $waiterShift,
             'shiftStartTime' => $waiterShift ? ($waiterShift['clock_in_time'] ?? null) : null,
+            'handoverNotes' => $handoverNotes,
             // Bonus data
             'bonusMonth' => $bonusMonth,
             'bonusConfig' => $bonusConfig,
@@ -290,6 +292,7 @@ class WaiterController extends Controller
             'stock_report_items' => 'nullable|string|max:2000',
             'no_out_of_stock' => 'nullable|boolean',
             'photo_proof_data_url' => 'nullable|string|max:5000000',
+            'photo_before_data_url' => 'nullable|string|max:5000000',
             'product_checklist' => 'nullable|string|max:50000',
         ]);
 
@@ -317,7 +320,8 @@ class WaiterController extends Controller
             $request->input('stock_report_items'),
             $request->boolean('no_out_of_stock'),
             $request->input('photo_proof_data_url'),
-            $productChecklist
+            $productChecklist,
+            $request->input('photo_before_data_url')
         );
 
         if (! ($result['success'] ?? false)) {
@@ -353,14 +357,59 @@ class WaiterController extends Controller
             report($e);
         }
 
+        // Auto-collect restock requests from product checklist
+        try {
+            if ($productChecklist && is_array($productChecklist)) {
+                $task = $this->firebase->getWaiterTaskById($id);
+                $rackId = $task['rack_id'] ?? '';
+                $rackName = $task['rack_name'] ?? ($task['title'] ?? '');
+
+                foreach ($productChecklist as $item) {
+                    $actualQty = (int) ($item['actual_qty'] ?? 0);
+                    $standardQty = (int) ($item['standard_qty'] ?? 0);
+                    $minQty = (int) ($item['min_qty'] ?? 0);
+
+                    // Trigger restock if qty = 0 OR qty <= min_qty (when min_qty is set)
+                    $needsRestock = $actualQty === 0 || ($minQty > 0 && $actualQty <= $minQty);
+
+                    if ($needsRestock && $rackId) {
+                        $qtyNeeded = $standardQty - $actualQty;
+                        if ($qtyNeeded <= 0) $qtyNeeded = $standardQty;
+
+                        $this->firebase->createOrUpdateRestockRequest([
+                            'product_id' => $item['product_id'] ?? '',
+                            'product_name' => $item['product_name'] ?? ($item['name'] ?? ''),
+                            'rack_id' => $rackId,
+                            'rack_name' => $rackName,
+                            'reported_qty' => $actualQty,
+                            'standard_qty' => $standardQty,
+                            'min_qty' => $minQty,
+                            'qty_needed' => $qtyNeeded,
+                            'reported_by' => $waiterId,
+                            'reported_by_name' => $waiterName,
+                            'date' => date('Y-m-d'),
+                        ]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $isPartial = (bool) ($result['partial'] ?? false);
+        $responseMessage = $result['message'] ?? 'Tugas berhasil diverifikasi sebagai selesai.';
+
         if ($request->expectsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Tugas berhasil diverifikasi sebagai selesai.',
+                'partial' => $isPartial,
+                'completed_count' => $result['completed_count'] ?? 1,
+                'repeat_count' => $result['repeat_count'] ?? 1,
+                'message' => $responseMessage,
             ]);
         }
 
-        return back()->with('success', 'Tugas berhasil diverifikasi sebagai selesai.');
+        return back()->with('success', $responseMessage);
     }
 
     /**
@@ -505,7 +554,8 @@ class WaiterController extends Controller
         $tasks = $this->firebase->getWaiterTasksByWaiterId($waiterId);
 
         $pendingTasks = array_values(array_filter($tasks, function ($task) {
-            return ($task['status'] ?? 'pending') === 'pending';
+            $status = $task['status'] ?? 'pending';
+            return $status === 'pending' || $status === 'in_progress';
         }));
         $pendingTasks = $this->deduplicatePendingTasks($pendingTasks);
 
@@ -513,7 +563,8 @@ class WaiterController extends Controller
         $pendingTasks = $this->filterByShiftTime($pendingTasks, $waiterId);
 
         $taskHistory = array_values(array_filter($tasks, function ($task) {
-            return ($task['status'] ?? 'pending') !== 'pending';
+            $status = $task['status'] ?? 'pending';
+            return $status !== 'pending' && $status !== 'in_progress';
         }));
 
         return [
@@ -620,6 +671,42 @@ class WaiterController extends Controller
     }
 
     /**
+     * Waiter restock list — active POs with receivable items
+     */
+    public function restockList()
+    {
+        $orders = $this->firebase->getPurchaseOrders();
+        // Filter to only active POs (ordered or partial)
+        $activeOrders = array_filter($orders, fn($o) => in_array($o['status'] ?? '', ['ordered', 'partial']));
+
+        return view('waiter.restock', compact('activeOrders'));
+    }
+
+    /**
+     * Waiter confirms receiving a PO item (partial qty support)
+     */
+    public function receiveRestockItem(string $poId, Request $request)
+    {
+        $request->validate([
+            'restock_id' => 'required|string',
+            'received_qty' => 'required|integer|min:1',
+        ]);
+
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+
+        $result = $this->firebase->receivePoItem(
+            $poId,
+            $request->input('restock_id'),
+            (int) $request->input('received_qty'),
+            $waiterId,
+            $waiterName
+        );
+
+        return response()->json($result);
+    }
+
+    /**
      * Send WhatsApp notifications for newly overdue tasks.
      */
     protected function sendOverdueNotifications(array $overdueTasks): void
@@ -645,5 +732,23 @@ class WaiterController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    /**
+     * Submit handover note at clock-out.
+     */
+    public function submitHandover(Request $request)
+    {
+        $request->validate([
+            'note' => 'required|string|max:2000',
+        ]);
+
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+        $today = date('Y-m-d');
+
+        $this->firebase->saveHandoverNote($waiterId, $waiterName, $today, $request->input('note'));
+
+        return response()->json(['success' => true, 'message' => 'Catatan serah terima berhasil disimpan.']);
     }
 }

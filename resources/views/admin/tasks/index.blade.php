@@ -86,7 +86,145 @@
         border-top: 1px solid #f1f5f9;
     }
 
-    /* ── Tools Row ── */
+    /* Kategori Modal & Breakdown */
+    .task-category-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        padding-top: 8px;
+    }
+    .task-category-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+    }
+    .task-category-info {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .task-category-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+    .task-category-name {
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--color-text);
+        display: flex;
+        align-items: center;
+    }
+    .task-category-count {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--color-text-muted);
+    }
+    .task-category-progress {
+        height: 4px;
+        background: var(--color-bg);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .task-category-progress-bar {
+        height: 100%;
+        border-radius: 2px;
+    }
+    
+    .category-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.72);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        z-index: 1500;
+    }
+    .category-modal.show {
+        display: flex;
+    }
+    .category-modal-box {
+        width: min(100%, 500px);
+        max-height: calc(100vh - 32px);
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+        display: flex;
+        flex-direction: column;
+    }
+    .category-modal-header {
+        padding: 16px;
+        border-bottom: 1px solid var(--color-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .category-modal-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--color-text);
+    }
+    .category-modal-close {
+        background: none;
+        border: none;
+        font-size: 20px;
+        color: var(--color-text-muted);
+        cursor: pointer;
+    }
+    .category-modal-body {
+        padding: 16px;
+        overflow-y: auto;
+    }
+    .category-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+    .category-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-bg);
+    }
+    .category-form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+    }
+    .category-form-group {
+        display: flex;
+        gap: 10px;
+    }
+    .category-form-input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        font-size: 14px;
+    }
+    .category-form-color {
+        width: 40px;
+        height: 38px;
+        padding: 2px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+    }
+
+    /* "?"? Tools Row "?"? */
     .task-tools-row {
         display: flex;
         justify-content: space-between;
@@ -473,6 +611,17 @@
             <div class="page-subtitle">{{ $pageSubtitle }}</div>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            @if($isRackScope)
+            <button type="button" class="btn" style="background:#dbeafe; color:#1d4ed8;" onclick="openExportStockModal()">
+                📥 Export Stok
+            </button>
+            @endif
+            <button type="button" class="btn" style="background:#fef3c7; color:#92400e;" onclick="openReassignModal()">
+                🔄 Reassign
+            </button>
+            <button type="button" class="btn" style="background:#e2e8f0; color:var(--color-text);" onclick="openCategoryModal()">
+                Kelola Kategori
+            </button>
             <a href="{{ route($otherTaskScopeRouteName ?? 'admin.tasks.rack.index') }}" class="btn" style="background:#e2e8f0; color:var(--color-text);">
                 {{ $switchLabel }}
             </a>
@@ -545,6 +694,35 @@
         @endif
         <a href="{{ route('admin.racks.index') }}" class="btn btn-sm" style="background:#2563eb;color:#fff;">Kelola Rak</a>
     </div>
+
+    {{-- Category Breakdown Section --}}
+    @if(!$isRackScope && !empty($categoryBreakdown))
+    <details class="task-section" open>
+        <summary class="task-section-summary">Breakdown Kategori Tugas <span class="badge" style="background:var(--color-primary-bg);color:var(--color-primary);">{{ count($categoryBreakdown) }} Kategori</span></summary>
+        <div class="task-section-body">
+            <div class="task-category-grid">
+                @foreach($categoryBreakdown as $cb)
+                    @php
+                        $percent = $cb['total'] > 0 ? round(($cb['done'] / $cb['total']) * 100) : 0;
+                        $color = $cb['category_color'] ?? '#94a3b8';
+                    @endphp
+                    <div class="task-category-card">
+                        <div class="task-category-info">
+                            <div class="task-category-name">
+                                <span class="task-category-dot" style="background-color: {{ $color }};"></span>
+                                {{ $cb['category_name'] ?: 'Tanpa Kategori' }}
+                            </div>
+                            <div class="task-category-count">{{ $cb['done'] }}/{{ $cb['total'] }}</div>
+                        </div>
+                        <div class="task-category-progress">
+                            <div class="task-category-progress-bar" style="width: {{ $percent }}%; background-color: {{ $color }};"></div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    </details>
+    @endif
 
     {{-- ═══════════════════════════════════════════════════════════════
          SECTION 1: Monitoring Cek Rak (FIRST for rack_check scope)
@@ -675,6 +853,16 @@
         <form method="GET" action="{{ route($taskScopeRouteName ?? 'admin.tasks.index') }}" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
             <input type="date" name="track_date" value="{{ $selectedDate }}" class="form-input" style="width:auto;">
             <button type="submit" class="btn btn-primary">Tampilkan</button>
+            
+            @if(!$isRackScope && !empty($categories))
+            <select id="tracking-category-filter" class="form-input" style="width:auto; margin-left: auto;" onchange="filterTrackingByCategory()">
+                <option value="">Semua Kategori</option>
+                <option value="uncategorized">Tanpa Kategori</option>
+                @foreach($categories as $cat)
+                    <option value="{{ $cat['id'] }}">{{ $cat['name'] }}</option>
+                @endforeach
+            </select>
+            @endif
         </form>
 
         @if($isRackScope)
@@ -735,9 +923,9 @@
                     @if(empty($dateDoneTasks))
                         <div style="font-size: 13px; color: var(--color-text-muted);">Tidak ada tugas selesai pada tanggal ini.</div>
                     @else
-                        <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--color-text-secondary);">
+                                    <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--color-text-secondary);">
                             @foreach($dateDoneTasks as $task)
-                                <li style="margin-bottom: 5px;">
+                                <li class="js-history-task-row" data-category-id="{{ $task['category_id'] ?? 'uncategorized' }}" style="margin-bottom: 5px;">
                                     <strong>{{ $task['title'] ?? '-' }}</strong>
                                     <div>Waiter: {{ $task['completed_by_waiter_name'] ?? '-' }}</div>
                                     @if(($task['task_type'] ?? 'general') === 'rack_check')
@@ -766,7 +954,7 @@
                     @else
                         <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--color-text-secondary);">
                             @foreach($dateNotDoneTasks as $task)
-                                <li style="margin-bottom: 5px;">
+                                <li class="js-history-task-row" data-category-id="{{ $task['category_id'] ?? 'uncategorized' }}" style="margin-bottom: 5px;">
                                     <strong>{{ $task['title'] ?? '-' }}</strong>
                                     <div>Status: {{ strtoupper($task['status'] ?? '-') }}</div>
                                     <div>Target: {{ $task['assigned_waiter_name'] ?? '-' }}</div>
@@ -1303,16 +1491,22 @@
                                      data-rack-name="{{ $task['rack_name'] ?? '' }}"
                                      data-completed-date="{{ !empty($task['completed_at']) ? date('Y-m-d', (int) $task['completed_at']) : '' }}"
                                      data-tracking-date="{{ $task['tracking_date'] ?? '' }}"
-                                     data-status="{{ $task['status'] ?? 'pending' }}">
+                                     data-status="{{ $task['status'] ?? 'pending' }}"
+                                     data-category-id="{{ $task['category_id'] ?? 'uncategorized' }}">
                                     <div class="history-task-main">
                                         <div class="history-task-title-row">
                                             <span class="history-task-title">{{ $task['title'] ?? '-' }}</span>
                                             @if(($task['status'] ?? '') === 'done')
                                                 <span class="badge badge-success" style="font-size:12px;">Selesai</span>
+                                            @elseif(($task['status'] ?? '') === 'in_progress')
+                                                <span class="badge" style="background:#ecfdf5;color:#065f46;font-size:12px;">{{ ($task['completed_count'] ?? 0) }}/{{ ($task['repeat_count'] ?? 1) }}</span>
                                             @elseif(($task['status'] ?? '') === 'overdue')
                                                 <span class="badge" style="background:var(--color-danger-bg);color:#721c24;font-size:12px;">Tidak Selesai</span>
                                             @else
                                                 <span class="badge" style="background:var(--color-warning-bg);color:#856404;font-size:12px;">Pending</span>
+                                            @endif
+                                            @if(($task['repeat_count'] ?? 1) > 1 && ($task['status'] ?? '') !== 'in_progress')
+                                                <span style="font-size:11px;color:#6366f1;font-weight:600;">🔄 {{ $task['repeat_count'] }}x</span>
                                             @endif
                                         </div>
                                         @if(!empty($task['description']))
@@ -1436,6 +1630,138 @@
             </div>
             <img id="task-photo-modal-image" class="task-photo-modal-image" src="" alt="Preview bukti foto">
             <div id="task-photo-modal-meta" class="task-photo-modal-meta"></div>
+        </div>
+    </div>
+
+    {{-- Category Modal --}}
+    <div id="category-modal" class="category-modal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="category-modal-box">
+            <div class="category-modal-header">
+                <div class="category-modal-title">Kelola Kategori Tugas</div>
+                <button type="button" class="category-modal-close" onclick="closeCategoryModal()">&times;</button>
+            </div>
+            <div class="category-modal-body">
+                <div id="category-modal-message"></div>
+                <div class="category-list" id="category-list-container">
+                    <div style="text-align:center; padding: 20px; color: var(--color-text-muted);">Memuat data...</div>
+                </div>
+
+                <form id="category-add-form" class="category-form" onsubmit="submitCategoryAdd(event)">
+                    <div style="font-weight: 600; color: var(--color-text);">Tambah Kategori Baru</div>
+                    <div class="category-form-group">
+                        <input type="text" id="category-new-name" class="category-form-input" placeholder="Nama Kategori (mis. Area Depan)" required>
+                        <input type="color" id="category-new-color" class="category-form-color" value="#3b82f6" title="Warna Kategori">
+                    </div>
+                    <div class="category-form-group">
+                        <input type="number" id="category-new-order" class="category-form-input" placeholder="Urutan (opsional)" style="max-width: 100px;">
+                        <button type="submit" class="btn btn-primary" id="category-add-btn" style="flex: 1;">Tambah</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {{-- Scan Compliance Stats (rack_check scope only) --}}
+    @if($isRackScope && !empty($scanStats))
+    <details class="task-section" open>
+        <summary class="task-section-summary">📊 Statistik Kepatuhan Scan <span class="badge" style="background:#dbeafe;color:#1d4ed8;">{{ count($scanStats) }} Waiter</span></summary>
+        <div class="task-section-body">
+            <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead>
+                        <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+                            <th style="padding:10px 12px; text-align:left;">Waiter</th>
+                            <th style="padding:10px 12px; text-align:center;">Total Scan</th>
+                            <th style="padding:10px 12px; text-align:center;">Berhasil</th>
+                            <th style="padding:10px 12px; text-align:center;">Mismatch</th>
+                            <th style="padding:10px 12px; text-align:center;">Akurasi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($scanStats as $wId => $stat)
+                        @php
+                            $waiterName = collect($waiters)->firstWhere('id', $wId)['name'] ?? $wId;
+                            $accuracy = $stat['total'] > 0 ? round(($stat['success'] / $stat['total']) * 100) : 100;
+                            $accColor = $accuracy >= 90 ? '#166534' : ($accuracy >= 70 ? '#92400e' : '#991b1b');
+                            $accBg = $accuracy >= 90 ? '#f0fdf4' : ($accuracy >= 70 ? '#fef3c7' : '#fef2f2');
+                        @endphp
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:10px 12px; font-weight:600;">{{ $waiterName }}</td>
+                            <td style="padding:10px 12px; text-align:center;">{{ $stat['total'] }}</td>
+                            <td style="padding:10px 12px; text-align:center; color:#166534;">{{ $stat['success'] }}</td>
+                            <td style="padding:10px 12px; text-align:center; color:#991b1b; font-weight:{{ $stat['mismatch'] > 0 ? '700' : '400' }};">{{ $stat['mismatch'] }}</td>
+                            <td style="padding:10px 12px; text-align:center;">
+                                <span style="display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:700; background:{{ $accBg }}; color:{{ $accColor }};">{{ $accuracy }}%</span>
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+    @endif
+
+    {{-- Export Stock Modal --}}
+    @if($isRackScope)
+    <div id="export-stock-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        <div style="background:#fff; border-radius:12px; padding:24px; max-width:380px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; font-size:18px;">📥 Export Laporan Stok</h3>
+                <button type="button" onclick="closeExportStockModal()" style="background:none; border:none; font-size:20px; cursor:pointer;">&times;</button>
+            </div>
+            <form action="{{ route('admin.tasks.export_stock') }}" method="GET">
+                <div style="margin-bottom:12px;">
+                    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:4px;">Dari Tanggal</label>
+                    <input type="date" name="from_date" value="{{ now()->subDays(7)->format('Y-m-d') }}" required style="width:100%; padding:8px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px;">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:4px;">Sampai Tanggal</label>
+                    <input type="date" name="to_date" value="{{ now()->format('Y-m-d') }}" required style="width:100%; padding:8px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px;">
+                </div>
+                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                    <button type="button" class="btn" style="background:#e2e8f0;" onclick="closeExportStockModal()">Batal</button>
+                    <button type="submit" class="btn btn-primary">📥 Download Excel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    @endif
+
+    {{-- Reassign Modal --}}
+    <div id="reassign-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        <div style="background:#fff; border-radius:12px; padding:24px; max-width:420px; width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; font-size:18px;">🔄 Bulk Reassign Tugas</h3>
+                <button type="button" onclick="closeReassignModal()" style="background:none; border:none; font-size:20px; cursor:pointer;">&times;</button>
+            </div>
+            <p style="font-size:13px; color:var(--color-text-muted); margin-bottom:16px;">Pindahkan semua tugas pending dari waiter yang libur ke waiter lain.</p>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Dari Waiter:</label>
+                <select id="reassign-from" class="form-input" style="width:100%;">
+                    <option value="">-- Pilih waiter asal --</option>
+                    @foreach($waiters ?? [] as $w)
+                        <option value="{{ $w['id'] }}">{{ $w['name'] }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Ke Waiter:</label>
+                <select id="reassign-to" class="form-input" style="width:100%;">
+                    <option value="">-- Pilih waiter tujuan --</option>
+                    @foreach($waiters ?? [] as $w)
+                        <option value="{{ $w['id'] }}">{{ $w['name'] }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div style="margin-bottom:16px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">Tanggal:</label>
+                <input type="date" id="reassign-date" class="form-input" style="width:100%;" value="{{ $selectedDate ?? date('Y-m-d') }}">
+            </div>
+            <div id="reassign-result" style="display:none; margin-bottom:12px; padding:8px 12px; border-radius:6px; font-size:13px;"></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button type="button" class="btn" style="background:#e2e8f0;" onclick="closeReassignModal()">Batal</button>
+                <button type="button" class="btn btn-primary" id="reassign-submit-btn" onclick="submitReassign()">Pindahkan</button>
+            </div>
         </div>
     </div>
 @endsection
@@ -1677,6 +2003,244 @@
             if (e.key === 'Escape' && overlay.classList.contains('is-open')) closeOverlay();
         });
     })();
+
+    // Kategori functions
+    window.filterTasksByCategory = function(categoryId) {
+        const tasks = document.querySelectorAll('.js-history-task-row');
+        tasks.forEach(row => {
+            if (!categoryId) {
+                row.style.display = '';
+            } else {
+                const rowCatId = row.getAttribute('data-category-id') || 'uncategorized';
+                row.style.display = rowCatId === categoryId ? '' : 'none';
+            }
+        });
+    };
+
+    window.openCategoryModal = function() {
+        document.getElementById('category-modal').classList.add('show');
+        loadCategories();
+    };
+
+    window.closeCategoryModal = function() {
+        document.getElementById('category-modal').classList.remove('show');
+    };
+
+    function renderCategories(categories) {
+        const container = document.getElementById('category-list-container');
+        if (!categories || categories.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--color-text-muted);">Belum ada kategori.</div>';
+            return;
+        }
+        
+        let html = '';
+        categories.forEach(cat => {
+            html += `
+                <div class="category-item">
+                    <div class="category-item-info">
+                        <span class="task-category-dot" style="background-color: ${cat.color || '#94a3b8'}; margin: 0;"></span>
+                        <span style="font-weight: 600; color: var(--color-text);">${cat.name}</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="deleteCategory('${cat.id}')">Hapus</button>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    }
+
+    function showCategoryMessage(msg, isError = false) {
+        const msgEl = document.getElementById('category-modal-message');
+        msgEl.innerHTML = `<div style="padding: 10px; margin-bottom: 15px; border-radius: 6px; background-color: ${isError ? '#fef2f2' : '#f0fdf4'}; color: ${isError ? '#991b1b' : '#166534'}; border: 1px solid ${isError ? '#fecaca' : '#bbf7d0'};">${msg}</div>`;
+        setTimeout(() => { msgEl.innerHTML = ''; }, 3000);
+    }
+
+    function loadCategories() {
+        const container = document.getElementById('category-list-container');
+        container.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--color-text-muted);">Memuat data...</div>';
+        
+        fetch('{{ url("admin/tasks/categories") }}', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.categories) {
+                renderCategories(data.categories);
+            } else {
+                container.innerHTML = '<div style="text-align:center; padding: 20px; color: #991b1b;">Gagal memuat kategori.</div>';
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            container.innerHTML = '<div style="text-align:center; padding: 20px; color: #991b1b;">Terjadi kesalahan sistem.</div>';
+        });
+    }
+
+    window.submitCategoryAdd = function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('category-add-btn');
+        const name = document.getElementById('category-new-name').value;
+        const color = document.getElementById('category-new-color').value;
+        const order = document.getElementById('category-new-order').value || 0;
+        const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        
+        btn.disabled = true;
+        btn.innerText = 'Memproses...';
+        
+        fetch('{{ url("admin/tasks/categories") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': token
+            },
+            body: JSON.stringify({ name, color, order })
+        })
+        .then(res => res.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerText = 'Tambah';
+            if (data.success) {
+                document.getElementById('category-new-name').value = '';
+                document.getElementById('category-new-order').value = '';
+                showCategoryMessage('Kategori berhasil ditambahkan.');
+                loadCategories();
+                setTimeout(() => { window.location.reload(); }, 1500); // Reload to reflect changes in filter dropdown
+            } else {
+                showCategoryMessage(data.message || 'Gagal menambahkan kategori.', true);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            btn.disabled = false;
+            btn.innerText = 'Tambah';
+            showCategoryMessage('Terjadi kesalahan sistem.', true);
+        });
+    };
+
+    window.deleteCategory = function(id) {
+        if (!confirm('Yakin ingin menghapus kategori ini?')) return;
+        
+        const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        
+        fetch(`{{ url("admin/tasks/categories") }}/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': token
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                showCategoryMessage('Kategori berhasil dihapus.');
+                loadCategories();
+                setTimeout(() => { window.location.reload(); }, 1500);
+            } else {
+                showCategoryMessage(data.message || 'Gagal menghapus kategori.', true);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            showCategoryMessage('Terjadi kesalahan sistem.', true);
+        });
+    };
+
+    window.filterTrackingByCategory = function() {
+        const val = document.getElementById('tracking-category-filter').value;
+        filterTasksByCategory(val);
+    };
+
+    // ── Export Stock Modal ──
+    window.openExportStockModal = function() {
+        const modal = document.getElementById('export-stock-modal');
+        if (modal) modal.style.display = 'flex';
+    };
+    window.closeExportStockModal = function() {
+        const modal = document.getElementById('export-stock-modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    // ── Reassign Modal ──
+    window.openReassignModal = function() {
+        const modal = document.getElementById('reassign-modal');
+        modal.style.display = 'flex';
+        document.getElementById('reassign-result').style.display = 'none';
+    };
+
+    window.closeReassignModal = function() {
+        document.getElementById('reassign-modal').style.display = 'none';
+    };
+
+    window.submitReassign = function() {
+        const fromId = document.getElementById('reassign-from').value;
+        const toId = document.getElementById('reassign-to').value;
+        const date = document.getElementById('reassign-date').value;
+        const resultEl = document.getElementById('reassign-result');
+        const btn = document.getElementById('reassign-submit-btn');
+
+        if (!fromId || !toId || !date) {
+            resultEl.style.display = 'block';
+            resultEl.style.background = '#fef2f2';
+            resultEl.style.color = '#991b1b';
+            resultEl.textContent = 'Lengkapi semua field.';
+            return;
+        }
+        if (fromId === toId) {
+            resultEl.style.display = 'block';
+            resultEl.style.background = '#fef2f2';
+            resultEl.style.color = '#991b1b';
+            resultEl.textContent = 'Waiter asal dan tujuan harus berbeda.';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Memproses...';
+        const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+        fetch('{{ route("admin.tasks.bulk_reassign") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': token
+            },
+            body: JSON.stringify({ from_waiter_id: fromId, to_waiter_id: toId, date: date })
+        })
+        .then(res => res.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.textContent = 'Pindahkan';
+            resultEl.style.display = 'block';
+            if (data.success) {
+                resultEl.style.background = '#f0fdf4';
+                resultEl.style.color = '#166534';
+                resultEl.textContent = data.message;
+                if (data.reassigned_count > 0) {
+                    setTimeout(() => { window.location.reload(); }, 1500);
+                }
+            } else {
+                resultEl.style.background = '#fef2f2';
+                resultEl.style.color = '#991b1b';
+                resultEl.textContent = data.message || 'Gagal memproses.';
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            btn.disabled = false;
+            btn.textContent = 'Pindahkan';
+            resultEl.style.display = 'block';
+            resultEl.style.background = '#fef2f2';
+            resultEl.style.color = '#991b1b';
+            resultEl.textContent = 'Terjadi kesalahan sistem.';
+        });
+    };
+
 })();
 </script>
 @endpush

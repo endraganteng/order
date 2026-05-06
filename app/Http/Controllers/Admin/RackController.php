@@ -37,7 +37,10 @@ class RackController extends Controller
             'location' => $request->location,
             'description' => $request->description,
             'is_active' => $request->has('is_active'),
+            'check_order' => (int) $request->input('check_order', 0),
         ]);
+
+        $this->firebase->logAuditAction('create', 'rack', null, ['name' => $request->name]);
 
         return redirect()->route('admin.racks.index')
             ->with('success', 'Rak berhasil ditambahkan dan QR code otomatis digenerate.');
@@ -141,6 +144,7 @@ class RackController extends Controller
             'location' => $request->location,
             'description' => $request->description,
             'is_active' => (bool) $request->is_active,
+            'check_order' => (int) $request->input('check_order', 0),
         ]);
 
         return redirect()->route('admin.racks.index')
@@ -158,9 +162,26 @@ class RackController extends Controller
             ->with('success', 'QR code rak berhasil digenerate ulang.');
     }
 
+    public function history($id)
+    {
+        $rack = $this->firebase->getRackById($id);
+        if (! $rack) {
+            abort(404);
+        }
+
+        $history = $this->firebase->getRackCheckHistory($id, 100);
+
+        // Resolve waiter names
+        $waiters = collect($this->firebase->getActiveWaiters())->keyBy('id')->toArray();
+
+        return view('admin.racks.history', compact('rack', 'history', 'waiters'));
+    }
+
     public function destroy($id)
     {
         $this->firebase->deleteRack($id);
+
+        $this->firebase->logAuditAction('delete', 'rack', $id, []);
 
         return redirect()->route('admin.racks.index')
             ->with('success', 'Rak berhasil dihapus.');

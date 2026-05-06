@@ -15,7 +15,7 @@ class AdminAuthMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (!session()->has('admin_authenticated')) {
+        if (! session()->has('admin_authenticated') || ! session('admin_id')) {
             return redirect()->route('admin.login');
         }
 

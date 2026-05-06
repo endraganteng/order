@@ -247,13 +247,33 @@
     </div>
 
     <script>
+        // Sync desktop ↔ mobile selects on change
+        document.querySelectorAll('.js-shift-select').forEach(function(select) {
+            select.addEventListener('change', function() {
+                var wId = this.dataset.waiterId;
+                var day = this.dataset.day;
+                var val = this.value;
+                // Sync all selects with same waiter+day
+                document.querySelectorAll('.js-shift-select[data-waiter-id="' + wId + '"][data-day="' + day + '"]').forEach(function(s) {
+                    if (s !== select) s.value = val;
+                    updateCellColor(s);
+                });
+            });
+        });
+
         function saveScheduleTemplate() {
             var btn = document.getElementById('btnSaveAll');
             btn.disabled = true;
             btn.textContent = 'Menyimpan...';
 
             var schedule = {};
-            document.querySelectorAll('.js-shift-select').forEach(function(select) {
+            // Only collect from visible selects to avoid duplicates
+            var selects = document.querySelectorAll('.schedule-table-desktop .js-shift-select');
+            if (selects.length === 0) {
+                // Mobile view active
+                selects = document.querySelectorAll('.schedule-cards-mobile .js-shift-select');
+            }
+            selects.forEach(function(select) {
                 var wId = select.dataset.waiterId;
                 var day = select.dataset.day;
                 if (!schedule[wId]) schedule[wId] = {};

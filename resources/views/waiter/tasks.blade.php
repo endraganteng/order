@@ -579,6 +579,14 @@
             background: #dcfce7;
             color: #166534;
         }
+        .product-checklist-status.restock {
+            color: #c2410c;
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+        }
+        .product-checklist-item.restock {
+            background: #fffbeb;
+        }
         .product-checklist-status.shortage {
             background: #ffedd5;
             color: #9a3412;
@@ -810,6 +818,8 @@
             </div>
             <button type="button" class="btn-attendance" id="btn-attendance-action" disabled>Memuat...</button>
         </div>
+
+        @include('waiter.partials.handover', ['handoverNotes' => $handoverNotes, 'todayAttendance' => $todayAttendance])
 
         <div class="portal-tabs">
             <button type="button" class="tab-btn js-tab-btn active" data-tab="rack">📦 Cek Rak <span id="badge-tab-rack" class="menu-badge js-rack-menu-badge hidden">0</span></button>
@@ -1412,6 +1422,7 @@
         const stockReportItemsByTask = new Map();
         const noteDraftByTask = new Map();
         const photoProofByTask = new Map();
+        const photoBeforeByTask = new Map();
         const productChecklistByTask = new Map();
         let activeScannerTaskId = '';
         let activeScannerTaskLabel = '';
@@ -2131,6 +2142,14 @@
             const deadlineText = task.deadline_at
                 ? `<div class="meta">Batas waktu: ${escapeHtml(formatDateTime(task.deadline_at))}</div>`
                 : '';
+            const repeatCount = Math.max(1, Number(task.repeat_count || 1));
+            const completedCount = Number(task.completed_count || 0);
+            const isRepeatTask = repeatCount > 1;
+            const repeatProgressBlock = isRepeatTask
+                ? `<div class="meta" style="margin: 6px 0; padding: 4px 8px; background: ${completedCount > 0 ? '#ecfdf5' : '#f0f9ff'}; border-radius: 6px; font-weight: 600; color: ${completedCount > 0 ? '#065f46' : '#1e40af'};">
+                    🔄 Pengulangan: ${completedCount}/${repeatCount} selesai
+                   </div>`
+                : '';
             const requiresPhotoProof = Boolean(task?.requires_photo_proof);
             const existingScan = String(scannedBarcodeByTask.get(task.id) || '');
             const existingStockReport = String(stockReportItemsByTask.get(task.id) || '');
@@ -2150,6 +2169,7 @@
                     const isFilled = Boolean(productData.filled);
                     const actualQty = Number(productData.actual_qty || 0);
                     const standardQty = Number(product.standard_qty || 0);
+                    const minQty = Number(product.min_qty || 0);
                     const qtyInputValue = isFilled ? String(actualQty) : '';
                     let itemClass = '';
                     let statusHtml = '';
@@ -2157,6 +2177,9 @@
                         if (actualQty === 0) {
                             itemClass = 'habis';
                             statusHtml = '<span class="product-checklist-status habis">Habis</span>';
+                        } else if (minQty > 0 && actualQty <= minQty) {
+                            itemClass = 'restock';
+                            statusHtml = '<span class="product-checklist-status restock">Perlu Restock!</span>';
                         } else if (actualQty < standardQty) {
                             itemClass = 'shortage';
                             statusHtml = `<span class="product-checklist-status shortage">Kurang ${standardQty - actualQty}</span>`;
@@ -2177,11 +2200,21 @@
                 }).join('');
 
                 const filledCount = Object.values(existingChecklist).filter(v => v.filled).length;
-                const shortageCount = Object.values(existingChecklist).filter(v => v.filled && v.actual_qty < (v.standard_qty || 0)).length;
+                const shortageCount = Object.values(existingChecklist).filter(v => v.filled && v.actual_qty < (v.standard_qty || 0) && v.actual_qty > 0).length;
                 const habisCount = Object.values(existingChecklist).filter(v => v.filled && v.actual_qty === 0).length;
+                const restockCount = rackProducts.filter(p => {
+                    const d = existingChecklist[p.id];
+                    return d && d.filled && d.actual_qty > 0 && Number(p.min_qty || 0) > 0 && d.actual_qty <= Number(p.min_qty);
+                }).length;
                 let summaryText = `${filledCount}/${rackProducts.length} produk diisi`;
+                if (restockCount > 0) {
+                    summaryText += ` • ${restockCount} perlu restock`;
+                }
                 if (shortageCount > 0) {
-                    summaryText += ` \u2022 ${shortageCount} produk kurang`;
+                    summaryText += ` • ${shortageCount} produk kurang`;
+                }
+                if (habisCount > 0) {
+                    summaryText += ` • ${habisCount} habis`;
                 }
                 if (habisCount > 0) {
                     summaryText += ` \u2022 ${habisCount} habis`;
@@ -2199,10 +2232,36 @@
                     <textarea class="input js-stock-report" name="stock_report_items" data-task-id="${escapeAttr(task.id)}" maxlength="2000" placeholder="Jika ada barang menipis/habis, tulis di sini. Boleh dikosongkan jika tidak ada.">${escapeHtml(existingStockReport)}</textarea>
                     <div class="meta" style="font-size:12px; color:#6b7280;">Alur cek rak: scan QR code rak → (jika ada) isi barang menipis/habis → selesai.</div>`
                 : `<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 8px;">🔒 Form barang menipis/habis muncul setelah QR code rak berhasil di-scan.</div>`;
+            const requiresPhotoBefore = Boolean(task?.requires_photo_before);
+            const existingPhotoBefore = photoBeforeByTask.get(task.id) || null;
+            const existingPhotoBeforeDataUrl = String(existingPhotoBefore?.dataUrl || '');
+            const photoBeforeBlock = requiresPhotoBefore
+                ? `<div class="photo-proof-wrap" style="border-color: #fbbf24; background: #fffbeb;">
+                        <div class="photo-proof-head" style="color: #92400e;">
+                            <span>📷 Foto SEBELUM (Kondisi Awal) — Wajib</span>
+                            ${existingPhotoBeforeDataUrl
+                                ? `<button type="button" class="btn-photo-clear js-photo-before-clear" data-task-id="${escapeAttr(task.id)}">Hapus</button>`
+                                : ''}
+                        </div>
+                        <input
+                            class="input js-photo-before"
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            data-task-id="${escapeAttr(task.id)}"
+                            style="margin-bottom: 6px;"
+                        >
+                        <div class="photo-proof-meta">Foto kondisi rak/area SEBELUM dikerjakan.</div>
+                        ${existingPhotoBeforeDataUrl
+                            ? `<img src="${escapeAttr(existingPhotoBeforeDataUrl)}" alt="Foto sebelum" class="photo-proof-preview">
+                               <div class="photo-proof-meta" style="color:#065f46;">✅ Foto sebelum siap.</div>`
+                            : '<div class="photo-proof-meta" style="color:#9a3412;">⚠️ Belum ada foto sebelum.</div>'}
+                    </div>`
+                : '';
             const photoProofBlock = requiresPhotoProof
                 ? `<div class="photo-proof-wrap">
                         <div class="photo-proof-head">
-                            <span>📷 Bukti Foto Wajib</span>
+                            <span>📷 ${requiresPhotoBefore ? 'Foto SESUDAH (Hasil Akhir) — Wajib' : 'Bukti Foto Wajib'}</span>
                             ${existingPhotoDataUrl
                                 ? `<button type="button" class="btn-photo-clear js-photo-proof-clear" data-task-id="${escapeAttr(task.id)}">Hapus Foto</button>`
                                 : ''}
@@ -2215,7 +2274,7 @@
                             data-task-id="${escapeAttr(task.id)}"
                             style="margin-bottom: 6px;"
                         >
-                        <div class="photo-proof-meta">Ambil/upload foto bukti. Sistem akan kompres otomatis sebelum kirim.</div>
+                        <div class="photo-proof-meta">${requiresPhotoBefore ? 'Foto kondisi SESUDAH selesai dikerjakan.' : 'Ambil/upload foto bukti. Sistem akan kompres otomatis sebelum kirim.'}</div>
                         ${existingPhotoDataUrl
                             ? `<img src="${escapeAttr(existingPhotoDataUrl)}" alt="Bukti foto task ${escapeAttr(task.title || '-')}" class="photo-proof-preview">
                                <div class="photo-proof-meta">Foto siap dikirim • ${escapeHtml(formatBytes(existingPhotoProof?.sizeBytes || estimateDataUrlBytes(existingPhotoDataUrl)))}.</div>`
@@ -2243,6 +2302,9 @@
                    ${scheduleText}
                    ${deadlineText}`;
 
+            const completeBtnLabel = isRepeatTask
+                ? (completedCount + 1 >= repeatCount ? '✅ Selesaikan (Terakhir)' : `✅ Selesai #${completedCount + 1}`)
+                : '✅ Verifikasi Selesai';
             const completeActionBlock = requiresScan
                 ? (existingScan
                     ? `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
@@ -2251,14 +2313,16 @@
                     : '<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 10px;">🔒 Tombol selesai akan muncul setelah QR code rak berhasil di-scan.</div>')
                 : `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
                        <input class="input" type="text" name="note" maxlength="500" placeholder="Catatan verifikasi (opsional)" value="${escapeAttr(existingNoteDraft)}">
-                       <button type="submit" class="btn btn-done">✅ Verifikasi Selesai</button>
+                       <button type="submit" class="btn btn-done">${completeBtnLabel}</button>
                    </form>`;
 
             return `<div class="card ${cls}">
                 <div class="title">${escapeHtml(task.title || '-')}</div>
                 ${requiresScan ? '' : (task.description ? `<div class="desc">${escapeHtml(task.description)}</div>` : '')}
+                ${repeatProgressBlock}
                 ${defaultMetaBlock}
                 ${rackBlock}
+                ${photoBeforeBlock}
                 ${photoProofBlock}
                 ${completeActionBlock}
             </div>`;
@@ -2336,6 +2400,11 @@
             for (const taskId of Array.from(photoProofByTask.keys())) {
                 if (!pendingTaskIds.has(taskId)) {
                     photoProofByTask.delete(taskId);
+                }
+            }
+            for (const taskId of Array.from(photoBeforeByTask.keys())) {
+                if (!pendingTaskIds.has(taskId)) {
+                    photoBeforeByTask.delete(taskId);
                 }
             }
             for (const taskId of Array.from(productChecklistByTask.keys())) {
@@ -2641,7 +2710,7 @@
             }
         }
 
-        async function completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl) {
+        async function completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl, photoBeforeDataUrl) {
             submitButton.disabled = true;
 
             const scannedBarcode = String(scannedBarcodeByTask.get(taskId) || '');
@@ -2681,6 +2750,7 @@
                         scanned_barcode: scannedBarcode,
                         stock_report_items: stockReportItems,
                         photo_proof_data_url: photoProofDataUrl,
+                        photo_before_data_url: photoBeforeDataUrl || '',
                         product_checklist: productChecklistJson,
                     }),
                 });
@@ -2690,12 +2760,21 @@
                     throw new Error(payload?.message || 'Gagal memverifikasi tugas.');
                 }
 
-                scannedBarcodeByTask.delete(taskId);
-                stockReportItemsByTask.delete(taskId);
-                noteDraftByTask.delete(taskId);
-                photoProofByTask.delete(taskId);
-                productChecklistByTask.delete(taskId);
-                showFlash('success', payload?.message || 'Tugas berhasil diverifikasi sebagai selesai.');
+                if (payload?.partial) {
+                    // Partial completion — clear note/photo drafts but keep task in list
+                    noteDraftByTask.delete(taskId);
+                    photoProofByTask.delete(taskId);
+                    photoBeforeByTask.delete(taskId);
+                    showFlash('success', payload?.message || `Pengulangan ${payload.completed_count}/${payload.repeat_count} selesai.`);
+                } else {
+                    scannedBarcodeByTask.delete(taskId);
+                    stockReportItemsByTask.delete(taskId);
+                    noteDraftByTask.delete(taskId);
+                    photoProofByTask.delete(taskId);
+                    photoBeforeByTask.delete(taskId);
+                    productChecklistByTask.delete(taskId);
+                    showFlash('success', payload?.message || 'Tugas berhasil diverifikasi sebagai selesai.');
+                }
             } catch (error) {
                 showFlash('error', error?.message || 'Gagal memverifikasi tugas.');
             } finally {
@@ -2972,7 +3051,14 @@
                     return;
                 }
 
-                await completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl);
+                const requiresPhotoBefore = Boolean(currentTask?.requires_photo_before);
+                const photoBeforeDataUrl = String(photoBeforeByTask.get(taskId)?.dataUrl || '');
+                if (requiresPhotoBefore && photoBeforeDataUrl === '') {
+                    showFlash('error', 'Task ini wajib foto SEBELUM (kondisi awal) sebelum verifikasi selesai.');
+                    return;
+                }
+
+                await completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl, photoBeforeDataUrl);
                 await pollTasks();
             });
 
@@ -3063,6 +3149,34 @@
                     return;
                 }
 
+                const photoBeforeInput = event.target.closest('.js-photo-before');
+                if (photoBeforeInput) {
+                    const taskId = String(photoBeforeInput.getAttribute('data-task-id') || '');
+                    if (!taskId) { return; }
+
+                    const selectedFile = photoBeforeInput.files && photoBeforeInput.files.length > 0
+                        ? photoBeforeInput.files[0]
+                        : null;
+
+                    if (!selectedFile) {
+                        photoBeforeByTask.delete(taskId);
+                        renderAllTasks();
+                        return;
+                    }
+
+                    try {
+                        const compressed = await compressPhotoProofFile(selectedFile);
+                        photoBeforeByTask.set(taskId, compressed);
+                        showFlash('success', `Foto sebelum siap (${formatBytes(compressed.sizeBytes)}).`);
+                    } catch (error) {
+                        photoBeforeByTask.delete(taskId);
+                        showFlash('error', error?.message || 'Gagal memproses foto sebelum.');
+                    }
+
+                    renderAllTasks();
+                    return;
+                }
+
                 const photoInput = event.target.closest('.js-photo-proof');
                 if (!photoInput) {
                     return;
@@ -3124,6 +3238,19 @@
                     photoProofByTask.delete(taskId);
                     renderAllTasks();
                     showFlash('success', 'Foto bukti dihapus dari draft task ini.');
+                    return;
+                }
+
+                const photoBeforeClearBtn = event.target.closest('.js-photo-before-clear');
+                if (photoBeforeClearBtn) {
+                    const taskId = String(photoBeforeClearBtn.getAttribute('data-task-id') || '');
+                    if (!taskId) {
+                        return;
+                    }
+
+                    photoBeforeByTask.delete(taskId);
+                    renderAllTasks();
+                    showFlash('success', 'Foto sebelum dihapus dari draft task ini.');
                     return;
                 }
 

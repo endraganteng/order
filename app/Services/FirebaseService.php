@@ -269,6 +269,11 @@ class FirebaseService
         }
 
         usort($racks, function ($a, $b) {
+            $orderA = (int) ($a['check_order'] ?? 0);
+            $orderB = (int) ($b['check_order'] ?? 0);
+            if ($orderA !== $orderB) {
+                return $orderA <=> $orderB;
+            }
             return ($a['name'] ?? '') <=> ($b['name'] ?? '');
         });
 
@@ -314,6 +319,7 @@ class FirebaseService
             'description' => $description,
             'barcode_value' => $this->generateUniqueRackBarcodeValue($name),
             'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'check_order' => max(0, (int) ($data['check_order'] ?? 0)),
             'created_at' => time(),
             'updated_at' => time(),
         ];
@@ -333,6 +339,7 @@ class FirebaseService
             'location' => trim((string) ($data['location'] ?? '')),
             'description' => trim((string) ($data['description'] ?? '')),
             'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'check_order' => max(0, (int) ($data['check_order'] ?? 0)),
             'updated_at' => time(),
         ];
 
@@ -364,6 +371,40 @@ class FirebaseService
     public function deleteRack($id)
     {
         $this->database->getReference('waiter_racks/'.$id)->remove();
+    }
+
+    /**
+     * Get completed rack-check task history for a specific rack.
+     */
+    public function getRackCheckHistory(string $rackId, ?int $limit = 50): array
+    {
+        $reference = $this->database->getReference('waiter_tasks')
+            ->orderByChild('rack_id')
+            ->equalTo($rackId);
+        $snapshot = $reference->getSnapshot();
+
+        $tasks = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $task) {
+                if (($task['task_type'] ?? '') !== 'rack_check') {
+                    continue;
+                }
+                if (($task['status'] ?? '') !== 'done') {
+                    continue;
+                }
+                $tasks[] = array_merge(['id' => $key], $task);
+            }
+        }
+
+        usort($tasks, function ($a, $b) {
+            return ($b['completed_at'] ?? 0) - ($a['completed_at'] ?? 0);
+        });
+
+        if ($limit !== null && count($tasks) > $limit) {
+            $tasks = array_slice($tasks, 0, $limit);
+        }
+
+        return $tasks;
     }
 
     /**
@@ -772,6 +813,7 @@ class FirebaseService
                     'standard_qty' => isset($assignment['standard_qty'])
                         ? max(0, (int) $assignment['standard_qty'])
                         : max(0, (int) ($masterProduct['standard_qty'] ?? 0)),
+                    'min_qty' => max(0, (int) ($assignment['min_qty'] ?? 0)),
                     'unit' => (string) ($masterProduct['unit'] ?? 'pcs'),
                     'is_active' => ($masterProduct['is_active'] ?? true) !== false,
                     'assigned_at' => $assignment['assigned_at'] ?? null,
@@ -820,9 +862,12 @@ class FirebaseService
                 ? max(0, (int) $assignment['standard_qty'])
                 : max(0, (int) ($masterProduct['standard_qty'] ?? 0));
 
+            $minQty = max(0, (int) ($assignment['min_qty'] ?? $existingProducts[$productId]['min_qty'] ?? 0));
+
             $payload[$productId] = [
                 'product_id' => $productId,
                 'standard_qty' => $standardQty,
+                'min_qty' => $minQty,
                 'assigned_at' => $existingProducts[$productId]['assigned_at'] ?? $now,
                 'updated_at' => $now,
             ];
@@ -873,9 +918,12 @@ class FirebaseService
                     ? max(0, (int) $assignment['standard_qty'])
                     : max(0, (int) ($masterProduct['standard_qty'] ?? 0));
 
+                $minQty = max(0, (int) ($assignment['min_qty'] ?? $existingProducts[$productId]['min_qty'] ?? 0));
+
                 $payload[$productId] = [
                     'product_id' => $productId,
                     'standard_qty' => $standardQty,
+                    'min_qty' => $minQty,
                     'assigned_at' => $existingProducts[$productId]['assigned_at'] ?? $now,
                     'updated_at' => $now,
                 ];
@@ -929,6 +977,7 @@ class FirebaseService
                     'standard_qty' => isset($assignment['standard_qty'])
                         ? max(0, (int) $assignment['standard_qty'])
                         : max(0, (int) ($masterProduct['standard_qty'] ?? 0)),
+                    'min_qty' => max(0, (int) ($assignment['min_qty'] ?? 0)),
                     'unit' => (string) ($masterProduct['unit'] ?? 'pcs'),
                     'is_active' => true,
                     'assigned_at' => $assignment['assigned_at'] ?? null,
@@ -1194,10 +1243,10 @@ class FirebaseService
             $taskData = $this->buildWaiterTaskPayload($data, $waiter, [
                 'is_recurring_instance' => false,
                 'scheduled_time' => null,
-                'scheduled_for_date' => null,
+                'scheduled_for_date' => $data['scheduled_for_date'] ?? null,
                 'source_template_id' => null,
                 'time_limit_minutes' => null,
-                'deadline_at' => null,
+                'deadline_at' => $data['deadline_at'] ?? null,
                 'recurrence_type' => null,
             ]);
 
@@ -1207,6 +1256,118 @@ class FirebaseService
         }
 
         return ['count' => $count, 'entries' => $createdEntries];
+    }
+
+    /**
+     * Bulk reassign pending/in_progress tasks from one waiter to another for a given date.
+     */
+    public function bulkReassignPendingTasks(string $fromWaiterId, string $toWaiterId, string $date): int
+    {
+        $toWaiter = $this->getWaiterById($toWaiterId);
+        if (! $toWaiter) {
+            return 0;
+        }
+
+        $reference = $this->database->getReference('waiter_tasks');
+        $snapshot = $reference->orderByChild('assigned_waiter_id')->equalTo($fromWaiterId)->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return 0;
+        }
+
+        $reassignedCount = 0;
+        $toWaiterName = trim(($toWaiter['name'] ?? ''));
+
+        foreach ($snapshot->getValue() as $taskId => $task) {
+            $taskDate = $task['scheduled_for_date'] ?? '';
+            $status = $task['status'] ?? '';
+
+            if ($taskDate !== $date || ! in_array($status, ['pending', 'in_progress'])) {
+                continue;
+            }
+
+            $this->database->getReference('waiter_tasks/'.$taskId)->update([
+                'assigned_waiter_id' => $toWaiterId,
+                'assigned_waiter_name' => $toWaiterName,
+                'reassigned_at' => time(),
+                'reassigned_from' => $fromWaiterId,
+            ]);
+            $reassignedCount++;
+        }
+
+        return $reassignedCount;
+    }
+
+    /**
+     * Log a barcode scan attempt (success or mismatch).
+     */
+    public function logScanAttempt(string $waiterId, string $rackId, bool $success, string $scanned, string $expected): void
+    {
+        $date = now()->format('Y-m-d');
+        $ref = $this->database->getReference("scan_attempts/{$waiterId}/{$date}");
+        $snapshot = $ref->getSnapshot();
+
+        $data = $snapshot->exists() ? $snapshot->getValue() : ['total' => 0, 'mismatch' => 0, 'logs' => []];
+        $data['total'] = ((int) ($data['total'] ?? 0)) + 1;
+        if (! $success) {
+            $data['mismatch'] = ((int) ($data['mismatch'] ?? 0)) + 1;
+        }
+
+        // Keep last 20 logs per waiter per day
+        $logs = is_array($data['logs'] ?? null) ? $data['logs'] : [];
+        $logs[] = [
+            'rack_id' => $rackId,
+            'scanned' => $scanned,
+            'expected' => $expected,
+            'success' => $success,
+            'at' => time(),
+        ];
+        if (count($logs) > 20) {
+            $logs = array_slice($logs, -20);
+        }
+        $data['logs'] = array_values($logs);
+
+        $ref->set($data);
+    }
+
+    /**
+     * Get scan compliance stats for a date (all waiters).
+     */
+    public function getScanStats(string $date): array
+    {
+        $ref = $this->database->getReference('scan_attempts');
+        $snapshot = $ref->getSnapshot();
+
+        $stats = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $waiterId => $dates) {
+                if (! is_array($dates) || ! isset($dates[$date])) {
+                    continue;
+                }
+                $dayData = $dates[$date];
+                $stats[$waiterId] = [
+                    'total' => (int) ($dayData['total'] ?? 0),
+                    'mismatch' => (int) ($dayData['mismatch'] ?? 0),
+                    'success' => ((int) ($dayData['total'] ?? 0)) - ((int) ($dayData['mismatch'] ?? 0)),
+                    'logs' => is_array($dayData['logs'] ?? null) ? $dayData['logs'] : [],
+                ];
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Get a single waiter task by ID.
+     */
+    public function getWaiterTaskById(string $taskId): ?array
+    {
+        $snapshot = $this->database->getReference('waiter_tasks/'.$taskId)->getSnapshot();
+        if (! $snapshot->exists()) {
+            return null;
+        }
+
+        return array_merge(['id' => $taskId], $snapshot->getValue());
     }
 
     /**
@@ -1272,6 +1433,26 @@ class FirebaseService
                 if (($task['assigned_waiter_id'] ?? '') === $waiterId) {
                     $tasks[] = array_merge(['id' => $key], $task);
                 }
+            }
+        }
+
+        return $tasks;
+    }
+
+    /**
+     * Get ALL tasks for a specific date (all waiters).
+     */
+    public function getWaiterTasksByDate(string $date): array
+    {
+        $reference = $this->database->getReference('waiter_tasks')
+            ->orderByChild('scheduled_for_date')
+            ->equalTo($date);
+        $snapshot = $reference->getSnapshot();
+
+        $tasks = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $task) {
+                $tasks[] = array_merge(['id' => $key], $task);
             }
         }
 
@@ -1397,7 +1578,8 @@ class FirebaseService
         $stockReportItems = null,
         $noOutOfStock = false,
         $photoProofDataUrl = null,
-        $productChecklist = null
+        $productChecklist = null,
+        $photoBeforeDataUrl = null
     ) {
         $taskReference = $this->database->getReference('waiter_tasks/'.$taskId);
         $snapshot = $taskReference->getSnapshot();
@@ -1419,7 +1601,7 @@ class FirebaseService
         }
 
         $currentStatus = $task['status'] ?? 'pending';
-        if ($currentStatus !== 'pending') {
+        if ($currentStatus !== 'pending' && $currentStatus !== 'in_progress') {
             return [
                 'success' => false,
                 'message' => 'Tugas ini sudah tidak aktif.',
@@ -1464,6 +1646,22 @@ class FirebaseService
             return [
                 'success' => false,
                 'message' => 'Task ini wajib upload foto bukti sebelum verifikasi selesai.',
+            ];
+        }
+
+        // Validate photo before (if required)
+        $requiresPhotoBefore = (bool) ($task['requires_photo_before'] ?? false);
+        $validatedPhotoBeforeDataUrl = '';
+        if ($photoBeforeDataUrl !== null && $photoBeforeDataUrl !== '') {
+            $normalizedPhotoBefore = $this->normalizePhotoProofDataUrl($photoBeforeDataUrl);
+            if ($normalizedPhotoBefore['success'] ?? false) {
+                $validatedPhotoBeforeDataUrl = (string) ($normalizedPhotoBefore['data_url'] ?? '');
+            }
+        }
+        if ($requiresPhotoBefore && $validatedPhotoBeforeDataUrl === '') {
+            return [
+                'success' => false,
+                'message' => 'Task ini wajib upload foto SEBELUM (kondisi awal) sebelum verifikasi selesai.',
             ];
         }
 
@@ -1516,11 +1714,16 @@ class FirebaseService
             }
 
             if ($providedBarcode !== $expectedBarcode) {
+                // Log mismatch attempt
+                $this->logScanAttempt($waiterId, $rackId, false, $providedBarcode, $expectedBarcode);
                 return [
                     'success' => false,
                     'message' => 'QR code tidak sesuai dengan rak target. Silakan scan ulang QR code rak yang benar.',
                 ];
             }
+
+            // Log successful scan
+            $this->logScanAttempt($waiterId, $rackId, true, $providedBarcode, $expectedBarcode);
         }
 
         $stockReportText = trim((string) $stockReportItems);
@@ -1538,13 +1741,43 @@ class FirebaseService
             $noOutOfStockChecked = true;
         }
 
-        $updates = [
-            'status' => $status,
+        // Repeat/multi-checklist logic
+        $repeatCount = max(1, (int) ($task['repeat_count'] ?? 1));
+        $completedCount = (int) ($task['completed_count'] ?? 0);
+        $completions = (array) ($task['completions'] ?? []);
+        $isRepeatTask = $repeatCount > 1;
+        $newCompletedCount = $completedCount + 1;
+        $isFullyDone = $newCompletedCount >= $repeatCount;
+
+        // Build completion entry for this repetition
+        $completionEntry = [
             'completed_at' => $now,
+            'note' => ! empty($note) ? $note : null,
+        ];
+
+        if ($validatedPhotoProofDataUrl !== '') {
+            $completionEntry['photo_proof_url'] = $validatedPhotoProofDataUrl;
+            $completionEntry['photo_proof_mime_type'] = $normalizedPhoto['mime_type'] ?? null;
+            $completionEntry['photo_proof_size_bytes'] = (int) ($normalizedPhoto['size_bytes'] ?? 0);
+        }
+
+        $completions[(string) $newCompletedCount] = $completionEntry;
+
+        $updates = [
+            'completed_count' => $newCompletedCount,
+            'completions' => $completions,
             'completed_by_waiter_id' => (string) $waiterId,
             'completed_by_waiter_name' => (string) $waiterName,
             'completed_by_waiter_email' => (string) $waiterEmail,
         ];
+
+        if ($isFullyDone) {
+            $updates['status'] = $status;
+            $updates['completed_at'] = $now;
+        } else {
+            // Partial completion — keep task active
+            $updates['status'] = 'in_progress';
+        }
 
         if ($requiresBarcodeScan) {
             $updates['completed_scanned_barcode'] = strtoupper(trim((string) $scannedBarcode));
@@ -1589,7 +1822,8 @@ class FirebaseService
             }
         }
 
-        if ($requiresPhotoProof || $validatedPhotoProofDataUrl !== '') {
+        // For single-repeat tasks or final completion, store photo at top level too
+        if ($isFullyDone && ($requiresPhotoProof || $validatedPhotoProofDataUrl !== '')) {
             $hasPhotoProof = $validatedPhotoProofDataUrl !== '';
             $updates['completed_photo_proof_url'] = $hasPhotoProof ? $validatedPhotoProofDataUrl : null;
             $updates['completed_photo_proof_mime_type'] = $hasPhotoProof ? ($normalizedPhoto['mime_type'] ?? null) : null;
@@ -1597,14 +1831,32 @@ class FirebaseService
             $updates['photo_proof_uploaded_at'] = $hasPhotoProof ? $now : null;
         }
 
-        if (! empty($note)) {
+        // Store photo before (kondisi awal) if provided
+        if ($validatedPhotoBeforeDataUrl !== '') {
+            $updates['completed_photo_before_url'] = $validatedPhotoBeforeDataUrl;
+        }
+
+        if (! empty($note) && $isFullyDone) {
             $updates['completed_note'] = $note;
         }
 
         $taskReference->update($updates);
 
+        if ($isRepeatTask && ! $isFullyDone) {
+            return [
+                'success' => true,
+                'partial' => true,
+                'completed_count' => $newCompletedCount,
+                'repeat_count' => $repeatCount,
+                'message' => "Pengulangan #{$newCompletedCount} dari {$repeatCount} selesai.",
+            ];
+        }
+
         return [
             'success' => true,
+            'partial' => false,
+            'completed_count' => $newCompletedCount,
+            'repeat_count' => $repeatCount,
             'message' => 'Tugas berhasil diverifikasi.',
         ];
     }
@@ -1648,8 +1900,11 @@ class FirebaseService
             'priority' => $data['priority'] ?? 'normal',
             'assigned_by' => $data['assigned_by'] ?? 'Supervisor',
             'task_type' => $taskType,
+            'category_id' => $data['category_id'] ?? null,
+            'category_name' => $data['category_name'] ?? null,
             'requires_barcode_scan' => (bool) ($data['requires_barcode_scan'] ?? false),
             'requires_photo_proof' => (bool) ($data['requires_photo_proof'] ?? false),
+            'requires_photo_before' => (bool) ($data['requires_photo_before'] ?? false),
             'rack_target_scope' => $data['rack_target_scope'] ?? null,
             'rack_id' => $data['rack_id'] ?? null,
             'rack_name' => $data['rack_name'] ?? null,
@@ -1916,39 +2171,44 @@ class FirebaseService
      */
     public function markOverdueWaiterTasks()
     {
-        $reference = $this->database->getReference('waiter_tasks')
-            ->orderByChild('status')
-            ->equalTo('pending');
-        $snapshot = $reference->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return ['count' => 0, 'overdue_tasks' => []];
-        }
-
         $now = time();
         $updates = [];
         $overdueCount = 0;
         $overdueTasks = [];
         $baseRef = $this->database->getReference('waiter_tasks');
 
-        foreach ($snapshot->getValue() as $taskId => $task) {
-            $deadlineAt = (int) ($task['deadline_at'] ?? 0);
-            if ($deadlineAt <= 0 || $now <= $deadlineAt) {
+        // Check both 'pending' and 'in_progress' tasks for overdue
+        foreach (['pending', 'in_progress'] as $activeStatus) {
+            $reference = $this->database->getReference('waiter_tasks')
+                ->orderByChild('status')
+                ->equalTo($activeStatus);
+            $snapshot = $reference->getSnapshot();
+
+            if (! $snapshot->exists()) {
                 continue;
             }
 
-            $updates[$taskId.'/status'] = 'overdue';
-            $updates[$taskId.'/completed_at'] = $now;
-            if (empty($task['completed_note'])) {
-                $updates[$taskId.'/completed_note'] = 'Auto: batas waktu habis';
+            foreach ($snapshot->getValue() as $taskId => $task) {
+                $deadlineAt = (int) ($task['deadline_at'] ?? 0);
+                if ($deadlineAt <= 0 || $now <= $deadlineAt) {
+                    continue;
+                }
+
+                $updates[$taskId.'/status'] = 'overdue';
+                $updates[$taskId.'/completed_at'] = $now;
+                if (empty($task['completed_note'])) {
+                    $updates[$taskId.'/completed_note'] = 'Auto: batas waktu habis';
+                }
+                $overdueTasks[] = array_merge(['id' => $taskId], $task);
+                $overdueCount++;
             }
-            $overdueTasks[] = array_merge(['id' => $taskId], $task);
-            $overdueCount++;
         }
 
-        if (! empty($updates)) {
-            $baseRef->update($updates);
+        if (count($updates) === 0) {
+            return ['count' => 0, 'overdue_tasks' => []];
         }
+
+        $baseRef->update($updates);
 
         // Auto-apply penalties for newly overdue tasks
         if ($overdueCount > 0) {
@@ -2135,8 +2395,11 @@ class FirebaseService
             'description' => $resolvedDescription,
             'priority' => $resolvedPriority,
             'task_type' => $taskType,
+            'category_id' => $data['category_id'] ?? null,
+            'category_name' => $data['category_name'] ?? null,
             'requires_barcode_scan' => (bool) ($data['requires_barcode_scan'] ?? false),
             'requires_photo_proof' => (bool) ($data['requires_photo_proof'] ?? false),
+            'requires_photo_before' => (bool) ($data['requires_photo_before'] ?? false),
             'rack_target_scope' => $data['rack_target_scope'] ?? null,
             'rack_id' => $data['rack_id'] ?? null,
             'rack_name' => $data['rack_name'] ?? null,
@@ -2163,6 +2426,7 @@ class FirebaseService
             'completed_product_checklist' => null,
             'product_checklist_completed_at' => null,
             'completed_photo_proof_url' => null,
+            'completed_photo_before_url' => null,
             'completed_photo_proof_mime_type' => null,
             'completed_photo_proof_size_bytes' => null,
             'photo_proof_uploaded_at' => null,
@@ -2174,6 +2438,9 @@ class FirebaseService
             'deadline_at' => null,
             'recurrence_type' => null,
             'recurring_instance_key' => null,
+            'repeat_count' => max(1, (int) ($data['repeat_count'] ?? 1)),
+            'completed_count' => 0,
+            'completions' => [],
         ];
 
         return array_merge($payload, $overrides);
@@ -2186,7 +2453,73 @@ class FirebaseService
     {
         $role = strtolower(trim((string) $waiterRole));
 
-        return in_array($role, ['kasir', 'pelayan'], true) ? $role : 'pelayan';
+        return in_array($role, ['kasir', 'pelayan', 'supervisor'], true) ? $role : 'pelayan';
+    }
+
+    /**
+     * Get all task categories.
+     */
+    public function getTaskCategories(): array
+    {
+        $reference = $this->database->getReference('task_categories');
+        $snapshot = $reference->getSnapshot();
+
+        $categories = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $category) {
+                $categories[] = array_merge(['id' => $key], $category);
+            }
+        }
+
+        usort($categories, function ($a, $b) {
+            return ($a['order'] ?? 999) <=> ($b['order'] ?? 999);
+        });
+
+        return $categories;
+    }
+
+    /**
+     * Create a new task category.
+     */
+    public function createTaskCategory(string $name, string $color, int $order = 0): string
+    {
+        $ref = $this->database->getReference('task_categories')->push([
+            'name' => trim($name),
+            'color' => $color,
+            'order' => $order,
+            'created_at' => time(),
+        ]);
+
+        return $ref->getKey();
+    }
+
+    /**
+     * Update an existing task category.
+     */
+    public function updateTaskCategory(string $id, array $data): void
+    {
+        $updateData = [];
+        if (isset($data['name'])) {
+            $updateData['name'] = trim($data['name']);
+        }
+        if (isset($data['color'])) {
+            $updateData['color'] = $data['color'];
+        }
+        if (isset($data['order'])) {
+            $updateData['order'] = (int) $data['order'];
+        }
+
+        if (count($updateData) > 0) {
+            $this->database->getReference('task_categories/' . $id)->update($updateData);
+        }
+    }
+
+    /**
+     * Delete a task category.
+     */
+    public function deleteTaskCategory(string $id): void
+    {
+        $this->database->getReference('task_categories/' . $id)->remove();
     }
 
     /**
@@ -3933,5 +4266,585 @@ class FirebaseService
     public function updateWaiterSpecialistRole(string $waiterId, ?string $role): void
     {
         $this->database->getReference("allowed_waiters/{$waiterId}/specialist_role")->set($role);
+    }
+
+    // ==========================================
+    // RESTOCK & PURCHASE ORDER SYSTEM
+    // ==========================================
+
+    /**
+     * Create or update a restock request (dedup: same product+rack+pending = update)
+     */
+    public function createOrUpdateRestockRequest(array $data): string
+    {
+        $productId = $data['product_id'];
+        $rackId = $data['rack_id'];
+
+        // Check for existing pending entry for same product+rack
+        $existing = $this->database->getReference('restock_requests')
+            ->orderByChild('product_id')
+            ->equalTo($productId)
+            ->getSnapshot()
+            ->getValue();
+
+        if ($existing) {
+            foreach ($existing as $key => $entry) {
+                if (($entry['rack_id'] ?? '') === $rackId && ($entry['status'] ?? '') === 'pending') {
+                    // Update existing entry with latest qty
+                    $this->database->getReference("restock_requests/{$key}")->update([
+                        'reported_qty' => (int) $data['reported_qty'],
+                        'qty_needed' => (int) $data['qty_needed'],
+                        'reported_by' => $data['reported_by'],
+                        'reported_by_name' => $data['reported_by_name'],
+                        'reported_at' => time(),
+                        'updated_at' => time(),
+                    ]);
+                    return $key;
+                }
+            }
+        }
+
+        // Create new entry
+        $payload = [
+            'product_id' => $productId,
+            'product_name' => $data['product_name'] ?? '',
+            'rack_id' => $rackId,
+            'rack_name' => $data['rack_name'] ?? '',
+            'reported_qty' => (int) ($data['reported_qty'] ?? 0),
+            'standard_qty' => (int) ($data['standard_qty'] ?? 0),
+            'min_qty' => (int) ($data['min_qty'] ?? 0),
+            'qty_needed' => (int) ($data['qty_needed'] ?? 0),
+            'reported_by' => $data['reported_by'] ?? '',
+            'reported_by_name' => $data['reported_by_name'] ?? '',
+            'reported_at' => time(),
+            'date' => $data['date'] ?? date('Y-m-d'),
+            'status' => 'pending',
+            'po_id' => null,
+            'received_at' => null,
+            'received_by' => null,
+            'received_by_name' => null,
+            'received_qty' => 0,
+            'created_at' => time(),
+            'updated_at' => time(),
+        ];
+
+        $newRef = $this->database->getReference('restock_requests')->push($payload);
+        return $newRef->getKey();
+    }
+
+    /**
+     * Get pending restock requests
+     */
+    public function getPendingRestockRequests(): array
+    {
+        $snapshot = $this->database->getReference('restock_requests')
+            ->orderByChild('status')
+            ->equalTo('pending')
+            ->getSnapshot();
+
+        $items = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $item) {
+                $item['id'] = $key;
+                $items[] = $item;
+            }
+            // Sort by reported_at desc
+            usort($items, fn($a, $b) => ($b['reported_at'] ?? 0) - ($a['reported_at'] ?? 0));
+        }
+        return $items;
+    }
+
+    /**
+     * Get all restock requests (optionally filtered by status)
+     */
+    public function getRestockRequests(?string $status = null): array
+    {
+        if ($status) {
+            $snapshot = $this->database->getReference('restock_requests')
+                ->orderByChild('status')
+                ->equalTo($status)
+                ->getSnapshot();
+        } else {
+            $snapshot = $this->database->getReference('restock_requests')->getSnapshot();
+        }
+
+        $items = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $item) {
+                if (is_array($item)) {
+                    $item['id'] = $key;
+                    $items[] = $item;
+                }
+            }
+            usort($items, fn($a, $b) => ($b['reported_at'] ?? 0) - ($a['reported_at'] ?? 0));
+        }
+        return $items;
+    }
+
+    /**
+     * Create a Purchase Order from selected restock requests
+     */
+    public function createPurchaseOrder(array $restockIds, string $createdBy, string $createdByName, ?string $supplier = null, ?string $notes = null, array $qtyOverrides = []): ?string
+    {
+        // Generate PO number
+        $today = date('Ymd');
+        $existingPOs = $this->database->getReference('purchase_orders')
+            ->orderByChild('created_date')
+            ->equalTo($today)
+            ->getSnapshot()
+            ->getValue();
+        $seq = $existingPOs ? count($existingPOs) + 1 : 1;
+        $poNumber = "PO-{$today}-" . str_pad($seq, 3, '0', STR_PAD_LEFT);
+
+        // Build PO items from restock requests
+        $items = [];
+        $itemsCount = 0;
+        foreach ($restockIds as $restockId) {
+            $snapshot = $this->database->getReference("restock_requests/{$restockId}")->getSnapshot();
+            if (!$snapshot->exists()) continue;
+
+            $req = $snapshot->getValue();
+            $qtyNeeded = (int) ($req['qty_needed'] ?? 0);
+            $qtyOrdered = isset($qtyOverrides[$restockId]) ? (int) $qtyOverrides[$restockId] : $qtyNeeded;
+
+            $items[$restockId] = [
+                'product_id' => $req['product_id'] ?? '',
+                'product_name' => $req['product_name'] ?? '',
+                'rack_id' => $req['rack_id'] ?? '',
+                'rack_name' => $req['rack_name'] ?? '',
+                'qty_needed' => $qtyNeeded,
+                'qty_ordered' => $qtyOrdered,
+                'received_qty' => 0,
+                'received' => false,
+            ];
+            $itemsCount++;
+        }
+
+        if ($itemsCount === 0) return null;
+
+        $poPayload = [
+            'po_number' => $poNumber,
+            'created_at' => time(),
+            'created_date' => $today,
+            'created_by' => $createdBy,
+            'created_by_name' => $createdByName,
+            'status' => 'ordered',
+            'supplier' => $supplier,
+            'notes' => $notes,
+            'items_count' => $itemsCount,
+            'received_count' => 0,
+            'items' => $items,
+        ];
+
+        $poRef = $this->database->getReference('purchase_orders')->push($poPayload);
+        $poId = $poRef->getKey();
+
+        // Update restock requests status to 'ordered' and link po_id
+        foreach ($restockIds as $restockId) {
+            $this->database->getReference("restock_requests/{$restockId}")->update([
+                'status' => 'ordered',
+                'po_id' => $poId,
+                'updated_at' => time(),
+            ]);
+        }
+
+        return $poId;
+    }
+
+    /**
+     * Get all purchase orders
+     */
+    public function getPurchaseOrders(?string $status = null): array
+    {
+        $ref = $this->database->getReference('purchase_orders');
+        $snapshot = $ref->getSnapshot();
+
+        $orders = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $order) {
+                if (!is_array($order)) continue;
+                if ($status && ($order['status'] ?? '') !== $status) continue;
+                $order['id'] = $key;
+                $orders[] = $order;
+            }
+            usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        }
+        return $orders;
+    }
+
+    /**
+     * Get a single purchase order by ID
+     */
+    public function getPurchaseOrder(string $poId): ?array
+    {
+        $snapshot = $this->database->getReference("purchase_orders/{$poId}")->getSnapshot();
+        if (!$snapshot->exists()) return null;
+        $order = $snapshot->getValue();
+        $order['id'] = $poId;
+        return $order;
+    }
+
+    /**
+     * Receive an item in a PO (partial receive with qty)
+     */
+    public function receivePoItem(string $poId, string $restockId, int $receivedQty, string $receivedBy, string $receivedByName): array
+    {
+        $po = $this->getPurchaseOrder($poId);
+        if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
+
+        $items = $po['items'] ?? [];
+        if (!isset($items[$restockId])) return ['success' => false, 'message' => 'Item tidak ditemukan di PO'];
+
+        $item = $items[$restockId];
+        $qtyOrdered = (int) ($item['qty_ordered'] ?? 0);
+        $currentReceived = (int) ($item['received_qty'] ?? 0);
+        $newReceived = $currentReceived + $receivedQty;
+
+        // Update PO item
+        $itemUpdates = [
+            "items/{$restockId}/received_qty" => $newReceived,
+            "items/{$restockId}/received" => $newReceived >= $qtyOrdered,
+            "items/{$restockId}/last_received_at" => time(),
+            "items/{$restockId}/last_received_by" => $receivedBy,
+            "items/{$restockId}/last_received_by_name" => $receivedByName,
+        ];
+
+        $this->database->getReference("purchase_orders/{$poId}")->update($itemUpdates);
+
+        // Count total received items
+        $receivedCount = 0;
+        $totalItems = count($items);
+        foreach ($items as $rId => $itm) {
+            $rQty = ($rId === $restockId) ? $newReceived : (int) ($itm['received_qty'] ?? 0);
+            $oQty = (int) ($itm['qty_ordered'] ?? 0);
+            if ($rQty >= $oQty) $receivedCount++;
+        }
+
+        // Update PO status
+        $poStatus = 'ordered';
+        if ($receivedCount >= $totalItems) {
+            $poStatus = 'completed';
+        } elseif ($receivedCount > 0 || $newReceived > 0) {
+            $poStatus = 'partial';
+        }
+
+        $this->database->getReference("purchase_orders/{$poId}")->update([
+            'received_count' => $receivedCount,
+            'status' => $poStatus,
+        ]);
+
+        // Update restock request
+        $restockUpdates = [
+            'received_qty' => $newReceived,
+            'received_by' => $receivedBy,
+            'received_by_name' => $receivedByName,
+            'received_at' => time(),
+            'updated_at' => time(),
+        ];
+        if ($newReceived >= $qtyOrdered) {
+            $restockUpdates['status'] = 'received';
+        }
+        $this->database->getReference("restock_requests/{$restockId}")->update($restockUpdates);
+
+        return ['success' => true, 'po_status' => $poStatus, 'received_count' => $receivedCount, 'total_items' => $totalItems];
+    }
+
+    /**
+     * Cancel a purchase order
+     */
+    public function cancelPurchaseOrder(string $poId): bool
+    {
+        $po = $this->getPurchaseOrder($poId);
+        if (!$po) return false;
+
+        $this->database->getReference("purchase_orders/{$poId}/status")->set('cancelled');
+
+        // Revert restock requests back to pending
+        $items = $po['items'] ?? [];
+        foreach (array_keys($items) as $restockId) {
+            $this->database->getReference("restock_requests/{$restockId}")->update([
+                'status' => 'pending',
+                'po_id' => null,
+                'updated_at' => time(),
+            ]);
+        }
+
+        return true;
+    }
+
+    /**
+     * Get restock history for a specific product
+     */
+    public function getProductRestockHistory(string $productId, int $limit = 20): array
+    {
+        $snapshot = $this->database->getReference('restock_requests')
+            ->orderByChild('product_id')
+            ->equalTo($productId)
+            ->getSnapshot();
+
+        $items = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $item) {
+                $item['id'] = $key;
+                $items[] = $item;
+            }
+            usort($items, fn($a, $b) => ($b['reported_at'] ?? 0) - ($a['reported_at'] ?? 0));
+            $items = array_slice($items, 0, $limit);
+        }
+        return $items;
+    }
+
+    /**
+     * Get stale POs (ordered for more than N days)
+     */
+    public function getStalePurchaseOrders(int $staleDays = 3): array
+    {
+        $snapshot = $this->database->getReference('purchase_orders')
+            ->orderByChild('status')
+            ->equalTo('ordered')
+            ->getSnapshot();
+
+        $staleOrders = [];
+        $threshold = time() - ($staleDays * 86400);
+
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $order) {
+                if (($order['created_at'] ?? time()) < $threshold) {
+                    $order['id'] = $key;
+                    $staleOrders[] = $order;
+                }
+            }
+        }
+        return $staleOrders;
+    }
+
+    /**
+     * Get restock summary stats
+     */
+    public function getRestockSummary(): array
+    {
+        $allRequests = $this->getRestockRequests();
+        $allPOs = $this->getPurchaseOrders();
+
+        $thisMonth = date('Y-m');
+        $monthlyPOs = array_filter($allPOs, fn($po) => date('Y-m', $po['created_at'] ?? 0) === $thisMonth);
+
+        // Most restocked products
+        $productCounts = [];
+        foreach ($allRequests as $req) {
+            $pid = $req['product_id'] ?? '';
+            if (!isset($productCounts[$pid])) {
+                $productCounts[$pid] = ['name' => $req['product_name'] ?? '', 'count' => 0];
+            }
+            $productCounts[$pid]['count']++;
+        }
+        arsort($productCounts);
+
+        // Average fulfillment time
+        $fulfillTimes = [];
+        foreach ($allRequests as $req) {
+            if (($req['status'] ?? '') === 'received' && !empty($req['received_at']) && !empty($req['reported_at'])) {
+                $fulfillTimes[] = (int) $req['received_at'] - (int) $req['reported_at'];
+            }
+        }
+        $avgFulfillment = count($fulfillTimes) > 0 ? array_sum($fulfillTimes) / count($fulfillTimes) : 0;
+
+        return [
+            'total_requests' => count($allRequests),
+            'pending_count' => count(array_filter($allRequests, fn($r) => ($r['status'] ?? '') === 'pending')),
+            'ordered_count' => count(array_filter($allRequests, fn($r) => ($r['status'] ?? '') === 'ordered')),
+            'received_count' => count(array_filter($allRequests, fn($r) => ($r['status'] ?? '') === 'received')),
+            'monthly_po_count' => count($monthlyPOs),
+            'avg_fulfillment_hours' => round($avgFulfillment / 3600, 1),
+            'top_products' => array_slice($productCounts, 0, 5, true),
+        ];
+    }
+
+    // ==========================================
+    // AUDIT LOG SYSTEM
+    // ==========================================
+
+    /**
+     * Log an admin action to audit_logs node
+     */
+    public function logAuditAction(string $action, string $entity, ?string $entityId, array $details = []): void
+    {
+        $adminId = session('admin_id', 'system');
+        $adminName = session('admin_name', 'System');
+
+        $entry = [
+            'action' => $action,
+            'entity' => $entity,
+            'entity_id' => $entityId,
+            'admin_id' => $adminId,
+            'admin_name' => $adminName,
+            'details' => $details ?: null,
+            'ip' => request()->ip(),
+            'timestamp' => time(),
+            'date' => now()->format('Y-m-d'),
+        ];
+
+        $this->database->getReference('audit_logs')->push($entry);
+    }
+
+    /**
+     * Get audit logs with optional filters
+     */
+    public function getAuditLogs(?string $date = null, ?string $entity = null, ?string $adminId = null, int $limit = 100): array
+    {
+        $snapshot = $this->database->getReference('audit_logs')
+            ->orderByChild('timestamp')
+            ->getSnapshot();
+
+        $logs = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $id => $log) {
+                if (!is_array($log)) continue;
+
+                if ($date && ($log['date'] ?? '') !== $date) continue;
+                if ($entity && ($log['entity'] ?? '') !== $entity) continue;
+                if ($adminId && ($log['admin_id'] ?? '') !== $adminId) continue;
+
+                $log['id'] = $id;
+                $logs[] = $log;
+            }
+        }
+
+        // Sort by timestamp desc
+        usort($logs, fn($a, $b) => ($b['timestamp'] ?? 0) - ($a['timestamp'] ?? 0));
+
+        return array_slice($logs, 0, $limit);
+    }
+
+    // ==========================================
+    // WAITER PERFORMANCE SUMMARY
+    // ==========================================
+
+    /**
+     * Get waiter task performance for a date range
+     */
+    public function getWaiterTaskPerformance(string $waiterId, string $fromDate, string $toDate): array
+    {
+        $tasks = $this->database->getReference('waiter_tasks')
+            ->orderByChild('assigned_waiter_id')
+            ->equalTo($waiterId)
+            ->getSnapshot()
+            ->getValue();
+
+        $dailyStats = [];
+        $totalDone = 0;
+        $totalOverdue = 0;
+        $totalTasks = 0;
+
+        if ($tasks) {
+            foreach ($tasks as $task) {
+                if (!is_array($task)) continue;
+                $taskDate = $task['scheduled_for_date'] ?? '';
+                if ($taskDate < $fromDate || $taskDate > $toDate) continue;
+
+                $totalTasks++;
+                $status = $task['status'] ?? 'pending';
+
+                if (!isset($dailyStats[$taskDate])) {
+                    $dailyStats[$taskDate] = ['total' => 0, 'done' => 0, 'overdue' => 0];
+                }
+                $dailyStats[$taskDate]['total']++;
+
+                if ($status === 'done') {
+                    $dailyStats[$taskDate]['done']++;
+                    $totalDone++;
+                }
+                if ($status === 'overdue') {
+                    $dailyStats[$taskDate]['overdue']++;
+                    $totalOverdue++;
+                }
+            }
+        }
+
+        ksort($dailyStats);
+
+        return [
+            'total_tasks' => $totalTasks,
+            'total_done' => $totalDone,
+            'total_overdue' => $totalOverdue,
+            'completion_rate' => $totalTasks > 0 ? round(($totalDone / $totalTasks) * 100, 1) : 0,
+            'daily_stats' => $dailyStats,
+        ];
+    }
+
+    /**
+     * Get waiter bonus history for multiple months
+     */
+    public function getWaiterBonusHistory(string $waiterId, int $monthsBack = 6): array
+    {
+        $history = [];
+        $now = now();
+
+        for ($i = 0; $i < $monthsBack; $i++) {
+            $month = $now->copy()->subMonths($i)->format('Y-m');
+            $summary = $this->database->getReference("waiter_bonus_summary/{$waiterId}/{$month}")->getSnapshot();
+            if ($summary->exists()) {
+                $data = $summary->getValue();
+                $data['month'] = $month;
+                $history[] = $data;
+            } else {
+                $history[] = ['month' => $month, 'net_points' => 0, 'total_bonus' => 0];
+            }
+        }
+
+        return array_reverse($history);
+    }
+
+    // ==========================================
+    // SHIFT HANDOVER NOTES
+    // ==========================================
+
+    /**
+     * Save handover note at clock-out
+     */
+    public function saveHandoverNote(string $waiterId, string $waiterName, string $date, string $note): void
+    {
+        $entry = [
+            'waiter_id' => $waiterId,
+            'waiter_name' => $waiterName,
+            'date' => $date,
+            'note' => $note,
+            'created_at' => time(),
+        ];
+
+        $this->database->getReference("handover_notes/{$date}/{$waiterId}")->set($entry);
+    }
+
+    /**
+     * Get handover notes for a date (from previous shift)
+     */
+    public function getHandoverNotes(string $date): array
+    {
+        $snapshot = $this->database->getReference("handover_notes/{$date}")->getSnapshot();
+        if (!$snapshot->exists()) return [];
+
+        $notes = [];
+        foreach ($snapshot->getValue() as $waiterId => $note) {
+            if (!is_array($note)) continue;
+            $note['id'] = $waiterId;
+            $notes[] = $note;
+        }
+
+        usort($notes, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+        return $notes;
+    }
+
+    /**
+     * Get latest handover notes (yesterday or last working day)
+     */
+    public function getLatestHandoverNotes(): array
+    {
+        // Try yesterday first, then go back up to 3 days
+        for ($i = 1; $i <= 3; $i++) {
+            $date = now()->subDays($i)->format('Y-m-d');
+            $notes = $this->getHandoverNotes($date);
+            if (!empty($notes)) return $notes;
+        }
+        return [];
     }
 }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AttendanceController;
+use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\AuthController;
@@ -9,9 +10,11 @@ use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\RackController;
 use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\RackProductController;
+use App\Http\Controllers\Admin\RestockController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\TaskController;
 use App\Http\Controllers\Admin\WaiterController as AdminWaiterController;
+use App\Http\Controllers\Admin\WaiterPerformanceController;
 use App\Http\Controllers\CashierController;
 use App\Http\Controllers\WaiterController;
 use Illuminate\Support\Facades\Route;
@@ -24,6 +27,9 @@ Route::get('/', function () {
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('login', [AuthController::class, 'showLogin'])->name('login');
     Route::post('login', [AuthController::class, 'login'])->name('login.post');
+    Route::post('login/google', [AuthController::class, 'loginWithGoogle'])
+        ->middleware('throttle:20,1')
+        ->name('login.google');
 
     Route::middleware('admin.auth')->group(function () {
         Route::get('logout', [AuthController::class, 'logout'])->name('logout');
@@ -47,6 +53,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('racks/{id}', [RackController::class, 'update'])->name('racks.update');
         Route::post('racks/{id}/regenerate-barcode', [RackController::class, 'regenerateBarcode'])->name('racks.regenerate_barcode');
         Route::delete('racks/{id}', [RackController::class, 'destroy'])->name('racks.destroy');
+        Route::get('racks/{id}/history', [RackController::class, 'history'])->name('racks.history');
         Route::post('racks/ajax-store', [RackController::class, 'storeAjax'])->name('racks.ajax_store');
 
         // Product categories
@@ -98,6 +105,27 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::delete('tasks/recurring/{id}', [TaskController::class, 'recurringDestroy'])->name('tasks.recurring.destroy');
         Route::post('tasks/recurring/batch-destroy', [TaskController::class, 'recurringBatchDestroy'])->name('tasks.recurring.batch_destroy');
 
+        // Live Dashboard
+        Route::get('tasks/live', [TaskController::class, 'live'])->name('tasks.live');
+
+        // Task Categories (AJAX)
+        Route::get('tasks/categories', [TaskController::class, 'categoryIndex'])->name('tasks.categories.index');
+        Route::post('tasks/categories', [TaskController::class, 'categoryStore'])->name('tasks.categories.store');
+        Route::delete('tasks/categories/{id}', [TaskController::class, 'categoryDestroy'])->name('tasks.categories.destroy');
+
+        // Bulk Reassign
+        Route::post('tasks/bulk-reassign', [TaskController::class, 'bulkReassign'])->name('tasks.bulk_reassign');
+
+        // Stock Report Export
+        Route::get('tasks/export-stock', [TaskController::class, 'exportStockReport'])->name('tasks.export_stock');
+
+        // Restock & Purchase Orders
+        Route::get('restock', [RestockController::class, 'index'])->name('restock.index');
+        Route::post('restock/create-po', [RestockController::class, 'createPO'])->name('restock.create_po');
+        Route::get('restock/orders', [RestockController::class, 'orders'])->name('restock.orders');
+        Route::get('restock/orders/{id}', [RestockController::class, 'orderDetail'])->name('restock.order_detail');
+        Route::delete('restock/orders/{id}', [RestockController::class, 'cancelOrder'])->name('restock.cancel_order');
+
         // Shifts & Schedules
         Route::get('shifts', [ShiftController::class, 'index'])->name('shifts.index');
         Route::post('shifts', [ShiftController::class, 'store'])->name('shifts.store');
@@ -132,6 +160,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('bonus/monthly-summary/override', [BonusController::class, 'overrideBonus'])->name('bonus.monthly_summary.override');
         Route::get('bonus/leaderboard', [BonusController::class, 'leaderboard'])->name('bonus.leaderboard');
         Route::post('bonus/leaderboard/generate', [BonusController::class, 'generateLeaderboard'])->name('bonus.leaderboard.generate');
+
+        // Audit Log
+        Route::get('audit-log', [AuditLogController::class, 'index'])->name('audit_log.index');
+
+        // Waiter Performance
+        Route::get('waiters/{id}/performance', [WaiterPerformanceController::class, 'show'])->name('waiters.performance');
     });
 });
 
@@ -175,6 +209,13 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         // Bonus Dashboard
         Route::get('bonus', [\App\Http\Controllers\WaiterBonusController::class, 'index'])->name('bonus');
         Route::get('bonus/api', [\App\Http\Controllers\WaiterBonusController::class, 'apiData'])->name('bonus.api');
+
+        // Restock / Penerimaan Barang
+        Route::get('restock', [WaiterController::class, 'restockList'])->name('restock');
+        Route::post('restock/{poId}/receive', [WaiterController::class, 'receiveRestockItem'])->name('restock.receive');
+
+        // Handover Notes
+        Route::post('handover', [WaiterController::class, 'submitHandover'])->name('handover.submit');
 
         Route::get('logout', [WaiterController::class, 'logout'])->name('logout');
     });

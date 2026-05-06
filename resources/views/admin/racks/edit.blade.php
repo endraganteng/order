@@ -40,6 +40,16 @@
             </div>
 
             <div class="form-group">
+                <label class="form-label" for="rack-check-order">Urutan Cek (prioritas)</label>
+                <input type="number" id="rack-check-order" name="check_order" value="{{ old('check_order', $rack['check_order'] ?? 0) }}" min="0" max="999"
+                    class="form-input" style="max-width: 120px;">
+                <div class="form-hint">Angka kecil = dicek lebih dulu. 0 = tanpa urutan khusus.</div>
+                @error('check_order')
+                    <span class="form-error">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div class="form-group">
                 <label class="form-label-inline">
                     <input type="checkbox" name="is_active" value="1" {{ old('is_active', ($rack['is_active'] ?? true)) ? 'checked' : '' }}>
                     Rak aktif (bisa dipilih saat membuat task)

@@ -86,6 +86,8 @@ class AttendanceController extends Controller
 
         $this->firebase->updateAttendance($waiterId, $date, $data);
 
+        $this->firebase->logAuditAction('override', 'attendance', $waiterId, ['date' => $date, 'fields' => array_keys($data)]);
+
         return response()->json(['success' => true, 'message' => 'Data absensi berhasil diperbarui']);
     }
 
@@ -95,6 +97,8 @@ class AttendanceController extends Controller
     public function destroy($waiterId, $date)
     {
         $this->firebase->deleteAttendance($waiterId, $date);
+
+        $this->firebase->logAuditAction('delete', 'attendance', $waiterId, ['date' => $date]);
 
         return response()->json(['success' => true, 'message' => 'Data absensi berhasil dihapus']);
     }

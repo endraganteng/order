@@ -67,7 +67,13 @@
             color: var(--color-text);
         }
         .col-qty {
-            width: 200px;
+            width: 180px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .col-min-qty {
+            width: 180px;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -110,7 +116,7 @@
             .col-name {
                 width: 100%;
             }
-            .col-qty {
+            .col-qty, .col-min-qty {
                 width: 100%;
                 justify-content: flex-start;
             }
@@ -127,7 +133,8 @@
                     <input type="checkbox" id="selectAll" title="Pilih Semua">
                 </div>
                 <div class="col-name">Nama Produk Master</div>
-                <div class="col-qty">Target Qty (Per Rak)</div>
+                <div class="col-qty">Target Qty</div>
+                <div class="col-min-qty">Min Qty (Restock)</div>
             </div>
             
             <div id="productList">
@@ -136,13 +143,14 @@
                         $productId = $product['id'];
                         $isAssigned = in_array($productId, $assignedProductIds);
                         
-                        // Find assigned standard_qty if assigned, else use master standard_qty
+                        // Find assigned standard_qty and min_qty if assigned
                         $qty = $product['standard_qty'] ?? 0;
+                        $minQty = 0;
                         if ($isAssigned) {
-                            // Find the product in rackProducts to get the specific qty for this rack
                             foreach ($rackProducts as $rp) {
                                 if ($rp['id'] === $productId) {
                                     $qty = $rp['standard_qty'];
+                                    $minQty = $rp['min_qty'] ?? 0;
                                     break;
                                 }
                             }
@@ -157,6 +165,10 @@
                         </div>
                         <div class="col-qty">
                             <input type="number" class="qty-input js-qty-input" name="quantities[{{ $productId }}]" value="{{ $qty }}" min="0" {{ $isAssigned ? '' : 'disabled' }}>
+                            <span style="font-size: 13px; color: var(--color-text-muted);">{{ $product['unit'] ?? 'pcs' }}</span>
+                        </div>
+                        <div class="col-min-qty">
+                            <input type="number" class="qty-input js-min-qty-input" name="min_quantities[{{ $productId }}]" value="{{ $minQty }}" min="0" {{ $isAssigned ? '' : 'disabled' }} placeholder="0">
                             <span style="font-size: 13px; color: var(--color-text-muted);">{{ $product['unit'] ?? 'pcs' }}</span>
                         </div>
                     </div>
@@ -185,17 +197,19 @@
                 cb.addEventListener('change', function() {
                     const row = this.closest('.product-list-item');
                     const qtyInput = row.querySelector('.js-qty-input');
+                    const minQtyInput = row.querySelector('.js-min-qty-input');
                     
                     if (this.checked) {
                         row.classList.add('selected');
                         qtyInput.disabled = false;
+                        if (minQtyInput) minQtyInput.disabled = false;
                         if (qtyInput.value === '0' || qtyInput.value === '') {
-                            // Focus so user can enter qty
                             setTimeout(() => qtyInput.focus(), 50);
                         }
                     } else {
                         row.classList.remove('selected');
                         qtyInput.disabled = true;
+                        if (minQtyInput) minQtyInput.disabled = true;
                     }
                     
                     updateSelectAllState();

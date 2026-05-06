@@ -62,6 +62,7 @@
                     @php $waiterRoleValue = old('waiter_role', $waiter['waiter_role'] ?? 'pelayan'); @endphp
                     <option value="pelayan" {{ $waiterRoleValue === 'pelayan' ? 'selected' : '' }}>Pelayan</option>
                     <option value="kasir" {{ $waiterRoleValue === 'kasir' ? 'selected' : '' }}>Kasir</option>
+                    <option value="supervisor" {{ $waiterRoleValue === 'supervisor' ? 'selected' : '' }}>Supervisor</option>
                 </select>
                 @error('waiter_role')
                     <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
@@ -80,6 +81,21 @@
                     @endforeach
                 </select>
                 @error('shift_id')
+                    <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">Wajib Absensi</label>
+                <select name="attendance_exempt"
+                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    <option value="0" {{ !old('attendance_exempt', $waiter['attendance_exempt'] ?? false) ? 'selected' : '' }}>Ya — Wajib absen</option>
+                    <option value="1" {{ old('attendance_exempt', $waiter['attendance_exempt'] ?? false) ? 'selected' : '' }}>Tidak — Bebas dari kewajiban absen</option>
+                </select>
+                <div style="font-size: 12px; color: #666; margin-top: 6px;">
+                    Jika "Tidak", waiter ini tidak akan kena penalti absen otomatis dan tidak diwajibkan clock-in/out.
+                </div>
+                @error('attendance_exempt')
                     <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
                 @enderror
             </div>

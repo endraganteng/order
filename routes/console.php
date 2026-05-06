@@ -116,6 +116,11 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
             continue;
         }
 
+        // Skip waiters exempt from attendance
+        if (!empty($waiter['attendance_exempt'])) {
+            continue;
+        }
+
         $shift = $firebase->getWaiterShiftForDate($waiterId, $date);
         $clockOutTime = trim((string) ($shift['clock_out_time'] ?? ''));
         if ($clockOutTime !== '') {
@@ -166,6 +171,200 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
     $this->info("Applied absent penalties: {$penaltiesApplied}");
 })->purpose('Audit waiter no-shows and apply absent penalties');
 
+Artisan::command('waiter:send-weekly-report', function () {
+    $firebase = app(FirebaseService::class);
+    $fonnte = app(FonnteService::class);
+
+    $endDate = now()->subDay()->format('Y-m-d'); // Yesterday (Sunday)
+    $startDate = now()->subDays(7)->format('Y-m-d'); // Last Monday
+
+    $waiters = $firebase->getActiveWaiters();
+    $totalTasks = 0;
+    $doneTasks = 0;
+    $overdueTasks = 0;
+    $waiterStats = [];
+
+    foreach ($waiters as $waiter) {
+        $waiterId = (string) ($waiter['id'] ?? '');
+        if ($waiterId === '') {
+            continue;
+        }
+
+        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId);
+        $waiterTotal = 0;
+        $waiterDone = 0;
+
+        foreach ($tasks as $task) {
+            $scheduledDate = (string) ($task['scheduled_for_date'] ?? '');
+            $createdAt = (int) ($task['created_at'] ?? 0);
+            $taskDate = $scheduledDate ?: ($createdAt > 0 ? date('Y-m-d', $createdAt) : '');
+
+            if ($taskDate < $startDate || $taskDate > $endDate) {
+                continue;
+            }
+
+            $totalTasks++;
+            $waiterTotal++;
+            $status = (string) ($task['status'] ?? 'pending');
+
+            if ($status === 'done') {
+                $doneTasks++;
+                $waiterDone++;
+            } elseif ($status === 'overdue') {
+                $overdueTasks++;
+            }
+        }
+
+        if ($waiterTotal > 0) {
+            $waiterStats[] = [
+                'name' => $waiter['name'] ?? 'Waiter',
+                'done' => $waiterDone,
+                'total' => $waiterTotal,
+                'rate' => $waiterTotal > 0 ? ($waiterDone / $waiterTotal) : 0,
+            ];
+        }
+    }
+
+    usort($waiterStats, fn ($a, $b) => $b['rate'] <=> $a['rate']);
+
+    $topPerformers = array_slice($waiterStats, 0, 3);
+    $needsAttention = array_filter($waiterStats, fn ($w) => $w['rate'] < 0.5);
+    usort($needsAttention, fn ($a, $b) => $a['rate'] <=> $b['rate']);
+
+    $sent = $fonnte->sendWeeklyReport([
+        'period' => $startDate.' s/d '.$endDate,
+        'total' => $totalTasks,
+        'done' => $doneTasks,
+        'overdue' => $overdueTasks,
+        'top_performers' => $topPerformers,
+        'needs_attention' => array_values(array_slice($needsAttention, 0, 3)),
+    ]);
+
+    $this->info('Weekly report sent: '.($sent ? 'YES' : 'NO'));
+})->purpose('Send weekly task summary report to supervisor via WhatsApp');
+
+Artisan::command('waiter:send-monthly-report', function () {
+    $firebase = app(FirebaseService::class);
+    $fonnte = app(FonnteService::class);
+
+    $lastMonth = now()->subMonth();
+    $startDate = $lastMonth->startOfMonth()->format('Y-m-d');
+    $endDate = $lastMonth->endOfMonth()->format('Y-m-d');
+    $monthLabel = $lastMonth->translatedFormat('F Y');
+
+    $waiters = $firebase->getActiveWaiters();
+    $totalTasks = 0;
+    $doneTasks = 0;
+    $overdueTasks = 0;
+    $waiterStats = [];
+    $categoryStats = [];
+
+    foreach ($waiters as $waiter) {
+        $waiterId = (string) ($waiter['id'] ?? '');
+        if ($waiterId === '') {
+            continue;
+        }
+
+        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId);
+        $waiterTotal = 0;
+        $waiterDone = 0;
+
+        foreach ($tasks as $task) {
+            $scheduledDate = (string) ($task['scheduled_for_date'] ?? '');
+            $createdAt = (int) ($task['created_at'] ?? 0);
+            $taskDate = $scheduledDate ?: ($createdAt > 0 ? date('Y-m-d', $createdAt) : '');
+
+            if ($taskDate < $startDate || $taskDate > $endDate) {
+                continue;
+            }
+
+            $totalTasks++;
+            $waiterTotal++;
+            $status = (string) ($task['status'] ?? 'pending');
+
+            if ($status === 'done') {
+                $doneTasks++;
+                $waiterDone++;
+            } elseif ($status === 'overdue') {
+                $overdueTasks++;
+            }
+
+            // Category breakdown
+            $catName = (string) ($task['category_name'] ?? 'Lainnya');
+            if (! isset($categoryStats[$catName])) {
+                $categoryStats[$catName] = ['name' => $catName, 'done' => 0, 'total' => 0];
+            }
+            $categoryStats[$catName]['total']++;
+            if ($status === 'done') {
+                $categoryStats[$catName]['done']++;
+            }
+        }
+
+        if ($waiterTotal > 0) {
+            $waiterStats[] = [
+                'name' => $waiter['name'] ?? 'Waiter',
+                'done' => $waiterDone,
+                'total' => $waiterTotal,
+                'rate' => $waiterTotal > 0 ? ($waiterDone / $waiterTotal) : 0,
+            ];
+        }
+    }
+
+    usort($waiterStats, fn ($a, $b) => $b['rate'] <=> $a['rate']);
+    $categoryList = array_values($categoryStats);
+    usort($categoryList, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+    $sent = $fonnte->sendMonthlyReport([
+        'period' => $monthLabel,
+        'total' => $totalTasks,
+        'done' => $doneTasks,
+        'overdue' => $overdueTasks,
+        'total_waiters' => count($waiters),
+        'top_performers' => array_slice($waiterStats, 0, 3),
+        'by_category' => array_slice($categoryList, 0, 5),
+    ]);
+
+    $this->info('Monthly report sent: '.($sent ? 'YES' : 'NO'));
+})->purpose('Send monthly task summary report to supervisor via WhatsApp');
+
+Artisan::command('waiter:check-stale-po', function () {
+    $firebase = app(FirebaseService::class);
+    $fonnte = app(FonnteService::class);
+
+    if (!$fonnte->isAutoReportEnabled()) {
+        $this->info('Auto report disabled, skipping stale PO check.');
+        return;
+    }
+
+    $staleOrders = $firebase->getStalePurchaseOrders(3);
+    if (empty($staleOrders)) {
+        $this->info('No stale POs found.');
+        return;
+    }
+
+    $reportPhone = $fonnte->getReportPhone();
+    if (!$reportPhone) {
+        $this->info('No report phone configured.');
+        return;
+    }
+
+    $lines = ["⚠️ *PO Belum Diterima (>3 hari)*\n"];
+    foreach ($staleOrders as $po) {
+        $daysAgo = round((time() - ($po['created_at'] ?? time())) / 86400);
+        $lines[] = "📦 {$po['po_number']} — {$po['items_count']} item, {$daysAgo} hari lalu";
+        if (!empty($po['supplier'])) {
+            $lines[] = "   Supplier: {$po['supplier']}";
+        }
+    }
+    $lines[] = "\nSegera follow up ke supplier.";
+
+    $fonnte->sendMessage($reportPhone, implode("\n", $lines));
+    $this->info('Stale PO reminder sent for ' . count($staleOrders) . ' PO(s).');
+})->purpose('Send WhatsApp reminder for POs not received after 3 days');
+
 Schedule::command('waiter:process-tasks')->everyMinute()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('waiter:audit-attendance')->hourly()->withoutOverlapping();
+Schedule::command('waiter:send-weekly-report')->weeklyOn(1, '07:00')->withoutOverlapping();
+Schedule::command('waiter:send-monthly-report')->monthlyOn(1, '07:00')->withoutOverlapping();
+Schedule::command('waiter:check-stale-po')->dailyAt('08:00')->withoutOverlapping();

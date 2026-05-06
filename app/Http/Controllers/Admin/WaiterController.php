@@ -48,6 +48,8 @@ class WaiterController extends Controller
         $phone = $request->phone ?: null;
         $this->firebase->addAllowedEmailWithPassword($email, $request->name, $passwordHash, $request->waiter_role, $shiftId, $phone);
 
+        $this->firebase->logAuditAction('create', 'waiter', null, ['email' => $email, 'name' => $request->name, 'role' => $request->waiter_role]);
+
         return redirect()->route('admin.waiters.index')
             ->with('success', 'Waiter berhasil ditambahkan');
     }
@@ -82,6 +84,7 @@ class WaiterController extends Controller
             'is_active' => (bool) $request->is_active,
             'shift_id' => $request->shift_id ?: null,
             'phone' => $request->phone ?: null,
+            'attendance_exempt' => (bool) $request->attendance_exempt,
         ];
 
         if ($request->filled('password')) {
@@ -90,6 +93,8 @@ class WaiterController extends Controller
 
         $this->firebase->updateAllowedEmail($id, $payload);
 
+        $this->firebase->logAuditAction('update', 'waiter', $id, ['email' => $email, 'name' => $request->name]);
+
         return redirect()->route('admin.waiters.index')
             ->with('success', 'Waiter berhasil diupdate');
     }
@@ -97,6 +102,8 @@ class WaiterController extends Controller
     public function destroy($id)
     {
         $this->firebase->deleteAllowedEmail($id);
+
+        $this->firebase->logAuditAction('delete', 'waiter', $id, []);
 
         return redirect()->route('admin.waiters.index')
             ->with('success', 'Waiter berhasil dihapus');

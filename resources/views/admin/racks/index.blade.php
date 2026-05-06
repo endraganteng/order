@@ -207,6 +207,7 @@
                                 </td>
                                 <td>
                                     <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                        <a href="{{ route('admin.racks.history', $rackId) }}" class="btn btn-success btn-sm">Riwayat</a>
                                         <a href="{{ route('admin.racks.print_labels', ['rack_ids' => [$rackId]]) }}" target="_blank" class="btn btn-info btn-sm">Print</a>
                                         <a href="{{ route('admin.racks.edit', $rackId) }}" class="btn btn-warning btn-sm">Edit</a>
                                         <form method="POST" action="{{ route('admin.racks.regenerate_barcode', $rackId) }}" data-confirm="Generate ulang QR code rak ini? QR code lama tidak bisa dipakai lagi untuk verifikasi task baru.">
@@ -271,6 +272,7 @@
                         </div>
                     </div>
                     <div class="rack-mobile-actions">
+                        <a href="{{ route('admin.racks.history', $rackId) }}" class="btn btn-success btn-sm">Riwayat</a>
                         <a href="{{ route('admin.racks.products', $rackId) }}" class="btn btn-info btn-sm">Produk</a>
                         <a href="{{ route('admin.racks.print_labels', ['rack_ids' => [$rackId]]) }}" target="_blank" class="btn btn-info btn-sm">Print</a>
                         <a href="{{ route('admin.racks.edit', $rackId) }}" class="btn btn-warning btn-sm">Edit</a>

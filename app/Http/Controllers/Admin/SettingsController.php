@@ -32,7 +32,11 @@ class SettingsController extends Controller
             'order_timeout_minutes' => (int) $request->order_timeout_minutes,
             'fonnte_api_token' => $request->fonnte_api_token ?: '',
             'fonnte_enabled' => (bool) $request->fonnte_enabled,
+            'report_phone' => $request->report_phone ?: '',
+            'auto_report_enabled' => (bool) $request->auto_report_enabled,
         ]);
+
+        $this->firebase->logAuditAction('update', 'settings', null, ['timeout' => (int) $request->order_timeout_minutes]);
 
         return back()->with('success', 'Settings berhasil diupdate');
     }

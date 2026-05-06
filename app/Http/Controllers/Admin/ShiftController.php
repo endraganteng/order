@@ -196,6 +196,8 @@ class ShiftController extends Controller
         try {
             $this->firebase->saveScheduleTemplate($validated['schedule']);
 
+            $this->firebase->logAuditAction('update', 'schedule_template', null, ['waiters_count' => count($validated['schedule'])]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Template jadwal berhasil disimpan. Berlaku untuk seterusnya.',

@@ -10,6 +10,8 @@ use App\Http\Requests\UpdateRecurringTaskRequest;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
 use Illuminate\Http\Request;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class TaskController extends Controller
 {
@@ -71,6 +73,7 @@ class TaskController extends Controller
     {
         $waiters = $this->firebase->getActiveWaiters();
         $racks = $this->firebase->getActiveRacks();
+        $categories = $this->firebase->getTaskCategories();
         $requestedScope = (string) $request->input('task_scope', 'general');
         $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
         $requestedTaskType = $taskScope === 'rack_check' ? 'rack_check' : 'general';
@@ -88,7 +91,29 @@ class TaskController extends Controller
             }
         }
 
-        return view('admin.tasks.create', compact('waiters', 'racks', 'taskScope', 'backRouteName', 'requestedTaskType', 'waiterDayOffMap'));
+        // Build rack check status for today (for progress indicator in board builder)
+        $rackCheckStatus = [];
+        if ($taskScope === 'rack_check') {
+            $allTasks = $this->firebase->getWaiterTasksByDate($today);
+            foreach ($allTasks as $task) {
+                if (($task['task_type'] ?? '') !== 'rack_check') {
+                    continue;
+                }
+                $rackId = $task['rack_id'] ?? '';
+                if ($rackId === '') {
+                    continue;
+                }
+                if (!isset($rackCheckStatus[$rackId])) {
+                    $rackCheckStatus[$rackId] = ['total' => 0, 'done' => 0];
+                }
+                $rackCheckStatus[$rackId]['total']++;
+                if (($task['status'] ?? '') === 'done') {
+                    $rackCheckStatus[$rackId]['done']++;
+                }
+            }
+        }
+
+        return view('admin.tasks.create', compact('waiters', 'racks', 'taskScope', 'backRouteName', 'requestedTaskType', 'waiterDayOffMap', 'categories', 'rackCheckStatus'));
     }
 
     /**
@@ -118,11 +143,14 @@ class TaskController extends Controller
 
         $rackTargetScope = (string) $request->input('rack_target_scope', 'single');
         $requiresPhotoProof = (bool) $request->boolean('requires_photo_proof');
+        $requiresPhotoBefore = (bool) $request->boolean('requires_photo_before');
         $requestedScope = (string) $request->input('task_scope', 'general');
         $taskType = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
         $taskTitle = trim((string) $request->input('title', ''));
         $taskDescription = trim((string) $request->input('description', ''));
         $taskPriority = (string) $request->input('priority', 'normal');
+        $categoryId = $request->input('category_id');
+        $categoryName = $request->input('category_name', '');
 
         // Parse hybrid fixed rack assignments: { "rackId": "waiterId", ... }
         $fixedRackAssignments = [];
@@ -138,6 +166,12 @@ class TaskController extends Controller
                     }
                 }
             }
+        }
+
+        // ── Batch Board Builder Mode (general tasks) ──
+        $batchTasksJson = trim((string) $request->input('batch_tasks_json', ''));
+        if ($batchTasksJson !== '' && $taskType === 'general') {
+            return $this->storeBatch($batchTasksJson, $request);
         }
 
         if ($assignmentType === 'role' && $taskType !== 'rack_check' && $roleAssignmentMode === 'rolling') {
@@ -169,11 +203,14 @@ class TaskController extends Controller
             'task_type' => 'general',
             'requires_barcode_scan' => false,
             'requires_photo_proof' => $requiresPhotoProof,
+            'requires_photo_before' => $requiresPhotoBefore,
             'rack_target_scope' => null,
             'rack_id' => null,
             'rack_name' => null,
             'rack_location' => null,
             'rack_barcode_value' => null,
+            'category_id' => $categoryId,
+            'category_name' => $categoryName,
         ]];
 
         if ($taskType === 'rack_check') {
@@ -239,16 +276,19 @@ class TaskController extends Controller
 
             $rackTargetScope = count($selectedRacks) === count($activeRacks) ? 'all' : 'single';
 
-            $taskRackPayloads = array_map(function ($rack) use ($requiresPhotoProof, $rackTargetScope) {
+            $taskRackPayloads = array_map(function ($rack) use ($requiresPhotoProof, $requiresPhotoBefore, $rackTargetScope) {
                 return [
                     'task_type' => 'rack_check',
                     'requires_barcode_scan' => true,
                     'requires_photo_proof' => $requiresPhotoProof,
+                    'requires_photo_before' => $requiresPhotoBefore,
                     'rack_target_scope' => $rackTargetScope,
                     'rack_id' => $rack['id'] ?? null,
                     'rack_name' => $rack['name'] ?? null,
                     'rack_location' => $rack['location'] ?? null,
                     'rack_barcode_value' => $rack['barcode_value'] ?? null,
+                    'category_id' => $categoryId,
+                    'category_name' => $categoryName,
                 ];
             }, $selectedRacks);
         }
@@ -427,6 +467,8 @@ class TaskController extends Controller
 
         $this->firebase->deleteWaiterTask($id);
 
+        $this->firebase->logAuditAction('delete', 'task', $id, ['title' => $task['title'] ?? '']);
+
         return redirect()->route($redirectRouteName)
             ->with('success', 'Tugas berhasil dihapus');
     }
@@ -474,12 +516,13 @@ class TaskController extends Controller
     public function recurringEdit($id)
     {
         $template = $this->firebase->getRecurringWaiterTaskTemplateById($id);
+        $categories = $this->firebase->getTaskCategories();
 
         if (! $template) {
             abort(404);
         }
 
-        return view('admin.tasks.edit_recurring', compact('template'));
+        return view('admin.tasks.edit_recurring', compact('template', 'categories'));
     }
 
     /**
@@ -559,6 +602,7 @@ class TaskController extends Controller
         $taskScope = $taskScope === 'rack_check' ? 'rack_check' : 'general';
         $tasks = $this->firebase->getWaiterTasks();
         $recurringTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+        $categories = $this->firebase->getTaskCategories();
         $waiters = $this->firebase->getActiveWaiters();
         $racks = $this->firebase->getRacks();
 
@@ -599,6 +643,7 @@ class TaskController extends Controller
         $collectedStockBoard = $this->buildCollectedStockBoard($dateTasks);
 
         $waiterPerformance = $this->buildWaiterPerformance($tasks);
+        $categoryBreakdown = $this->buildCategoryBreakdown($tasks);
 
         $taskScopeRouteName = $taskScope === 'rack_check'
             ? 'admin.tasks.rack.index'
@@ -620,7 +665,7 @@ class TaskController extends Controller
         $isRackScope = $taskScope === 'rack_check';
         $tasksCollection = collect($tasks);
         $kpi = [
-            'pending' => $tasksCollection->where('status', 'pending')->count(),
+            'pending' => $tasksCollection->whereIn('status', ['pending', 'in_progress'])->count(),
             'done' => $tasksCollection->where('status', 'done')->count(),
             'overdue' => $tasksCollection->where('status', 'overdue')->count(),
             'activeRackCount' => collect($racks)->filter(fn ($rack) => ($rack['is_active'] ?? true) === true)->count(),
@@ -708,6 +753,12 @@ class TaskController extends Controller
         }
         $recurringDisplayCount = $isRackScope ? $recurringGroupedRackTemplates->count() : count($recurringTemplates);
 
+        // ── Scan compliance stats (rack_check scope only) ──
+        $scanStats = [];
+        if ($isRackScope) {
+            $scanStats = $this->firebase->getScanStats($selectedDate);
+        }
+
         // ── History data pre-grouped by waiter ──
         $historyWaiterNames = collect($taskHistory)->pluck('assigned_waiter_name')->filter()->unique()->sort()->values();
         $historyRackNames = collect($taskHistory)->pluck('rack_name')->filter()->unique()->sort()->values();
@@ -720,6 +771,8 @@ class TaskController extends Controller
             'recurringTemplates',
             'waiters',
             'taskHistory',
+            'categories',
+            'categoryBreakdown',
             'selectedDate',
             'dateTasks',
             'dateDoneTasks',
@@ -756,7 +809,8 @@ class TaskController extends Controller
             'recurringDisplayCount',
             'historyWaiterNames',
             'historyRackNames',
-            'historyByWaiter'
+            'historyByWaiter',
+            'scanStats'
         ));
     }
 
@@ -840,8 +894,11 @@ class TaskController extends Controller
                 'priority' => $taskPriority,
                 'assigned_by' => 'Supervisor',
                 'task_type' => $taskRackPayload['task_type'],
+                'category_id' => $taskRackPayload['category_id'] ?? null,
+                'category_name' => $taskRackPayload['category_name'] ?? null,
                 'requires_barcode_scan' => $taskRackPayload['requires_barcode_scan'],
                 'requires_photo_proof' => $taskRackPayload['requires_photo_proof'],
+                'requires_photo_before' => $taskRackPayload['requires_photo_before'] ?? false,
                 'rack_target_scope' => $taskRackPayload['rack_target_scope'],
                 'rack_id' => $taskRackPayload['rack_id'],
                 'rack_name' => $taskRackPayload['rack_name'],
@@ -983,8 +1040,11 @@ class TaskController extends Controller
                 'priority' => $taskPriority,
                 'assigned_by' => 'Supervisor',
                 'task_type' => $taskRackPayload['task_type'],
+                'category_id' => $taskRackPayload['category_id'] ?? null,
+                'category_name' => $taskRackPayload['category_name'] ?? null,
                 'requires_barcode_scan' => $taskRackPayload['requires_barcode_scan'],
                 'requires_photo_proof' => $taskRackPayload['requires_photo_proof'],
+                'requires_photo_before' => $taskRackPayload['requires_photo_before'] ?? false,
                 'rack_target_scope' => $taskRackPayload['rack_target_scope'],
                 'rack_id' => $taskRackPayload['rack_id'],
                 'rack_name' => $taskRackPayload['rack_name'],
@@ -1069,6 +1129,164 @@ class TaskController extends Controller
 
         return redirect()->route($redirectRouteName)
             ->with('success', "Tugas berhasil dibuat dan didelegasikan ke {$createdCount} waiter.");
+    }
+
+    /**
+     * Store batch tasks from the general task board builder.
+     *
+     * Expected JSON format in batch_tasks_json:
+     * {
+     *   "tasks": [
+     *     {"title": "...", "description": "...", "category_id": "...", "category_name": "...", "requires_photo_proof": false}
+     *   ],
+     *   "assignments": {
+     *     "waiter_id": [0, 1, ...]  // indices into tasks array
+     *   }
+     * }
+     */
+    protected function storeBatch(string $batchTasksJson, $request)
+    {
+        $redirectRouteName = $this->resolveRouteNameByTaskType('general', 'general');
+
+        $batchData = json_decode($batchTasksJson, true);
+        if (! is_array($batchData) || ! isset($batchData['tasks']) || ! is_array($batchData['tasks'])) {
+            return back()
+                ->withErrors(['batch_tasks_json' => 'Data batch tugas tidak valid.'])
+                ->withInput();
+        }
+
+        $tasks = $batchData['tasks'];
+        $assignments = $batchData['assignments'] ?? [];
+
+        if (count($tasks) === 0) {
+            return back()
+                ->withErrors(['batch_tasks_json' => 'Tambahkan minimal satu tugas sebelum mengirim.'])
+                ->withInput();
+        }
+
+        // Validate each task has a title
+        foreach ($tasks as $index => $task) {
+            $title = trim((string) ($task['title'] ?? ''));
+            if ($title === '') {
+                return back()
+                    ->withErrors(['batch_tasks_json' => 'Tugas #' . ($index + 1) . ' tidak memiliki judul.'])
+                    ->withInput();
+            }
+        }
+
+        // Validate assignments — each task must be assigned to at least 1 waiter
+        $assignedTaskIndices = [];
+        foreach ($assignments as $waiterId => $taskIndices) {
+            if (! is_array($taskIndices)) {
+                continue;
+            }
+            foreach ($taskIndices as $taskIndex) {
+                $assignedTaskIndices[(int) $taskIndex] = true;
+            }
+        }
+
+        $unassignedTasks = [];
+        foreach ($tasks as $index => $task) {
+            if (! isset($assignedTaskIndices[$index])) {
+                $unassignedTasks[] = $index + 1;
+            }
+        }
+
+        if (count($unassignedTasks) > 0) {
+            return back()
+                ->withErrors(['batch_tasks_json' => 'Tugas #' . implode(', #', $unassignedTasks) . ' belum di-assign ke waiter manapun.'])
+                ->withInput();
+        }
+
+        // Process: for each waiter → for each assigned task index → create task
+        $createdCount = 0;
+        $allCreatedEntries = [];
+
+        foreach ($assignments as $waiterId => $taskIndices) {
+            $waiterId = trim((string) $waiterId);
+            if ($waiterId === '' || ! is_array($taskIndices)) {
+                continue;
+            }
+
+            foreach ($taskIndices as $taskIndex) {
+                $taskIndex = (int) $taskIndex;
+                if (! isset($tasks[$taskIndex])) {
+                    continue;
+                }
+
+                $task = $tasks[$taskIndex];
+                $title = trim((string) ($task['title'] ?? ''));
+                $description = trim((string) ($task['description'] ?? ''));
+                $categoryId = $task['category_id'] ?? null;
+                $categoryName = $task['category_name'] ?? '';
+                $requiresPhotoProof = (bool) ($task['requires_photo_proof'] ?? false);
+                $requiresPhotoBefore = (bool) ($task['requires_photo_before'] ?? false);
+                $repeatCount = max(1, (int) ($task['repeat_count'] ?? 1));
+                $deadlineTime = trim((string) ($task['deadline_time'] ?? ''));
+
+                // Calculate deadline_at timestamp from deadline_time (HH:MM format)
+                $deadlineAt = null;
+                if ($deadlineTime !== '' && preg_match('/^\d{2}:\d{2}$/', $deadlineTime)) {
+                    $todayDate = now()->format('Y-m-d');
+                    $deadlineAt = strtotime($todayDate . ' ' . $deadlineTime . ':00');
+                    if ($deadlineAt === false || $deadlineAt <= time()) {
+                        $deadlineAt = null; // Ignore past deadlines
+                    }
+                }
+
+                if ($title === '') {
+                    continue;
+                }
+
+                $result = $this->firebase->createWaiterTasksFromAssignment([
+                    'title' => $title,
+                    'description' => $description,
+                    'priority' => 'normal',
+                    'assigned_by' => 'Supervisor',
+                    'task_type' => 'general',
+                    'category_id' => $categoryId ?: null,
+                    'category_name' => $categoryName ?: null,
+                    'requires_barcode_scan' => false,
+                    'requires_photo_proof' => $requiresPhotoProof,
+                    'requires_photo_before' => $requiresPhotoBefore,
+                    'repeat_count' => $repeatCount,
+                    'deadline_at' => $deadlineAt,
+                    'scheduled_for_date' => $deadlineAt !== null ? now()->format('Y-m-d') : null,
+                    'rack_target_scope' => null,
+                    'rack_id' => null,
+                    'rack_name' => null,
+                    'rack_location' => null,
+                    'rack_barcode_value' => null,
+                    'assignment_type' => 'single',
+                    'assignment_strategy' => null,
+                    'assigned_waiter_id' => $waiterId,
+                    'assigned_waiter_role' => null,
+                    'selected_waiter_ids' => [],
+                ]);
+
+                $createdCount += $result['count'];
+                $allCreatedEntries = array_merge($allCreatedEntries, $result['entries']);
+            }
+        }
+
+        // Send WhatsApp notifications
+        try {
+            foreach ($allCreatedEntries as $entry) {
+                $this->fonnte->notifyTaskAssigned($entry['waiter'], $entry['task']);
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        if ($createdCount <= 0) {
+            return redirect()->route($redirectRouteName)
+                ->with('error', 'Tidak ada waiter aktif yang bisa menerima tugas.');
+        }
+
+        $taskCount = count($tasks);
+
+        return redirect()->route($redirectRouteName)
+            ->with('success', "Batch berhasil: {$taskCount} tugas didelegasikan ke waiter (total {$createdCount} task dibuat).");
     }
 
     /**
@@ -1590,5 +1808,240 @@ class TaskController extends Controller
         });
 
         return $result;
+    }
+
+    /**
+     * Build category breakdown from tasks for reporting.
+     */
+    protected function buildCategoryBreakdown(array $tasks): array
+    {
+        $breakdown = [];
+
+        foreach ($tasks as $task) {
+            $catId = $task['category_id'] ?? null;
+            $catName = $task['category_name'] ?? null;
+            $key = $catId ?? '__uncategorized__';
+
+            if (!isset($breakdown[$key])) {
+                $breakdown[$key] = [
+                    'category_id' => $catId,
+                    'category_name' => $catName ?: 'Lainnya',
+                    'total' => 0,
+                    'done' => 0,
+                ];
+            }
+
+            $breakdown[$key]['total']++;
+            if (($task['status'] ?? '') === 'done') {
+                $breakdown[$key]['done']++;
+            }
+        }
+
+        // Sort: named categories first (by name), uncategorized last
+        uasort($breakdown, function ($a, $b) {
+            if ($a['category_id'] === null && $b['category_id'] !== null) return 1;
+            if ($a['category_id'] !== null && $b['category_id'] === null) return -1;
+            return strcasecmp($a['category_name'], $b['category_name']);
+        });
+
+        return array_values($breakdown);
+    }
+
+    /**
+     * Live real-time dashboard for task monitoring.
+     */
+    public function live()
+    {
+        $waiters = $this->firebase->getActiveWaiters();
+        $today = now()->format('Y-m-d');
+
+        return view('admin.tasks.live', compact('waiters', 'today'));
+    }
+
+    /**
+     * Get task categories (JSON for AJAX).
+     */
+    public function categoryIndex()
+    {
+        $categories = $this->firebase->getTaskCategories();
+
+        return response()->json(['categories' => $categories]);
+    }
+
+    /**
+     * Store a new task category.
+     */
+    public function categoryStore(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:100',
+            'color' => 'required|string|max:7',
+            'order' => 'nullable|integer|min:0',
+        ]);
+
+        $id = $this->firebase->createTaskCategory(
+            $request->input('name'),
+            $request->input('color'),
+            (int) $request->input('order', 0)
+        );
+
+        return response()->json(['success' => true, 'id' => $id]);
+    }
+
+    /**
+     * Delete a task category.
+     */
+    public function categoryDestroy(string $id)
+    {
+        $this->firebase->deleteTaskCategory($id);
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Bulk reassign pending tasks from one waiter to another.
+     */
+    public function bulkReassign(Request $request)
+    {
+        $request->validate([
+            'from_waiter_id' => 'required|string',
+            'to_waiter_id' => 'required|string|different:from_waiter_id',
+            'date' => 'required|date_format:Y-m-d',
+        ]);
+
+        $count = $this->firebase->bulkReassignPendingTasks(
+            $request->input('from_waiter_id'),
+            $request->input('to_waiter_id'),
+            $request->input('date')
+        );
+
+        if ($count > 0) {
+            $this->firebase->logAuditAction('bulk_reassign', 'task', null, [
+                'from' => $request->input('from_waiter_id'),
+                'to' => $request->input('to_waiter_id'),
+                'date' => $request->input('date'),
+                'count' => $count,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'reassigned_count' => $count,
+            'message' => $count > 0
+                ? "{$count} tugas berhasil dipindahkan."
+                : 'Tidak ada tugas pending untuk dipindahkan.',
+        ]);
+    }
+
+    /**
+     * Export stock report to Excel for a date range.
+     */
+    public function exportStockReport(Request $request)
+    {
+        $request->validate([
+            'from_date' => 'required|date_format:Y-m-d',
+            'to_date' => 'required|date_format:Y-m-d|after_or_equal:from_date',
+        ]);
+
+        $fromDate = $request->input('from_date');
+        $toDate = $request->input('to_date');
+
+        // Get all tasks and filter by date range + rack_check + done
+        $tasks = $this->firebase->getWaiterTasks();
+        $tasks = array_filter($tasks, function ($task) use ($fromDate, $toDate) {
+            if (($task['task_type'] ?? '') !== 'rack_check') {
+                return false;
+            }
+            if (($task['status'] ?? '') !== 'done') {
+                return false;
+            }
+            $date = $task['scheduled_for_date'] ?? ($task['completed_at'] ? date('Y-m-d', $task['completed_at']) : '');
+            return $date >= $fromDate && $date <= $toDate;
+        });
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Laporan Stok');
+
+        // Header
+        $headers = ['Tanggal', 'Rak', 'Waiter', 'Produk', 'Qty Standar', 'Qty Aktual', 'Min Qty', 'Status', 'Catatan Stok'];
+        foreach ($headers as $col => $header) {
+            $sheet->setCellValueByColumnAndRow($col + 1, 1, $header);
+        }
+
+        // Style header
+        $headerStyle = $sheet->getStyle('A1:I1');
+        $headerStyle->getFont()->setBold(true);
+        $headerStyle->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB('FFE2E8F0');
+
+        $row = 2;
+        foreach ($tasks as $task) {
+            $date = $task['scheduled_for_date'] ?? date('Y-m-d', $task['completed_at'] ?? time());
+            $rackName = $task['rack_name'] ?? '-';
+            $waiterName = $task['assigned_waiter_name'] ?? '-';
+            $stockReport = $task['completed_stock_report'] ?? '';
+
+            $checklist = $task['completed_product_checklist'] ?? ($task['product_checklist'] ?? []);
+            if (is_array($checklist) && count($checklist) > 0) {
+                foreach ($checklist as $item) {
+                    $productName = $item['product_name'] ?? $item['name'] ?? '-';
+                    $standardQty = (int) ($item['standard_qty'] ?? 0);
+                    $actualQty = isset($item['actual_qty']) ? (int) $item['actual_qty'] : null;
+                    $minQty = (int) ($item['min_qty'] ?? 0);
+
+                    $status = 'OK';
+                    if ($actualQty !== null) {
+                        if ($actualQty === 0) {
+                            $status = 'Habis';
+                        } elseif ($minQty > 0 && $actualQty <= $minQty) {
+                            $status = 'Perlu Restock';
+                        } elseif ($actualQty < $standardQty) {
+                            $status = 'Kurang';
+                        }
+                    } else {
+                        $status = '-';
+                    }
+
+                    $sheet->setCellValueByColumnAndRow(1, $row, $date);
+                    $sheet->setCellValueByColumnAndRow(2, $row, $rackName);
+                    $sheet->setCellValueByColumnAndRow(3, $row, $waiterName);
+                    $sheet->setCellValueByColumnAndRow(4, $row, $productName);
+                    $sheet->setCellValueByColumnAndRow(5, $row, $standardQty);
+                    $sheet->setCellValueByColumnAndRow(6, $row, $actualQty ?? '-');
+                    $sheet->setCellValueByColumnAndRow(7, $row, $minQty > 0 ? $minQty : '-');
+                    $sheet->setCellValueByColumnAndRow(8, $row, $status);
+                    $sheet->setCellValueByColumnAndRow(9, $row, '');
+                    $row++;
+                }
+            } elseif ($stockReport !== '') {
+                // Free-text stock report (no checklist)
+                $sheet->setCellValueByColumnAndRow(1, $row, $date);
+                $sheet->setCellValueByColumnAndRow(2, $row, $rackName);
+                $sheet->setCellValueByColumnAndRow(3, $row, $waiterName);
+                $sheet->setCellValueByColumnAndRow(4, $row, '-');
+                $sheet->setCellValueByColumnAndRow(5, $row, '-');
+                $sheet->setCellValueByColumnAndRow(6, $row, '-');
+                $sheet->setCellValueByColumnAndRow(7, $row, '-');
+                $sheet->setCellValueByColumnAndRow(8, $row, '-');
+                $sheet->setCellValueByColumnAndRow(9, $row, $stockReport);
+                $row++;
+            }
+        }
+
+        // Auto-size columns
+        foreach (range('A', 'I') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $fileName = "laporan-stok-{$fromDate}-{$toDate}.xlsx";
+        $tempPath = storage_path("app/{$fileName}");
+
+        $writer = new Xlsx($spreadsheet);
+        $writer->save($tempPath);
+
+        return response()->download($tempPath, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
     }
 }

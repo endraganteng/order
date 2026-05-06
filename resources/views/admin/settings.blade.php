@@ -58,6 +58,36 @@
                 @enderror
             </div>
 
+            <hr style="margin: 30px 0; border: none; border-top: 2px solid #e0e0e0;">
+
+            <h3 style="margin-bottom: 15px; color: #333;">Laporan Otomatis</h3>
+            <p style="color: #666; font-size: 14px; margin-bottom: 20px;">
+                Kirim ringkasan laporan tugas mingguan (Senin) dan bulanan (tanggal 1) ke WhatsApp supervisor.
+            </p>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 600;">Nomor HP Supervisor (Laporan)</label>
+                <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                    Nomor yang akan menerima laporan otomatis. Format: 08xxx atau 628xxx.
+                </p>
+                <input type="text" name="report_phone"
+                    value="{{ old('report_phone', $settings['report_phone'] ?? '') }}"
+                    placeholder="08123456789"
+                    style="width: 300px; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                @error('report_phone')
+                    <span style="color: #dc3545; font-size: 12px; display: block; margin-top: 5px;">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 600;">Aktifkan Laporan Otomatis</label>
+                <select name="auto_report_enabled"
+                    style="width: 200px; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    <option value="1" {{ old('auto_report_enabled', $settings['auto_report_enabled'] ?? false) ? 'selected' : '' }}>Aktif</option>
+                    <option value="0" {{ !old('auto_report_enabled', $settings['auto_report_enabled'] ?? false) ? 'selected' : '' }}>Nonaktif</option>
+                </select>
+            </div>
+
             <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
         </form>
     </div>

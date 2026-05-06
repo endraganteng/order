@@ -139,14 +139,67 @@
         .bb-add-rack-cancel { padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer; }
         .bb-add-rack-cancel:hover { background: #f1f5f9; }
         .bb-add-rack-msg { font-size: 12px; margin-top: 6px; padding: 6px 10px; border-radius: 6px; }
-        .bb-add-rack-msg--ok { background: #dcfce7; color: #166534; }
-        .bb-add-rack-msg--err { background: #fef2f2; color: #991b1b; }
-        @media (max-width: 768px) {
-            .bb-board { grid-template-columns: 1fr; }
-            .bb-rack-pool { min-height: 120px; }
-            .bb-waiter-lanes { max-height: none; }
-            .bb-toolbar { flex-direction: column; }
+
+        /* General Task Board Builder styles (GT) */
+        .gt-wrapper { margin-bottom: 24px; }
+        .gt-info-banner { padding: 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; margin-bottom: 20px; }
+        .gt-info-banner-title { font-weight: 700; margin-bottom: 6px; }
+        .gt-info-banner-text { font-size: 13px; line-height: 1.5; }
+        .gt-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+        .gt-toolbar-label { display: flex; align-items: center; font-weight: 700; font-size: 13px; color: #475569; margin-right: 4px; white-space: nowrap; }
+        .gt-toolbar-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+        .gt-toolbar-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+        .gt-toolbar-btn.is-active { background: #eef2ff; border-color: #818cf8; color: #4338ca; }
+        .gt-toolbar-btn--reset { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+        .gt-toolbar-btn--reset:hover { background: #fee2e2; border-color: #f87171; }
+        .gt-toolbar-select { padding: 7px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #334155; background: #fff; cursor: pointer; }
+        .gt-board { display: grid; grid-template-columns: 320px 1fr; gap: 16px; min-height: 320px; }
+        @media (max-width: 767px) {
+            .gt-board { grid-template-columns: 1fr; }
         }
+        .gt-task-pool { background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 12px; min-height: 280px; }
+        .gt-task-pool-header { font-weight: 700; font-size: 14px; color: #475569; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+        .gt-task-pool-count { font-size: 12px; font-weight: 600; color: #94a3b8; }
+        .gt-task-pool-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+        .gt-task-pool-empty { text-align: center; padding: 20px 10px; color: #94a3b8; font-size: 13px; }
+        .gt-task-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; cursor: grab; transition: box-shadow 0.2s, border-color 0.2s, opacity 0.2s; user-select: none; -webkit-user-select: none; position: relative; }
+        .gt-task-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: #94a3b8; }
+        .gt-task-card:active, .gt-task-card.is-dragging { cursor: grabbing; opacity: 0.5; }
+        .gt-task-card-header { display: flex; align-items: center; gap: 8px; }
+        .gt-task-card-icon { font-size: 16px; flex-shrink: 0; }
+        .gt-task-card-title { font-weight: 700; font-size: 13px; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+        .gt-task-card-remove { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: none; background: #fee2e2; color: #ef4444; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.1); opacity: 0; transition: opacity 0.2s; }
+        .gt-task-card:hover .gt-task-card-remove { opacity: 1; }
+        .gt-task-card-remove:hover { background: #fca5a5; color: #b91c1c; }
+        .gt-task-card-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #64748b; }
+        .gt-task-card-cat { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; background: #f1f5f9; border-radius: 4px; }
+        .gt-task-card-cat-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .gt-task-card-proof { display: inline-flex; align-items: center; gap: 4px; color: #f59e0b; font-weight: 600; }
+        .gt-task-add-form { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+        .gt-task-add-form-group { margin-bottom: 8px; }
+        .gt-task-add-form input[type="text"], .gt-task-add-form select, .gt-task-add-form textarea { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+        .gt-task-add-form input[type="text"]:focus, .gt-task-add-form select:focus, .gt-task-add-form textarea:focus { outline: none; border-color: #818cf8; box-shadow: 0 0 0 2px rgba(129,140,248,0.2); }
+        .gt-task-add-form textarea { resize: vertical; min-height: 40px; }
+        .gt-task-add-form-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; cursor: pointer; }
+        .gt-task-add-btn { width: 100%; padding: 8px; background: #4f46e5; color: #fff; border: none; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: background 0.2s; margin-top: 4px; }
+        .gt-task-add-btn:hover { background: #4338ca; }
+        .gt-waiter-lanes { display: flex; flex-direction: column; gap: 10px; max-height: 560px; overflow-y: auto; padding-right: 4px; }
+        .gt-waiter-lane { background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 12px; transition: border-color 0.2s, background 0.2s, box-shadow 0.2s; }
+        .gt-waiter-lane.is-drag-over { border-color: #818cf8; background: #f5f3ff; box-shadow: 0 0 0 3px rgba(129,140,248,0.15); }
+        .gt-waiter-lane-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .gt-waiter-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
+        .gt-waiter-avatar--pelayan { background: #6366f1; }
+        .gt-waiter-avatar--kasir { background: #f59e0b; }
+        .gt-waiter-lane-name { font-weight: 700; font-size: 14px; color: #0f172a; }
+        .gt-waiter-lane-role { font-size: 12px; color: #64748b; text-transform: capitalize; }
+        .gt-waiter-lane-count { margin-left: auto; font-size: 12px; font-weight: 700; color: #6366f1; background: #eef2ff; padding: 2px 10px; border-radius: 20px; }
+        .gt-waiter-lane-drop { min-height: 50px; border: 2px dashed #e2e8f0; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; transition: border-color 0.2s; }
+        .gt-waiter-lane.is-drag-over .gt-waiter-lane-drop { border-color: #a5b4fc; }
+        .gt-waiter-lane-placeholder { width: 100%; text-align: center; padding: 12px 8px; color: #cbd5e1; font-size: 12px; pointer-events: none; }
+        .gt-summary { margin-top: 14px; padding: 12px 16px; border-radius: 10px; background: #f0fdf4; border: 1px solid #86efac; font-size: 13px; color: #166534; display: none; }
+        .gt-summary.is-visible { display: block; }
+        .gt-summary-warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+        .gt-summary-detail { margin-top: 6px; font-size: 12px; opacity: 0.85; }
     </style>
     @endpush
 
@@ -218,9 +271,15 @@
                             </div>
                             <div class="bb-rack-pool-list" id="bbRackPoolList">
                                 @forelse($bbRacks as $rack)
+                                    @php
+                                        $rId = $rack['id'] ?? '';
+                                        $rStatus = ($rackCheckStatus[$rId] ?? null);
+                                        $rDone = $rStatus['done'] ?? 0;
+                                        $rTotal = $rStatus['total'] ?? 0;
+                                    @endphp
                                     <div class="bb-rack-card"
                                          draggable="true"
-                                         data-rack-id="{{ $rack['id'] ?? '' }}"
+                                         data-rack-id="{{ $rId }}"
                                          data-rack-name="{{ $rack['name'] ?? '-' }}"
                                          data-rack-location="{{ $rack['location'] ?? '-' }}"
                                          data-rack-barcode="{{ $rack['barcode_value'] ?? '-' }}">
@@ -229,6 +288,11 @@
                                             <div class="bb-rack-card-name">{{ $rack['name'] ?? '-' }}</div>
                                             <div class="bb-rack-card-loc">📍 {{ $rack['location'] ?? '-' }}</div>
                                         </div>
+                                        @if($rTotal > 0)
+                                            <div style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 10px; white-space: nowrap; {{ $rDone >= $rTotal ? 'background: #d1fae5; color: #065f46;' : 'background: #fef3c7; color: #92400e;' }}">
+                                                {{ $rDone }}/{{ $rTotal }} ✓
+                                            </div>
+                                        @endif
                                     </div>
                                 @empty
                                     <div class="bb-rack-pool-empty">Belum ada rak aktif.</div>
@@ -300,21 +364,31 @@
 
                 {{-- Photo Proof --}}
                 <div style="margin-bottom: 20px;">
-                    <label style="display: flex; align-items: flex-start; gap: 10px; font-weight: 600; color: #333; cursor: pointer;">
-                        <input
-                            type="checkbox"
-                            id="requires_photo_proof"
-                            name="requires_photo_proof"
-                            value="1"
-                            {{ old('requires_photo_proof') ? 'checked' : '' }}
-                            style="margin-top: 3px;"
-                        >
-                        <span>📷 Wajib bukti foto saat waiter menyelesaikan tugas</span>
-                    </label>
-                    <div style="font-size: 13px; color: #666; margin-top: 8px; margin-left: 26px;">
-                        Jika aktif, waiter harus ambil/upload foto bukti (kamera HP) sebelum tombol verifikasi bisa diproses.
+                    <div style="font-weight: 600; color: #333; margin-bottom: 8px;">📷 Bukti Foto</div>
+                    <select id="requires_photo_proof" name="photo_mode" style="padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; width: 100%; max-width: 300px;">
+                        <option value="none" {{ old('photo_mode', 'none') === 'none' ? 'selected' : '' }}>Tidak wajib</option>
+                        <option value="after" {{ old('photo_mode') === 'after' ? 'selected' : '' }}>Wajib foto sesudah</option>
+                        <option value="both" {{ old('photo_mode') === 'both' ? 'selected' : '' }}>Wajib foto sebelum & sesudah</option>
+                    </select>
+                    <input type="hidden" name="requires_photo_proof" id="requires_photo_proof_hidden" value="{{ old('requires_photo_proof', '0') }}">
+                    <input type="hidden" name="requires_photo_before" id="requires_photo_before_hidden" value="{{ old('requires_photo_before', '0') }}">
+                    <div style="font-size: 13px; color: #666; margin-top: 8px;">
+                        "Sebelum & sesudah" = waiter harus foto kondisi rak sebelum mulai cek, lalu foto lagi setelah selesai.
                     </div>
                 </div>
+                <script>
+                    (function() {
+                        var sel = document.getElementById('requires_photo_proof');
+                        var hiddenProof = document.getElementById('requires_photo_proof_hidden');
+                        var hiddenBefore = document.getElementById('requires_photo_before_hidden');
+                        function syncPhotoMode() {
+                            hiddenProof.value = sel.value !== 'none' ? '1' : '0';
+                            hiddenBefore.value = sel.value === 'both' ? '1' : '0';
+                        }
+                        sel.addEventListener('change', syncPhotoMode);
+                        syncPhotoMode();
+                    })();
+                </script>
 
                 {{-- Schedule Section (rack_check) --}}
                 <div style="margin-bottom: 20px; padding: 14px; border: 1px solid #fdba74; border-radius: 10px; background: #fff7ed;">
@@ -415,301 +489,135 @@
                     </div>
                 </div>
             @else
-                {{-- ============================================================ --}}
-                {{-- GENERAL MODE: Keep ALL existing content exactly as-is         --}}
-                {{-- ============================================================ --}}
+                {{-- GENERAL MODE: Board Builder UI --}}
+                <div class="gt-wrapper">
+                    <input type="hidden" name="task_type" id="task_type" value="general">
+                    <input type="hidden" name="task_scope" value="general">
+                    <input type="hidden" id="batch_tasks_json" name="batch_tasks_json" value="">
 
-                <div style="margin-bottom: 20px;">
-                    <label for="title" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Judul Tugas <span style="color: #dc3545;">*</span>
-                    </label>
-                    <input type="text" id="title" name="title" value="{{ old('title') }}"
-                        placeholder="Contoh: Bersihkan area meja 5"
-                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; transition: border-color 0.3s;"                        required>
-                </div>
-
-                <div style="margin-bottom: 20px;">
-                    <label for="description" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Deskripsi <span style="color: #999; font-weight: normal;">(opsional)</span>
-                    </label>
-                    <textarea id="description" name="description" rows="3"
-                        placeholder="Detail tambahan tentang tugas..."
-                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; resize: vertical; font-family: inherit; transition: border-color 0.3s;">{{ old('description') }}</textarea>
-                </div>
-
-                <div style="margin-bottom: 25px;">
-                    <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
-                        Prioritas <span style="color: #dc3545;">*</span>
-                    </label>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <label style="flex: 1; min-width: 120px; cursor: pointer;">
-                            <input type="radio" name="priority" value="urgent" {{ old('priority') === 'urgent' ? 'checked' : '' }}
-                                style="display: none;" onchange="updatePriorityStyle(this)">
-                            <div class="priority-option" data-priority="urgent"
-                                style="padding: 14px; border: 2px solid #e0e0e0; border-radius: 8px; text-align: center; transition: all 0.3s;">
-                                <div style="font-size: 24px; margin-bottom: 6px;">🔴</div>
-                                <div style="font-weight: 600; font-size: 14px;">Urgent</div>
-                            </div>
-                        </label>
-                        <label style="flex: 1; min-width: 120px; cursor: pointer;">
-                            <input type="radio" name="priority" value="normal" {{ old('priority', 'normal') === 'normal' ? 'checked' : '' }}
-                                style="display: none;" onchange="updatePriorityStyle(this)">
-                            <div class="priority-option" data-priority="normal"
-                                style="padding: 14px; border: 2px solid #667eea; border-radius: 8px; text-align: center; background: #f0f3ff; transition: all 0.3s;">
-                                <div style="font-size: 24px; margin-bottom: 6px;">🔵</div>
-                                <div style="font-weight: 600; font-size: 14px;">Normal</div>
-                            </div>
-                        </label>
-                        <label style="flex: 1; min-width: 120px; cursor: pointer;">
-                            <input type="radio" name="priority" value="low" {{ old('priority') === 'low' ? 'checked' : '' }}
-                                style="display: none;" onchange="updatePriorityStyle(this)">
-                            <div class="priority-option" data-priority="low"
-                                style="padding: 14px; border: 2px solid #e0e0e0; border-radius: 8px; text-align: center; transition: all 0.3s;">
-                                <div style="font-size: 24px; margin-bottom: 6px;">⚪</div>
-                                <div style="font-weight: 600; font-size: 14px;">Low</div>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-
-                @php
-                    $taskType = $taskScopeMode === 'rack_check' ? 'rack_check' : 'general';
-                    $oldRackIdsInput = old('rack_ids', []);
-                    if (!is_array($oldRackIdsInput)) {
-                        $oldRackIdsInput = explode(',', (string) $oldRackIdsInput);
-                    }
-                    $oldRackIdsInput = array_values(array_filter(array_map(function ($rackId) {
-                        return trim((string) $rackId);
-                    }, $oldRackIdsInput), function ($rackId) {
-                        return $rackId !== '';
-                    }));
-
-                    $legacyRackId = trim((string) old('rack_id', ''));
-                    if ($legacyRackId !== '') {
-                        $oldRackIdsInput[] = $legacyRackId;
-                    }
-
-                    $selectedRackIds = array_values(array_unique($oldRackIdsInput));
-                    $rackTotalCount = count($racks ?? []);
-                    $selectedRackCount = count($selectedRackIds);
-                    $rackTargetScope = old('rack_target_scope', ($rackTotalCount > 0 && $selectedRackCount === $rackTotalCount) ? 'all' : 'single');
-                @endphp
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Jenis Halaman
-                    </label>
-                    <div style="display: inline-block; padding: 10px 14px; border-radius: 8px; background: #eef2ff; border: 1px solid #c7d2fe; color: #1f2937; font-weight: 700; font-size: 14px;">📝 Tugas Umum</div>
-                    <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                        Anda sedang membuat <b>{{ $taskScopeLabel }}</b>. Jenis tugas dikunci sesuai halaman agar tidak tercampur.
-                    </div>
-                </div>
-
-                <div id="rack-selector-wrapper" style="margin-bottom: 20px; display: none;">
-                    <input type="hidden" id="rack_target_scope" name="rack_target_scope" value="{{ $rackTargetScope }}">
-
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Pilih Rak Target (Bisa Multi-Pilih) <span style="color: #dc3545;">*</span>
-                    </label>
-
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #334155; cursor: pointer;">
-                            <input type="checkbox" id="rack_select_all" {{ ($rackTotalCount > 0 && $selectedRackCount === $rackTotalCount) ? 'checked' : '' }}>
-                            Pilih semua rak aktif
-                        </label>
-                        <span id="rack-selection-count-hint" style="font-size: 12px; color: #64748b;">
-                            {{ $selectedRackCount }} dari {{ $rackTotalCount }} rak dipilih
-                        </span>
+                    <div class="gt-info-banner">
+                        <div class="gt-info-banner-title">🛠️ Mode Tugas Umum</div>
+                        <div class="gt-info-banner-text">
+                            Buat tugas pada kolom <b>Tugas</b> di sebelah kiri, lalu <b>seret (drag)</b> tugas tersebut ke nama waiter di sebelah kanan.<br>
+                            Satu tugas bisa diseret ke lebih dari satu waiter. Gunakan tombol Quick Assign untuk membagi tugas dengan cepat.
+                        </div>
                     </div>
 
-                    <div id="rack-checkbox-list" style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); max-height: 280px; overflow: auto; padding: 10px; border: 1px solid #dbe2ea; border-radius: 10px; background: #f8fafc;">
-                        @forelse(($racks ?? []) as $rack)
-                            @php
-                                $rackId = (string) ($rack['id'] ?? '');
-                                $isChecked = in_array($rackId, $selectedRackIds, true);
-                            @endphp
-                            <label class="rack-checkbox-item" style="display: block; border: 1px solid #dbe2ea; border-radius: 8px; padding: 10px; background: #fff; cursor: pointer;">
-                                <div style="display: flex; align-items: flex-start; gap: 8px;">
-                                    <input
-                                        type="checkbox"
-                                        class="js-rack-checkbox"
-                                        name="rack_ids[]"
-                                        value="{{ $rackId }}"
-                                        {{ $isChecked ? 'checked' : '' }}
-                                        style="margin-top: 3px;"
-                                    >
-                                    <div style="min-width: 0;">
-                                        <div style="font-weight: 700; color: #0f172a; word-break: break-word;">{{ $rack['name'] ?? '-' }}</div>
-                                        <div style="font-size: 12px; color: #64748b; word-break: break-word;">📍 {{ $rack['location'] ?? '-' }}</div>
-                                        <div style="font-size: 12px; color: #94a3b8; word-break: break-all;">QR: {{ $rack['barcode_value'] ?? '-' }}</div>
+                    <div class="gt-toolbar">
+                        <div class="gt-toolbar-label">Quick Assign:</div>
+                        <button type="button" class="gt-toolbar-btn js-gt-btn-assign-all">
+                            ✨ Assign Semua
+                        </button>
+                        <button type="button" class="gt-toolbar-btn js-gt-btn-merata">
+                            🎲 Rolling Merata
+                        </button>
+                        <div style="width: 1px; background: #cbd5e1; margin: 0 4px;"></div>
+                        <div class="gt-toolbar-label">Filter:</div>
+                        <select class="gt-toolbar-select js-gt-role-filter">
+                            <option value="all">Semua Role</option>
+                            <option value="pelayan">Pelayan Saja</option>
+                            <option value="kasir">Kasir Saja</option>
+                        </select>
+                        <div style="margin-left: auto;">
+                            <button type="button" class="gt-toolbar-btn gt-toolbar-btn--reset js-gt-btn-reset">
+                                🗑️ Reset
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="gt-board">
+                        {{-- LEFT COLUMN: Task Pool --}}
+                        <div class="gt-task-pool js-gt-task-pool">
+                            <div class="gt-task-pool-header">
+                                <span>📝 Tugas</span>
+                                <span class="gt-task-pool-count js-gt-pool-count">0 dibuat</span>
+                            </div>
+                            
+                            <div class="gt-task-pool-list js-gt-pool-list">
+                                <div class="gt-task-pool-empty js-gt-pool-empty">
+                                    Belum ada tugas. Buat tugas baru di bawah.
+                                </div>
+                            </div>
+
+                            <div class="gt-task-add-form">
+                                <div class="gt-task-add-form-group">
+                                    <input type="text" id="gt_new_title" placeholder="Judul tugas (wajib)...">
+                                </div>
+                                <div class="gt-task-add-form-group">
+                                    <textarea id="gt_new_desc" rows="2" placeholder="Deskripsi tugas (opsional)..."></textarea>
+                                </div>
+                                <div class="gt-task-add-form-group">
+                                    <select id="gt_new_category">
+                                        <option value="">Pilih Kategori (opsional)</option>
+                                        @foreach(($categories ?? []) as $cat)
+                                            <option value="{{ $cat['id'] }}" data-color="{{ $cat['color'] }}">{{ $cat['name'] }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="gt-task-add-form-group" style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap;">📷 Foto:</label>
+                                    <select id="gt_new_photo" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;">
+                                        <option value="none">Tidak wajib</option>
+                                        <option value="after">Wajib foto sesudah</option>
+                                        <option value="both">Wajib sebelum & sesudah</option>
+                                    </select>
+                                </div>
+                                <div class="gt-task-add-form-group" style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap;">🔄 Ulangi:</label>
+                                    <input type="number" id="gt_new_repeat" min="1" max="10" value="1" style="width: 60px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-align: center;">
+                                    <span style="font-size: 11px; color: #94a3b8;">kali per waiter</span>
+                                </div>
+                                <div class="gt-task-add-form-group" style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap;">⏰ Batas waktu:</label>
+                                    <input type="time" id="gt_new_deadline" value="" style="width: 110px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                                    <span style="font-size: 11px; color: #94a3b8;">opsional</span>
+                                </div>
+                                <button type="button" class="gt-task-add-btn js-gt-btn-add">
+                                    + Tambah Tugas
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- RIGHT COLUMN: Waiter Lanes --}}
+                        <div class="gt-waiter-lanes">
+                            @forelse(($waiters ?? []) as $waiter)
+                                @php
+                                    $waiterId = (string) ($waiter['id'] ?? '');
+                                    $waiterRole = strtolower((string) ($waiter['waiter_role'] ?? 'pelayan'));
+                                    $isWaiterOff = ($waiterDayOffMap[$waiterId] ?? false);
+                                @endphp
+                                <div class="gt-waiter-lane js-gt-waiter-lane" data-waiter-id="{{ $waiterId }}" data-waiter-role="{{ $waiterRole }}">
+                                    <div class="gt-waiter-lane-header">
+                                        <div class="gt-waiter-avatar gt-waiter-avatar--{{ $waiterRole }}">
+                                            {{ strtoupper(substr($waiter['name'] ?? 'U', 0, 1)) }}
+                                        </div>
+                                        <div>
+                                            <div class="gt-waiter-lane-name">
+                                                {{ $waiter['name'] ?? '-' }}
+                                                @if($isWaiterOff)
+                                                    <span style="color: #dc2626; font-size: 11px; font-weight: 600; margin-left: 4px;">LIBUR</span>
+                                                @endif
+                                            </div>
+                                            <div class="gt-waiter-lane-role">{{ $waiterRole }}</div>
+                                        </div>
+                                        <div class="gt-waiter-lane-count js-gt-lane-count">0</div>
+                                    </div>
+                                    <div class="gt-waiter-lane-drop js-gt-lane-drop">
+                                        <div class="gt-waiter-lane-placeholder js-gt-lane-placeholder">Seret tugas ke sini</div>
                                     </div>
                                 </div>
-                            </label>
-                        @empty
-                            <div style="font-size: 13px; color: #b91c1c;">Belum ada rak aktif untuk dipilih.</div>
-                        @endforelse
-                    </div>
-
-                    <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                        Supervisor bisa memilih satu atau beberapa rak sekaligus. Sistem akan membuat task cek-rak per rak terpilih.
-                        <br>
-                        Rak belum ada? <a href="{{ route('admin.racks.create') }}" target="_blank" rel="noopener">Tambah rak dulu</a>.
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 20px;">
-                    <label style="display: flex; align-items: flex-start; gap: 10px; font-weight: 600; color: #333; cursor: pointer;">
-                        <input
-                            type="checkbox"
-                            id="requires_photo_proof"
-                            name="requires_photo_proof"
-                            value="1"
-                            {{ old('requires_photo_proof') ? 'checked' : '' }}
-                            style="margin-top: 3px;"
-                        >
-                        <span>📷 Wajib bukti foto saat waiter menyelesaikan tugas</span>
-                    </label>
-                    <div style="font-size: 13px; color: #666; margin-top: 8px; margin-left: 26px;">
-                        Jika aktif, waiter harus ambil/upload foto bukti (kamera HP) sebelum tombol verifikasi bisa diproses.
-                    </div>
-                </div>
-
-                @php
-                    $assignmentType = old('assignment_type', 'all');
-                    $assignedWaiterRole = old('assigned_waiter_role', 'pelayan');
-                    $roleAssignmentMode = old('role_assignment_mode', $taskScopeMode === 'rack_check' ? 'rolling' : 'all');
-                    $oldSelectedWaiterIdsInput = old('selected_waiter_ids', []);
-                    if (!is_array($oldSelectedWaiterIdsInput)) {
-                        $oldSelectedWaiterIdsInput = explode(',', (string) $oldSelectedWaiterIdsInput);
-                    }
-                    $selectedWaiterIds = array_values(array_unique(array_filter(array_map(function ($waiterId) {
-                        return trim((string) $waiterId);
-                    }, $oldSelectedWaiterIdsInput), function ($waiterId) {
-                        return $waiterId !== '';
-                    })));
-                    $activePelayanCount = collect($waiters ?? [])->filter(function ($waiter) {
-                        return strtolower((string) ($waiter['waiter_role'] ?? 'pelayan')) === 'pelayan';
-                    })->count();
-                    $activeKasirCount = collect($waiters ?? [])->filter(function ($waiter) {
-                        return strtolower((string) ($waiter['waiter_role'] ?? 'pelayan')) === 'kasir';
-                    })->count();
-                @endphp
-                <div style="margin-bottom: 20px;">
-                    <label for="assignment_type" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Delegasi Ke <span style="color: #dc3545;">*</span>
-                    </label>
-                    <select
-                        id="assignment_type"
-                        name="assignment_type"
-                        onchange="toggleAssignmentFields()"
-                        style="width: 260px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                    >
-                        <option value="all" {{ $assignmentType === 'all' ? 'selected' : '' }}>Semua Waiter Aktif</option>
-                        <option value="single" {{ $assignmentType === 'single' ? 'selected' : '' }}>Waiter Tertentu</option>
-                        <option value="role" {{ $assignmentType === 'role' ? 'selected' : '' }}>Berdasarkan Role</option>
-                    </select>
-                    <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                        Supervisor bisa kirim ke 1 waiter, semua waiter aktif, atau waiter berdasarkan role.
-                    </div>
-                </div>
-
-                <div id="single-waiter-wrapper" style="margin-bottom: 20px; display: none;">
-                    <label for="assigned_waiter_id" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Pilih Nama Waiter <span style="color: #dc3545;">*</span>
-                    </label>
-                    <select
-                        id="assigned_waiter_id"
-                        name="assigned_waiter_id"
-                        style="width: 100%; max-width: 420px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                    >
-                        <option value="">-- Pilih waiter --</option>
-                        @foreach(($waiters ?? []) as $waiter)
-                            @php $isDayOff = ($waiterDayOffMap[$waiter['id'] ?? ''] ?? false); @endphp
-                            <option value="{{ $waiter['id'] }}" {{ old('assigned_waiter_id') === ($waiter['id'] ?? '') ? 'selected' : '' }}>
-                                {{ $waiter['name'] ?? '-' }} ({{ $waiter['email'] ?? '-' }}){{ $isDayOff ? ' — LIBUR HARI INI' : '' }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div id="role-waiter-wrapper" style="margin-bottom: 20px; display: none;">
-                    <label for="assigned_waiter_role" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Pilih Role Waiter <span style="color: #dc3545;">*</span>
-                    </label>
-                    <select
-                        id="assigned_waiter_role"
-                        name="assigned_waiter_role"
-                        style="width: 100%; max-width: 320px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                    >
-                        <option value="pelayan" {{ $assignedWaiterRole === 'pelayan' ? 'selected' : '' }}>Pelayan ({{ $activePelayanCount }} aktif)</option>
-                        <option value="kasir" {{ $assignedWaiterRole === 'kasir' ? 'selected' : '' }}>Kasir ({{ $activeKasirCount }} aktif)</option>
-                    </select>
-                </div>
-
-                <div id="role-assignment-mode-wrapper" style="margin-bottom: 20px; display: none;">
-                    <label for="role_assignment_mode" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Mode Delegasi Role <span style="color: #dc3545;">*</span>
-                    </label>
-                    <select
-                        id="role_assignment_mode"
-                        name="role_assignment_mode"
-                        style="width: 100%; max-width: 360px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                    >
-                        <option value="all" {{ $roleAssignmentMode === 'all' ? 'selected' : '' }}>Semua Waiter dalam Role</option>
-                        <option value="selected" {{ $roleAssignmentMode === 'selected' ? 'selected' : '' }}>Pilih Waiter Tertentu (Checklist)</option>
-                        <option value="rolling" data-rack-only="1" {{ $roleAssignmentMode === 'rolling' ? 'selected' : '' }}>Rolling per Rak (disarankan untuk Cek Rak)</option>
-                    </select>
-                    <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                        Pilih <b>Semua</b> untuk broadcast satu role, <b>Pilih Waiter Tertentu</b> untuk subset via checkbox,
-                        atau <b>Rolling per Rak</b> untuk pembagian merata yang berotasi otomatis setiap hari.
-                        Anda juga bisa memilih waiter tertentu lalu tetap memakai rolling per rak.
-                    </div>
-                </div>
-
-                <div id="role-selected-waiters-wrapper" style="margin-bottom: 20px; display: none;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-                        Pilih Nama Waiter dalam Role <span style="color: #dc3545;">*</span>
-                    </label>
-
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #334155; cursor: pointer;">
-                            <input type="checkbox" id="role_waiter_select_all">
-                            Pilih semua waiter yang tampil
-                        </label>
-                        <span id="role-selection-count-hint" style="font-size: 12px; color: #64748b;">0 waiter dipilih</span>
-                    </div>
-
-                    <div id="role-waiter-checkbox-list" style="display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); max-height: 240px; overflow: auto; padding: 10px; border: 1px solid #dbe2ea; border-radius: 10px; background: #f8fafc;">
-                        @foreach(($waiters ?? []) as $waiter)
-                            @php
-                                $waiterId = (string) ($waiter['id'] ?? '');
-                                $waiterRole = strtolower((string) ($waiter['waiter_role'] ?? 'pelayan'));
-                                $isSelectedWaiter = in_array($waiterId, $selectedWaiterIds, true);
-                                $isWaiterOff = ($waiterDayOffMap[$waiterId] ?? false);
-                            @endphp
-                            <label class="role-waiter-item" data-waiter-role="{{ $waiterRole }}">
-                                <div style="display: flex; align-items: flex-start; gap: 8px;">
-                                    <input
-                                        type="checkbox"
-                                        class="js-role-waiter-checkbox"
-                                        name="selected_waiter_ids[]"
-                                        value="{{ $waiterId }}"
-                                        data-waiter-role="{{ $waiterRole }}"
-                                        {{ $isSelectedWaiter ? 'checked' : '' }}
-                                        style="margin-top: 3px;"
-                                    >
-                                    <div style="min-width: 0;">
-                                        <div style="font-weight: 700; color: #0f172a; word-break: break-word;">{{ $waiter['name'] ?? '-' }}@if($isWaiterOff) <span style="color: #dc2626; font-size: 11px; font-weight: 600;">LIBUR</span>@endif</div>
-                                        <div style="font-size: 12px; color: #64748b; word-break: break-all;">{{ $waiter['email'] ?? '-' }}</div>
-                                        <div style="font-size: 12px; color: #94a3b8; text-transform: capitalize;">Role: {{ $waiterRole }}</div>
-                                    </div>
+                            @empty
+                                <div style="text-align: center; padding: 20px; color: #64748b; background: #fff; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                    Tidak ada data waiter aktif.
                                 </div>
-                            </label>
-                        @endforeach
+                            @endforelse
+                        </div>
                     </div>
 
-                    <div style="font-size: 13px; color: #666; margin-top: 8px;">
-                        Centang waiter yang dipilih untuk menerima tugas pada role ini.
-                        Jika mode <b>Rolling per Rak</b> aktif dan tidak ada checklist waiter, sistem akan memakai semua waiter pada role.
+                    <div class="gt-summary js-gt-summary">
+                        <div style="font-weight: 700; margin-bottom: 4px;" class="js-gt-summary-title">Status Tugas</div>
+                        <div class="js-gt-summary-text">0 tugas dibuat, 0 tugas di-assign.</div>
+                        <div class="gt-summary-detail js-gt-summary-detail"></div>
                     </div>
                 </div>
 
@@ -832,6 +740,499 @@
     </div>
 
     <script>
+        {{-- General Mode Board Builder Logic --}}
+        (function() {
+            var taskTypeInput = document.getElementById('task_type');
+            if (!taskTypeInput || taskTypeInput.value !== 'general') return;
+
+            var taskPool = [];
+            var assignments = {}; 
+            var taskIdCounter = 0;
+
+            var DOM = {
+                title: document.getElementById('gt_new_title'),
+                desc: document.getElementById('gt_new_desc'),
+                cat: document.getElementById('gt_new_category'),
+                photo: document.getElementById('gt_new_photo'),
+                btnAdd: document.querySelector('.js-gt-btn-add'),
+                poolList: document.querySelector('.js-gt-pool-list'),
+                poolCount: document.querySelector('.js-gt-pool-count'),
+                emptyState: document.querySelector('.js-gt-pool-empty'),
+                lanes: document.querySelectorAll('.js-gt-waiter-lane'),
+                roleFilter: document.querySelector('.js-gt-role-filter'),
+                btnAssignAll: document.querySelector('.js-gt-btn-assign-all'),
+                btnMerata: document.querySelector('.js-gt-btn-merata'),
+                btnReset: document.querySelector('.js-gt-btn-reset'),
+                summary: document.querySelector('.js-gt-summary'),
+                summaryTitle: document.querySelector('.js-gt-summary-title'),
+                summaryText: document.querySelector('.js-gt-summary-text'),
+                summaryDetail: document.querySelector('.js-gt-summary-detail'),
+                jsonField: document.getElementById('batch_tasks_json'),
+                form: document.querySelector('form')
+            };
+
+            function updateSummary() {
+                var totalTasks = taskPool.length;
+                var assignedTasks = new Set();
+                
+                Object.keys(assignments).forEach(function(wid) {
+                    assignments[wid].forEach(function(tid) {
+                        assignedTasks.add(tid);
+                    });
+                });
+
+                var assignedCount = assignedTasks.size;
+                var isWarning = totalTasks > 0 && assignedCount < totalTasks;
+
+                if (totalTasks === 0) {
+                    DOM.summary.classList.remove('is-visible');
+                    return;
+                }
+
+                DOM.summary.classList.add('is-visible');
+                DOM.summaryText.textContent = totalTasks + " tugas dibuat, " + assignedCount + " sudah di-assign ke waiter.";
+                
+                if (isWarning) {
+                    DOM.summary.classList.add('gt-summary-warn');
+                    DOM.summaryTitle.textContent = "⚠️ Perhatian";
+                    DOM.summaryDetail.innerHTML = "Ada <b>" + (totalTasks - assignedCount) + "</b> tugas yang belum diberikan ke siapapun.";
+                } else {
+                    DOM.summary.classList.remove('gt-summary-warn');
+                    DOM.summaryTitle.textContent = "✅ Status Tugas";
+                    DOM.summaryDetail.innerHTML = "Semua tugas sudah diberikan minimal ke 1 waiter.";
+                }
+
+                // Update lane counters
+                DOM.lanes.forEach(function(lane) {
+                    var wid = lane.getAttribute('data-waiter-id');
+                    var count = (assignments[wid] || []).length;
+                    lane.querySelector('.js-gt-lane-count').textContent = count;
+                });
+            }
+
+            function syncJSON() {
+                var payload = {
+                    tasks: taskPool.map(function(t) {
+                        return {
+                            title: t.title,
+                            description: t.description,
+                            category_id: t.category_id,
+                            category_name: t.category_name,
+                            requires_photo_proof: t.requires_photo_proof,
+                            requires_photo_before: t.requires_photo_before || false,
+                            repeat_count: t.repeat_count || 1,
+                            deadline_time: t.deadline_time || null
+                        };
+                    }),
+                    assignments: {}
+                };
+
+                // Map assignments from task.id to task index in payload.tasks array
+                Object.keys(assignments).forEach(function(wid) {
+                    var assignedIndices = [];
+                    assignments[wid].forEach(function(tid) {
+                        var index = taskPool.findIndex(function(t) { return t.id === tid; });
+                        if (index !== -1) assignedIndices.push(index);
+                    });
+                    if (assignedIndices.length > 0) {
+                        payload.assignments[wid] = assignedIndices;
+                    }
+                });
+
+                DOM.jsonField.value = JSON.stringify(payload);
+            }
+
+            function renderPool() {
+                DOM.poolList.innerHTML = '';
+                DOM.poolCount.textContent = taskPool.length + " dibuat";
+
+                if (taskPool.length === 0) {
+                    DOM.poolList.appendChild(DOM.emptyState);
+                    return;
+                }
+
+                taskPool.forEach(function(task) {
+                    var card = document.createElement('div');
+                    card.className = 'gt-task-card';
+                    card.setAttribute('draggable', 'true');
+                    card.setAttribute('data-task-id', task.id);
+
+                    var catHtml = '';
+                    if (task.category_name) {
+                        catHtml = '<div class="gt-task-card-cat">' +
+                                  '<div class="gt-task-card-cat-dot" style="background: ' + (task.category_color || '#cbd5e1') + '"></div>' +
+                                  task.category_name + '</div>';
+                    }
+
+                    var proofHtml = task.requires_photo_before ? '<div class="gt-task-card-proof" title="Wajib Foto Sebelum & Sesudah">📷📷</div>' : (task.requires_photo_proof ? '<div class="gt-task-card-proof" title="Wajib Foto Bukti">📷</div>' : '');
+                    var repeatHtml = task.repeat_count > 1 ? '<div class="gt-task-card-proof" title="Ulangi ' + task.repeat_count + 'x" style="color: #6366f1;">🔄 ' + task.repeat_count + 'x</div>' : '';
+                    var deadlineHtml = task.deadline_time ? '<div class="gt-task-card-proof" title="Batas waktu ' + task.deadline_time + '" style="color: #d97706;">⏰ ' + task.deadline_time + '</div>' : '';
+
+                    card.innerHTML = 
+                        '<button type="button" class="gt-task-card-remove" title="Hapus tugas">×</button>' +
+                        '<div class="gt-task-card-header">' +
+                            '<div class="gt-task-card-icon">📝</div>' +
+                            '<div class="gt-task-card-title" title="' + task.title + '">' + task.title + '</div>' +
+                        '</div>' +
+                        '<div class="gt-task-card-meta">' + catHtml + proofHtml + repeatHtml + deadlineHtml + '</div>';
+
+                    // Delete task
+                    card.querySelector('.gt-task-card-remove').addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        if (confirm('Hapus tugas ini?')) {
+                            taskPool = taskPool.filter(function(t) { return t.id !== task.id; });
+                            Object.keys(assignments).forEach(function(wid) {
+                                assignments[wid] = assignments[wid].filter(function(tid) { return tid !== task.id; });
+                            });
+                            renderPool();
+                            renderLanes();
+                            updateSummary();
+                            syncJSON();
+                        }
+                    });
+
+                    // Drag Start
+                    card.addEventListener('dragstart', function(e) {
+                        e.dataTransfer.setData('text/plain', task.id);
+                        e.dataTransfer.setData('application/x-gt-source', 'pool');
+                        card.classList.add('is-dragging');
+                    });
+                    card.addEventListener('dragend', function() {
+                        card.classList.remove('is-dragging');
+                    });
+
+                    // Touch support
+                    card.addEventListener('touchstart', function(e) {
+                        handleTouchStart(e, task.id, 'pool', null);
+                    }, { passive: true });
+
+                    DOM.poolList.appendChild(card);
+                });
+            }
+
+            function renderLanes() {
+                DOM.lanes.forEach(function(lane) {
+                    var wid = lane.getAttribute('data-waiter-id');
+                    var dropZone = lane.querySelector('.js-gt-lane-drop');
+                    var placeholder = dropZone.querySelector('.js-gt-lane-placeholder');
+                    
+                    // Clear existing chips
+                    Array.from(dropZone.querySelectorAll('.gt-task-chip')).forEach(function(el) { el.remove(); });
+
+                    var myTasks = assignments[wid] || [];
+                    if (myTasks.length === 0) {
+                        if (placeholder) placeholder.style.display = 'block';
+                    } else {
+                        if (placeholder) placeholder.style.display = 'none';
+                        
+                        myTasks.forEach(function(tid) {
+                            var task = taskPool.find(function(t) { return t.id === tid; });
+                            if (!task) return;
+
+                            var chip = document.createElement('div');
+                            chip.className = 'gt-task-chip';
+                            chip.setAttribute('draggable', 'true');
+                            chip.setAttribute('data-task-id', task.id);
+                            chip.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 600; color: #334155; cursor: grab;';
+
+                            var chipRepeat = task.repeat_count > 1 ? ' <span style="color:#6366f1; font-size:10px;">🔄' + task.repeat_count + 'x</span>' : '';
+                            chip.innerHTML = 
+                                '<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">' + task.title + chipRepeat + '</span>' +
+                                '<button type="button" class="gt-task-chip-remove" style="border: none; background: #e2e8f0; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #64748b; font-size: 10px;">×</button>';
+
+                            // Remove from lane
+                            chip.querySelector('.gt-task-chip-remove').addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                assignments[wid] = assignments[wid].filter(function(id) { return id !== task.id; });
+                                renderLanes();
+                                updateSummary();
+                                syncJSON();
+                            });
+
+                            // Drag from lane back to pool (unassign)
+                            chip.addEventListener('dragstart', function(e) {
+                                e.dataTransfer.setData('text/plain', task.id);
+                                e.dataTransfer.setData('application/x-gt-source', 'lane');
+                                e.dataTransfer.setData('application/x-gt-waiter', wid);
+                                chip.style.opacity = '0.5';
+                            });
+                            chip.addEventListener('dragend', function() {
+                                chip.style.opacity = '1';
+                            });
+
+                            // Touch from lane
+                            chip.addEventListener('touchstart', function(e) {
+                                handleTouchStart(e, task.id, 'lane', wid);
+                            }, { passive: true });
+
+                            dropZone.appendChild(chip);
+                        });
+                    }
+                });
+            }
+
+            function assignTask(tid, wid) {
+                if (!assignments[wid]) assignments[wid] = [];
+                if (assignments[wid].indexOf(tid) === -1) {
+                    assignments[wid].push(tid);
+                }
+            }
+
+            // --- Add Task ---
+            DOM.btnAdd.addEventListener('click', function() {
+                var title = DOM.title.value.trim();
+                if (!title) {
+                    alert('Judul tugas wajib diisi.');
+                    DOM.title.focus();
+                    return;
+                }
+
+                var catOpt = DOM.cat.options[DOM.cat.selectedIndex];
+                
+                var repeatInput = document.getElementById('gt_new_repeat');
+                var repeatCount = Math.max(1, Math.min(10, parseInt(repeatInput.value) || 1));
+                var deadlineInput = document.getElementById('gt_new_deadline');
+                var deadlineTime = deadlineInput.value || '';
+
+                var newTask = {
+                    id: 't_' + (++taskIdCounter) + '_' + Date.now(),
+                    title: title,
+                    description: DOM.desc.value.trim(),
+                    category_id: catOpt.value,
+                    category_name: catOpt.value ? catOpt.text : '',
+                    category_color: catOpt.value ? catOpt.getAttribute('data-color') : '',
+                    requires_photo_proof: DOM.photo.value !== 'none',
+                    requires_photo_before: DOM.photo.value === 'both',
+                    repeat_count: repeatCount,
+                    deadline_time: deadlineTime
+                };
+
+                taskPool.push(newTask);
+                
+                // Reset form
+                DOM.title.value = '';
+                DOM.desc.value = '';
+                DOM.cat.selectedIndex = 0;
+                DOM.photo.value = 'none';
+                repeatInput.value = '1';
+                deadlineInput.value = '';
+                DOM.title.focus();
+
+                renderPool();
+                updateSummary();
+                syncJSON();
+            });
+
+            // --- Drag and Drop ---
+            DOM.lanes.forEach(function(lane) {
+                lane.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    lane.classList.add('is-drag-over');
+                });
+                lane.addEventListener('dragleave', function() {
+                    lane.classList.remove('is-drag-over');
+                });
+                lane.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    lane.classList.remove('is-drag-over');
+                    
+                    var tid = e.dataTransfer.getData('text/plain');
+                    var wid = lane.getAttribute('data-waiter-id');
+                    
+                    if (tid && wid) {
+                        assignTask(tid, wid);
+                        renderLanes();
+                        updateSummary();
+                        syncJSON();
+                    }
+                });
+            });
+
+            // Pool Drop Zone (unassign)
+            var poolZone = document.querySelector('.js-gt-task-pool');
+            poolZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                poolZone.style.borderColor = '#818cf8';
+                poolZone.style.background = '#eef2ff';
+            });
+            poolZone.addEventListener('dragleave', function() {
+                poolZone.style.borderColor = '';
+                poolZone.style.background = '';
+            });
+            poolZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                poolZone.style.borderColor = '';
+                poolZone.style.background = '';
+
+                var tid = e.dataTransfer.getData('text/plain');
+                var src = e.dataTransfer.getData('application/x-gt-source');
+                var srcWid = e.dataTransfer.getData('application/x-gt-waiter');
+
+                if (tid && src === 'lane' && srcWid) {
+                    assignments[srcWid] = assignments[srcWid].filter(function(id) { return id !== tid; });
+                    renderLanes();
+                    updateSummary();
+                    syncJSON();
+                }
+            });
+
+            // --- Touch Dragging ---
+            var touchState = { active: false, tid: null, clone: null, srcWid: null, srcType: null };
+            
+            function handleTouchStart(e, tid, srcType, srcWid) {
+                touchState.active = true;
+                touchState.tid = tid;
+                touchState.srcType = srcType;
+                touchState.srcWid = srcWid;
+
+                var clone = e.target.closest(srcType === 'pool' ? '.gt-task-card' : '.gt-task-chip').cloneNode(true);
+                clone.style.position = 'fixed';
+                clone.style.opacity = '0.8';
+                clone.style.zIndex = '9999';
+                clone.style.pointerEvents = 'none';
+                clone.style.width = '200px';
+                document.body.appendChild(clone);
+                touchState.clone = clone;
+                
+                var touch = e.touches[0];
+                moveClone(touch.clientX, touch.clientY);
+            }
+
+            function moveClone(x, y) {
+                if (touchState.clone) {
+                    touchState.clone.style.left = (x - 20) + 'px';
+                    touchState.clone.style.top = (y - 20) + 'px';
+                }
+            }
+
+            document.addEventListener('touchmove', function(e) {
+                if (!touchState.active) return;
+                e.preventDefault(); // prevent scroll
+                var touch = e.touches[0];
+                moveClone(touch.clientX, touch.clientY);
+            }, { passive: false });
+
+            document.addEventListener('touchend', function(e) {
+                if (!touchState.active) return;
+                
+                if (touchState.clone) {
+                    touchState.clone.remove();
+                    touchState.clone = null;
+                }
+
+                var touch = e.changedTouches[0];
+                var el = document.elementFromPoint(touch.clientX, touch.clientY);
+                
+                if (el) {
+                    var targetLane = el.closest('.gt-waiter-lane');
+                    var targetPool = el.closest('.gt-task-pool');
+
+                    if (targetLane && touchState.tid) {
+                        var wid = targetLane.getAttribute('data-waiter-id');
+                        assignTask(touchState.tid, wid);
+                        renderLanes();
+                        updateSummary();
+                        syncJSON();
+                    } else if (targetPool && touchState.srcType === 'lane' && touchState.srcWid) {
+                        assignments[touchState.srcWid] = assignments[touchState.srcWid].filter(function(id) { return id !== touchState.tid; });
+                        renderLanes();
+                        updateSummary();
+                        syncJSON();
+                    }
+                }
+
+                touchState.active = false;
+            });
+
+            // --- Toolbar Actions ---
+            function getVisibleLanes() {
+                return Array.from(DOM.lanes).filter(function(lane) { return lane.style.display !== 'none'; });
+            }
+
+            DOM.roleFilter.addEventListener('change', function() {
+                var val = this.value;
+                DOM.lanes.forEach(function(lane) {
+                    var role = lane.getAttribute('data-waiter-role');
+                    lane.style.display = (val === 'all' || role === val) ? 'flex' : 'none';
+                });
+            });
+
+            DOM.btnAssignAll.addEventListener('click', function() {
+                if (taskPool.length === 0) return alert('Buat tugas terlebih dahulu.');
+                var visibleLanes = getVisibleLanes();
+                if (visibleLanes.length === 0) return;
+
+                taskPool.forEach(function(task) {
+                    visibleLanes.forEach(function(lane) {
+                        assignTask(task.id, lane.getAttribute('data-waiter-id'));
+                    });
+                });
+                renderLanes();
+                updateSummary();
+                syncJSON();
+            });
+
+            DOM.btnMerata.addEventListener('click', function() {
+                if (taskPool.length === 0) return alert('Buat tugas terlebih dahulu.');
+                var visibleLanes = getVisibleLanes();
+                if (visibleLanes.length === 0) return;
+
+                var idx = 0;
+                taskPool.forEach(function(task) {
+                    var lane = visibleLanes[idx % visibleLanes.length];
+                    assignTask(task.id, lane.getAttribute('data-waiter-id'));
+                    idx++;
+                });
+                renderLanes();
+                updateSummary();
+                syncJSON();
+            });
+
+            DOM.btnReset.addEventListener('click', function() {
+                if (confirm('Hapus semua penugasan (kembalikan tugas ke pool)?')) {
+                    Object.keys(assignments).forEach(function(wid) { assignments[wid] = []; });
+                    renderLanes();
+                    updateSummary();
+                    syncJSON();
+                }
+            });
+
+            // --- Form Submit Validation ---
+            DOM.form.addEventListener('submit', function(e) {
+                // Only validate if general mode is active
+                if (document.getElementById('task_type').value !== 'general') return;
+
+                if (taskPool.length === 0) {
+                    e.preventDefault();
+                    alert('Anda belum membuat satupun tugas.');
+                    return;
+                }
+
+                var unassignedCount = 0;
+                var assignedTasks = new Set();
+                Object.keys(assignments).forEach(function(wid) {
+                    assignments[wid].forEach(function(tid) { assignedTasks.add(tid); });
+                });
+
+                unassignedCount = taskPool.length - assignedTasks.size;
+
+                if (unassignedCount > 0) {
+                    if (!confirm('Ada ' + unassignedCount + ' tugas yang belum di-assign. Tetap lanjutkan? Tugas yang tidak di-assign tidak akan dikirim.')) {
+                        e.preventDefault();
+                    }
+                }
+                
+                // Ensure JSON is synced
+                syncJSON();
+            });
+
+        })();
+
+        function updateCategoryName(selectEl) {
+            const selected = selectEl.options[selectEl.selectedIndex];
+            document.getElementById('category_name').value = selected.dataset.name || '';
+        }
+
         function updatePriorityStyle(radio) {
             // Reset all options
             document.querySelectorAll('.priority-option').forEach(el => {

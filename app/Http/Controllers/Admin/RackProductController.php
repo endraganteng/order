@@ -426,10 +426,16 @@ class RackProductController extends Controller
             $quantities = [];
         }
 
+        $minQuantities = $request->input('min_quantities', []);
+        if (! is_array($minQuantities)) {
+            $minQuantities = [];
+        }
+
         $assignments = [];
         foreach ($productIds as $productId) {
             $assignments[$productId] = [
                 'standard_qty' => max(0, (int) ($quantities[$productId] ?? 0)),
+                'min_qty' => max(0, (int) ($minQuantities[$productId] ?? 0)),
             ];
         }
 
