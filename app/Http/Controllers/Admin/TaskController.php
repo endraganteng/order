@@ -276,7 +276,7 @@ class TaskController extends Controller
 
             $rackTargetScope = count($selectedRacks) === count($activeRacks) ? 'all' : 'single';
 
-            $taskRackPayloads = array_map(function ($rack) use ($requiresPhotoProof, $requiresPhotoBefore, $rackTargetScope) {
+            $taskRackPayloads = array_map(function ($rack) use ($requiresPhotoProof, $requiresPhotoBefore, $rackTargetScope, $categoryId, $categoryName) {
                 return [
                     'task_type' => 'rack_check',
                     'requires_barcode_scan' => true,
@@ -287,6 +287,7 @@ class TaskController extends Controller
                     'rack_name' => $rack['name'] ?? null,
                     'rack_location' => $rack['location'] ?? null,
                     'rack_barcode_value' => $rack['barcode_value'] ?? null,
+                    'rack_type' => $rack['rack_type'] ?? 'storage',
                     'category_id' => $categoryId,
                     'category_name' => $categoryName,
                 ];
@@ -387,15 +388,19 @@ class TaskController extends Controller
             }
         }
 
-        if ($isRecurring && ! $request->filled('schedule_time')) {
+        $scheduleMode = (string) $request->input('schedule_mode', 'fixed');
+        $isShiftRelative = $scheduleMode === 'shift_relative';
+
+        if ($isRecurring && ! $isShiftRelative && ! $request->filled('schedule_time')) {
             return back()
-                ->withErrors(['schedule_time' => 'Jam jadwal wajib diisi untuk task berulang'])
+                ->withErrors(['schedule_time' => 'Jam jadwal wajib diisi untuk task berulang mode fixed'])
                 ->withInput();
         }
 
-        if ($isRecurring && ! $request->filled('time_limit_minutes')) {
+        $deadlineMode = (string) $request->input('deadline_mode', 'fixed');
+        if ($isRecurring && ! $isShiftRelative && $deadlineMode !== 'before_shift_end' && ! $request->filled('time_limit_minutes')) {
             return back()
-                ->withErrors(['time_limit_minutes' => 'Batas waktu (menit) wajib diisi untuk task berulang'])
+                ->withErrors(['time_limit_minutes' => 'Batas waktu (menit) wajib diisi untuk task berulang mode fixed'])
                 ->withInput();
         }
 
@@ -452,6 +457,16 @@ class TaskController extends Controller
             $fixedRackAssignments,
             $redirectRouteName
         );
+    }
+
+    /**
+     * Force generate recurring tasks NOW (bypass time checks) — for debugging.
+     */
+    public function forceGenerate()
+    {
+        $count = $this->firebase->generateDueRecurringWaiterTasks(true);
+
+        return back()->with('success', "Force generate selesai: {$count} task dibuat.");
     }
 
     /**
@@ -551,12 +566,21 @@ class TaskController extends Controller
                 ->withInput();
         }
 
+        $scheduleMode = (string) $request->input('schedule_mode', 'fixed');
+        $shiftOffsetMinutes = (int) $request->input('shift_offset_minutes', 0);
+        $deadlineMode = (string) $request->input('deadline_mode', 'fixed');
+        $deadlineBeforeEndMinutes = (int) $request->input('deadline_before_end_minutes', 60);
+
         $this->firebase->updateRecurringWaiterTaskTemplate($id, [
             'title' => $request->title,
             'description' => $request->description ?? '',
             'priority' => $request->priority,
             'schedule_time' => $scheduleTime,
             'time_limit_minutes' => $timeLimitMinutes,
+            'schedule_mode' => $scheduleMode,
+            'shift_offset_minutes' => $shiftOffsetMinutes,
+            'deadline_mode' => $deadlineMode,
+            'deadline_before_end_minutes' => $deadlineBeforeEndMinutes,
             'recurrence_type' => $recurrenceType,
             'weekly_day' => $recurrenceType === 'weekly' ? (int) $request->weekly_day : null,
             'interval_days' => $recurrenceType === 'every_n_days' ? (int) $request->interval_days : null,
@@ -912,6 +936,10 @@ class TaskController extends Controller
                 'rolling_slot_index' => $rollingSlotIndex,
                 'schedule_time' => $request->schedule_time,
                 'time_limit_minutes' => (int) $request->time_limit_minutes,
+                'schedule_mode' => (string) $request->input('schedule_mode', 'fixed'),
+                'shift_offset_minutes' => (int) $request->input('shift_offset_minutes', 0),
+                'deadline_mode' => (string) $request->input('deadline_mode', 'fixed'),
+                'deadline_before_end_minutes' => (int) $request->input('deadline_before_end_minutes', 60),
                 'recurrence_type' => $recurrenceType,
                 'weekly_day' => $recurrenceType === 'weekly' ? (int) $request->weekly_day : null,
                 'interval_days' => $recurrenceType === 'every_n_days' ? (int) $request->interval_days : null,

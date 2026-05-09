@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\RackProductController;
 use App\Http\Controllers\Admin\RestockController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\SupplierController;
 use App\Http\Controllers\Admin\TaskController;
 use App\Http\Controllers\Admin\WaiterController as AdminWaiterController;
 use App\Http\Controllers\Admin\WaiterPerformanceController;
@@ -95,6 +96,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         Route::get('tasks/rack-check', [TaskController::class, 'rackIndex'])->name('tasks.rack.index');
         Route::post('tasks/rack-check/reset', [TaskController::class, 'rackReset'])->name('tasks.rack.reset');
+        Route::post('tasks/force-generate', [TaskController::class, 'forceGenerate'])->name('tasks.force_generate');
         Route::get('tasks/create', [TaskController::class, 'create'])->name('tasks.create');
         Route::post('tasks', [TaskController::class, 'store'])->name('tasks.store');
         Route::post('tasks/cashiers', [TaskController::class, 'cashierStore'])->name('tasks.cashiers.store');
@@ -122,9 +124,20 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Restock & Purchase Orders
         Route::get('restock', [RestockController::class, 'index'])->name('restock.index');
         Route::post('restock/create-po', [RestockController::class, 'createPO'])->name('restock.create_po');
+        Route::post('restock/create-batch-po', [RestockController::class, 'createBatchPO'])->name('restock.create_batch_po');
         Route::get('restock/orders', [RestockController::class, 'orders'])->name('restock.orders');
         Route::get('restock/orders/{id}', [RestockController::class, 'orderDetail'])->name('restock.order_detail');
         Route::delete('restock/orders/{id}', [RestockController::class, 'cancelOrder'])->name('restock.cancel_order');
+        Route::post('restock/orders/{poId}/accept-as-is/{restockId}', [RestockController::class, 'acceptAsIs'])->name('restock.accept_as_is');
+
+        // Suppliers
+        Route::get('suppliers', [SupplierController::class, 'index'])->name('suppliers.index');
+        Route::get('suppliers/create', [SupplierController::class, 'create'])->name('suppliers.create');
+        Route::post('suppliers', [SupplierController::class, 'store'])->name('suppliers.store');
+        Route::post('suppliers/ajax-store', [SupplierController::class, 'storeAjax'])->name('suppliers.ajax_store');
+        Route::get('suppliers/{id}/edit', [SupplierController::class, 'edit'])->name('suppliers.edit');
+        Route::put('suppliers/{id}', [SupplierController::class, 'update'])->name('suppliers.update');
+        Route::delete('suppliers/{id}', [SupplierController::class, 'destroy'])->name('suppliers.destroy');
 
         // Shifts & Schedules
         Route::get('shifts', [ShiftController::class, 'index'])->name('shifts.index');
@@ -213,9 +226,7 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         // Restock / Penerimaan Barang
         Route::get('restock', [WaiterController::class, 'restockList'])->name('restock');
         Route::post('restock/{poId}/receive', [WaiterController::class, 'receiveRestockItem'])->name('restock.receive');
-
-        // Handover Notes
-        Route::post('handover', [WaiterController::class, 'submitHandover'])->name('handover.submit');
+        Route::post('restock/{poId}/report-issue', [WaiterController::class, 'reportRestockIssue'])->name('restock.report_issue');
 
         Route::get('logout', [WaiterController::class, 'logout'])->name('logout');
     });

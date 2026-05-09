@@ -605,6 +605,94 @@
             color: #4338ca;
             border-top: 1px solid #e2e8f0;
         }
+        .refill-step {
+            margin-top: 10px;
+            border: 2px solid #f59e0b;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fffbeb;
+        }
+        .refill-step-header {
+            padding: 10px 12px;
+            background: #fef3c7;
+            font-weight: 700;
+            font-size: 14px;
+            color: #92400e;
+            border-bottom: 1px solid #fde68a;
+        }
+        .refill-step-hint {
+            padding: 8px 12px;
+            font-size: 12px;
+            color: #78350f;
+            background: #fef9c3;
+            border-bottom: 1px solid #fde68a;
+        }
+        .refill-step-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid #fef3c7;
+            flex-wrap: wrap;
+        }
+        .refill-step-item:last-child {
+            border-bottom: none;
+        }
+        .refill-step-name {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            min-width: 100px;
+        }
+        .refill-step-info {
+            font-size: 12px;
+            color: #92400e;
+        }
+        .refill-step-qty {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+        }
+        .refill-step-qty input {
+            width: 60px;
+            padding: 6px 8px;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 14px;
+            background: #fff;
+        }
+        .refill-step-qty input:focus {
+            border-color: #d97706;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+        }
+        .refill-step-actions {
+            padding: 10px 12px;
+            background: #fef3c7;
+            border-top: 1px solid #fde68a;
+            display: flex;
+            gap: 8px;
+        }
+        .refill-step-actions button {
+            flex: 1;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+        }
+        .refill-step-actions .btn-refill-submit {
+            background: #f59e0b;
+            color: #fff;
+        }
+        .refill-step-actions .btn-refill-skip {
+            background: #e5e7eb;
+            color: #374151;
+        }
         .attendance-bar {
             background: #eef2ff;
             border: 1px solid #c7d2fe;
@@ -786,6 +874,11 @@
             #panel-bonus .tier-row { flex-wrap: wrap; gap: 0.35rem 0.65rem; }
             #panel-bonus .tier-amount { margin-left: 0; }
         }
+
+        /* History accordion */
+        details[open] > summary > span:first-child {
+            transform: rotate(90deg);
+        }
     </style>
 </head>
 
@@ -799,6 +892,8 @@
             <button type="button" class="top-menu-btn" id="topMenuBtn" aria-label="Menu">⋮</button>
             <div class="top-dropdown" id="topDropdown">
                 <div style="padding: 10px 14px; font-size: 12px; color: #9ca3af;">Login sebagai <strong style="color:#374151;">{{ $waiterName }}</strong></div>
+                <div class="top-dropdown-divider"></div>
+                <a href="/waiter/restock" class="top-dropdown-item">📦 Penerimaan Barang</a>
                 <div class="top-dropdown-divider"></div>
                 <a href="{{ route('waiter.logout', [], false) }}" class="top-dropdown-item danger" onclick="return confirm('Yakin mau logout?')">🚪 Logout</a>
             </div>
@@ -819,8 +914,6 @@
             <button type="button" class="btn-attendance" id="btn-attendance-action" disabled>Memuat...</button>
         </div>
 
-        @include('waiter.partials.handover', ['handoverNotes' => $handoverNotes, 'todayAttendance' => $todayAttendance])
-
         <div class="portal-tabs">
             <button type="button" class="tab-btn js-tab-btn active" data-tab="rack">📦 Cek Rak <span id="badge-tab-rack" class="menu-badge js-rack-menu-badge hidden">0</span></button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="tasks">📝 Tugas <span id="badge-tab-general" class="menu-badge js-general-menu-badge hidden">0</span></button>
@@ -832,46 +925,56 @@
             <h2 style="margin: 0 0 10px 0;">Cek Rak Saya (<span id="rack-pending-count">0</span>)</h2>
             <div id="rack-pending-container"></div>
 
-            <h2 style="margin: 10px 0;">Riwayat Cek Rak</h2>
-            <div style="overflow-x: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Tugas</th>
-                            <th>Status</th>
-                            <th>Catatan</th>
-                            <th>Verifikasi Rak</th>
-                            <th>Laporan Stok Rak</th>
-                            <th>Bukti Foto</th>
-                            <th>Waktu</th>
-                        </tr>
-                    </thead>
-                    <tbody id="rack-history-body"></tbody>
-                </table>
-            </div>
+            <details style="margin-top: 16px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc;">
+                <summary style="cursor: pointer; font-weight: 700; font-size: 16px; color: #334155; user-select: none; list-style: none; display: flex; align-items: center; gap: 8px;">
+                    <span style="transition: transform 0.2s;">▶</span>
+                    <span>Riwayat Cek Rak</span>
+                </summary>
+                <div style="overflow-x: auto; margin-top: 12px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tugas</th>
+                                <th>Status</th>
+                                <th>Catatan</th>
+                                <th>Verifikasi Rak</th>
+                                <th>Laporan Stok Rak</th>
+                                <th>Bukti Foto</th>
+                                <th>Waktu</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rack-history-body"></tbody>
+                    </table>
+                </div>
+            </details>
         </section>
 
         <section id="panel-tasks" class="portal-panel">
             <h2 style="margin: 0 0 10px 0;">Tugas Umum Saya (<span id="general-pending-count">0</span>)</h2>
             <div id="general-pending-container"></div>
 
-            <h2 style="margin: 10px 0;">Riwayat Tugas Umum</h2>
-            <div style="overflow-x: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Tugas</th>
-                            <th>Status</th>
-                            <th>Catatan</th>
-                            <th>Verifikasi Rak</th>
-                            <th>Laporan Stok Rak</th>
-                            <th>Bukti Foto</th>
-                            <th>Waktu</th>
-                        </tr>
-                    </thead>
-                    <tbody id="general-history-body"></tbody>
-                </table>
-            </div>
+            <details style="margin-top: 16px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc;">
+                <summary style="cursor: pointer; font-weight: 700; font-size: 16px; color: #334155; user-select: none; list-style: none; display: flex; align-items: center; gap: 8px;">
+                    <span style="transition: transform 0.2s;">▶</span>
+                    <span>Riwayat Tugas Umum</span>
+                </summary>
+                <div style="overflow-x: auto; margin-top: 12px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tugas</th>
+                                <th>Status</th>
+                                <th>Catatan</th>
+                                <th>Verifikasi Rak</th>
+                                <th>Laporan Stok Rak</th>
+                                <th>Bukti Foto</th>
+                                <th>Waktu</th>
+                            </tr>
+                        </thead>
+                        <tbody id="general-history-body"></tbody>
+                    </table>
+                </div>
+            </details>
         </section>
 
         <section id="panel-reports" class="portal-panel">
@@ -1347,6 +1450,7 @@
         'taskHistory' => $taskHistory,
         'activityReports' => $activityReports ?? [],
         'rackProductsMap' => $rackProductsMap ?? [],
+        'rackTypesMap' => $rackTypesMap ?? [],
         'todayAttendance' => $todayAttendance ?? null,
         'waiterShift' => $waiterShift ?? null,
         'shiftStartTime' => $shiftStartTime ?? null,
@@ -1354,6 +1458,7 @@
         'attendanceClockOutUrl' => route('waiter.attendance.clock_out', [], false),
         'attendanceStatusUrl' => route('waiter.attendance.status', [], false),
         'bonusApiUrl' => route('waiter.bonus.api', [], false),
+        'clockOutEnabled' => $clockOutEnabled ?? false,
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
 
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -1364,6 +1469,7 @@
 
         const waiterId = String(context.waiterId || '');
         const shiftStartTime = context.shiftStartTime || null;
+        const clockOutEnabled = !!context.clockOutEnabled;
         const rackPendingCountEl = document.getElementById('rack-pending-count');
         const rackPendingContainer = document.getElementById('rack-pending-container');
         const generalPendingCountEl = document.getElementById('general-pending-count');
@@ -1424,6 +1530,7 @@
         const photoProofByTask = new Map();
         const photoBeforeByTask = new Map();
         const productChecklistByTask = new Map();
+        const refillStepByTask = new Map(); // tracks display rack tasks in refill mode
         let activeScannerTaskId = '';
         let activeScannerTaskLabel = '';
         let activeScannerExpectedBarcode = '';
@@ -1441,6 +1548,7 @@
         let reportDate = String(context.reportDate || new Date().toISOString().slice(0, 10));
         let activityReports = Array.isArray(context.activityReports) ? context.activityReports : [];
         let rackProductsMap = context.rackProductsMap && typeof context.rackProductsMap === 'object' ? context.rackProductsMap : {};
+        let rackTypesMap = context.rackTypesMap && typeof context.rackTypesMap === 'object' ? context.rackTypesMap : {};
         let syncDueInFlight = false;
         let syncDueCooldownUntil = 0;
         let syncDueBackoffMs = 0;
@@ -1523,8 +1631,13 @@
                     }
                 }
                 if (btnAttendanceAction) {
-                    btnAttendanceAction.textContent = '📷 Scan Absen Pulang';
-                    btnAttendanceAction.disabled = false;
+                    if (clockOutEnabled) {
+                        btnAttendanceAction.textContent = '📷 Scan Absen Pulang';
+                        btnAttendanceAction.disabled = false;
+                    } else {
+                        btnAttendanceAction.textContent = 'Selesai Hari Ini';
+                        btnAttendanceAction.disabled = true;
+                    }
                 }
             } else {
                 if (attendanceStatusLabelEl) {
@@ -1581,6 +1694,7 @@
 
         async function startAttendanceScan() {
             if (attendanceState.clock_out) return;
+            if (attendanceState.clock_in && !clockOutEnabled) return;
             attendanceScanMode = attendanceState.clock_in ? 'clock_out' : 'clock_in';
 
             if (scannerModalTitleEl) {
@@ -2130,6 +2244,28 @@
             return escapeHtml(value).replaceAll('`', '&#96;');
         }
 
+        function renderRefillStep(task) {
+            const shortageItems = refillStepByTask.get(task.id);
+            if (!shortageItems || shortageItems.length === 0) return '';
+
+            const itemsHtml = shortageItems.map(item => {
+                return `<div class="refill-step-item">
+                    <div class="refill-step-name">${escapeHtml(item.product_name)}</div>
+                    <div class="refill-step-info">Sebelum: ${item.initial_qty} / Standar: ${item.standard_qty}</div>
+                    <div class="refill-step-qty">
+                        <input type="number" class="js-refill-qty" data-task-id="${escapeAttr(task.id)}" data-product-id="${escapeAttr(item.product_id)}" data-initial-qty="${item.initial_qty}" min="0" max="999" value="${item.standard_qty}" placeholder="Qty">
+                        <span style="font-size:12px;color:#6b7280;">${escapeHtml(item.product_unit)}</span>
+                    </div>
+                </div>`;
+            }).join('');
+
+            return `<div class="refill-step" data-task-id="${escapeAttr(task.id)}">
+                <div class="refill-step-header">⚠️ ${shortageItems.length} Produk Perlu Diisi Ulang</div>
+                <div class="refill-step-hint">Ambil dari gudang, isi rak, lalu input qty setelah refill. Jika gudang habis, biarkan qty sama seperti sebelumnya.</div>
+                ${itemsHtml}
+            </div>`;
+        }
+
         function renderPendingTaskCard(task) {
             const requiresScan = isRackScanTask(task);
             const priority = task.priority || 'normal';
@@ -2281,9 +2417,13 @@
                             : '<div class="photo-proof-meta" style="color:#9a3412;">⚠️ Belum ada foto bukti.</div>'}
                     </div>`
                 : '';
+            const taskRackType = getRackTypeForTask(task);
+            const rackTypeBadge = taskRackType === 'display'
+                ? '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:#fef3c7;color:#92400e;margin-left:6px;">🏪 Display</span>'
+                : '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;margin-left:6px;">📦 Gudang</span>';
             const rackBlock = requiresScan
                 ? `<div style="margin: 8px 0 10px 0;">
-                        <span class="tag-rack">📦 Cek Rak - Wajib Scan</span>
+                        <span class="tag-rack">📦 Cek Rak - Wajib Scan</span>${rackTypeBadge}
                         <div class="meta">Rak: <strong>${escapeHtml(task.rack_name || '-')}</strong> (${escapeHtml(task.rack_location || '-')})</div>
                         <div class="meta">QR Code Rak: <code>${escapeHtml(task.rack_barcode_value || '-')}</code></div>
                         ${rackTargetScope === 'all' ? '<div class="meta" style="font-size:12px;color:#334155;">🎯 Bagian dari assignment <b>Semua Rak Aktif</b> (wajib scan tiap rak melalui task masing-masing).</div>' : ''}
@@ -2293,6 +2433,7 @@
                             ${existingScan ? `✅ QR code ter-scan: <code>${escapeHtml(existingScan)}</code>` : '⚠️ Belum scan QR code rak.'}
                         </div>
                         ${hasRackProducts ? productChecklistBlock : stockReportBlock}
+                        ${renderRefillStep(task)}
                     </div>`
                 : '';
             const defaultMetaBlock = requiresScan
@@ -2302,13 +2443,15 @@
                    ${scheduleText}
                    ${deadlineText}`;
 
+            const isInRefillMode = refillStepByTask.has(task.id);
             const completeBtnLabel = isRepeatTask
                 ? (completedCount + 1 >= repeatCount ? '✅ Selesaikan (Terakhir)' : `✅ Selesai #${completedCount + 1}`)
                 : '✅ Verifikasi Selesai';
+            const rackCompleteBtnLabel = isInRefillMode ? '✅ Sudah Diisi, Selesaikan' : '✅ Selesaikan Cek Rak';
             const completeActionBlock = requiresScan
                 ? (existingScan
                     ? `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
-                           <button type="submit" class="btn btn-done">✅ Selesaikan Cek Rak</button>
+                           <button type="submit" class="btn btn-done">${rackCompleteBtnLabel}</button>
                        </form>`
                     : '<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 10px;">🔒 Tombol selesai akan muncul setelah QR code rak berhasil di-scan.</div>')
                 : `<form class="js-complete-form" data-task-id="${escapeHtml(task.id)}" style="margin-top: 10px;">
@@ -2343,20 +2486,56 @@
             </section>`;
         }
 
+        function getRackTypeForTask(task) {
+            const rackId = String(task?.rack_id || '');
+            if (rackId && rackTypesMap[rackId]) return rackTypesMap[rackId];
+            return String(task?.rack_type || 'storage');
+        }
+
         function renderRackTaskGroupSection(rackTasks) {
             const sortedRackTasks = rackTasks.slice().sort(compareRackTaskOrder);
             const searchKeyword = normalizeSearchKeyword(rackSearchKeyword);
 
-            const subtitle = 'Urut otomatis berdasarkan lokasi dan nama rak. Gunakan pencarian untuk langsung lompat ke rak target.';
+            // Split by rack type
+            const displayTasks = sortedRackTasks.filter(t => getRackTypeForTask(t) === 'display');
+            const storageTasks = sortedRackTasks.filter(t => getRackTypeForTask(t) !== 'display');
+
+            const displayDone = displayTasks.filter(t => t.status === 'done').length;
+            const storageDone = storageTasks.filter(t => t.status === 'done').length;
+
             const hintText = searchKeyword === ''
-                ? `${rackTasks.length} dari ${rackTasks.length} rak tugas aktif ditampilkan.`
-                : `${rackTasks.length} dari ${rackTasks.length} rak cocok dengan kata kunci "${escapeHtml(searchKeyword)}".`;
+                ? `${rackTasks.length} tugas cek rak aktif.`
+                : `${rackTasks.length} rak cocok dengan kata kunci "${escapeHtml(searchKeyword)}".`;
+
+            let groupsHtml = '';
+
+            if (displayTasks.length > 0) {
+                groupsHtml += `<div class="rack-type-group" style="margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fef3c7;border-radius:8px;margin-bottom:8px;">
+                        <span style="font-size:16px;">🏪</span>
+                        <span style="font-weight:700;font-size:14px;color:#92400e;">Rak Display</span>
+                        <span style="margin-left:auto;font-size:12px;color:#92400e;font-weight:600;">${displayTasks.length} rak</span>
+                    </div>
+                    <div class="grid">${displayTasks.map((task) => `<div class="rack-task-item js-rack-task-item" data-rack-search-text="${escapeAttr(buildRackTaskSearchText(task))}">${renderPendingTaskCard(task)}</div>`).join('')}</div>
+                </div>`;
+            }
+
+            if (storageTasks.length > 0) {
+                groupsHtml += `<div class="rack-type-group" style="margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#dbeafe;border-radius:8px;margin-bottom:8px;">
+                        <span style="font-size:16px;">📦</span>
+                        <span style="font-weight:700;font-size:14px;color:#1e40af;">Rak Gudang</span>
+                        <span style="margin-left:auto;font-size:12px;color:#1e40af;font-weight:600;">${storageTasks.length} rak</span>
+                    </div>
+                    <div class="grid">${storageTasks.map((task) => `<div class="rack-task-item js-rack-task-item" data-rack-search-text="${escapeAttr(buildRackTaskSearchText(task))}">${renderPendingTaskCard(task)}</div>`).join('')}</div>
+                </div>`;
+            }
 
             return `<section class="task-group js-rack-group-section">
                 <div class="task-group-head">
                     <div>
-                        <h3 class="task-group-title">📦 Tugas Cek Rak Rutin</h3>
-                        <div class="task-group-subtitle">${subtitle}</div>
+                        <h3 class="task-group-title">📦 Tugas Cek Rak</h3>
+                        <div class="task-group-subtitle">Dikelompokkan berdasarkan tipe rak. Gunakan pencarian untuk langsung lompat ke rak target.</div>
                     </div>
                     <span class="task-group-badge">${rackTasks.length} tugas</span>
                 </div>
@@ -2374,7 +2553,7 @@
                 </div>
 
                 ${sortedRackTasks.length
-                    ? `<div class="grid">${sortedRackTasks.map((task) => `<div class="rack-task-item js-rack-task-item" data-rack-search-text="${escapeAttr(buildRackTaskSearchText(task))}">${renderPendingTaskCard(task)}</div>`).join('')}</div>
+                    ? `${groupsHtml}
                        <div class="task-group-empty js-rack-search-empty hidden">Tidak ada rak yang cocok dengan pencarian. Coba kata kunci lain atau reset filter.</div>`
                     : '<div class="task-group-empty">Tidak ada rak yang cocok dengan pencarian. Coba kata kunci lain atau reset filter.</div>'}
             </section>`;
@@ -2410,6 +2589,11 @@
             for (const taskId of Array.from(productChecklistByTask.keys())) {
                 if (!pendingTaskIds.has(taskId)) {
                     productChecklistByTask.delete(taskId);
+                }
+            }
+            for (const taskId of Array.from(refillStepByTask.keys())) {
+                if (!pendingTaskIds.has(taskId)) {
+                    refillStepByTask.delete(taskId);
                 }
             }
 
@@ -2554,6 +2738,9 @@
 
             if (payload && typeof payload === 'object' && payload.rack_products_map) {
                 rackProductsMap = payload.rack_products_map;
+            }
+            if (payload && typeof payload === 'object' && payload.rack_types_map) {
+                rackTypesMap = payload.rack_types_map;
             }
 
             if (isPendingFormInputActive()) {
@@ -2722,11 +2909,15 @@
                     if (entry && entry.filled) {
                         serialized[productId] = {
                             checked: true,
+                            product_id: productId,
                             actual_qty: Number(entry.actual_qty || 0),
                             standard_qty: Number(entry.standard_qty || 0),
+                            min_qty: Number(entry.min_qty || 0),
                             product_name: String(entry.product_name || ''),
                             product_unit: String(entry.product_unit || 'pcs'),
                             is_shortage: Boolean(entry.is_shortage),
+                            initial_qty: entry.was_refilled ? Number(entry.initial_qty || 0) : undefined,
+                            was_refilled: entry.was_refilled ? true : undefined,
                         };
                     }
                 }
@@ -2773,6 +2964,7 @@
                     photoProofByTask.delete(taskId);
                     photoBeforeByTask.delete(taskId);
                     productChecklistByTask.delete(taskId);
+                    refillStepByTask.delete(taskId);
                     showFlash('success', payload?.message || 'Tugas berhasil diverifikasi sebagai selesai.');
                 }
             } catch (error) {
@@ -3058,6 +3250,65 @@
                     return;
                 }
 
+                // DISPLAY RACK REFILL INTERCEPT
+                const taskRackId = String(currentTask?.rack_id || '');
+                const isDisplayRack = (rackTypesMap[taskRackId] || String(currentTask?.rack_type || '')) === 'display';
+                const isRackCheck = String(currentTask?.task_type || '') === 'rack_check';
+                if (isRackCheck && isDisplayRack && !refillStepByTask.has(taskId)) {
+                    // Check if there are shortage items that need refill
+                    const checklist = productChecklistByTask.get(taskId) || {};
+                    const rackId = String(currentTask?.rack_id || '');
+                    const rackProducts = rackProductsMap[rackId] || [];
+                    const shortageItems = [];
+                    for (const product of rackProducts) {
+                        const entry = checklist[product.id];
+                        if (!entry || !entry.filled) continue;
+                        const actualQty = Number(entry.actual_qty || 0);
+                        const minQty = Number(product.min_qty || 0);
+                        const standardQty = Number(product.standard_qty || 0);
+                        // Needs refill if: habis OR below min_qty
+                        if (actualQty === 0 || (minQty > 0 && actualQty <= minQty) || (standardQty > 0 && actualQty < standardQty)) {
+                            shortageItems.push({
+                                product_id: product.id,
+                                product_name: product.name,
+                                product_unit: product.unit || 'pcs',
+                                initial_qty: actualQty,
+                                standard_qty: standardQty,
+                                min_qty: minQty,
+                            });
+                        }
+                    }
+
+                    if (shortageItems.length > 0) {
+                        // Enter refill mode — show refill UI instead of submitting
+                        refillStepByTask.set(taskId, shortageItems);
+                        renderAllTasks();
+                        showFlash('info', `${shortageItems.length} produk perlu diisi ulang dari gudang.`);
+                        return;
+                    }
+                }
+
+                // If in refill mode, merge refill data into checklist before submit
+                if (refillStepByTask.has(taskId)) {
+                    const refillContainer = form.closest('.card')?.querySelector(`.refill-step[data-task-id="${taskId}"]`);
+                    if (refillContainer) {
+                        const checklist = productChecklistByTask.get(taskId) || {};
+                        const refillInputs = refillContainer.querySelectorAll('.js-refill-qty');
+                        refillInputs.forEach(input => {
+                            const productId = String(input.getAttribute('data-product-id') || '');
+                            const initialQty = Number(input.getAttribute('data-initial-qty') || 0);
+                            const refillQty = Math.max(0, parseInt(input.value) || 0);
+                            if (productId && checklist[productId]) {
+                                checklist[productId].initial_qty = initialQty;
+                                checklist[productId].actual_qty = refillQty;
+                                checklist[productId].was_refilled = true;
+                            }
+                        });
+                        productChecklistByTask.set(taskId, checklist);
+                    }
+                    refillStepByTask.delete(taskId);
+                }
+
                 await completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl, photoBeforeDataUrl);
                 await pollTasks();
             });
@@ -3093,9 +3344,11 @@
                         const rackProducts = rackProductsMap[rackId] || [];
                         const product = rackProducts.find(p => p.id === productId);
                         const standardQty = product ? Number(product.standard_qty || 0) : Number(checklist[productId]?.standard_qty || 0);
+                        const minQty = product ? Number(product.min_qty || 0) : Number(checklist[productId]?.min_qty || 0);
                         checklist[productId] = {
                             actual_qty: actualQty,
                             standard_qty: standardQty,
+                            min_qty: minQty,
                             product_name: product ? (product.name || '') : (checklist[productId]?.product_name || ''),
                             product_unit: product ? (product.unit || 'pcs') : (checklist[productId]?.product_unit || 'pcs'),
                             filled: isFilled,
@@ -3134,9 +3387,11 @@
                         const rackProducts = rackProductsMap[rackId] || [];
                         const product = rackProducts.find(p => p.id === productId);
                         const standardQty = product ? Number(product.standard_qty || 0) : Number(checklist[productId]?.standard_qty || 0);
+                        const minQty = product ? Number(product.min_qty || 0) : Number(checklist[productId]?.min_qty || 0);
                         checklist[productId] = {
                             actual_qty: actualQty,
                             standard_qty: standardQty,
+                            min_qty: minQty,
                             product_name: product ? (product.name || '') : (checklist[productId]?.product_name || ''),
                             product_unit: product ? (product.unit || 'pcs') : (checklist[productId]?.product_unit || 'pcs'),
                             filled: isFilled,

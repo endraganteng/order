@@ -35,16 +35,16 @@
         
         <div style="display: grid; grid-template-columns: 120px 1fr; gap: 10px; margin-bottom: 10px;">
             <div style="color: var(--color-text-secondary); font-weight: 500;">Dibuat Oleh:</div>
-            <div style="color: var(--color-text);">{{ $order['created_by_name'] }}</div>
+            <div style="color: var(--color-text);">{{ $order['created_by_name'] ?? '-' }}</div>
             
             <div style="color: var(--color-text-secondary); font-weight: 500;">Tanggal:</div>
-            <div style="color: var(--color-text);">{{ date('d M Y H:i', $order['created_at']) }}</div>
+            <div style="color: var(--color-text);">{{ !empty($order['created_at']) ? date('d M Y H:i', $order['created_at']) : '-' }}</div>
             
             <div style="color: var(--color-text-secondary); font-weight: 500;">Supplier:</div>
-            <div style="color: var(--color-text);">{{ $order['supplier'] ?: '-' }}</div>
+            <div style="color: var(--color-text);">{{ $order['supplier'] ?? '-' }}</div>
             
             <div style="color: var(--color-text-secondary); font-weight: 500;">Catatan:</div>
-            <div style="color: var(--color-text); font-style: {{ $order['notes'] ? 'normal' : 'italic' }};">{{ $order['notes'] ?: 'Tidak ada catatan' }}</div>
+            <div style="color: var(--color-text); font-style: {{ !empty($order['notes']) ? 'normal' : 'italic' }};">{{ $order['notes'] ?? 'Tidak ada catatan' }}</div>
         </div>
     </div>
     
@@ -53,13 +53,15 @@
         <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: var(--color-text); border-bottom: 1px solid var(--color-border); padding-bottom: 10px;">Progress Penerimaan</h3>
         
         @php
-            $progressPercent = $order['items_count'] > 0 ? round(($order['received_count'] / $order['items_count']) * 100) : 0;
+            $itemsCount = $order['items_count'] ?? 0;
+            $receivedCount = $order['received_count'] ?? 0;
+            $progressPercent = $itemsCount > 0 ? round(($receivedCount / $itemsCount) * 100) : 0;
             $progressColor = $progressPercent === 100 ? 'var(--color-success)' : 'var(--color-primary)';
         @endphp
         
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
             <span style="font-weight: 600; color: var(--color-text);">Item Diterima</span>
-            <span style="font-weight: bold; color: {{ $progressPercent === 100 ? 'var(--color-success)' : 'var(--color-text)' }};">{{ $order['received_count'] }} / {{ $order['items_count'] }} ({{ $progressPercent }}%)</span>
+            <span style="font-weight: bold; color: {{ $progressPercent === 100 ? 'var(--color-success)' : 'var(--color-text)' }};">{{ $receivedCount }} / {{ $itemsCount }} ({{ $progressPercent }}%)</span>
         </div>
         
         <div style="width: 100%; height: 12px; background: var(--color-bg); border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border);">
@@ -86,31 +88,54 @@
                     <th style="padding: 12px; text-align: center;">Diterima</th>
                     <th style="padding: 12px; text-align: center;">Status</th>
                     <th style="padding: 12px;">Terakhir Diterima</th>
+                    <th style="padding: 12px; text-align: center;">Aksi</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach($order['items'] as $item)
-                <tr style="border-bottom: 1px solid var(--color-border);">
-                    <td style="padding: 12px; font-weight: 500;">{{ $item['product_name'] }}</td>
-                    <td style="padding: 12px; color: var(--color-text-secondary);">{{ $item['rack_name'] }}</td>
-                    <td style="padding: 12px; text-align: center; color: var(--color-text-muted);">{{ $item['qty_needed'] }}</td>
-                    <td style="padding: 12px; text-align: center; font-weight: bold;">{{ $item['qty_ordered'] }}</td>
-                    <td style="padding: 12px; text-align: center; font-weight: bold; color: {{ $item['received_qty'] > 0 ? ($item['received'] ? 'var(--color-success)' : 'var(--color-warning)') : 'var(--color-text-muted)' }};">
-                        {{ $item['received_qty'] }}
+                @foreach(($order['items'] ?? []) as $itemKey => $item)
+                @php 
+                    $receivedQty = $item['received_qty'] ?? 0; 
+                    $qtyOrdered = $item['qty_ordered'] ?? 0;
+                    $isReceived = !empty($item['received']); 
+                    $hasMismatch = $receivedQty > 0 && $receivedQty < $qtyOrdered && !$isReceived;
+                    $acceptedAsIs = !empty($item['accepted_as_is']);
+                @endphp
+                <tr style="border-bottom: 1px solid var(--color-border);" data-item-key="{{ $itemKey }}">
+                    <td style="padding: 12px; font-weight: 500;">{{ $item['product_name'] ?? '-' }}</td>
+                    <td style="padding: 12px; color: var(--color-text-secondary);">{{ $item['rack_name'] ?? '-' }}</td>
+                    <td style="padding: 12px; text-align: center; color: var(--color-text-muted);">{{ $item['qty_needed'] ?? 0 }}</td>
+                    <td style="padding: 12px; text-align: center; font-weight: bold;">{{ $qtyOrdered }}</td>
+                    <td style="padding: 12px; text-align: center; font-weight: bold; color: {{ $receivedQty > 0 ? ($isReceived ? 'var(--color-success)' : 'var(--color-warning)') : 'var(--color-text-muted)' }};">
+                        {{ $receivedQty }}
+                        @if($hasMismatch)
+                            <span style="color: var(--color-warning); font-size: 11px; display: block; margin-top: 2px;">⚠️ Kurang {{ $qtyOrdered - $receivedQty }}</span>
+                        @endif
                     </td>
                     <td style="padding: 12px; text-align: center;">
-                        @if($item['received'])
+                        @if($isReceived)
                             <span style="color: var(--color-success); font-size: 18px;" title="Selesai">✅</span>
-                        @elseif($item['received_qty'] > 0)
+                            @if($acceptedAsIs)
+                                <div style="font-size: 10px; color: var(--color-warning); margin-top: 2px;">Diterima apa adanya</div>
+                            @endif
+                        @elseif($receivedQty > 0)
                             <span style="color: var(--color-warning); font-size: 18px;" title="Parsial">⏳</span>
                         @else
                             <span style="color: var(--color-text-muted); font-size: 18px;" title="Menunggu">⚪</span>
                         @endif
                     </td>
                     <td style="padding: 12px; color: var(--color-text-secondary); font-size: 13px;">
-                        @if($item['last_received_at'])
+                        @if(!empty($item['last_received_at']))
                             <div>{{ date('d M Y H:i', $item['last_received_at']) }}</div>
-                            <div style="font-size: 12px;">Oleh: {{ $item['last_received_by_name'] }}</div>
+                            <div style="font-size: 12px;">Oleh: {{ $item['last_received_by_name'] ?? '-' }}</div>
+                        @else
+                            -
+                        @endif
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        @if($hasMismatch && in_array($order['status'], ['ordered', 'partial']))
+                            <button class="btn-accept-as-is" data-restock-id="{{ $itemKey }}" style="background: var(--color-warning); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                ✓ Terima Apa Adanya
+                            </button>
                         @else
                             -
                         @endif
@@ -145,10 +170,10 @@
                         <div style="display: flex; flex-direction: column; gap: 8px;">
                             @foreach($histories as $h)
                             <div style="display: flex; justify-content: space-between; font-size: 13px; border-bottom: 1px dashed var(--color-border); padding-bottom: 5px;">
-                                <span style="color: var(--color-text-secondary);">{{ date('d M Y', strtotime($h['date'])) }}</span>
+                                <span style="color: var(--color-text-secondary);">{{ date('d M Y', strtotime($h['date'] ?? 'now')) }}</span>
                                 <span>
-                                    Qty: <strong>{{ $h['qty_ordered'] }}</strong>
-                                    @if($h['received'])
+                                    Qty: <strong>{{ $h['qty_ordered'] ?? 0 }}</strong>
+                                    @if(!empty($h['received']))
                                         <span style="color: var(--color-success); margin-left: 5px;">✅</span>
                                     @endif
                                 </span>
@@ -215,6 +240,46 @@
                 }
             });
         }
+
+        // Accept as-is buttons
+        const acceptButtons = document.querySelectorAll('.btn-accept-as-is');
+        acceptButtons.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const restockId = this.getAttribute('data-restock-id');
+                const row = this.closest('tr');
+                const productName = row.querySelector('td:first-child').textContent.trim();
+                
+                if (confirm(`Terima item "${productName}" apa adanya?\n\nQty yang sudah diterima akan dianggap final.`)) {
+                    this.textContent = 'Memproses...';
+                    this.disabled = true;
+                    
+                    fetch('{{ route("admin.restock.accept_as_is", ["poId" => $order["id"], "restockId" => "__RESTOCK_ID__"]) }}'.replace('__RESTOCK_ID__', restockId), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            location.reload();
+                        } else {
+                            alert(data.message || 'Gagal memproses');
+                            this.textContent = '✓ Terima Apa Adanya';
+                            this.disabled = false;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Terjadi kesalahan sistem');
+                        this.textContent = '✓ Terima Apa Adanya';
+                        this.disabled = false;
+                    });
+                }
+            });
+        });
     });
 </script>
 @endpush

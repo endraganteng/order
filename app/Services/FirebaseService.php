@@ -319,6 +319,7 @@ class FirebaseService
             'description' => $description,
             'barcode_value' => $this->generateUniqueRackBarcodeValue($name),
             'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'rack_type' => in_array($data['rack_type'] ?? '', ['display', 'storage']) ? $data['rack_type'] : 'storage',
             'check_order' => max(0, (int) ($data['check_order'] ?? 0)),
             'created_at' => time(),
             'updated_at' => time(),
@@ -339,6 +340,7 @@ class FirebaseService
             'location' => trim((string) ($data['location'] ?? '')),
             'description' => trim((string) ($data['description'] ?? '')),
             'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
+            'rack_type' => in_array($data['rack_type'] ?? '', ['display', 'storage']) ? $data['rack_type'] : 'storage',
             'check_order' => max(0, (int) ($data['check_order'] ?? 0)),
             'updated_at' => time(),
         ];
@@ -444,6 +446,19 @@ class FirebaseService
         return array_values(array_filter($this->getProductCategories(), function ($cat) {
             return ($cat['is_active'] ?? true) !== false;
         }));
+    }
+
+    /**
+     * Get product categories as id => data map (for quick lookup)
+     */
+    public function getProductCategoriesMap(): array
+    {
+        $categories = $this->getProductCategories();
+        $map = [];
+        foreach ($categories as $cat) {
+            $map[$cat['id']] = $cat;
+        }
+        return $map;
     }
 
     /**
@@ -996,6 +1011,23 @@ class FirebaseService
     }
 
     /**
+     * Get rack types map (rackId => rack_type).
+     */
+    public function getRackTypesMap(): array
+    {
+        $map = [];
+        foreach ($this->getActiveRacks() as $rack) {
+            $rackId = trim((string) ($rack['id'] ?? ''));
+            if ($rackId === '') {
+                continue;
+            }
+            $map[$rackId] = (string) ($rack['rack_type'] ?? 'storage');
+        }
+
+        return $map;
+    }
+
+    /**
      * Get app settings
      */
     public function getSettings()
@@ -1256,6 +1288,60 @@ class FirebaseService
         }
 
         return ['count' => $count, 'entries' => $createdEntries];
+    }
+
+    /**
+     * Create a refill task for display rack shortage (auto-generated).
+     * Assigns to the same waiter who reported the shortage.
+     */
+    public function createDisplayRefillTask(
+        string $waiterId,
+        string $waiterName,
+        string $rackId,
+        string $rackName,
+        array $shortageItems
+    ): ?string {
+        if (empty($shortageItems)) return null;
+
+        // Build description listing all shortage items
+        $lines = [];
+        foreach ($shortageItems as $item) {
+            $productName = $item['product_name'] ?? '';
+            $needed = (int) ($item['qty_needed'] ?? 0);
+            $lines[] = "• {$productName}: ambil {$needed} pcs dari gudang";
+        }
+        $description = "Isi ulang rak display dari gudang:\n" . implode("\n", $lines);
+
+        $taskData = [
+            'title' => "Isi ulang {$rackName} dari gudang",
+            'description' => $description,
+            'task_type' => 'general',
+            'status' => 'pending',
+            'assigned_waiter_id' => $waiterId,
+            'assigned_waiter_name' => $waiterName,
+            'assignment_type' => 'single',
+            'created_at' => time(),
+            'created_by' => 'system',
+            'created_by_name' => 'Sistem Otomatis',
+            'scheduled_for_date' => date('Y-m-d'),
+            'deadline_at' => null,
+            'requires_photo_proof' => false,
+            'requires_photo_before' => false,
+            'repeat_count' => 1,
+            'completed_count' => 0,
+            'completions' => [],
+            'category_id' => null,
+            'category_name' => null,
+            'rack_id' => $rackId,
+            'rack_name' => $rackName,
+            'refill_source' => 'display_shortage',
+            'refill_items' => $shortageItems,
+            'is_recurring_instance' => false,
+            'source_template_id' => null,
+        ];
+
+        $ref = $this->database->getReference('waiter_tasks')->push($taskData);
+        return $ref->getKey();
     }
 
     /**
@@ -1894,6 +1980,11 @@ class FirebaseService
         $assignedWaiterId = $assignmentType === 'single' ? ($data['assigned_waiter_id'] ?? null) : null;
         $assignedWaiter = $assignedWaiterId ? $this->getWaiterById($assignedWaiterId) : null;
 
+        $scheduleMode = (string) ($data['schedule_mode'] ?? 'fixed');
+        $shiftOffsetMinutes = max(0, (int) ($data['shift_offset_minutes'] ?? 0));
+        $deadlineMode = (string) ($data['deadline_mode'] ?? 'fixed');
+        $deadlineBeforeEndMinutes = max(0, (int) ($data['deadline_before_end_minutes'] ?? 60));
+
         $templateData = [
             'title' => $data['title'],
             'description' => $data['description'] ?? '',
@@ -1910,6 +2001,7 @@ class FirebaseService
             'rack_name' => $data['rack_name'] ?? null,
             'rack_location' => $data['rack_location'] ?? null,
             'rack_barcode_value' => $data['rack_barcode_value'] ?? null,
+            'rack_type' => $data['rack_type'] ?? null,
             'assignment_type' => $assignmentType,
             'assignment_strategy' => $data['assignment_strategy'] ?? null,
             'rolling_slot_index' => isset($data['rolling_slot_index']) ? max(0, (int) $data['rolling_slot_index']) : null,
@@ -1922,6 +2014,10 @@ class FirebaseService
             'selected_waiter_ids' => $assignmentType === 'role' ? $selectedWaiterIds : [],
             'schedule_time' => $scheduleTime,
             'time_limit_minutes' => $timeLimitMinutes,
+            'schedule_mode' => $scheduleMode,
+            'shift_offset_minutes' => $shiftOffsetMinutes,
+            'deadline_mode' => $deadlineMode,
+            'deadline_before_end_minutes' => $deadlineBeforeEndMinutes,
             'recurrence_type' => $recurrenceType,
             'weekly_day' => $recurrenceType === 'weekly' ? (int) ($data['weekly_day'] ?? date('N')) : null,
             'interval_days' => $recurrenceType === 'every_n_days' ? (int) ($data['interval_days'] ?? 1) : null,
@@ -1991,12 +2087,21 @@ class FirebaseService
 
         $updatedTimeLimitMinutes = (int) ($data['time_limit_minutes'] ?? ($existing['time_limit_minutes'] ?? 0));
 
+        $updatedScheduleMode = (string) ($data['schedule_mode'] ?? ($existing['schedule_mode'] ?? 'fixed'));
+        $updatedShiftOffsetMinutes = max(0, (int) ($data['shift_offset_minutes'] ?? ($existing['shift_offset_minutes'] ?? 0)));
+        $updatedDeadlineMode = (string) ($data['deadline_mode'] ?? ($existing['deadline_mode'] ?? 'fixed'));
+        $updatedDeadlineBeforeEndMinutes = max(0, (int) ($data['deadline_before_end_minutes'] ?? ($existing['deadline_before_end_minutes'] ?? 60)));
+
         $updates = [
             'title' => $data['title'],
             'description' => $data['description'] ?? '',
             'priority' => $data['priority'] ?? 'normal',
             'schedule_time' => $updatedScheduleTime,
             'time_limit_minutes' => $updatedTimeLimitMinutes,
+            'schedule_mode' => $updatedScheduleMode,
+            'shift_offset_minutes' => $updatedShiftOffsetMinutes,
+            'deadline_mode' => $updatedDeadlineMode,
+            'deadline_before_end_minutes' => $updatedDeadlineBeforeEndMinutes,
             'recurrence_type' => $recurrenceType,
             'weekly_day' => $recurrenceType === 'weekly' ? (int) ($data['weekly_day'] ?? date('N')) : null,
             'interval_days' => $recurrenceType === 'every_n_days' ? (int) ($data['interval_days'] ?? 1) : null,
@@ -2010,7 +2115,7 @@ class FirebaseService
     /**
      * Generate due recurring waiter tasks.
      */
-    public function generateDueRecurringWaiterTasks()
+    public function generateDueRecurringWaiterTasks(bool $force = false)
     {
         $templates = $this->getRecurringWaiterTaskTemplates();
         $generatedCount = 0;
@@ -2024,14 +2129,20 @@ class FirebaseService
             }
 
             $scheduleTime = $template['schedule_time'] ?? null;
-            if (! $scheduleTime) {
+            $templateScheduleModeCheck = (string) ($template['schedule_mode'] ?? 'fixed');
+
+            // For shift_relative mode, schedule_time is optional (used as fallback only)
+            if (! $force && $templateScheduleModeCheck === 'fixed' && ! $scheduleTime) {
                 continue;
             }
 
             $lastGeneratedDate = $template['last_generated_date'] ?? null;
-            $alreadyGeneratedToday = $lastGeneratedDate === $todayDate;
-            $isDueToday = $currentTime >= $scheduleTime;
-            $recurrenceMatchedToday = $this->isTemplateDueForDate($template, $todayDate);
+            // For shift_relative mode, don't skip based on last_generated_date because
+            // different waiters may have different shift start times throughout the day
+            $alreadyGeneratedToday = $force ? false : ($templateScheduleModeCheck === 'shift_relative' ? false : ($lastGeneratedDate === $todayDate));
+            // For shift_relative mode, skip the global time check (handled per-waiter in loop)
+            $isDueToday = $force ? true : ($templateScheduleModeCheck === 'shift_relative' ? true : ($currentTime >= $scheduleTime));
+            $recurrenceMatchedToday = $force ? true : $this->isTemplateDueForDate($template, $todayDate);
 
             if ($alreadyGeneratedToday || ! $isDueToday || ! $recurrenceMatchedToday) {
                 continue;
@@ -2105,11 +2216,10 @@ class FirebaseService
             }
 
             $timeLimitMinutes = (int) ($template['time_limit_minutes'] ?? 0);
-            $deadlineAt = null;
-            if ($timeLimitMinutes > 0) {
-                $scheduleTimestamp = $this->buildScheduledTimestamp($todayDate, $scheduleTime);
-                $deadlineAt = $scheduleTimestamp + ($timeLimitMinutes * 60);
-            }
+            $templateScheduleMode = (string) ($template['schedule_mode'] ?? 'fixed');
+            $templateShiftOffsetMinutes = max(0, (int) ($template['shift_offset_minutes'] ?? 0));
+            $templateDeadlineMode = (string) ($template['deadline_mode'] ?? 'fixed');
+            $templateDeadlineBeforeEndMinutes = max(0, (int) ($template['deadline_before_end_minutes'] ?? 60));
 
             $generatedForTemplate = 0;
 
@@ -2117,6 +2227,53 @@ class FirebaseService
                 $mapKey = $this->buildWaiterRecurringInstanceKey($template['id'], $waiter['id'] ?? null);
                 if (isset($existingRecurringMap[$mapKey])) {
                     continue;
+                }
+
+                // Resolve per-waiter schedule time and deadline based on schedule_mode
+                $waiterScheduleTime = $scheduleTime;
+                $waiterDeadlineAt = null;
+                $waiterId = $waiter['id'] ?? '';
+
+                if ($templateScheduleMode === 'shift_relative' && $waiterId !== '') {
+                    $waiterShift = $this->getWaiterShiftForDate($waiterId, $todayDate);
+                    if ($waiterShift) {
+                        $shiftStart = $waiterShift['clock_in_time'] ?? '08:00';
+                        $shiftEnd = $waiterShift['clock_out_time'] ?? '17:00';
+
+                        // Calculate schedule time: shift start + offset
+                        $shiftStartTimestamp = $this->buildScheduledTimestamp($todayDate, $shiftStart);
+                        $waiterScheduleTimestamp = $shiftStartTimestamp + ($templateShiftOffsetMinutes * 60);
+                        $waiterScheduleTime = date('H:i', $waiterScheduleTimestamp);
+
+                        // Check if current time has reached this waiter's schedule time
+                        if (! $force && $currentTime < $waiterScheduleTime) {
+                            continue; // Not yet time for this waiter
+                        }
+
+                        // Calculate deadline based on deadline_mode
+                        if ($templateDeadlineMode === 'before_shift_end') {
+                            $shiftEndTimestamp = $this->buildScheduledTimestamp($todayDate, $shiftEnd);
+                            // Handle overnight shifts (end < start)
+                            if ($shiftEndTimestamp <= $shiftStartTimestamp) {
+                                $shiftEndTimestamp += 86400; // +24h
+                            }
+                            $waiterDeadlineAt = $shiftEndTimestamp - ($templateDeadlineBeforeEndMinutes * 60);
+                        } elseif ($timeLimitMinutes > 0) {
+                            $waiterDeadlineAt = $waiterScheduleTimestamp + ($timeLimitMinutes * 60);
+                        }
+                    } else {
+                        // Waiter has no shift today — fallback to fixed mode
+                        if ($timeLimitMinutes > 0) {
+                            $scheduleTimestamp = $this->buildScheduledTimestamp($todayDate, $scheduleTime);
+                            $waiterDeadlineAt = $scheduleTimestamp + ($timeLimitMinutes * 60);
+                        }
+                    }
+                } else {
+                    // Fixed mode: original behavior
+                    if ($timeLimitMinutes > 0) {
+                        $scheduleTimestamp = $this->buildScheduledTimestamp($todayDate, $scheduleTime);
+                        $waiterDeadlineAt = $scheduleTimestamp + ($timeLimitMinutes * 60);
+                    }
                 }
 
                 $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity(
@@ -2141,12 +2298,12 @@ class FirebaseService
                     'completed_by_waiter_name' => null,
                     'completed_by_waiter_email' => null,
                     'is_recurring_instance' => true,
-                    'scheduled_time' => $scheduleTime,
+                    'scheduled_time' => $waiterScheduleTime,
                     'scheduled_for_date' => $todayDate,
                     'source_template_id' => $template['id'],
                     'recurring_instance_key' => $recurringInstanceKey,
                     'time_limit_minutes' => $timeLimitMinutes > 0 ? $timeLimitMinutes : null,
-                    'deadline_at' => $deadlineAt,
+                    'deadline_at' => $waiterDeadlineAt,
                     'recurrence_type' => $template['recurrence_type'] ?? 'daily',
                 ]);
 
@@ -2405,6 +2562,7 @@ class FirebaseService
             'rack_name' => $data['rack_name'] ?? null,
             'rack_location' => $data['rack_location'] ?? null,
             'rack_barcode_value' => $data['rack_barcode_value'] ?? null,
+            'rack_type' => $data['rack_type'] ?? null,
             'status' => 'pending',
             'assigned_by' => $data['assigned_by'] ?? 'Supervisor',
             'assignment_type' => $data['assignment_type'] ?? 'single',
@@ -3857,18 +4015,25 @@ class FirebaseService
     /**
      * Claim a durable reminder dispatch slot for one waiter/date/type.
      */
-    public function claimTaskReminderDispatch(string $waiterId, string $date, string $type, int $cooldownSeconds, int $now, int $lockSeconds = 300): bool
+    public function claimTaskReminderDispatch(string $waiterId, string $date, string $type, int $cooldownSeconds, int $now, int $maxSends = 0, int $lockSeconds = 300): bool
     {
         $path = 'waiter_task_reminder_state/'.$waiterId.'/'.$date.'/'.$type;
         $allowed = false;
 
-        $this->database->runTransaction(function ($transaction) use ($path, $cooldownSeconds, $now, $lockSeconds, &$allowed) {
+        $this->database->runTransaction(function ($transaction) use ($path, $cooldownSeconds, $now, $maxSends, $lockSeconds, &$allowed) {
             $reference = $this->database->getReference($path);
             $snapshot = $transaction->snapshot($reference);
             $state = $snapshot->exists() ? (array) $snapshot->getValue() : [];
 
             $lastSentAt = (int) ($state['last_sent_at'] ?? 0);
             $dispatchingUntil = (int) ($state['dispatching_until'] ?? 0);
+            $sendCount = (int) ($state['send_count'] ?? 0);
+
+            // Check max sends limit
+            if ($maxSends > 0 && $sendCount >= $maxSends) {
+                $allowed = false;
+                return;
+            }
 
             if (($lastSentAt > 0 && ($now - $lastSentAt) < $cooldownSeconds) || $dispatchingUntil > $now) {
                 $allowed = false;
@@ -3892,17 +4057,25 @@ class FirebaseService
      */
     public function completeTaskReminderDispatch(string $waiterId, string $date, string $type, int $sentAt, array $metadata = []): void
     {
+        $path = 'waiter_task_reminder_state/'.$waiterId.'/'.$date.'/'.$type;
+        $reference = $this->database->getReference($path);
+        $snapshot = $reference->getSnapshot();
+        $state = $snapshot->exists() ? (array) $snapshot->getValue() : [];
+        
+        $sendCount = (int) ($state['send_count'] ?? 0);
+        
         $payload = [
             'last_sent_at' => $sentAt,
             'dispatching_until' => null,
             'updated_at' => $sentAt,
+            'send_count' => $sendCount + 1,
         ];
 
         foreach ($metadata as $key => $value) {
             $payload[$key] = $value;
         }
 
-        $this->database->getReference('waiter_task_reminder_state/'.$waiterId.'/'.$date.'/'.$type)->update($payload);
+        $reference->update($payload);
     }
 
     /**
@@ -3914,14 +4087,6 @@ class FirebaseService
             'dispatching_until' => null,
             'updated_at' => $releasedAt,
         ]);
-    }
-
-    /**
-     * Delete attendance record for a waiter on a date.
-     */
-    public function deleteAttendance(string $waiterId, string $date): void
-    {
-        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->remove();
     }
 
     /**
@@ -4308,6 +4473,8 @@ class FirebaseService
         $payload = [
             'product_id' => $productId,
             'product_name' => $data['product_name'] ?? '',
+            'product_category_id' => $data['product_category_id'] ?? null,
+            'product_category_name' => $data['product_category_name'] ?? 'Tanpa Kategori',
             'rack_id' => $rackId,
             'rack_name' => $data['rack_name'] ?? '',
             'reported_qty' => (int) ($data['reported_qty'] ?? 0),
@@ -4352,6 +4519,60 @@ class FirebaseService
             usort($items, fn($a, $b) => ($b['reported_at'] ?? 0) - ($a['reported_at'] ?? 0));
         }
         return $items;
+    }
+
+    /**
+     * Get pending restock requests grouped by product (aggregated across racks)
+     */
+    public function getPendingRestockGroupedByProduct(): array
+    {
+        $pending = $this->getPendingRestockRequests();
+
+        // Group by product_id, aggregate qty_needed across racks
+        $grouped = [];
+        foreach ($pending as $item) {
+            $productId = $item['product_id'] ?? '';
+            if (!$productId) continue;
+
+            if (!isset($grouped[$productId])) {
+                $grouped[$productId] = [
+                    'product_id' => $productId,
+                    'product_name' => $item['product_name'] ?? '',
+                    'product_category_id' => $item['product_category_id'] ?? null,
+                    'product_category_name' => $item['product_category_name'] ?? 'Tanpa Kategori',
+                    'total_qty_needed' => 0,
+                    'racks' => [],
+                    'restock_ids' => [],
+                    'last_reported_at' => 0,
+                ];
+            }
+
+            $grouped[$productId]['total_qty_needed'] += (int) ($item['qty_needed'] ?? 0);
+            $grouped[$productId]['restock_ids'][] = $item['id'];
+            $grouped[$productId]['racks'][] = [
+                'rack_id' => $item['rack_id'] ?? '',
+                'rack_name' => $item['rack_name'] ?? '',
+                'qty_needed' => (int) ($item['qty_needed'] ?? 0),
+                'reported_qty' => (int) ($item['reported_qty'] ?? 0),
+                'standard_qty' => (int) ($item['standard_qty'] ?? 0),
+                'restock_id' => $item['id'],
+            ];
+
+            $reportedAt = (int) ($item['reported_at'] ?? 0);
+            if ($reportedAt > $grouped[$productId]['last_reported_at']) {
+                $grouped[$productId]['last_reported_at'] = $reportedAt;
+            }
+        }
+
+        // Sort by category then product name
+        $result = array_values($grouped);
+        usort($result, function ($a, $b) {
+            $catCmp = ($a['product_category_name'] ?? '') <=> ($b['product_category_name'] ?? '');
+            if ($catCmp !== 0) return $catCmp;
+            return ($a['product_name'] ?? '') <=> ($b['product_name'] ?? '');
+        });
+
+        return $result;
     }
 
     /**
@@ -4410,6 +4631,8 @@ class FirebaseService
             $items[$restockId] = [
                 'product_id' => $req['product_id'] ?? '',
                 'product_name' => $req['product_name'] ?? '',
+                'product_category_id' => $req['product_category_id'] ?? null,
+                'product_category_name' => $req['product_category_name'] ?? 'Tanpa Kategori',
                 'rack_id' => $req['rack_id'] ?? '',
                 'rack_name' => $req['rack_name'] ?? '',
                 'qty_needed' => $qtyNeeded,
@@ -4546,7 +4769,153 @@ class FirebaseService
         }
         $this->database->getReference("restock_requests/{$restockId}")->update($restockUpdates);
 
-        return ['success' => true, 'po_status' => $poStatus, 'received_count' => $receivedCount, 'total_items' => $totalItems];
+        return [
+            'success' => true,
+            'po_status' => $poStatus,
+            'received_count' => $receivedCount,
+            'total_items' => $totalItems,
+            'item_completed' => $newReceived >= $qtyOrdered,
+            'po_completed' => $poStatus === 'completed',
+            'new_received_qty' => $newReceived,
+            'qty_ordered' => $qtyOrdered,
+        ];
+    }
+
+    /**
+     * Accept PO item "as is" - mark as completed even if qty doesn't match order
+     * Supervisor action when supplier can't fulfill full order
+     */
+    public function acceptPoItemAsIs(string $poId, string $restockId, string $acceptedBy, string $acceptedByName): array
+    {
+        $po = $this->getPurchaseOrder($poId);
+        if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
+
+        $items = $po['items'] ?? [];
+        if (!isset($items[$restockId])) return ['success' => false, 'message' => 'Item tidak ditemukan di PO'];
+
+        $item = $items[$restockId];
+        $receivedQty = (int) ($item['received_qty'] ?? 0);
+
+        // Mark item as completed regardless of qty
+        $itemUpdates = [
+            "items/{$restockId}/received" => true,
+            "items/{$restockId}/accepted_as_is" => true,
+            "items/{$restockId}/accepted_as_is_at" => time(),
+            "items/{$restockId}/accepted_as_is_by" => $acceptedBy,
+            "items/{$restockId}/accepted_as_is_by_name" => $acceptedByName,
+        ];
+
+        $this->database->getReference("purchase_orders/{$poId}")->update($itemUpdates);
+
+        // Recount received items
+        $receivedCount = 0;
+        $totalItems = count($items);
+        foreach ($items as $rId => $itm) {
+            $isReceived = ($rId === $restockId) ? true : (bool) ($itm['received'] ?? false);
+            if ($isReceived) $receivedCount++;
+        }
+
+        // Update PO status
+        $poStatus = ($receivedCount >= $totalItems) ? 'completed' : 'partial';
+
+        $this->database->getReference("purchase_orders/{$poId}")->update([
+            'received_count' => $receivedCount,
+            'status' => $poStatus,
+        ]);
+
+        // Update restock request
+        $this->database->getReference("restock_requests/{$restockId}")->update([
+            'status' => 'received',
+            'accepted_as_is' => true,
+            'updated_at' => time(),
+        ]);
+
+        return [
+            'success' => true,
+            'po_status' => $poStatus,
+            'received_count' => $receivedCount,
+            'total_items' => $totalItems,
+            'po_completed' => $poStatus === 'completed',
+        ];
+    }
+
+    /**
+     * Report an issue with a PO item (not received, wrong qty, damaged)
+     * "Barang tidak datang" auto-closes item with received = true (qty stays 0)
+     */
+    public function reportPoItemIssue(string $poId, string $restockId, string $issueNote, string $reportedBy, string $reportedByName): array
+    {
+        $po = $this->getPurchaseOrder($poId);
+        if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
+
+        $items = $po['items'] ?? [];
+        if (!isset($items[$restockId])) return ['success' => false, 'message' => 'Item tidak ditemukan di PO'];
+
+        // Store issue
+        $issueData = [
+            'note' => $issueNote,
+            'reported_by' => $reportedBy,
+            'reported_by_name' => $reportedByName,
+            'reported_at' => time(),
+        ];
+        $this->database->getReference("purchase_orders/{$poId}/items/{$restockId}/issue")->set($issueData);
+
+        // "Barang tidak datang" = auto-close item (received_qty stays at current, mark as closed)
+        $itemClosed = false;
+        $isNotReceived = str_contains(strtolower($issueNote), 'tidak datang');
+
+        if ($isNotReceived) {
+            $this->database->getReference("purchase_orders/{$poId}/items/{$restockId}")->update([
+                'received' => true,
+                'closed_reason' => 'not_received',
+                'closed_at' => time(),
+                'closed_by' => $reportedBy,
+                'closed_by_name' => $reportedByName,
+            ]);
+            $itemClosed = true;
+
+            // Recount received items and update PO status
+            $receivedCount = 0;
+            $totalItems = count($items);
+            foreach ($items as $rId => $itm) {
+                if ($rId === $restockId) {
+                    $receivedCount++; // This item is now closed
+                } else {
+                    $rQty = (int) ($itm['received_qty'] ?? 0);
+                    $oQty = (int) ($itm['qty_ordered'] ?? 0);
+                    if (!empty($itm['received']) || $rQty >= $oQty) $receivedCount++;
+                }
+            }
+
+            $poStatus = 'ordered';
+            if ($receivedCount >= $totalItems) {
+                $poStatus = 'completed';
+            } elseif ($receivedCount > 0) {
+                $poStatus = 'partial';
+            }
+
+            $this->database->getReference("purchase_orders/{$poId}")->update([
+                'received_count' => $receivedCount,
+                'status' => $poStatus,
+            ]);
+
+            // Update restock request status
+            $this->database->getReference("restock_requests/{$restockId}")->update([
+                'status' => 'not_received',
+                'issue_note' => $issueNote,
+                'updated_at' => time(),
+            ]);
+
+            return [
+                'success' => true,
+                'item_closed' => true,
+                'po_completed' => $poStatus === 'completed',
+                'po_status' => $poStatus,
+                'message' => 'Item ditandai tidak diterima.',
+            ];
+        }
+
+        return ['success' => true, 'item_closed' => false, 'message' => 'Masalah berhasil dilaporkan.'];
     }
 
     /**
@@ -4846,5 +5215,85 @@ class FirebaseService
             if (!empty($notes)) return $notes;
         }
         return [];
+    }
+
+    // ========================================
+    // SUPPLIER MANAGEMENT
+    // ========================================
+
+    /**
+     * Get all suppliers
+     */
+    public function getSuppliers(): array
+    {
+        $snapshot = $this->database->getReference('suppliers')->getSnapshot();
+        if (!$snapshot->exists()) return [];
+
+        $suppliers = [];
+        foreach ($snapshot->getValue() as $id => $supplier) {
+            if (!is_array($supplier)) continue;
+            $supplier['id'] = $id;
+            $suppliers[] = $supplier;
+        }
+
+        usort($suppliers, fn($a, $b) => strcasecmp($a['name'] ?? '', $b['name'] ?? ''));
+        return $suppliers;
+    }
+
+    /**
+     * Get supplier by ID
+     */
+    public function getSupplierById(string $id): ?array
+    {
+        $snapshot = $this->database->getReference("suppliers/{$id}")->getSnapshot();
+        if (!$snapshot->exists()) return null;
+
+        $supplier = (array) $snapshot->getValue();
+        $supplier['id'] = $id;
+        return $supplier;
+    }
+
+    /**
+     * Create supplier
+     */
+    public function createSupplier(array $data): string
+    {
+        $payload = [
+            'name' => (string) ($data['name'] ?? ''),
+            'phone' => (string) ($data['phone'] ?? ''),
+            'address' => (string) ($data['address'] ?? ''),
+            'contact_person' => (string) ($data['contact_person'] ?? ''),
+            'created_at' => time(),
+            'updated_at' => time(),
+        ];
+
+        $ref = $this->database->getReference('suppliers')->push($payload);
+        return $ref->getKey();
+    }
+
+    /**
+     * Update supplier
+     */
+    public function updateSupplier(string $id, array $data): bool
+    {
+        $payload = [
+            'name' => (string) ($data['name'] ?? ''),
+            'phone' => (string) ($data['phone'] ?? ''),
+            'address' => (string) ($data['address'] ?? ''),
+            'contact_person' => (string) ($data['contact_person'] ?? ''),
+            'updated_at' => time(),
+        ];
+
+        $this->database->getReference("suppliers/{$id}")->update($payload);
+        return true;
+    }
+
+    /**
+     * Delete supplier
+     */
+    public function deleteSupplier(string $id): bool
+    {
+        $this->database->getReference("suppliers/{$id}")->remove();
+        return true;
     }
 }

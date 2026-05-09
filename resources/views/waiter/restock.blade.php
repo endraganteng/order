@@ -229,7 +229,7 @@
                 <div class="po-header">
                     <div>
                         <h3 class="po-title">{{ $order['po_number'] }}</h3>
-                        <div class="po-meta">Supplier: {{ $order['supplier'] ?: '-' }}</div>
+                        <div class="po-meta">Supplier: {{ $order['supplier'] ?? '-' }}</div>
                         <div class="po-meta">Tgl: {{ date('d M Y H:i', $order['created_at']) }}</div>
                     </div>
                     <div style="text-align: right;">
@@ -243,30 +243,45 @@
                 </div>
                 
                 <div style="margin-top: 15px;">
-                    @foreach($order['items'] as $item)
+                    @foreach(($order['items'] ?? []) as $restockKey => $item)
                         @php
-                            $remaining = $item['qty_ordered'] - $item['qty_received'];
-                            $isCompleted = $remaining <= 0 || $item['received'];
+                            $qtyOrdered = $item['qty_ordered'] ?? 0;
+                            $qtyReceived = $item['qty_received'] ?? $item['received_qty'] ?? 0;
+                            $remaining = $qtyOrdered - $qtyReceived;
+                            $isCompleted = $remaining <= 0 || !empty($item['received']);
+                            $itemRestockId = $item['restock_id'] ?? $restockKey;
                         @endphp
                         
-                        <div class="item-card {{ $isCompleted ? 'completed' : '' }}" id="item-{{ $item['restock_id'] }}">
+                        <div class="item-card {{ $isCompleted ? 'completed' : '' }}" id="item-{{ $itemRestockId }}">
                             <div class="item-header">
-                                <div class="item-name">{{ $item['product_name'] }}</div>
-                                <div class="item-rack">{{ $item['rack_name'] }}</div>
+                                <div class="item-name">{{ $item['product_name'] ?? '-' }}</div>
+                                <div class="item-rack">{{ $item['rack_name'] ?? '-' }}</div>
                             </div>
                             
                             <div class="item-stats">
-                                <div class="stat-box">Dipesan: <strong>{{ $item['qty_ordered'] }}</strong></div>
-                                <div class="stat-box">Diterima: <strong class="received-val">{{ $item['qty_received'] }}</strong></div>
+                                <div class="stat-box">Dipesan: <strong>{{ $qtyOrdered }}</strong></div>
+                                <div class="stat-box">Diterima: <strong class="received-val">{{ $qtyReceived }}</strong></div>
                             </div>
                             
+                            @if(!empty($item['issue']))
+                                <div style="margin-top:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:12px;color:#dc2626;font-weight:500;">
+                                    ⚠️ Dilaporkan: {{ $item['issue']['note'] ?? '-' }}
+                                    <span style="color:#94a3b8;font-weight:400;margin-left:6px;">oleh {{ $item['issue']['reported_by_name'] ?? '-' }}</span>
+                                </div>
+                            @endif
+
                             @if($isCompleted)
                                 <div class="completed-msg">✅ Item sudah diterima penuh</div>
                             @else
                                 <div class="receive-action">
-                                    <input type="number" class="qty-input" value="{{ $remaining }}" min="1" max="{{ $remaining }}" id="input-{{ $item['restock_id'] }}">
-                                    <button class="btn-receive" onclick="receiveItem({{ $order['id'] }}, {{ $item['restock_id'] }}, {{ $remaining }})">
+                                    <input type="number" class="qty-input" value="{{ $remaining }}" min="1" max="{{ $remaining }}" id="input-{{ $itemRestockId }}">
+                                    <button class="btn-receive" onclick="receiveItem('{{ $order['id'] }}', '{{ $itemRestockId }}', {{ $remaining }})">
                                         Terima
+                                    </button>
+                                </div>
+                                <div style="margin-top: 8px;">
+                                    <button style="background:none;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:500;" onclick="reportIssue('{{ $order['id'] }}', '{{ $itemRestockId }}', '{{ addslashes($item['product_name'] ?? '') }}')">
+                                        ⚠️ Laporkan Masalah
                                     </button>
                                 </div>
                             @endif
@@ -303,7 +318,7 @@
             qty = maxQty;
         }
         
-        const btn = input.nextElementSibling;
+        const btn = input.closest('.receive-action').querySelector('.btn-receive');
         btn.disabled = true;
         btn.textContent = '...';
         
@@ -322,35 +337,38 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showFlash('Penerimaan dicatat!');
+                showFlash('✅ Penerimaan dicatat! (' + qty + ' unit)');
                 
-                // Update UI visually
                 const itemCard = document.getElementById(`item-${restockId}`);
-                const currentReceived = parseInt(itemCard.querySelector('.received-val').textContent);
-                const newReceived = currentReceived + qty;
+                const receivedEl = itemCard.querySelector('.received-val');
+                const newReceived = data.new_received_qty || (parseInt(receivedEl.textContent) + qty);
+                receivedEl.textContent = newReceived;
                 
-                itemCard.querySelector('.received-val').textContent = newReceived;
+                // Update progress bar for this PO
+                const poCard = itemCard.closest('.po-card');
+                if (poCard && data.received_count !== undefined) {
+                    const progressText = poCard.querySelector('.po-progress-text');
+                    if (progressText) progressText.textContent = data.received_count + '/' + data.total_items + ' Item';
+                    const progressFill = poCard.querySelector('.progress-fill');
+                    if (progressFill) progressFill.style.width = Math.round((data.received_count / data.total_items) * 100) + '%';
+                }
                 
-                // If fully received
                 if (data.item_completed) {
                     itemCard.classList.add('completed');
-                    itemCard.querySelector('.receive-action').innerHTML = '<div class="completed-msg">✅ Item sudah diterima penuh</div>';
+                    const receiveAction = itemCard.querySelector('.receive-action');
+                    if (receiveAction) receiveAction.innerHTML = '<div class="completed-msg">✅ Item sudah diterima penuh</div>';
                 } else {
-                    // Update remaining in input
-                    const newMax = maxQty - qty;
-                    input.value = newMax;
-                    input.max = newMax;
-                    input.setAttribute('onchange', `if(this.value > ${newMax}) this.value = ${newMax}`);
-                    
-                    // Update onclick handler
-                    btn.setAttribute('onclick', `receiveItem(${poId}, ${restockId}, ${newMax})`);
+                    const newMax = (data.qty_ordered || maxQty) - newReceived;
+                    input.value = newMax > 0 ? newMax : 1;
+                    input.max = newMax > 0 ? newMax : 1;
+                    btn.setAttribute('onclick', `receiveItem('${poId}', '${restockId}', ${newMax})`);
                     btn.disabled = false;
                     btn.textContent = 'Terima';
                 }
                 
-                // If PO is fully completed, reload page to refresh state properly
                 if (data.po_completed) {
-                    setTimeout(() => window.location.reload(), 1500);
+                    showFlash('🎉 PO selesai! Semua barang sudah diterima.');
+                    setTimeout(() => window.location.reload(), 2000);
                 }
             } else {
                 alert('Error: ' + (data.message || 'Gagal menyimpan'));
@@ -363,6 +381,76 @@
             alert('Terjadi kesalahan sistem');
             btn.disabled = false;
             btn.textContent = 'Terima';
+        });
+    }
+
+    function reportIssue(poId, restockId, productName) {
+        const reason = prompt(`Laporkan masalah untuk "${productName}":\n\n1 = Barang tidak datang (qty = 0)\n2 = Qty tidak sesuai\n3 = Barang rusak/cacat\n\nPilih (1/2/3) atau ketik alasan:`);
+        if (!reason) return;
+
+        let note = reason;
+        if (reason === '1') note = 'Barang tidak datang';
+        else if (reason === '2') note = 'Qty tidak sesuai pesanan';
+        else if (reason === '3') note = 'Barang rusak/cacat';
+
+        if (note === 'Barang tidak datang' && !confirm('Konfirmasi: Item ini akan ditandai TIDAK DITERIMA (qty = 0) dan ditutup. Lanjutkan?')) {
+            return;
+        }
+
+        fetch(`/waiter/restock/${poId}/report-issue`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                restock_id: restockId,
+                issue_note: note
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const itemCard = document.getElementById(`item-${restockId}`);
+
+                if (data.item_closed) {
+                    // Item auto-closed (barang tidak datang)
+                    showFlash('❌ Item ditandai tidak diterima');
+                    if (itemCard) {
+                        itemCard.classList.add('completed');
+                        const receiveAction = itemCard.querySelector('.receive-action');
+                        if (receiveAction) receiveAction.remove();
+                        const reportBtn = itemCard.querySelector('[onclick*="reportIssue"]');
+                        if (reportBtn) reportBtn.parentElement.remove();
+                        const closedMsg = document.createElement('div');
+                        closedMsg.className = 'completed-msg';
+                        closedMsg.style.cssText = 'background:#fef2f2;color:#dc2626;border-color:#fecaca;';
+                        closedMsg.textContent = '❌ Barang tidak datang — ditutup';
+                        itemCard.appendChild(closedMsg);
+                    }
+
+                    if (data.po_completed) {
+                        showFlash('PO selesai (semua item sudah diproses).');
+                        setTimeout(() => window.location.reload(), 2000);
+                    }
+                } else {
+                    // Issue reported only (qty tidak sesuai, rusak)
+                    showFlash('⚠️ Masalah dilaporkan ke supervisor');
+                    if (itemCard) {
+                        const issueTag = document.createElement('div');
+                        issueTag.style.cssText = 'margin-top:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:12px;color:#dc2626;font-weight:500;';
+                        issueTag.textContent = '⚠️ Dilaporkan: ' + note;
+                        itemCard.appendChild(issueTag);
+                    }
+                }
+            } else {
+                alert('Error: ' + (data.message || 'Gagal melaporkan'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Terjadi kesalahan sistem');
         });
     }
 </script>

@@ -18,6 +18,7 @@ class StoreRackRequest extends FormRequest
             'location' => 'required|string|max:120',
             'description' => 'nullable|string|max:1000',
             'is_active' => 'nullable|boolean',
+            'rack_type' => 'required|in:display,storage',
             'check_order' => 'nullable|integer|min:0|max:999',
         ];
     }

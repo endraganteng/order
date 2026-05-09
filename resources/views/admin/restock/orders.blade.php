@@ -38,7 +38,7 @@
                 <tr style="border-bottom: 1px solid var(--color-border);">
                     <td style="padding: 12px; font-weight: bold;">{{ $order['po_number'] }}</td>
                     <td style="padding: 12px; color: var(--color-text-secondary);">{{ date('d M Y H:i', $order['created_at']) }}</td>
-                    <td style="padding: 12px; color: var(--color-text-secondary);">{{ $order['supplier'] ?: '-' }}</td>
+                    <td style="padding: 12px; color: var(--color-text-secondary);">{{ $order['supplier'] ?? '-' }}</td>
                     <td style="padding: 12px; text-align: center;">{{ $order['items_count'] }}</td>
                     <td style="padding: 12px; text-align: center;">
                         <span style="font-weight: 500; color: {{ $order['received_count'] == $order['items_count'] ? 'var(--color-success)' : 'var(--color-text)' }};">

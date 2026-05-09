@@ -628,6 +628,12 @@
             <a href="{{ route('admin.tasks.create', ['task_type' => $createTaskType, 'task_scope' => $createScope]) }}" class="btn btn-primary">
                 + Buat Tugas Baru
             </a>
+            <form method="POST" action="{{ route('admin.tasks.force_generate') }}" style="display:inline;">
+                @csrf
+                <button type="submit" class="btn" style="background:#fef3c7; color:#92400e; border:1px solid #f59e0b;" title="Generate semua recurring task SEKARANG (bypass jadwal & waktu)">
+                    ⚡ Force Generate
+                </button>
+            </form>
         </div>
     </div>
 

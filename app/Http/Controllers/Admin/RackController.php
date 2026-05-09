@@ -37,6 +37,7 @@ class RackController extends Controller
             'location' => $request->location,
             'description' => $request->description,
             'is_active' => $request->has('is_active'),
+            'rack_type' => $request->input('rack_type', 'storage'),
             'check_order' => (int) $request->input('check_order', 0),
         ]);
 
@@ -144,6 +145,7 @@ class RackController extends Controller
             'location' => $request->location,
             'description' => $request->description,
             'is_active' => (bool) $request->is_active,
+            'rack_type' => $request->input('rack_type', 'storage'),
             'check_order' => (int) $request->input('check_order', 0),
         ]);
 

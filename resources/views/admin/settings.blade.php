@@ -88,6 +88,25 @@
                 </select>
             </div>
 
+            <hr style="margin: 30px 0; border: none; border-top: 2px solid #e0e0e0;">
+
+            <h3 style="margin-bottom: 15px; color: #333;">Absensi</h3>
+            <p style="color: #666; font-size: 14px; margin-bottom: 20px;">
+                Pengaturan fitur absensi waiter.
+            </p>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 600;">Wajib Absen Pulang (Clock Out)</label>
+                <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                    Jika nonaktif, waiter tidak perlu scan QR untuk absen pulang. Jam pulang otomatis mengikuti jadwal shift.
+                </p>
+                <select name="clock_out_enabled"
+                    style="width: 200px; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    <option value="1" {{ old('clock_out_enabled', $settings['clock_out_enabled'] ?? false) ? 'selected' : '' }}>Aktif</option>
+                    <option value="0" {{ !old('clock_out_enabled', $settings['clock_out_enabled'] ?? false) ? 'selected' : '' }}>Nonaktif</option>
+                </select>
+            </div>
+
             <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
         </form>
     </div>

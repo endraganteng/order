@@ -124,24 +124,78 @@
                         style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
                 </div>
 
-                <div>
+                {{-- Schedule Mode: Fixed vs Shift Relative --}}
+                <div style="grid-column: 1 / -1;">
+                    @php $scheduleMode = old('schedule_mode', $template['schedule_mode'] ?? 'fixed'); @endphp
+                    <label for="schedule_mode" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Mode Jadwal
+                    </label>
+                    <select id="schedule_mode" name="schedule_mode" onchange="toggleScheduleMode()"
+                        style="width: 280px; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                        <option value="fixed" {{ $scheduleMode === 'fixed' ? 'selected' : '' }}>⏰ Jam Tetap (Fixed)</option>
+                        <option value="shift_relative" {{ $scheduleMode === 'shift_relative' ? 'selected' : '' }}>🔄 Ikuti Shift Waiter</option>
+                    </select>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        Mode "Ikuti Shift" = jam tugas & deadline otomatis menyesuaikan shift masing-masing waiter.
+                    </div>
+                </div>
+
+                {{-- Fixed mode fields --}}
+                <div id="fixed-schedule-wrapper">
                     <label for="schedule_time" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
                         Jam Jadwal <span style="color: #dc3545;">*</span>
                     </label>
                     <input type="time" id="schedule_time" name="schedule_time"
                         value="{{ old('schedule_time', $template['schedule_time'] ?? '') }}"
-                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                        required>
+                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
                 </div>
 
-                <div>
+                <div id="fixed-deadline-wrapper">
                     <label for="time_limit_minutes" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
                         Batas Waktu (menit) <span style="color: #dc3545;">*</span>
                     </label>
-                    <input type="number" id="time_limit_minutes" name="time_limit_minutes" min="1" max="1440"
+                    <input type="number" id="time_limit_minutes" name="time_limit_minutes" min="0" max="1440"
                         value="{{ old('time_limit_minutes', $template['time_limit_minutes'] ?? 30) }}"
-                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;"
-                        required>
+                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                </div>
+
+                {{-- Shift-relative mode fields --}}
+                <div id="shift-offset-wrapper" style="display: none;">
+                    @php $shiftOffset = old('shift_offset_minutes', $template['shift_offset_minutes'] ?? 30); @endphp
+                    <label for="shift_offset_minutes" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Muncul Setelah Shift Mulai (menit)
+                    </label>
+                    <input type="number" id="shift_offset_minutes" name="shift_offset_minutes" min="0" max="480"
+                        value="{{ $shiftOffset }}"
+                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        Contoh: 30 = tugas muncul 30 menit setelah shift dimulai
+                    </div>
+                </div>
+
+                <div id="shift-deadline-wrapper" style="display: none;">
+                    @php $deadlineMode = old('deadline_mode', $template['deadline_mode'] ?? 'fixed'); @endphp
+                    <label for="deadline_mode" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Mode Deadline
+                    </label>
+                    <select id="deadline_mode" name="deadline_mode" onchange="toggleDeadlineMode()"
+                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                        <option value="fixed" {{ $deadlineMode === 'fixed' ? 'selected' : '' }}>Batas waktu tetap (menit dari muncul)</option>
+                        <option value="before_shift_end" {{ $deadlineMode === 'before_shift_end' ? 'selected' : '' }}>Sebelum shift selesai</option>
+                    </select>
+                </div>
+
+                <div id="deadline-before-end-wrapper" style="display: none;">
+                    @php $deadlineBeforeEnd = old('deadline_before_end_minutes', $template['deadline_before_end_minutes'] ?? 60); @endphp
+                    <label for="deadline_before_end_minutes" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+                        Deadline Sebelum Shift Selesai (menit)
+                    </label>
+                    <input type="number" id="deadline_before_end_minutes" name="deadline_before_end_minutes" min="0" max="480"
+                        value="{{ $deadlineBeforeEnd }}"
+                        style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        Contoh: 60 = deadline 1 jam sebelum shift berakhir
+                    </div>
                 </div>
             </div>
 
@@ -202,7 +256,50 @@
             }
         }
 
+        function toggleScheduleMode() {
+            const mode = document.getElementById('schedule_mode').value;
+            const fixedSchedule = document.getElementById('fixed-schedule-wrapper');
+            const fixedDeadline = document.getElementById('fixed-deadline-wrapper');
+            const shiftOffset = document.getElementById('shift-offset-wrapper');
+            const shiftDeadline = document.getElementById('shift-deadline-wrapper');
+            const scheduleTimeInput = document.getElementById('schedule_time');
+            const timeLimitInput = document.getElementById('time_limit_minutes');
+
+            if (mode === 'shift_relative') {
+                fixedSchedule.style.display = 'none';
+                fixedDeadline.style.display = 'none';
+                shiftOffset.style.display = 'block';
+                shiftDeadline.style.display = 'block';
+                scheduleTimeInput.required = false;
+                timeLimitInput.required = false;
+                toggleDeadlineMode();
+            } else {
+                fixedSchedule.style.display = 'block';
+                fixedDeadline.style.display = 'block';
+                shiftOffset.style.display = 'none';
+                shiftDeadline.style.display = 'none';
+                document.getElementById('deadline-before-end-wrapper').style.display = 'none';
+                scheduleTimeInput.required = true;
+                timeLimitInput.required = true;
+            }
+        }
+
+        function toggleDeadlineMode() {
+            const deadlineMode = document.getElementById('deadline_mode').value;
+            const beforeEndWrapper = document.getElementById('deadline-before-end-wrapper');
+            const fixedDeadline = document.getElementById('fixed-deadline-wrapper');
+
+            if (deadlineMode === 'before_shift_end') {
+                beforeEndWrapper.style.display = 'block';
+                fixedDeadline.style.display = 'none';
+            } else {
+                beforeEndWrapper.style.display = 'none';
+                fixedDeadline.style.display = 'block';
+            }
+        }
+
         toggleRecurrenceDetailFields();
+        toggleScheduleMode();
     </script>
 @endsection
 

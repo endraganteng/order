@@ -103,9 +103,11 @@ class WaiterController extends Controller
         $taskBuckets = $this->buildWaiterTaskBuckets($waiterId);
         $activityReports = $this->buildWaiterActivityReports($waiterId, $reportDate);
         $rackProductsMap = $this->firebase->getAllRackProductsMap();
+        $rackTypesMap = $this->firebase->getRackTypesMap();
         $todayAttendance = $this->firebase->getAttendanceByDate($waiterId, date('Y-m-d'));
         $waiterShift = $this->firebase->getWaiterShift($waiterId);
-        $handoverNotes = $this->firebase->getLatestHandoverNotes();
+        $settings = $this->firebase->getSettings();
+        $clockOutEnabled = !empty($settings['clock_out_enabled']);
 
         // Bonus dashboard data
         $bonusMonth = date('Y-m');
@@ -147,10 +149,10 @@ class WaiterController extends Controller
             'taskHistory' => $taskBuckets['task_history'],
             'activityReports' => $activityReports,
             'rackProductsMap' => $rackProductsMap,
+            'rackTypesMap' => $rackTypesMap,
             'todayAttendance' => $todayAttendance,
             'waiterShift' => $waiterShift,
             'shiftStartTime' => $waiterShift ? ($waiterShift['clock_in_time'] ?? null) : null,
-            'handoverNotes' => $handoverNotes,
             // Bonus data
             'bonusMonth' => $bonusMonth,
             'bonusConfig' => $bonusConfig,
@@ -171,6 +173,7 @@ class WaiterController extends Controller
             'dailyMaxWithPerfect' => $dailyMaxWithPerfect,
             'monthlyServiceMax' => $monthlyServiceMax,
             'monthlySalesMax' => $monthlySalesMax,
+            'clockOutEnabled' => $clockOutEnabled,
         ]);
     }
 
@@ -357,38 +360,93 @@ class WaiterController extends Controller
             report($e);
         }
 
-        // Auto-collect restock requests from product checklist
+        // Auto-collect restock requests from product checklist (ONLY for storage racks)
         try {
             if ($productChecklist && is_array($productChecklist)) {
                 $task = $this->firebase->getWaiterTaskById($id);
                 $rackId = $task['rack_id'] ?? '';
                 $rackName = $task['rack_name'] ?? ($task['title'] ?? '');
 
-                foreach ($productChecklist as $item) {
-                    $actualQty = (int) ($item['actual_qty'] ?? 0);
-                    $standardQty = (int) ($item['standard_qty'] ?? 0);
-                    $minQty = (int) ($item['min_qty'] ?? 0);
+                // Only trigger restock for storage racks (not display racks)
+                $rack = $rackId ? $this->firebase->getRackById($rackId) : null;
+                $rackType = $rack['rack_type'] ?? 'storage';
 
-                    // Trigger restock if qty = 0 OR qty <= min_qty (when min_qty is set)
-                    $needsRestock = $actualQty === 0 || ($minQty > 0 && $actualQty <= $minQty);
+                if ($rackType === 'storage') {
+                    // STORAGE rack: shortage → masuk daftar restock (beli ke supplier)
+                    $productCategories = $this->firebase->getProductCategoriesMap();
 
-                    if ($needsRestock && $rackId) {
-                        $qtyNeeded = $standardQty - $actualQty;
-                        if ($qtyNeeded <= 0) $qtyNeeded = $standardQty;
+                    foreach ($productChecklist as $item) {
+                        $actualQty = (int) ($item['actual_qty'] ?? 0);
+                        $standardQty = (int) ($item['standard_qty'] ?? 0);
+                        $minQty = (int) ($item['min_qty'] ?? 0);
 
-                        $this->firebase->createOrUpdateRestockRequest([
-                            'product_id' => $item['product_id'] ?? '',
-                            'product_name' => $item['product_name'] ?? ($item['name'] ?? ''),
-                            'rack_id' => $rackId,
-                            'rack_name' => $rackName,
-                            'reported_qty' => $actualQty,
-                            'standard_qty' => $standardQty,
-                            'min_qty' => $minQty,
-                            'qty_needed' => $qtyNeeded,
-                            'reported_by' => $waiterId,
-                            'reported_by_name' => $waiterName,
-                            'date' => date('Y-m-d'),
-                        ]);
+                        $needsRestock = $standardQty > 0 && $actualQty < $standardQty;
+
+                        if ($needsRestock && $rackId) {
+                            $qtyNeeded = $standardQty - $actualQty;
+                            if ($qtyNeeded <= 0) $qtyNeeded = $standardQty;
+
+                            $productId = $item['product_id'] ?? '';
+                            $productMaster = $productId ? $this->firebase->getProductById($productId) : null;
+                            $catId = $productMaster['category_id'] ?? null;
+                            $catName = ($catId && isset($productCategories[$catId])) ? $productCategories[$catId]['name'] : 'Tanpa Kategori';
+
+                            $this->firebase->createOrUpdateRestockRequest([
+                                'product_id' => $productId,
+                                'product_name' => $item['product_name'] ?? ($item['name'] ?? ''),
+                                'product_category_id' => $catId,
+                                'product_category_name' => $catName,
+                                'rack_id' => $rackId,
+                                'rack_name' => $rackName,
+                                'reported_qty' => $actualQty,
+                                'standard_qty' => $standardQty,
+                                'min_qty' => $minQty,
+                                'qty_needed' => $qtyNeeded,
+                                'reported_by' => $waiterId,
+                                'reported_by_name' => $waiterName,
+                                'date' => date('Y-m-d'),
+                            ]);
+                        }
+                    }
+                } elseif ($rackType === 'display') {
+                    // DISPLAY rack: after refill step, if qty final still < standard → masuk restock
+                    // (waiter already did inline refill from gudang, qty submitted is the FINAL qty)
+                    $productCategories = $this->firebase->getProductCategoriesMap();
+
+                    foreach ($productChecklist as $item) {
+                        $actualQty = (int) ($item['actual_qty'] ?? 0); // qty FINAL setelah refill
+                        $standardQty = (int) ($item['standard_qty'] ?? 0);
+                        $minQty = (int) ($item['min_qty'] ?? 0);
+                        $wasRefilled = (bool) ($item['was_refilled'] ?? false);
+
+                        // Only trigger restock if item was refilled but still below standard
+                        // (meaning gudang juga tidak cukup)
+                        $needsRestock = $wasRefilled && $standardQty > 0 && $actualQty < $standardQty;
+
+                        if ($needsRestock && $rackId) {
+                            $qtyNeeded = $standardQty - $actualQty;
+
+                            $productId = $item['product_id'] ?? '';
+                            $productMaster = $productId ? $this->firebase->getProductById($productId) : null;
+                            $catId = $productMaster['category_id'] ?? null;
+                            $catName = ($catId && isset($productCategories[$catId])) ? $productCategories[$catId]['name'] : 'Tanpa Kategori';
+
+                            $this->firebase->createOrUpdateRestockRequest([
+                                'product_id' => $productId,
+                                'product_name' => $item['product_name'] ?? ($item['name'] ?? ''),
+                                'product_category_id' => $catId,
+                                'product_category_name' => $catName,
+                                'rack_id' => $rackId,
+                                'rack_name' => $rackName,
+                                'reported_qty' => $actualQty,
+                                'standard_qty' => $standardQty,
+                                'min_qty' => $minQty,
+                                'qty_needed' => $qtyNeeded,
+                                'reported_by' => $waiterId,
+                                'reported_by_name' => $waiterName,
+                                'date' => date('Y-m-d'),
+                            ]);
+                        }
                     }
                 }
             }
@@ -418,10 +476,12 @@ class WaiterController extends Controller
     public function getRackProducts()
     {
         $rackProductsMap = $this->firebase->getAllRackProductsMap();
+        $rackTypesMap = $this->firebase->getRackTypesMap();
 
         return response()->json([
             'success' => true,
             'rack_products_map' => $rackProductsMap,
+            'rack_types_map' => $rackTypesMap,
         ]);
     }
 
@@ -506,6 +566,11 @@ class WaiterController extends Controller
      */
     public function clockOut(Request $request)
     {
+        $settings = $this->firebase->getSettings();
+        if (empty($settings['clock_out_enabled'])) {
+            return response()->json(['success' => false, 'message' => 'Fitur absen pulang tidak aktif'], 403);
+        }
+
         $waiterId = (string) session('waiter_id');
         $scannedValue = $request->input('scanned_value');
 
@@ -707,6 +772,27 @@ class WaiterController extends Controller
     }
 
     /**
+     * Report issue with a PO item (not received, wrong qty, damaged)
+     * If issue is "Barang tidak datang", auto-close item with received_qty = 0
+     */
+    public function reportRestockIssue(string $poId, Request $request)
+    {
+        $request->validate([
+            'restock_id' => 'required|string',
+            'issue_note' => 'required|string|max:500',
+        ]);
+
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+        $restockId = $request->input('restock_id');
+        $issueNote = $request->input('issue_note');
+
+        $result = $this->firebase->reportPoItemIssue($poId, $restockId, $issueNote, $waiterId, $waiterName);
+
+        return response()->json($result);
+    }
+
+    /**
      * Send WhatsApp notifications for newly overdue tasks.
      */
     protected function sendOverdueNotifications(array $overdueTasks): void
@@ -732,23 +818,5 @@ class WaiterController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
-    }
-
-    /**
-     * Submit handover note at clock-out.
-     */
-    public function submitHandover(Request $request)
-    {
-        $request->validate([
-            'note' => 'required|string|max:2000',
-        ]);
-
-        $waiterId = (string) session('waiter_id');
-        $waiterName = (string) session('waiter_name', 'Waiter');
-        $today = date('Y-m-d');
-
-        $this->firebase->saveHandoverNote($waiterId, $waiterName, $today, $request->input('note'));
-
-        return response()->json(['success' => true, 'message' => 'Catatan serah terima berhasil disimpan.']);
     }
 }

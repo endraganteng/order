@@ -106,7 +106,7 @@
                                     <span style="font-family: monospace; background: var(--color-bg); padding: 0.1rem 0.3rem; border-radius: 4px; border: 1px solid var(--color-border);">{{ $log['entity'] }}</span>
                                 </td>
                                 <td style="padding: 0.75rem 1rem; color: var(--color-text);">
-                                    {{ Str::limit($log['entity_id'], 15) }}
+                                    {{ Str::limit($log['entity_id'] ?? '-', 15) }}
                                 </td>
                                 <td style="padding: 0.75rem 1rem;">
                                     @if($log['details'])

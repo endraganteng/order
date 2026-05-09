@@ -167,7 +167,7 @@ class FonnteService
 
             if ($this->dispatchReminder($waiterId, $date, 'general', 3600, $phone, $message, [
                 'pending_count' => $count,
-            ], $now)) {
+            ], $now, 2)) {
                 $sent[] = 'general';
             }
         }
@@ -187,7 +187,7 @@ class FonnteService
 
             if ($this->dispatchReminder($waiterId, $date, 'rack_check', 7200, $phone, $message, [
                 'pending_count' => $count,
-            ], $now)) {
+            ], $now, 2)) {
                 $sent[] = 'rack_check';
             }
         }
@@ -372,9 +372,9 @@ class FonnteService
         return $resolved !== false ? $resolved : null;
     }
 
-    protected function dispatchReminder(string $waiterId, string $date, string $type, int $cooldownSeconds, string $phone, string $message, array $metadata, int $now): bool
+    protected function dispatchReminder(string $waiterId, string $date, string $type, int $cooldownSeconds, string $phone, string $message, array $metadata, int $now, int $maxSends = 0): bool
     {
-        $claimed = $this->firebase->claimTaskReminderDispatch($waiterId, $date, $type, $cooldownSeconds, $now);
+        $claimed = $this->firebase->claimTaskReminderDispatch($waiterId, $date, $type, $cooldownSeconds, $now, $maxSends);
         if (! $claimed) {
             return false;
         }

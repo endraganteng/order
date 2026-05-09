@@ -19,6 +19,7 @@ class UpdateSettingsRequest extends FormRequest
             'fonnte_enabled' => 'nullable|boolean',
             'report_phone' => 'nullable|string|max:20',
             'auto_report_enabled' => 'nullable|boolean',
+            'clock_out_enabled' => 'nullable|boolean',
         ];
     }
 }

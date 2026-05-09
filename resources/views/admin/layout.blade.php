@@ -47,150 +47,239 @@
             background: #f5f7fa;
         }
 
+        /* ===== Navbar ===== */
         .navbar {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 15px 20px;
+            padding: 0 20px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            position: relative;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
 
         .navbar-container {
             max-width: 1200px;
             margin: 0 auto;
             display: flex;
-            flex-direction: column;
-            gap: 12px;
+            align-items: center;
+            height: 56px;
+            position: relative;
         }
 
-        .navbar-top {
+        .navbar-brand {
+            font-size: 17px;
+            font-weight: 700;
+            white-space: nowrap;
+            margin-right: 24px;
+            text-decoration: none;
+            color: white;
+        }
+
+        /* ===== Desktop Nav ===== */
+        .navbar-menu {
             display: flex;
-            justify-content: space-between;
+            align-items: center;
+            gap: 4px;
+            list-style: none;
+            height: 100%;
+        }
+
+        .navbar-menu > li {
+            position: relative;
+            height: 100%;
+            display: flex;
             align-items: center;
         }
 
-        .navbar h1 {
-            font-size: clamp(16px, 4vw, 20px);
-            white-space: nowrap;
-        }
-
-        .navbar nav {
-            display: grid;
-            width: 100%;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 10px;
-        }
-
-        .nav-group {
-            background: rgba(255, 255, 255, 0.14);
-            border: 1px solid rgba(255, 255, 255, 0.22);
-            border-radius: 10px;
-            padding: 10px;
-        }
-
-        .nav-group-title {
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.92);
-            margin-bottom: 8px;
-        }
-
-        .nav-links {
+        .dropdown-toggle {
             display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .nav-link {
+            align-items: center;
+            gap: 4px;
             color: white;
             text-decoration: none;
-            padding: 7px 11px;
-            border-radius: 4px;
-            transition: background 0.3s;
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
             font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
             white-space: nowrap;
-            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            background: transparent;
         }
 
-        .nav-link:hover {
-            background: rgba(255, 255, 255, 0.2);
+        .dropdown-toggle:hover {
+            background: rgba(255, 255, 255, 0.15);
         }
 
-        .nav-link.is-active {
-            background: rgba(255, 255, 255, 0.28);
-            font-weight: 700;
+        .dropdown-toggle .caret {
+            font-size: 10px;
+            transition: transform 0.2s;
         }
 
-        .nav-link.is-danger {
-            background: rgba(220, 53, 69, 0.75);
+        /* Dropdown Panel */
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            min-width: 200px;
+            background: white;
+            border-radius: var(--radius-md);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            padding: 6px 0;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(4px);
+            transition: opacity 0.2s, transform 0.2s, visibility 0.2s;
+            z-index: 1001;
         }
 
-        .nav-link.is-danger:hover {
-            background: rgba(220, 53, 69, 0.9);
+        .navbar-menu > li:hover > .dropdown-menu,
+        .navbar-menu > li.open > .dropdown-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
         }
 
-        /* Hamburger Menu */
+        .dropdown-menu a {
+            display: block;
+            padding: 9px 16px;
+            color: #334155;
+            text-decoration: none;
+            font-size: 13px;
+            transition: background 0.15s;
+            white-space: nowrap;
+        }
+
+        .dropdown-menu a:hover {
+            background: var(--color-primary-bg);
+            color: var(--color-primary-dark);
+        }
+
+        .dropdown-menu a.is-active {
+            background: var(--color-primary-bg);
+            color: var(--color-primary);
+            font-weight: 600;
+        }
+
+        .dropdown-menu a.is-danger {
+            color: var(--color-danger);
+        }
+
+        .dropdown-menu a.is-danger:hover {
+            background: var(--color-danger-bg);
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: var(--color-border);
+            margin: 4px 0;
+        }
+
+        /* ===== Hamburger ===== */
         .hamburger {
             display: none;
             flex-direction: column;
             cursor: pointer;
             padding: 5px;
+            margin-left: auto;
+            border: none;
+            background: transparent;
         }
 
         .hamburger span {
-            width: 25px;
-            height: 3px;
+            width: 22px;
+            height: 2.5px;
             background: white;
-            margin: 3px 0;
+            margin: 2.5px 0;
             border-radius: 2px;
             transition: 0.3s;
         }
 
-        /* Mobile Menu */
+        /* ===== Mobile ===== */
         @media (max-width: 768px) {
             .navbar-container {
-                gap: 10px;
+                flex-wrap: wrap;
             }
 
             .hamburger {
                 display: flex;
             }
 
-            .navbar nav {
+            .navbar-menu {
                 display: none;
-                width: 100%;
                 flex-direction: column;
-                gap: 5px;
-                margin-top: 0;
-                padding-top: 12px;
+                width: 100%;
+                gap: 0;
+                padding: 8px 0 12px;
                 border-top: 1px solid rgba(255, 255, 255, 0.2);
+                height: auto;
             }
 
-            .navbar nav.active {
+            .navbar-menu.active {
                 display: flex;
             }
 
-            .nav-group {
-                width: 100%;
-            }
-
-            .nav-links {
-                display: flex;
+            .navbar-menu > li {
                 flex-direction: column;
-                gap: 6px;
+                height: auto;
+                align-items: stretch;
             }
 
-            .nav-link {
+            .dropdown-toggle {
                 width: 100%;
-                text-align: left;
+                justify-content: space-between;
                 padding: 10px 12px;
+                border-radius: 0;
+            }
+
+            .dropdown-menu {
+                position: static;
+                opacity: 1;
+                visibility: visible;
+                transform: none;
+                box-shadow: none;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 0;
+                display: none;
+                padding: 4px 0;
+            }
+
+            .navbar-menu > li.open > .dropdown-menu {
+                display: block;
+            }
+
+            .dropdown-menu a {
+                color: rgba(255, 255, 255, 0.9);
+                padding: 9px 20px 9px 28px;
+            }
+
+            .dropdown-menu a:hover {
+                background: rgba(255, 255, 255, 0.12);
+                color: white;
+            }
+
+            .dropdown-menu a.is-active {
+                background: rgba(255, 255, 255, 0.18);
+                color: white;
+            }
+
+            .dropdown-menu a.is-danger {
+                color: #fca5a5;
+            }
+
+            .dropdown-toggle .caret {
+                transition: transform 0.2s;
+            }
+
+            .navbar-menu > li.open > .dropdown-toggle .caret {
+                transform: rotate(180deg);
             }
 
             /* Hamburger Animation */
             .hamburger.active span:nth-child(1) {
-                transform: rotate(45deg) translate(8px, 8px);
+                transform: rotate(45deg) translate(5px, 5px);
             }
 
             .hamburger.active span:nth-child(2) {
@@ -198,7 +287,7 @@
             }
 
             .hamburger.active span:nth-child(3) {
-                transform: rotate(-45deg) translate(7px, -7px);
+                transform: rotate(-45deg) translate(5px, -5px);
             }
         }
 
@@ -988,108 +1077,143 @@
 </head>
 
 <body>
-    <div class="navbar">
+    <header class="navbar">
         <div class="navbar-container">
-            <div class="navbar-top">
-                <h1>📋 Order App Admin</h1>
-                <div class="hamburger" onclick="toggleMenu()">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
-            </div>
-            <nav id="navMenu">
-                <div class="nav-group">
-                    <div class="nav-group-title">Ringkasan</div>
-                    <div class="nav-links">
-                        <a class="nav-link {{ request()->routeIs('admin.dashboard') ? 'is-active' : '' }}" href="{{ route('admin.dashboard') }}">🏠 Dashboard</a>
-                        <a class="nav-link {{ request()->routeIs('admin.current_order.*') ? 'is-active' : '' }}" href="{{ route('admin.current_order.index') }}">🧾 Current Order</a>
-                        <a class="nav-link {{ request()->routeIs('admin.test_order') ? 'is-active' : '' }}" href="{{ route('admin.test_order') }}">🧪 Test Order</a>
-                    </div>
-                </div>
+            <a class="navbar-brand" href="{{ route('admin.dashboard') }}">📋 Supervisor</a>
 
-                <div class="nav-group">
-                    <div class="nav-group-title">Tim & Area</div>
-                    <div class="nav-links">
-                        <a class="nav-link {{ request()->routeIs('admin.waiters.*') ? 'is-active' : '' }}" href="{{ route('admin.waiters.index') }}">👥 Waiters</a>
-                        <a class="nav-link {{ request()->routeIs('admin.racks.*') ? 'is-active' : '' }}" href="{{ route('admin.racks.index') }}">📦 Racks</a>
-<a class="nav-link {{ request()->routeIs('admin.products.*') ? 'is-active' : '' }}" href="{{ route('admin.products.index') }}">🏷️ Produk</a>
-<a class="nav-link {{ request()->routeIs('admin.product_categories.*') ? 'is-active' : '' }}" href="{{ route('admin.product_categories.index') }}">📂 Kategori</a>
-<a class="nav-link {{ request()->routeIs('admin.shifts.*') ? 'is-active' : '' }}" href="{{ route('admin.shifts.index') }}">⏰ Shift</a>
-<a class="nav-link {{ request()->routeIs('admin.schedules.*') ? 'is-active' : '' }}" href="{{ route('admin.schedules.index') }}">📅 Jadwal</a>
-                        <a class="nav-link" href="{{ route('waiter.login') }}" target="_blank" rel="noopener">🧑‍🍳 Portal Waiter</a>
-                    </div>
-                </div>
+            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
 
-                <div class="nav-group">
-                    <div class="nav-group-title">Operasional</div>
-                    <div class="nav-links">
-                        <a class="nav-link {{ request()->routeIs('admin.tasks.live') ? 'is-active' : '' }}" href="{{ route('admin.tasks.live') }}">📡 Live Monitor</a>
-                        <a class="nav-link {{ request()->routeIs('admin.tasks.index') ? 'is-active' : '' }}" href="{{ route('admin.tasks.index') }}">📝 Tugas Umum</a>
-                        <a class="nav-link {{ request()->routeIs('admin.tasks.rack.*') ? 'is-active' : '' }}" href="{{ route('admin.tasks.rack.index') }}">📦 Cek Rak</a>
-                        <a class="nav-link {{ request()->routeIs('admin.restock.*') ? 'is-active' : '' }}" href="{{ route('admin.restock.index') }}">📦 Restock & PO</a>
-                        <a class="nav-link {{ request()->routeIs('admin.attendance.*') ? 'is-active' : '' }}" href="{{ route('admin.attendance.index') }}">📋 Absensi</a>
-                        <a class="nav-link {{ request()->routeIs('admin.cleanup') ? 'is-active' : '' }}" href="{{ route('admin.cleanup') }}">🧹 Cleanup</a>
+            <ul class="navbar-menu" id="navMenu">
+                {{-- Ringkasan --}}
+                <li>
+                    <button class="dropdown-toggle">Ringkasan <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.dashboard') ? 'is-active' : '' }}" href="{{ route('admin.dashboard') }}">🏠 Dashboard</a>
+                        <a class="{{ request()->routeIs('admin.current_order.*') ? 'is-active' : '' }}" href="{{ route('admin.current_order.index') }}">🧾 Current Order</a>
+                        <a class="{{ request()->routeIs('admin.test_order') ? 'is-active' : '' }}" href="{{ route('admin.test_order') }}">🧪 Test Order</a>
                     </div>
-                </div>
+                </li>
 
-                <div class="nav-group">
-                    <div class="nav-group-title">Bonus & Performa</div>
-                    <div class="nav-links">
-                        <a class="nav-link {{ request()->routeIs('admin.bonus.config') ? 'is-active' : '' }}" href="{{ route('admin.bonus.config') }}">⚙️ Konfigurasi</a>
-                        <a class="nav-link {{ request()->routeIs('admin.bonus.daily_scoring') ? 'is-active' : '' }}" href="{{ route('admin.bonus.daily_scoring') }}">📊 Penilaian Harian</a>
-                        <a class="nav-link {{ request()->routeIs('admin.bonus.penalties') ? 'is-active' : '' }}" href="{{ route('admin.bonus.penalties') }}">⚠️ Penalti</a>
-                        <a class="nav-link {{ request()->routeIs('admin.bonus.sales_targets') ? 'is-active' : '' }}" href="{{ route('admin.bonus.sales_targets') }}">💰 Target Penjualan</a>
-                        <a class="nav-link {{ request()->routeIs('admin.bonus.monthly_summary') ? 'is-active' : '' }}" href="{{ route('admin.bonus.monthly_summary') }}">📋 Rekap Bulanan</a>
-                        <a class="nav-link {{ request()->routeIs('admin.bonus.leaderboard') ? 'is-active' : '' }}" href="{{ route('admin.bonus.leaderboard') }}">🏆 Leaderboard</a>
+                {{-- Tim & Area --}}
+                <li>
+                    <button class="dropdown-toggle">Tim & Area <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.waiters.*') ? 'is-active' : '' }}" href="{{ route('admin.waiters.index') }}">👥 Waiters</a>
+                        <a class="{{ request()->routeIs('admin.racks.*') ? 'is-active' : '' }}" href="{{ route('admin.racks.index') }}">📦 Racks</a>
+                        <a class="{{ request()->routeIs('admin.products.*') ? 'is-active' : '' }}" href="{{ route('admin.products.index') }}">🏷️ Produk</a>
+                        <a class="{{ request()->routeIs('admin.product_categories.*') ? 'is-active' : '' }}" href="{{ route('admin.product_categories.index') }}">📂 Kategori</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.shifts.*') ? 'is-active' : '' }}" href="{{ route('admin.shifts.index') }}">⏰ Shift</a>
+                        <a class="{{ request()->routeIs('admin.schedules.*') ? 'is-active' : '' }}" href="{{ route('admin.schedules.index') }}">📅 Jadwal</a>
+                        <div class="dropdown-divider"></div>
+                        <a href="{{ route('waiter.login') }}" target="_blank" rel="noopener">🧑‍🍳 Portal Waiter ↗</a>
                     </div>
-                </div>
+                </li>
 
-                <div class="nav-group">
-                    <div class="nav-group-title">Sistem</div>
-                    <div class="nav-links">
-                        <a class="nav-link {{ request()->routeIs('admin.audit_log.*') ? 'is-active' : '' }}" href="{{ route('admin.audit_log.index') }}">📜 Audit Log</a>
-                        <a class="nav-link {{ request()->routeIs('admin.settings') ? 'is-active' : '' }}" href="{{ route('admin.settings') }}">⚙️ Settings</a>
-                        <a class="nav-link is-danger" href="{{ route('admin.logout') }}">🚪 Logout</a>
+                {{-- Operasional --}}
+                <li>
+                    <button class="dropdown-toggle">Operasional <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.tasks.live') ? 'is-active' : '' }}" href="{{ route('admin.tasks.live') }}">📡 Live Monitor</a>
+                        <a class="{{ request()->routeIs('admin.tasks.index') ? 'is-active' : '' }}" href="{{ route('admin.tasks.index') }}">📝 Tugas Umum</a>
+                        <a class="{{ request()->routeIs('admin.tasks.rack.*') ? 'is-active' : '' }}" href="{{ route('admin.tasks.rack.index') }}">📦 Cek Rak</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.restock.*') ? 'is-active' : '' }}" href="{{ route('admin.restock.index') }}">📦 Restock & PO</a>
+                        <a class="{{ request()->routeIs('admin.suppliers.*') ? 'is-active' : '' }}" href="{{ route('admin.suppliers.index') }}">🏪 Supplier</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.attendance.*') ? 'is-active' : '' }}" href="{{ route('admin.attendance.index') }}">📋 Absensi</a>
+                        <a class="{{ request()->routeIs('admin.cleanup') ? 'is-active' : '' }}" href="{{ route('admin.cleanup') }}">🧹 Cleanup</a>
                     </div>
-                </div>
-            </nav>
+                </li>
+
+                {{-- Bonus & Performa --}}
+                <li>
+                    <button class="dropdown-toggle">Bonus <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.bonus.config') ? 'is-active' : '' }}" href="{{ route('admin.bonus.config') }}">⚙️ Konfigurasi</a>
+                        <a class="{{ request()->routeIs('admin.bonus.daily_scoring') ? 'is-active' : '' }}" href="{{ route('admin.bonus.daily_scoring') }}">📊 Penilaian Harian</a>
+                        <a class="{{ request()->routeIs('admin.bonus.penalties') ? 'is-active' : '' }}" href="{{ route('admin.bonus.penalties') }}">⚠️ Penalti</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.bonus.sales_targets') ? 'is-active' : '' }}" href="{{ route('admin.bonus.sales_targets') }}">💰 Target Penjualan</a>
+                        <a class="{{ request()->routeIs('admin.bonus.monthly_summary') ? 'is-active' : '' }}" href="{{ route('admin.bonus.monthly_summary') }}">📋 Rekap Bulanan</a>
+                        <a class="{{ request()->routeIs('admin.bonus.leaderboard') ? 'is-active' : '' }}" href="{{ route('admin.bonus.leaderboard') }}">🏆 Leaderboard</a>
+                    </div>
+                </li>
+
+                {{-- Sistem --}}
+                <li>
+                    <button class="dropdown-toggle">Sistem <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.audit_log.*') ? 'is-active' : '' }}" href="{{ route('admin.audit_log.index') }}">📜 Audit Log</a>
+                        <a class="{{ request()->routeIs('admin.settings') ? 'is-active' : '' }}" href="{{ route('admin.settings') }}">⚙️ Settings</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="is-danger" href="{{ route('admin.logout') }}">🚪 Logout</a>
+                    </div>
+                </li>
+            </ul>
         </div>
-    </div>
+    </header>
 
     <div class="container">
         @yield('content')
     </div>
 
     <script>
-        function toggleMenu() {
-            const nav = document.getElementById('navMenu');
-            const hamburger = document.querySelector('.hamburger');
-            nav.classList.toggle('active');
-            hamburger.classList.toggle('active');
-        }
+        (function() {
+            const hamburger = document.getElementById('hamburgerBtn');
+            const menu = document.getElementById('navMenu');
+            const isMobile = () => window.innerWidth <= 768;
 
-        // Close menu when clicking outside
-        document.addEventListener('click', function (event) {
-            const nav = document.getElementById('navMenu');
-            const hamburger = document.querySelector('.hamburger');
-            const navbar = document.querySelector('.navbar');
+            // Toggle mobile menu
+            hamburger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                menu.classList.toggle('active');
+                hamburger.classList.toggle('active');
+            });
 
-            if (!navbar.contains(event.target)) {
-                nav.classList.remove('active');
-                hamburger.classList.remove('active');
-            }
-        });
+            // Dropdown toggle (mobile: click, desktop: hover handled by CSS)
+            menu.querySelectorAll('.dropdown-toggle').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const li = btn.parentElement;
 
-        // Close menu when window is resized to desktop
-        window.addEventListener('resize', function () {
-            if (window.innerWidth > 768) {
-                const nav = document.getElementById('navMenu');
-                const hamburger = document.querySelector('.hamburger');
-                nav.classList.remove('active');
-                hamburger.classList.remove('active');
-            }
-        });
+                    if (isMobile()) {
+                        // Accordion: close siblings, toggle current
+                        menu.querySelectorAll(':scope > li').forEach(function(sibling) {
+                            if (sibling !== li) sibling.classList.remove('open');
+                        });
+                        li.classList.toggle('open');
+                    }
+                });
+            });
+
+            // Close everything on outside click
+            document.addEventListener('click', function(e) {
+                if (!document.querySelector('.navbar').contains(e.target)) {
+                    menu.classList.remove('active');
+                    hamburger.classList.remove('active');
+                    menu.querySelectorAll(':scope > li').forEach(function(li) {
+                        li.classList.remove('open');
+                    });
+                }
+            });
+
+            // Reset on resize to desktop
+            window.addEventListener('resize', function() {
+                if (!isMobile()) {
+                    menu.classList.remove('active');
+                    hamburger.classList.remove('active');
+                    menu.querySelectorAll(':scope > li').forEach(function(li) {
+                        li.classList.remove('open');
+                    });
+                }
+            });
+        })();
     </script>
     @stack('scripts')
 </body>

@@ -42,6 +42,18 @@
             </div>
 
             <div class="form-group">
+                <label class="form-label" for="rack-type">Tipe Rak</label>
+                <select id="rack-type" name="rack_type" class="form-input" required>
+                    <option value="storage" {{ old('rack_type', 'storage') === 'storage' ? 'selected' : '' }}>📦 Storage (Gudang/Stok)</option>
+                    <option value="display" {{ old('rack_type') === 'display' ? 'selected' : '' }}>🏪 Display (Etalase/Customer)</option>
+                </select>
+                <div class="form-hint">Storage = kekurangan stok masuk ke sistem restock/PO. Display = hanya perlu refill dari gudang.</div>
+                @error('rack_type')
+                    <span class="form-error">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div class="form-group">
                 <label class="form-label" for="rack-check-order">Urutan Cek (prioritas)</label>
                 <input type="number" id="rack-check-order" name="check_order" value="{{ old('check_order', 0) }}" min="0" max="999"
                     class="form-input" style="max-width: 120px;">
