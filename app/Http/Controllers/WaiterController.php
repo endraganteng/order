@@ -493,11 +493,7 @@ class WaiterController extends Controller
         $waiterId = (string) session('waiter_id');
         $scannedValue = $request->input('scanned_value');
 
-        if (! $this->firebase->verifyAttendanceQrCode($scannedValue)) {
-            return response()->json(['success' => false, 'message' => 'QR code absensi tidak valid'], 400);
-        }
-
-        $result = $this->firebase->clockIn($waiterId, 'qr_scan');
+        $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_in', (string) $scannedValue, 'qr_scan');
 
         if ($result['success'] ?? false) {
             // Check if late and auto-apply penalty
@@ -574,11 +570,7 @@ class WaiterController extends Controller
         $waiterId = (string) session('waiter_id');
         $scannedValue = $request->input('scanned_value');
 
-        if (! $this->firebase->verifyAttendanceQrCode($scannedValue)) {
-            return response()->json(['success' => false, 'message' => 'QR code absensi tidak valid'], 400);
-        }
-
-        $result = $this->firebase->clockOut($waiterId, 'qr_scan');
+        $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_out', (string) $scannedValue, 'qr_scan');
 
         return response()->json($result);
     }

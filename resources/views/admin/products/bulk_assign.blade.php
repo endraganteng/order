@@ -706,11 +706,6 @@
             const isFiltering = q !== '' || catId !== '';
 
             document.querySelectorAll('.js-product-item').forEach(el => {
-                if (!isFiltering && el.classList.contains('js-bulk-lazy-hidden')) {
-                    el.style.display = 'none';
-                    return;
-                }
-
                 const matchesSearch = !q || el.dataset.name.includes(q);
                 let matchesCat = true;
                 if (catId === '__none__') {
@@ -720,9 +715,9 @@
                 }
 
                 if (isFiltering) {
-                    el.style.display = (matchesSearch && matchesCat) ? '' : 'none';
+                    el.style.setProperty('display', (matchesSearch && matchesCat) ? 'flex' : 'none', 'important');
                 } else {
-                    el.style.display = '';
+                    el.style.removeProperty('display');
                 }
             });
 

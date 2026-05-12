@@ -16,6 +16,10 @@
         <div class="alert alert-danger">{{ session('error') }}</div>
     @endif
 
+    @if($errors->any())
+        <div class="alert alert-danger">{{ $errors->first() }}</div>
+    @endif
+
     @push('styles')
     <style>
         .rack-bulk-card {
@@ -34,6 +38,37 @@
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+        }
+        .rack-bulk-type-form {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .rack-bulk-type-select {
+            min-width: 220px;
+            padding: 8px 10px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            background: #fff;
+            font-size: 13px;
+        }
+        .rack-type-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .rack-type-chip.storage {
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+        .rack-type-chip.display {
+            background: #ecfdf5;
+            color: #047857;
         }
         .rack-label-preview {
             display: inline-flex;
@@ -131,6 +166,12 @@
     </style>
     @endpush
 
+    <form id="rackBulkTypeForm" method="POST" action="{{ route('admin.racks.bulk_update_type') }}" style="display:none;">
+        @csrf
+        <input type="hidden" name="rack_type" id="bulkRackTypeValue" value="{{ old('rack_type', 'storage') }}">
+        <div id="bulkRackTypeIds"></div>
+    </form>
+
     <form id="rackBulkActionForm" method="GET" action="{{ route('admin.racks.print_labels') }}" target="_blank">
         <div class="rack-bulk-card">
             <div>
@@ -138,6 +179,13 @@
                 <div style="font-size: 12px; color: var(--color-text-muted);">Pilih rak lalu print label atau export CSV. Jika tidak ada yang dipilih, semua rak akan diproses.</div>
             </div>
             <div class="rack-bulk-actions">
+                <div class="rack-bulk-type-form">
+                    <select id="bulkRackTypeSelect" class="rack-bulk-type-select" aria-label="Pilih tipe rak massal">
+                        <option value="storage" {{ old('rack_type', 'storage') === 'storage' ? 'selected' : '' }}>📦 Ubah ke Storage (Gudang/Stok)</option>
+                        <option value="display" {{ old('rack_type') === 'display' ? 'selected' : '' }}>🏪 Ubah ke Display (Etalase/Customer)</option>
+                    </select>
+                    <button type="button" class="btn btn-warning" id="btnBulkUpdateType">Update Tipe</button>
+                </div>
                 <button type="submit" class="btn btn-primary" id="btnPrint">Print Label</button>
                 <button type="submit" class="btn btn-success" id="btnExport" formaction="{{ route('admin.racks.export_barcodes') }}" formtarget="_self">Export CSV</button>
             </div>
@@ -155,6 +203,7 @@
                             <th>QR Value</th>
                             <th>Preview Label QR</th>
                             <th>Status</th>
+                            <th>Tipe</th>
                             <th>Produk</th>
                             <th>Aksi</th>
                         </tr>
@@ -165,6 +214,8 @@
                                 $rackId = (string) ($rack['id'] ?? '');
                                 $rackName = (string) ($rack['name'] ?? '-');
                                 $barcodeValue = (string) ($rack['barcode_value'] ?? '');
+                                $rackType = (($rack['rack_type'] ?? 'storage') === 'display') ? 'display' : 'storage';
+                                $rackTypeLabel = $rackType === 'display' ? 'Display' : 'Storage';
                             @endphp
                             <tr>
                                 <td>
@@ -201,6 +252,9 @@
                                     @endif
                                 </td>
                                 <td>
+                                    <span class="rack-type-chip {{ $rackType }}">{{ $rackTypeLabel }}</span>
+                                </td>
+                                <td>
                                     <a href="{{ route('admin.racks.products', $rackId) }}" class="btn btn-info btn-sm">
                                         {{ count($rack['products'] ?? []) }} Produk
                                     </a>
@@ -224,7 +278,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" style="text-align: center; color: var(--color-text-muted);">Belum ada data rak. Tambahkan rak dulu agar bisa dipakai untuk task cek rak.</td>
+                                <td colspan="9" style="text-align: center; color: var(--color-text-muted);">Belum ada data rak. Tambahkan rak dulu agar bisa dipakai untuk task cek rak.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -239,6 +293,8 @@
                     $rackId = (string) ($rack['id'] ?? '');
                     $rackName = (string) ($rack['name'] ?? '-');
                     $barcodeValue = (string) ($rack['barcode_value'] ?? '');
+                    $rackType = (($rack['rack_type'] ?? 'storage') === 'display') ? 'display' : 'storage';
+                    $rackTypeLabel = $rackType === 'display' ? 'Display' : 'Storage';
                 @endphp
                 <div class="rack-mobile-card">
                     <div class="rack-mobile-header">
@@ -270,6 +326,10 @@
                             <div class="rack-mobile-field-label">QR Value</div>
                             <code style="font-size: 12px;">{{ $barcodeValue !== '' ? $barcodeValue : '-' }}</code>
                         </div>
+                        <div>
+                            <div class="rack-mobile-field-label">Tipe</div>
+                            <div><span class="rack-type-chip {{ $rackType }}">{{ $rackTypeLabel }}</span></div>
+                        </div>
                     </div>
                     <div class="rack-mobile-actions">
                         <a href="{{ route('admin.racks.history', $rackId) }}" class="btn btn-success btn-sm">Riwayat</a>
@@ -299,6 +359,21 @@
             // Select all checkbox
             var selectAllEl = document.getElementById('selectAllRacks');
             var checkboxes = Array.from(document.querySelectorAll('.js-rack-checkbox'));
+            var mobileCheckboxes = Array.from(document.querySelectorAll('.js-rack-checkbox-mobile'));
+            var bulkTypeButton = document.getElementById('btnBulkUpdateType');
+            var bulkTypeSelect = document.getElementById('bulkRackTypeSelect');
+            var bulkTypeForm = document.getElementById('rackBulkTypeForm');
+            var bulkTypeIds = document.getElementById('bulkRackTypeIds');
+            var bulkTypeValue = document.getElementById('bulkRackTypeValue');
+
+            function getSelectedRackIds() {
+                var ids = checkboxes.concat(mobileCheckboxes)
+                    .filter(function(cb) { return cb.checked; })
+                    .map(function(cb) { return cb.value; })
+                    .filter(function(value, index, arr) { return value && arr.indexOf(value) === index; });
+
+                return ids;
+            }
 
             if (selectAllEl) {
                 selectAllEl.addEventListener('change', function() {
@@ -343,6 +418,34 @@
                             bulkForm.submit();
                         }
                     }
+                });
+            }
+
+            if (bulkTypeButton && bulkTypeForm && bulkTypeIds && bulkTypeValue && bulkTypeSelect) {
+                bulkTypeButton.addEventListener('click', function() {
+                    var selectedIds = getSelectedRackIds();
+                    if (selectedIds.length === 0) {
+                        alert('Pilih minimal satu rak untuk update tipe.');
+                        return;
+                    }
+
+                    var targetType = bulkTypeSelect.value === 'display' ? 'Display' : 'Storage';
+                    if (! confirm('Ubah tipe ' + selectedIds.length + ' rak menjadi ' + targetType + '?')) {
+                        return;
+                    }
+
+                    bulkTypeValue.value = bulkTypeSelect.value;
+                    bulkTypeIds.innerHTML = '';
+
+                    selectedIds.forEach(function(id) {
+                        var input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'rack_ids[]';
+                        input.value = id;
+                        bulkTypeIds.appendChild(input);
+                    });
+
+                    bulkTypeForm.submit();
                 });
             }
 

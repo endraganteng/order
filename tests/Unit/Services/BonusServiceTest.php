@@ -6,6 +6,7 @@ use App\Services\BonusService;
 use App\Services\FirebaseService;
 use Kreait\Firebase\Contract\Database;
 use Kreait\Firebase\Database\Reference;
+use Kreait\Firebase\Database\Snapshot;
 use PHPUnit\Framework\TestCase;
 
 class BonusServiceTest extends TestCase
@@ -181,5 +182,72 @@ class BonusServiceTest extends TestCase
         $this->assertTrue($result['already_finalized']);
         $this->assertSame('Bonus bulan ini sudah difinalisasi.', $result['message']);
         $this->assertFalse($transaction->setCalled);
+    }
+
+    public function test_get_leaderboard_filters_deleted_and_inactive_waiters_from_saved_snapshot(): void
+    {
+        $firebase = $this->createMock(FirebaseService::class);
+        $firebase->method('getActiveWaiters')->willReturn([
+            ['id' => 'waiter-1', 'name' => 'Active One', 'is_active' => true],
+            ['id' => 'waiter-3', 'name' => 'Active Three', 'is_active' => true],
+        ]);
+
+        $reference = $this->createMock(Reference::class);
+        $snapshot = new Snapshot($reference, [
+            'month' => '2026-05',
+            'generated_at' => 1234567890,
+            'total_waiters' => 3,
+            'rankings' => [
+                ['rank' => 1, 'waiter_id' => 'waiter-2', 'waiter_name' => 'Deleted User', 'total_points' => 99, 'total_bonus' => 400000],
+                ['rank' => 2, 'waiter_id' => 'waiter-1', 'waiter_name' => 'Active One', 'total_points' => 80, 'total_bonus' => 300000],
+                ['rank' => 3, 'waiter_id' => 'waiter-3', 'waiter_name' => 'Active Three', 'total_points' => 60, 'total_bonus' => 200000],
+            ],
+        ]);
+        $reference->method('getSnapshot')->willReturn($snapshot);
+
+        $database = $this->createMock(Database::class);
+        $database->method('getReference')->with('waiter_leaderboard/2026-05')->willReturn($reference);
+
+        $service = new BonusService($firebase, $database);
+
+        $leaderboard = $service->getLeaderboard('2026-05');
+
+        $this->assertSame('2026-05', $leaderboard['month']);
+        $this->assertSame(1234567890, $leaderboard['generated_at']);
+        $this->assertSame(2, $leaderboard['total_waiters']);
+        $this->assertSame(['waiter-1', 'waiter-3'], array_column($leaderboard['rankings'], 'waiter_id'));
+        $this->assertSame([1, 2], array_column($leaderboard['rankings'], 'rank'));
+        $this->assertSame([300000, 200000], array_column($leaderboard['rankings'], 'total_bonus'));
+    }
+
+    public function test_get_leaderboard_returns_empty_rankings_when_no_saved_entries_match_active_waiters(): void
+    {
+        $firebase = $this->createMock(FirebaseService::class);
+        $firebase->method('getActiveWaiters')->willReturn([
+            ['id' => 'waiter-9', 'name' => 'Different Waiter', 'is_active' => true],
+        ]);
+
+        $reference = $this->createMock(Reference::class);
+        $snapshot = new Snapshot($reference, [
+            'month' => '2026-06',
+            'generated_at' => 22334455,
+            'total_waiters' => 1,
+            'rankings' => [
+                ['rank' => 1, 'waiter_id' => 'waiter-2', 'waiter_name' => 'Former Waiter', 'total_points' => 50],
+            ],
+        ]);
+        $reference->method('getSnapshot')->willReturn($snapshot);
+
+        $database = $this->createMock(Database::class);
+        $database->method('getReference')->with('waiter_leaderboard/2026-06')->willReturn($reference);
+
+        $service = new BonusService($firebase, $database);
+
+        $leaderboard = $service->getLeaderboard('2026-06');
+
+        $this->assertSame('2026-06', $leaderboard['month']);
+        $this->assertSame(22334455, $leaderboard['generated_at']);
+        $this->assertSame(0, $leaderboard['total_waiters']);
+        $this->assertSame([], $leaderboard['rankings']);
     }
 }

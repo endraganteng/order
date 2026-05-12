@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\BulkUpdateRackTypeRequest;
 use App\Http\Requests\StoreRackAjaxRequest;
 use App\Http\Requests\StoreRackRequest;
 use App\Http\Requests\UpdateRackRequest;
@@ -121,6 +122,45 @@ class RackController extends Controller
         }, $fileName, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    public function bulkUpdateType(BulkUpdateRackTypeRequest $request)
+    {
+        $selectedRacks = $this->resolveSelectedRacks($request);
+
+        if (count($selectedRacks) === 0) {
+            return redirect()->route('admin.racks.index')
+                ->with('error', 'Pilih minimal satu rak yang valid untuk update tipe.');
+        }
+
+        $rackType = $request->input('rack_type', 'storage');
+
+        foreach ($selectedRacks as $rack) {
+            $rackId = (string) ($rack['id'] ?? '');
+            if ($rackId === '') {
+                continue;
+            }
+
+            $this->firebase->updateRack($rackId, [
+                'name' => (string) ($rack['name'] ?? ''),
+                'location' => (string) ($rack['location'] ?? ''),
+                'description' => (string) ($rack['description'] ?? ''),
+                'is_active' => (bool) ($rack['is_active'] ?? true),
+                'rack_type' => $rackType,
+                'check_order' => (int) ($rack['check_order'] ?? 0),
+            ]);
+        }
+
+        $this->firebase->logAuditAction('bulk_update_type', 'rack', null, [
+            'rack_ids' => array_values(array_map(fn ($rack) => (string) ($rack['id'] ?? ''), $selectedRacks)),
+            'rack_type' => $rackType,
+            'count' => count($selectedRacks),
+        ]);
+
+        $typeLabel = $rackType === 'display' ? 'Display' : 'Storage';
+
+        return redirect()->route('admin.racks.index')
+            ->with('success', count($selectedRacks).' rak berhasil diubah ke tipe '.$typeLabel.'.');
     }
 
     public function edit($id)

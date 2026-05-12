@@ -29,8 +29,33 @@ class CashierController extends Controller
         }
 
         $cashierWorkers = $this->firebase->getActiveCashierWorkers();
+        $attendanceWaiters = $this->firebase->getAttendanceEligibleWaiters();
 
-        return view('cashier.index', compact('cashierWorkers'));
+        return view('cashier.index', compact('cashierWorkers', 'attendanceWaiters'));
+    }
+
+    /**
+     * Get current attendance QR data for selected waiter.
+     */
+    public function getAttendanceQr(Request $request)
+    {
+        $waiterId = trim((string) $request->query('waiter_id', ''));
+        if ($waiterId === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Waiter harus dipilih terlebih dahulu.',
+            ], 422);
+        }
+
+        $payload = $this->firebase->getCashierAttendanceQrData($waiterId);
+        if (empty($payload['found'])) {
+            return response()->json([
+                'success' => false,
+                'message' => $payload['message'] ?? 'Waiter tidak ditemukan.',
+            ], 404);
+        }
+
+        return response()->json(array_merge(['success' => true], $payload));
     }
 
     /**

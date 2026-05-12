@@ -1056,7 +1056,39 @@ class BonusService
             return [];
         }
 
-        return (array) $snapshot->getValue();
+        $leaderboard = (array) $snapshot->getValue();
+        $rankings = $leaderboard['rankings'] ?? [];
+
+        if (! is_array($rankings)) {
+            $leaderboard['rankings'] = [];
+            $leaderboard['total_waiters'] = 0;
+
+            return $leaderboard;
+        }
+
+        $activeWaiterIds = array_fill_keys(array_map(function ($waiter) {
+            return (string) ($waiter['id'] ?? '');
+        }, $this->firebase->getActiveWaiters()), true);
+
+        unset($activeWaiterIds['']);
+
+        $filteredRankings = array_values(array_filter($rankings, function ($entry) use ($activeWaiterIds) {
+            $waiterId = (string) ((is_array($entry) ? ($entry['waiter_id'] ?? '') : '') ?: '');
+
+            return $waiterId !== '' && isset($activeWaiterIds[$waiterId]);
+        }));
+
+        foreach ($filteredRankings as $index => &$entry) {
+            if (is_array($entry)) {
+                $entry['rank'] = $index + 1;
+            }
+        }
+        unset($entry);
+
+        $leaderboard['rankings'] = $filteredRankings;
+        $leaderboard['total_waiters'] = count($filteredRankings);
+
+        return $leaderboard;
     }
 
     // =========================================================================

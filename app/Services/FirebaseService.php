@@ -99,6 +99,22 @@ class FirebaseService
     }
 
     /**
+     * Get active waiters who are still required to attend.
+     */
+    public function getAttendanceEligibleWaiters(): array
+    {
+        $waiters = array_values(array_filter($this->getActiveWaiters(), function ($waiter) {
+            return empty($waiter['attendance_exempt']);
+        }));
+
+        usort($waiters, function ($a, $b) {
+            return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
+        return $waiters;
+    }
+
+    /**
      * Get active waiters by role.
      */
     public function getActiveWaitersByRole($waiterRole)
@@ -3592,6 +3608,256 @@ class FirebaseService
     }
 
     /**
+     * Get current attendance QR payload for cashier display.
+     */
+    public function getCashierAttendanceQrData(string $waiterId): array
+    {
+        $today = date('Y-m-d');
+        $waiter = $this->getWaiterById($waiterId);
+
+        if (! $waiter || (($waiter['is_active'] ?? true) === false) || ! empty($waiter['attendance_exempt'])) {
+            return [
+                'found' => false,
+                'available' => false,
+                'message' => 'Waiter tidak tersedia untuk absensi QR.',
+            ];
+        }
+
+        $attendance = $this->getAttendanceByDate($waiterId, $today) ?? [];
+        $settings = $this->getSettings();
+        $clockOutEnabled = ! empty($settings['clock_out_enabled']);
+
+        $purpose = null;
+        $message = 'QR siap dipindai.';
+        if (! empty($attendance['clock_out'])) {
+            $message = 'Waiter ini sudah menyelesaikan absensi hari ini.';
+        } elseif (! empty($attendance['clock_in'])) {
+            if ($clockOutEnabled) {
+                $purpose = 'clock_out';
+                $message = 'QR absen pulang siap dipindai.';
+            } else {
+                $message = 'Absen masuk sudah tercatat. Absen pulang sedang nonaktif.';
+            }
+        } else {
+            $purpose = 'clock_in';
+            $message = 'QR absen masuk siap dipindai.';
+        }
+
+        $qrTokens = $this->ensureAttendanceQrTokens($waiterId, $today);
+
+        return [
+            'found' => true,
+            'available' => $purpose !== null,
+            'waiter_id' => $waiterId,
+            'waiter_name' => (string) ($waiter['name'] ?? 'Waiter'),
+            'date' => $today,
+            'purpose' => $purpose,
+            'purpose_label' => $purpose === 'clock_out'
+                ? 'Absen Pulang'
+                : ($purpose === 'clock_in' ? 'Absen Masuk' : 'Tidak Perlu QR'),
+            'qr_value' => $purpose ? (string) ($qrTokens[$purpose]['value'] ?? '') : '',
+            'message' => $message,
+            'attendance' => [
+                'clock_in' => $attendance['clock_in'] ?? null,
+                'clock_out' => $attendance['clock_out'] ?? null,
+                'status' => $attendance['status'] ?? null,
+                'late_minutes' => (int) ($attendance['late_minutes'] ?? 0),
+            ],
+        ];
+    }
+
+    /**
+     * Ensure per-waiter attendance QR tokens exist for the given date.
+     */
+    public function ensureAttendanceQrTokens(string $waiterId, string $date): array
+    {
+        $reference = $this->database->getReference('waiter_attendance_qr/'.$waiterId.'/'.$date);
+        $snapshot = $reference->getSnapshot();
+        $currentTokens = $snapshot->exists() && is_array($snapshot->getValue()) ? (array) $snapshot->getValue() : [];
+        $normalizedTokens = $this->normalizeAttendanceQrTokens($currentTokens, $waiterId, $date, time());
+
+        if ($normalizedTokens !== $currentTokens) {
+            $reference->set($normalizedTokens);
+        }
+
+        return $normalizedTokens;
+    }
+
+    /**
+     * Consume a one-time attendance QR token and record the attendance action.
+     */
+    public function processAttendanceQrScan(string $waiterId, string $purpose, string $scannedValue, string $method = 'qr_scan'): array
+    {
+        $waiterId = trim($waiterId);
+        $purpose = $purpose === 'clock_out' ? 'clock_out' : 'clock_in';
+        $scannedValue = trim($scannedValue);
+
+        if ($waiterId === '' || $scannedValue === '' || ! str_starts_with(strtoupper($scannedValue), 'ATTENDANCE:')) {
+            return ['success' => false, 'message' => 'QR code absensi tidak valid'];
+        }
+
+        $waiter = $this->getWaiterById($waiterId);
+        if (! $waiter || (($waiter['is_active'] ?? true) === false)) {
+            return ['success' => false, 'message' => 'Data waiter tidak ditemukan'];
+        }
+
+        if (! empty($waiter['attendance_exempt'])) {
+            return ['success' => false, 'message' => 'Waiter ini tidak wajib menggunakan absensi QR'];
+        }
+
+        $settings = $this->getSettings();
+        if ($purpose === 'clock_out' && empty($settings['clock_out_enabled'])) {
+            return ['success' => false, 'message' => 'Fitur absen pulang tidak aktif'];
+        }
+
+        $today = date('Y-m-d');
+        $nowTimestamp = time();
+        $nowTime = date('H:i', $nowTimestamp);
+        $status = 'present';
+        $lateMinutes = 0;
+
+        if ($purpose === 'clock_in') {
+            $shift = $this->getWaiterShiftForDate($waiterId, $today);
+            if ($shift) {
+                $clockInTime = $shift['clock_in_time'] ?? null;
+                $tolerance = (int) ($shift['late_tolerance_minutes'] ?? 0);
+
+                if ($clockInTime) {
+                    $expectedTimestamp = strtotime($today.' '.$clockInTime);
+                    $toleranceTimestamp = $expectedTimestamp + ($tolerance * 60);
+                    $actualTimestamp = strtotime($today.' '.$nowTime);
+
+                    if ($actualTimestamp > $toleranceTimestamp) {
+                        $status = 'late';
+                        $lateMinutes = (int) round(($actualTimestamp - $expectedTimestamp) / 60);
+                    }
+                }
+            }
+        }
+
+        $attendancePath = 'waiter_attendance/'.$waiterId.'/'.$today;
+        $tokenPath = 'waiter_attendance_qr/'.$waiterId.'/'.$today;
+        $result = ['success' => false, 'message' => 'Gagal memproses absensi.'];
+
+        $this->database->runTransaction(function ($transaction) use ($attendancePath, $tokenPath, $waiterId, $today, $purpose, $scannedValue, $method, $nowTimestamp, $nowTime, $status, $lateMinutes, &$result) {
+            $attendanceReference = $this->database->getReference($attendancePath);
+            $tokenReference = $this->database->getReference($tokenPath);
+            $attendanceSnapshot = $transaction->snapshot($attendanceReference);
+            $tokenSnapshot = $transaction->snapshot($tokenReference);
+            $record = $attendanceSnapshot->exists() ? (array) $attendanceSnapshot->getValue() : [];
+            $qrTokens = $this->normalizeAttendanceQrTokens($tokenSnapshot->exists() ? (array) $tokenSnapshot->getValue() : [], $waiterId, $today, $nowTimestamp);
+
+            if ($purpose === 'clock_in' && ! empty($record['clock_in'])) {
+                $result = [
+                    'success' => false,
+                    'message' => 'Sudah absen masuk hari ini pada '.$record['clock_in'],
+                ];
+                return;
+            }
+
+            if ($purpose === 'clock_out') {
+                if (empty($record['clock_in'])) {
+                    $result = ['success' => false, 'message' => 'Belum absen masuk hari ini'];
+                    return;
+                }
+
+                if (! empty($record['clock_out'])) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Sudah absen keluar hari ini pada '.$record['clock_out'],
+                    ];
+                    return;
+                }
+            }
+
+            $expectedToken = trim((string) ($qrTokens[$purpose]['value'] ?? ''));
+            if ($expectedToken === '' || ! hash_equals($expectedToken, $scannedValue)) {
+                $result = ['success' => false, 'message' => 'QR code absensi tidak valid'];
+                return;
+            }
+
+            $existingPurposeState = is_array($qrTokens[$purpose] ?? null) ? $qrTokens[$purpose] : [];
+            $qrTokens[$purpose] = array_merge($existingPurposeState, [
+                'value' => $this->generateAttendanceQrToken($waiterId, $today, $purpose),
+                'generated_at' => $nowTimestamp,
+                'updated_at' => $nowTimestamp,
+                'last_used_at' => $nowTimestamp,
+                'last_used_value_hash' => hash('sha256', $expectedToken),
+                'use_count' => (int) ($existingPurposeState['use_count'] ?? 0) + 1,
+            ]);
+
+            $record['updated_at'] = $nowTimestamp;
+
+            if ($purpose === 'clock_in') {
+                $record['clock_in'] = $nowTime;
+                $record['clock_in_timestamp'] = $nowTimestamp;
+                $record['status'] = $status;
+                $record['late_minutes'] = $lateMinutes;
+                $record['method'] = $method;
+                $record['note'] = (string) ($record['note'] ?? '');
+
+                $result = [
+                    'success' => true,
+                    'message' => $status === 'late'
+                        ? 'Absen masuk tercatat (terlambat '.$lateMinutes.' menit)'
+                        : 'Absen masuk tercatat tepat waktu',
+                    'status' => $status,
+                    'late_minutes' => $lateMinutes,
+                ];
+            } else {
+                $record['clock_out'] = $nowTime;
+                $record['clock_out_timestamp'] = $nowTimestamp;
+
+                $result = [
+                    'success' => true,
+                    'message' => 'Absen keluar tercatat pada '.$nowTime,
+                ];
+            }
+
+            $transaction->set($attendanceReference, $record);
+            $transaction->set($tokenReference, $qrTokens);
+        });
+
+        return $result;
+    }
+
+    /**
+     * Build normalized attendance QR token state for one waiter/date.
+     */
+    protected function normalizeAttendanceQrTokens(mixed $rawTokens, string $waiterId, string $date, int $nowTimestamp): array
+    {
+        $tokens = is_array($rawTokens) ? $rawTokens : [];
+
+        foreach (['clock_in', 'clock_out'] as $purpose) {
+            $state = is_array($tokens[$purpose] ?? null) ? $tokens[$purpose] : [];
+            $value = trim((string) ($state['value'] ?? ''));
+
+            if ($value === '') {
+                $value = $this->generateAttendanceQrToken($waiterId, $date, $purpose);
+            }
+
+            $generatedAt = (int) ($state['generated_at'] ?? 0);
+            $updatedAt = (int) ($state['updated_at'] ?? 0);
+
+            $tokens[$purpose] = array_merge($state, [
+                'value' => $value,
+                'generated_at' => $generatedAt > 0 ? $generatedAt : $nowTimestamp,
+                'updated_at' => $updatedAt > 0 ? $updatedAt : $nowTimestamp,
+            ]);
+        }
+
+        return $tokens;
+    }
+
+    /**
+     * Generate one-time attendance QR token.
+     */
+    protected function generateAttendanceQrToken(string $waiterId, string $date, string $purpose): string
+    {
+        return 'ATTENDANCE:'.strtoupper($purpose).':'.substr(hash('sha256', $waiterId.'|'.$date.'|'.$purpose.'|'.Str::random(40)), 0, 40);
+    }
+
+    /**
      * Record clock-in for a waiter.
      */
     public function clockIn(string $waiterId, string $method = 'qr_scan'): array
@@ -5074,6 +5340,7 @@ class FirebaseService
                 if ($entity && ($log['entity'] ?? '') !== $entity) continue;
                 if ($adminId && ($log['admin_id'] ?? '') !== $adminId) continue;
 
+                $log['details'] = $log['details'] ?? null;
                 $log['id'] = $id;
                 $logs[] = $log;
             }

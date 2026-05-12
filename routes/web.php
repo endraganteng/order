@@ -48,6 +48,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('racks', [RackController::class, 'index'])->name('racks.index');
         Route::get('racks/create', [RackController::class, 'create'])->name('racks.create');
         Route::post('racks', [RackController::class, 'store'])->name('racks.store');
+        Route::post('racks/bulk-update-type', [RackController::class, 'bulkUpdateType'])->name('racks.bulk_update_type');
         Route::get('racks/print-labels', [RackController::class, 'printLabels'])->name('racks.print_labels');
         Route::get('racks/export-barcodes', [RackController::class, 'exportBarcodes'])->name('racks.export_barcodes');
         Route::get('racks/{id}/edit', [RackController::class, 'edit'])->name('racks.edit');
@@ -185,6 +186,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 // Cashier route (no auth required)
 Route::get('cashier', [CashierController::class, 'index'])->name('cashier.index');
 Route::get('cashier/workers', [CashierController::class, 'getCashierWorkers'])->name('cashier.workers');
+Route::get('cashier/attendance-qr', [CashierController::class, 'getAttendanceQr'])->name('cashier.attendance_qr');
 
 // Cashier task actions (no auth, accessible from cashier page)
 Route::post('cashier/tasks/sync-due', [CashierController::class, 'syncDueTasks'])

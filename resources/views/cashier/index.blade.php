@@ -518,11 +518,142 @@
             to { transform: translateY(0); opacity: 1; }
         }
 
+        .attendance-qr-widget {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            width: min(360px, calc(100vw - 40px));
+            background: rgba(15, 23, 42, 0.94);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 20px;
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+            padding: 18px;
+            z-index: 1500;
+            backdrop-filter: blur(14px);
+        }
+
+        .attendance-qr-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .attendance-qr-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .attendance-qr-subtitle {
+            font-size: 12px;
+            color: #cbd5e1;
+            margin-top: 4px;
+        }
+
+        .attendance-qr-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(34, 197, 94, 0.18);
+            color: #86efac;
+            white-space: nowrap;
+        }
+
+        .attendance-qr-select {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #fff;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 14px;
+            margin-bottom: 12px;
+            outline: none;
+        }
+
+        .attendance-qr-select option {
+            color: #111827;
+        }
+
+        .attendance-qr-status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .attendance-qr-purpose {
+            font-size: 13px;
+            font-weight: 700;
+            color: #facc15;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+
+        .attendance-qr-date {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .attendance-qr-code-shell {
+            min-height: 220px;
+            border-radius: 16px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(241,245,249,0.98));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .attendance-qr-code {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .attendance-qr-code > img,
+        .attendance-qr-code > canvas {
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+        }
+
+        .attendance-qr-empty {
+            text-align: center;
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.5;
+            padding: 0 8px;
+        }
+
+        .attendance-qr-message {
+            font-size: 13px;
+            color: #e2e8f0;
+            line-height: 1.55;
+        }
+
+        .attendance-qr-meta {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
         /* ========== RESPONSIVE ========== */
         @media (max-width: 480px) {
             .tab-btn { padding: 10px 18px; font-size: 15px; }
             .section-title { font-size: 22px; }
             #tasks-container { grid-template-columns: 1fr; }
+            .attendance-qr-widget {
+                right: 12px;
+                bottom: 12px;
+                width: calc(100vw - 24px);
+                padding: 16px;
+            }
         }
     </style>
 </head>
@@ -530,6 +661,30 @@
 <body>
     <div id="toast-container"></div>
     <div id="connection-status">⌛ Connecting...</div>
+    <div class="attendance-qr-widget" id="attendance-qr-widget">
+        <div class="attendance-qr-header">
+            <div>
+                <div class="attendance-qr-title">QR Absensi Waiter</div>
+                <div class="attendance-qr-subtitle">Pilih waiter, lalu minta waiter scan QR ini dari portal waiter.</div>
+            </div>
+            <div class="attendance-qr-badge">1x Pakai</div>
+        </div>
+
+        <select id="attendance-qr-waiter-select" class="attendance-qr-select"></select>
+
+        <div class="attendance-qr-status">
+            <div id="attendance-qr-purpose" class="attendance-qr-purpose">Memuat...</div>
+            <div id="attendance-qr-date" class="attendance-qr-date"></div>
+        </div>
+
+        <div class="attendance-qr-code-shell">
+            <div id="attendance-qr-code" class="attendance-qr-code"></div>
+            <div id="attendance-qr-empty" class="attendance-qr-empty" style="display: none;"></div>
+        </div>
+
+        <div id="attendance-qr-message" class="attendance-qr-message">Menyiapkan QR absensi...</div>
+        <div id="attendance-qr-meta" class="attendance-qr-meta"></div>
+    </div>
 
     <div style="position: absolute; top: 20px; left: 20px;">
         <button id="btn-test-sound" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
@@ -580,6 +735,8 @@
     </div>
 
     <script id="cashier-workers-data" type="application/json">{!! json_encode($cashierWorkers ?? []) !!}</script>
+    <script id="attendance-waiters-data" type="application/json">{!! json_encode($attendanceWaiters ?? []) !!}</script>
+    <script src="{{ asset('js/vendor/qrcode.min.js') }}"></script>
 
     <script type="module">
         // Firebase Realtime Database configuration
@@ -604,12 +761,158 @@
         const tasksContainer = document.getElementById('tasks-container');
         const taskBadge = document.getElementById('task-badge');
         const cashierWorkersDataEl = document.getElementById('cashier-workers-data');
+        const attendanceWaitersDataEl = document.getElementById('attendance-waiters-data');
+        const attendanceWaiterSelectEl = document.getElementById('attendance-qr-waiter-select');
+        const attendanceQrCodeEl = document.getElementById('attendance-qr-code');
+        const attendanceQrEmptyEl = document.getElementById('attendance-qr-empty');
+        const attendanceQrPurposeEl = document.getElementById('attendance-qr-purpose');
+        const attendanceQrDateEl = document.getElementById('attendance-qr-date');
+        const attendanceQrMessageEl = document.getElementById('attendance-qr-message');
+        const attendanceQrMetaEl = document.getElementById('attendance-qr-meta');
+        const attendanceQrEndpoint = @json(route('cashier.attendance_qr', [], false));
+        const attendanceQrStorageKey = 'cashier_attendance_waiter_id';
         let cashierWorkers = [];
+        let attendanceWaiters = [];
+        let attendanceQrIntervalId = null;
+        let attendanceQrRequestId = 0;
         try {
             cashierWorkers = JSON.parse(cashierWorkersDataEl?.textContent || '[]');
         } catch (error) {
             cashierWorkers = [];
         }
+        try {
+            attendanceWaiters = JSON.parse(attendanceWaitersDataEl?.textContent || '[]');
+        } catch (error) {
+            attendanceWaiters = [];
+        }
+
+        function renderAttendanceWaiterOptions() {
+            if (!attendanceWaiterSelectEl) return;
+            attendanceWaiterSelectEl.innerHTML = '';
+
+            if (!attendanceWaiters.length) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'Tidak ada waiter wajib absen aktif';
+                attendanceWaiterSelectEl.appendChild(option);
+                attendanceWaiterSelectEl.disabled = true;
+                return;
+            }
+
+            attendanceWaiters.forEach((waiter) => {
+                const option = document.createElement('option');
+                option.value = waiter.id || '';
+                option.textContent = waiter.name || 'Waiter';
+                attendanceWaiterSelectEl.appendChild(option);
+            });
+
+            const savedWaiterId = window.localStorage.getItem(attendanceQrStorageKey) || '';
+            const defaultWaiter = attendanceWaiters.find((waiter) => waiter.id === savedWaiterId) || attendanceWaiters[0];
+            attendanceWaiterSelectEl.value = defaultWaiter?.id || '';
+            attendanceWaiterSelectEl.disabled = false;
+        }
+
+        function renderAttendanceQr(payload) {
+            if (!attendanceQrCodeEl || !attendanceQrEmptyEl || !attendanceQrPurposeEl || !attendanceQrDateEl || !attendanceQrMessageEl || !attendanceQrMetaEl) {
+                return;
+            }
+
+            attendanceQrCodeEl.innerHTML = '';
+            attendanceQrEmptyEl.style.display = 'none';
+
+            attendanceQrPurposeEl.textContent = payload?.purpose_label || 'QR Absensi';
+            attendanceQrDateEl.textContent = payload?.date || '';
+            attendanceQrMessageEl.textContent = payload?.message || 'QR siap dipindai.';
+
+            const attendance = payload?.attendance || {};
+            const metaParts = [];
+            if (attendance.clock_in) metaParts.push(`Masuk: ${attendance.clock_in}`);
+            if (attendance.clock_out) metaParts.push(`Pulang: ${attendance.clock_out}`);
+            if (attendance.status === 'late' && Number(attendance.late_minutes || 0) > 0) {
+                metaParts.push(`Terlambat ${attendance.late_minutes} menit`);
+            }
+            attendanceQrMetaEl.textContent = metaParts.join(' • ');
+
+            if (!payload?.available || !payload?.qr_value || typeof QRCode === 'undefined') {
+                attendanceQrEmptyEl.style.display = 'block';
+                attendanceQrEmptyEl.textContent = payload?.available
+                    ? 'Generator QR belum siap dimuat di browser ini.'
+                    : (payload?.message || 'QR saat ini tidak tersedia.');
+                return;
+            }
+
+            new QRCode(attendanceQrCodeEl, {
+                text: payload.qr_value,
+                width: 180,
+                height: 180,
+                colorDark: '#0f172a',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H,
+            });
+        }
+
+        async function loadAttendanceQrForSelectedWaiter() {
+            const waiterId = attendanceWaiterSelectEl?.value || '';
+            if (!waiterId) {
+                renderAttendanceQr({
+                    available: false,
+                    purpose_label: 'QR Absensi',
+                    message: 'Pilih waiter untuk menampilkan QR absensi.',
+                    date: '',
+                });
+                return;
+            }
+
+            const requestId = ++attendanceQrRequestId;
+
+            try {
+                const response = await fetch(`${attendanceQrEndpoint}?waiter_id=${encodeURIComponent(waiterId)}`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+
+                const payload = await response.json();
+                if (requestId !== attendanceQrRequestId) {
+                    return;
+                }
+
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.message || 'Gagal memuat QR absensi.');
+                }
+
+                window.localStorage.setItem(attendanceQrStorageKey, waiterId);
+                renderAttendanceQr(payload);
+            } catch (error) {
+                renderAttendanceQr({
+                    available: false,
+                    purpose_label: 'QR Absensi',
+                    message: error?.message || 'Gagal memuat QR absensi.',
+                    date: '',
+                });
+            }
+        }
+
+        function startAttendanceQrPolling() {
+            if (attendanceQrIntervalId) {
+                clearInterval(attendanceQrIntervalId);
+            }
+
+            attendanceQrIntervalId = window.setInterval(() => {
+                loadAttendanceQrForSelectedWaiter();
+            }, 5000);
+        }
+
+        function stopAttendanceQrPolling() {
+            if (!attendanceQrIntervalId) return;
+            clearInterval(attendanceQrIntervalId);
+            attendanceQrIntervalId = null;
+        }
+
+        renderAttendanceWaiterOptions();
+        loadAttendanceQrForSelectedWaiter();
+        startAttendanceQrPolling();
+        attendanceWaiterSelectEl?.addEventListener('change', loadAttendanceQrForSelectedWaiter);
 
         let serverTimeOffsetMs = 0;
         const serverTimeOffsetRef = ref(database, '.info/serverTimeOffset');
@@ -1350,6 +1653,8 @@
                 clearInterval(expiredIntervalId);
                 expiredIntervalId = null;
             }
+
+            stopAttendanceQrPolling();
         }
 
         startCashierPollingIntervals();
@@ -1363,8 +1668,10 @@
             loadCashierWorkersFromBackend();
             syncDueRecurringTasks();
             refreshExpiredOrdersForToday();
+            loadAttendanceQrForSelectedWaiter();
             stopCashierPollingIntervals();
             startCashierPollingIntervals();
+            startAttendanceQrPolling();
         });
 
         const connectedRef = ref(database, '.info/connected');

@@ -79,6 +79,7 @@
                     <tbody>
                         @foreach($logs as $log)
                             @php
+                                $details = $log['details'] ?? null;
                                 $actionConfig = [
                                     'create' => ['icon' => '✅', 'color' => 'var(--color-success)'],
                                     'update' => ['icon' => '✏️', 'color' => 'var(--color-info)'],
@@ -109,11 +110,11 @@
                                     {{ Str::limit($log['entity_id'] ?? '-', 15) }}
                                 </td>
                                 <td style="padding: 0.75rem 1rem;">
-                                    @if($log['details'])
+                                    @if($details)
                                         <details style="cursor: pointer; position: relative;">
                                             <summary style="color: var(--color-primary); font-size: 0.85rem; user-select: none; outline: none; list-style: none;">Lihat Data</summary>
                                             <div style="position: absolute; z-index: 10; left: 0; top: 100%; margin-top: 0.5rem; background: var(--color-bg); border: 1px solid var(--color-border); box-shadow: var(--shadow-sm); padding: 0.75rem; border-radius: var(--radius-md); min-width: 250px; max-width: 400px; max-height: 200px; overflow-y: auto;">
-                                                <pre style="margin: 0; font-size: 0.75rem; color: var(--color-text-secondary); white-space: pre-wrap; word-break: break-all;">{{ json_encode($log['details'], JSON_PRETTY_PRINT) }}</pre>
+                                                <pre style="margin: 0; font-size: 0.75rem; color: var(--color-text-secondary); white-space: pre-wrap; word-break: break-all;">{{ json_encode($details, JSON_PRETTY_PRINT) }}</pre>
                                             </div>
                                         </details>
                                     @else
