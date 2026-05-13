@@ -30,8 +30,33 @@ class CashierController extends Controller
 
         $cashierWorkers = $this->firebase->getActiveCashierWorkers();
         $attendanceWaiters = $this->firebase->getAttendanceEligibleWaiters();
+        $settings = $this->firebase->getSettings();
 
-        return view('cashier.index', compact('cashierWorkers', 'attendanceWaiters'));
+        // Get waiters who have shift today but haven't clocked in yet
+        $today = date('Y-m-d');
+        $waitersNotYetClocked = [];
+        
+        foreach ($attendanceWaiters as $waiter) {
+            $waiterId = $waiter['id'] ?? '';
+            $shift = $this->firebase->getWaiterShiftForDate($waiterId, $today);
+            
+            // Only include if waiter has shift today (not off)
+            if ($shift) {
+                $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
+                
+                // Check if not clocked in yet
+                if (!$attendance || empty($attendance['clock_in'])) {
+                    $waitersNotYetClocked[] = [
+                        'id' => $waiterId,
+                        'name' => $waiter['name'] ?? 'Unknown',
+                        'shift_name' => $shift['name'] ?? 'Shift',
+                        'clock_in_time' => $shift['clock_in_time'] ?? '-',
+                    ];
+                }
+            }
+        }
+
+        return view('cashier.index', compact('cashierWorkers', 'attendanceWaiters', 'settings', 'waitersNotYetClocked'));
     }
 
     /**
@@ -56,6 +81,76 @@ class CashierController extends Controller
         }
 
         return response()->json(array_merge(['success' => true], $payload));
+    }
+
+    /**
+     * Get global attendance QR (scan-triggered rotating mode).
+     */
+    public function getGlobalAttendanceQr()
+    {
+        $qrData = $this->firebase->getCurrentGlobalAttendanceQr();
+        $today = date('Y-m-d');
+        
+        // Calculate statistics and build waiters list
+        $eligibleWaiters = $this->firebase->getAttendanceEligibleWaiters();
+        $notYet = 0;
+        $clockedIn = 0;
+        $clockedOut = 0;
+        $waitersNotYetClocked = [];
+        
+        foreach ($eligibleWaiters as $waiter) {
+            $waiterId = $waiter['id'] ?? '';
+            $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
+            
+            // Check if waiter has shift today (not day off)
+            $shift = $this->firebase->getWaiterShiftForDate($waiterId, $today);
+            
+            // Skip if waiter is off today (no shift)
+            if (!$shift) {
+                continue;
+            }
+            
+            if (empty($attendance['clock_in'])) {
+                $notYet++;
+                
+                // Add to not-yet-clocked list with shift info
+                $waitersNotYetClocked[] = [
+                    'id' => $waiterId,
+                    'name' => $waiter['name'] ?? 'Unknown',
+                    'shift_name' => $shift['name'] ?? 'Shift',
+                    'clock_in_time' => $shift['clock_in_time'] ?? '-',
+                ];
+            } elseif (empty($attendance['clock_out'])) {
+                $clockedIn++;
+            } else {
+                $clockedOut++;
+            }
+        }
+        
+        // Get last scanned waiter name
+        $lastScannedWaiterName = null;
+        if (!empty($qrData['last_scanned_by'])) {
+            $lastWaiter = $this->firebase->getWaiterById($qrData['last_scanned_by']);
+            $lastScannedWaiterName = $lastWaiter['name'] ?? null;
+        }
+        
+        return response()->json([
+            'success' => true,
+            'qr_value' => $qrData['qr_value'],
+            'generated_at' => $qrData['generated_at'],
+            'scan_count' => $qrData['scan_count'],
+            'last_scanned_by' => $qrData['last_scanned_by'] ?? null,
+            'last_scanned_waiter_name' => $lastScannedWaiterName,
+            'date' => $today,
+            'message' => 'Scan QR ini untuk absen masuk/pulang',
+            'stats' => [
+                'total_waiters' => count($eligibleWaiters),
+                'not_yet' => $notYet,
+                'clocked_in' => $clockedIn,
+                'clocked_out' => $clockedOut,
+            ],
+            'waiters_not_yet_clocked' => $waitersNotYetClocked,
+        ]);
     }
 
     /**

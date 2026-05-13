@@ -3718,19 +3718,26 @@ class FirebaseService
 
         if ($purpose === 'clock_in') {
             $shift = $this->getWaiterShiftForDate($waiterId, $today);
-            if ($shift) {
-                $clockInTime = $shift['clock_in_time'] ?? null;
-                $tolerance = (int) ($shift['late_tolerance_minutes'] ?? 0);
+            
+            // Check if waiter is off today (libur)
+            if (!$shift) {
+                return [
+                    'success' => false,
+                    'message' => 'Anda sedang libur hari ini dan tidak perlu absen',
+                ];
+            }
+            
+            $clockInTime = $shift['clock_in_time'] ?? null;
+            $tolerance = (int) ($shift['late_tolerance_minutes'] ?? 0);
 
-                if ($clockInTime) {
-                    $expectedTimestamp = strtotime($today.' '.$clockInTime);
-                    $toleranceTimestamp = $expectedTimestamp + ($tolerance * 60);
-                    $actualTimestamp = strtotime($today.' '.$nowTime);
+            if ($clockInTime) {
+                $expectedTimestamp = strtotime($today.' '.$clockInTime);
+                $toleranceTimestamp = $expectedTimestamp + ($tolerance * 60);
+                $actualTimestamp = strtotime($today.' '.$nowTime);
 
-                    if ($actualTimestamp > $toleranceTimestamp) {
-                        $status = 'late';
-                        $lateMinutes = (int) round(($actualTimestamp - $expectedTimestamp) / 60);
-                    }
+                if ($actualTimestamp > $toleranceTimestamp) {
+                    $status = 'late';
+                    $lateMinutes = (int) round(($actualTimestamp - $expectedTimestamp) / 60);
                 }
             }
         }
@@ -3880,24 +3887,30 @@ class FirebaseService
             return ['success' => false, 'message' => 'Data waiter tidak ditemukan'];
         }
 
+        // Check if waiter is off today (libur)
+        $shift = $this->getWaiterShiftForDate($waiterId, $today);
+        if (!$shift) {
+            return [
+                'success' => false,
+                'message' => 'Anda sedang libur hari ini dan tidak perlu absen',
+            ];
+        }
+
         // Determine late status based on today's schedule template (not static shift_id)
         $status = 'present';
         $lateMinutes = 0;
-        $shift = $this->getWaiterShiftForDate($waiterId, $today);
 
-        if ($shift) {
-            $clockInTime = $shift['clock_in_time'] ?? null;
-            $tolerance = (int) ($shift['late_tolerance_minutes'] ?? 0);
+        $clockInTime = $shift['clock_in_time'] ?? null;
+        $tolerance = (int) ($shift['late_tolerance_minutes'] ?? 0);
 
-            if ($clockInTime) {
-                $expectedTimestamp = strtotime($today.' '.$clockInTime);
-                $toleranceTimestamp = $expectedTimestamp + ($tolerance * 60);
-                $actualTimestamp = strtotime($today.' '.$now);
+        if ($clockInTime) {
+            $expectedTimestamp = strtotime($today.' '.$clockInTime);
+            $toleranceTimestamp = $expectedTimestamp + ($tolerance * 60);
+            $actualTimestamp = strtotime($today.' '.$now);
 
-                if ($actualTimestamp > $toleranceTimestamp) {
-                    $status = 'late';
-                    $lateMinutes = (int) round(($actualTimestamp - $expectedTimestamp) / 60);
-                }
+            if ($actualTimestamp > $toleranceTimestamp) {
+                $status = 'late';
+                $lateMinutes = (int) round(($actualTimestamp - $expectedTimestamp) / 60);
             }
         }
 
@@ -3951,6 +3964,218 @@ class FirebaseService
         ]);
 
         return ['success' => true, 'message' => 'Absen keluar tercatat pada '.$now];
+    }
+
+    // ===================================================================
+    // GLOBAL QR ATTENDANCE (SCAN-TRIGGERED ROTATING)
+    // ===================================================================
+
+    /**
+     * Get current global attendance QR (scan-triggered rotating).
+     */
+    public function getCurrentGlobalAttendanceQr(): array
+    {
+        $ref = $this->database->getReference('attendance_config/global_qr');
+        $snapshot = $ref->getSnapshot();
+        $data = $snapshot->exists() ? $snapshot->getValue() : [];
+        
+        $qrValue = $data['qr_value'] ?? '';
+        $generatedAt = $data['generated_at'] ?? 0;
+        $scanCount = $data['scan_count'] ?? 0;
+        $lastScannedBy = $data['last_scanned_by'] ?? null;
+        
+        // Generate new QR if empty
+        if ($qrValue === '') {
+            return $this->regenerateGlobalAttendanceQr();
+        }
+        
+        return [
+            'qr_value' => $qrValue,
+            'generated_at' => $generatedAt,
+            'scan_count' => $scanCount,
+            'last_scanned_by' => $lastScannedBy,
+        ];
+    }
+
+    /**
+     * Regenerate global attendance QR (called after successful scan).
+     */
+    public function regenerateGlobalAttendanceQr(): array
+    {
+        $now = time();
+        $qrValue = 'ATTENDANCE:GLOBAL:' . bin2hex(random_bytes(16));
+        
+        $data = [
+            'qr_value' => $qrValue,
+            'generated_at' => $now,
+            'scan_count' => 0,
+            'updated_at' => $now,
+        ];
+        
+        $this->database->getReference('attendance_config/global_qr')->set($data);
+        
+        return $data;
+    }
+
+    /**
+     * Process global QR scan with auto-regeneration (scan-triggered).
+     */
+    public function processGlobalQrScanWithRegeneration(
+        string $waiterId, 
+        string $purpose, 
+        string $scannedValue
+    ): array
+    {
+        $today = date('Y-m-d');
+        $now = time();
+        
+        // Validate waiter
+        $waiter = $this->getWaiterById($waiterId);
+        if (!$waiter || !($waiter['is_active'] ?? true)) {
+            return ['success' => false, 'message' => 'Data waiter tidak ditemukan'];
+        }
+        
+        if (!empty($waiter['attendance_exempt'])) {
+            return ['success' => false, 'message' => 'Waiter ini tidak wajib absensi'];
+        }
+        
+        // Check settings
+        $settings = $this->getSettings();
+        if ($purpose === 'clock_out' && empty($settings['clock_out_enabled'])) {
+            return ['success' => false, 'message' => 'Fitur absen pulang tidak aktif'];
+        }
+        
+        // Use transaction for atomic operation
+        $attendancePath = "waiter_attendance/{$waiterId}/{$today}";
+        $globalQrPath = "attendance_config/global_qr";
+        $result = ['success' => false, 'message' => 'Gagal memproses absensi'];
+        
+        $this->database->runTransaction(function($transaction) use (
+            $attendancePath, 
+            $globalQrPath, 
+            $waiterId, 
+            $today, 
+            $purpose, 
+            $scannedValue, 
+            $now, 
+            &$result
+        ) {
+            // 1. Validate QR
+            $qrRef = $this->database->getReference($globalQrPath);
+            $qrSnapshot = $transaction->snapshot($qrRef);
+            
+            if (!$qrSnapshot->exists()) {
+                $result = ['success' => false, 'message' => 'QR code tidak ditemukan'];
+                return;
+            }
+            
+            $qrData = $qrSnapshot->getValue();
+            $currentQr = $qrData['qr_value'] ?? '';
+            
+            if ($currentQr !== $scannedValue) {
+                $result = ['success' => false, 'message' => 'QR code tidak valid atau sudah berubah. Silakan scan ulang.'];
+                return;
+            }
+            
+            // 2. Check attendance record
+            $attendanceRef = $this->database->getReference($attendancePath);
+            $attendanceSnapshot = $transaction->snapshot($attendanceRef);
+            $record = $attendanceSnapshot->exists() ? (array) $attendanceSnapshot->getValue() : [];
+            
+            // 3. Validate based on purpose
+            if ($purpose === 'clock_in') {
+                if (!empty($record['clock_in'])) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Sudah absen masuk hari ini pada ' . $record['clock_in']
+                    ];
+                    return;
+                }
+                
+                // Check if waiter is off today (libur)
+                $shift = $this->getWaiterShiftForDate($waiterId, $today);
+                if (!$shift) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Anda sedang libur hari ini dan tidak perlu absen'
+                    ];
+                    return;
+                }
+                
+                // Calculate late status
+                $status = 'present';
+                $lateMinutes = 0;
+                
+                if (!empty($shift['clock_in_time'])) {
+                    $expectedTs = strtotime($today . ' ' . $shift['clock_in_time']);
+                    $tolerance = ($shift['late_tolerance_minutes'] ?? 0) * 60;
+                    
+                    if ($now > ($expectedTs + $tolerance)) {
+                        $status = 'late';
+                        $lateMinutes = (int) round(($now - $expectedTs) / 60);
+                    }
+                }
+                
+                $record['clock_in'] = date('H:i', $now);
+                $record['clock_in_timestamp'] = $now;
+                $record['status'] = $status;
+                $record['late_minutes'] = $lateMinutes;
+                $record['method'] = 'qr_scan_global';
+                $record['note'] = $record['note'] ?? '';
+                $record['updated_at'] = $now;
+                
+                $result = [
+                    'success' => true,
+                    'message' => $status === 'late' 
+                        ? "Absen masuk tercatat (terlambat {$lateMinutes} menit)"
+                        : 'Absen masuk tercatat tepat waktu',
+                    'status' => $status,
+                    'late_minutes' => $lateMinutes,
+                    'new_qr_generated' => true,
+                ];
+                
+            } else { // clock_out
+                if (empty($record['clock_in'])) {
+                    $result = ['success' => false, 'message' => 'Belum absen masuk hari ini'];
+                    return;
+                }
+                
+                if (!empty($record['clock_out'])) {
+                    $result = [
+                        'success' => false,
+                        'message' => 'Sudah absen keluar hari ini pada ' . $record['clock_out']
+                    ];
+                    return;
+                }
+                
+                $record['clock_out'] = date('H:i', $now);
+                $record['clock_out_timestamp'] = $now;
+                $record['updated_at'] = $now;
+                
+                $result = [
+                    'success' => true,
+                    'message' => 'Absen keluar tercatat pada ' . date('H:i', $now),
+                    'new_qr_generated' => true,
+                ];
+            }
+            
+            // 4. Save attendance
+            $transaction->set($attendanceRef, $record);
+            
+            // 5. REGENERATE QR (key part!)
+            $newQrValue = 'ATTENDANCE:GLOBAL:' . bin2hex(random_bytes(16));
+            $newQrData = [
+                'qr_value' => $newQrValue,
+                'generated_at' => $now,
+                'scan_count' => ($qrData['scan_count'] ?? 0) + 1,
+                'updated_at' => $now,
+                'last_scanned_by' => $waiterId,
+            ];
+            
+            $transaction->set($qrRef, $newQrData);
+        });
+        
+        return $result;
     }
 
     // ===================================================================
@@ -4103,7 +4328,33 @@ class FirebaseService
      */
     public function getWaiterShiftForDate(string $waiterId, string $date): ?array
     {
-        $dayOfWeek = strtolower(date('l', strtotime($date))); // monday, tuesday, etc.
+        // PRIORITY 1: Check rotation pattern first
+        $pattern = $this->getRotationPattern($waiterId);
+        if ($pattern) {
+            if ($pattern['role'] === 'primary') {
+                // Primary kasir with rotation
+                $isOffDay = $this->isRotationOffDay($pattern, $date);
+                if ($isOffDay) {
+                    return null; // Libur karena rotation
+                }
+                // Working - return default shift
+                $shiftId = $pattern['default_shift_id'];
+                if ($shiftId) {
+                    return $this->getShiftById($shiftId);
+                }
+            } elseif ($pattern['role'] === 'backup') {
+                // Backup kasir - check if covering someone
+                $coverage = $this->getBackupCoverage($waiterId, $date);
+                if ($coverage) {
+                    return $this->getShiftById($coverage['shift_id']);
+                }
+                // Backup not covering anyone today = off
+                return null;
+            }
+        }
+        
+        // PRIORITY 2: Fallback to template (existing logic for waiter)
+        $dayOfWeek = strtolower(date('l', strtotime($date)));
         $template = $this->getScheduleTemplate();
         $shiftId = $template[$waiterId][$dayOfWeek] ?? null;
 
@@ -4170,6 +4421,132 @@ class FirebaseService
         }
 
         return $result;
+    }
+
+    // ===================================================================
+    // ROTATION PATTERN (for kasir with rotating schedule)
+    // ===================================================================
+
+    /**
+     * Set rotation pattern for kasir.
+     */
+    public function setRotationPattern(string $waiterId, array $pattern): void
+    {
+        $payload = [
+            'enabled' => true,
+            'role' => $pattern['role'] ?? 'primary', // primary | backup
+            'default_shift_id' => $pattern['default_shift_id'] ?? null,
+            'rotation_days' => $pattern['rotation_days'] ?? [],
+            'start_week' => $pattern['start_week'] ?? date('o-\WW'),
+            'start_day' => $pattern['start_day'] ?? 'monday',
+            'updated_at' => time(),
+        ];
+        
+        $this->database->getReference("rotation_patterns/{$waiterId}")->set($payload);
+    }
+
+    /**
+     * Get rotation pattern for waiter/kasir.
+     */
+    public function getRotationPattern(string $waiterId): ?array
+    {
+        $ref = $this->database->getReference("rotation_patterns/{$waiterId}");
+        $snapshot = $ref->getSnapshot();
+        
+        if (!$snapshot->exists()) {
+            return null;
+        }
+        
+        $pattern = $snapshot->getValue();
+        return ($pattern['enabled'] ?? false) ? $pattern : null;
+    }
+
+    /**
+     * Calculate if today is rotation off day.
+     */
+    private function isRotationOffDay(array $pattern, string $date): bool
+    {
+        $rotationDays = $pattern['rotation_days'] ?? [];
+        if (empty($rotationDays)) {
+            return false;
+        }
+        
+        $startWeek = $pattern['start_week'];
+        
+        // Calculate week offset
+        list($startYear, $startWeekNum) = explode('-W', $startWeek);
+        $currentWeek = date('o-\WW', strtotime($date));
+        list($currentYear, $currentWeekNum) = explode('-W', $currentWeek);
+        
+        $yearDiff = (int)$currentYear - (int)$startYear;
+        $weekOffset = ($yearDiff * 52) + ((int)$currentWeekNum - (int)$startWeekNum);
+        
+        // Determine off day this week
+        $rotationIndex = $weekOffset % count($rotationDays);
+        $offDayThisWeek = $rotationDays[$rotationIndex];
+        
+        $currentDayOfWeek = strtolower(date('l', strtotime($date)));
+        
+        return $currentDayOfWeek === $offDayThisWeek;
+    }
+
+    /**
+     * Get backup coverage for date.
+     */
+    public function getBackupCoverage(string $backupId, string $date): ?array
+    {
+        $ref = $this->database->getReference("backup_coverage/{$date}/{$backupId}");
+        $snapshot = $ref->getSnapshot();
+        
+        if (!$snapshot->exists()) {
+            return null;
+        }
+        
+        return $snapshot->getValue();
+    }
+
+    /**
+     * Calculate and set backup coverage for date.
+     */
+    public function calculateBackupCoverageForDate(string $date): void
+    {
+        // Get all kasir with rotation
+        $allWaiters = $this->getAllowedEmails();
+        $primaryKasir = [];
+        $backupKasir = null;
+        
+        foreach ($allWaiters as $waiter) {
+            $pattern = $this->getRotationPattern($waiter['id']);
+            if (!$pattern) continue;
+            
+            if ($pattern['role'] === 'primary') {
+                $primaryKasir[] = [
+                    'id' => $waiter['id'],
+                    'pattern' => $pattern,
+                ];
+            } elseif ($pattern['role'] === 'backup') {
+                $backupKasir = $waiter['id'];
+            }
+        }
+        
+        if (!$backupKasir) return;
+        
+        // Check which primary is off today
+        foreach ($primaryKasir as $kasir) {
+            $isOff = $this->isRotationOffDay($kasir['pattern'], $date);
+            if ($isOff) {
+                // Backup covers this kasir
+                $this->database->getReference("backup_coverage/{$date}/{$backupKasir}")->set([
+                    'covering_for' => $kasir['id'],
+                    'shift_id' => $kasir['pattern']['default_shift_id'],
+                    'calculated_at' => time(),
+                ]);
+                return; // Only cover one kasir per day
+            }
+        }
+        
+        // No one off = backup is off
+        $this->database->getReference("backup_coverage/{$date}/{$backupKasir}")->remove();
     }
 
     public function getAttendanceByDate(string $waiterId, string $date): ?array
@@ -4276,6 +4653,14 @@ class FirebaseService
         }
 
         $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->update($payload);
+    }
+
+    /**
+     * Delete attendance record for a waiter on a specific date.
+     */
+    public function deleteAttendance(string $waiterId, string $date): void
+    {
+        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->remove();
     }
 
     /**

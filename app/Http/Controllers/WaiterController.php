@@ -492,8 +492,18 @@ class WaiterController extends Controller
     {
         $waiterId = (string) session('waiter_id');
         $scannedValue = $request->input('scanned_value');
-
-        $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_in', (string) $scannedValue, 'qr_scan');
+        
+        // Check if using global QR mode
+        $settings = $this->firebase->getSettings();
+        $useGlobalQr = !empty($settings['attendance_use_global_qr']);
+        
+        if ($useGlobalQr) {
+            // Global QR mode (scan-triggered rotating)
+            $result = $this->firebase->processGlobalQrScanWithRegeneration($waiterId, 'clock_in', (string) $scannedValue);
+        } else {
+            // Per-waiter QR mode (original)
+            $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_in', (string) $scannedValue, 'qr_scan');
+        }
 
         if ($result['success'] ?? false) {
             // Check if late and auto-apply penalty
@@ -569,8 +579,17 @@ class WaiterController extends Controller
 
         $waiterId = (string) session('waiter_id');
         $scannedValue = $request->input('scanned_value');
-
-        $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_out', (string) $scannedValue, 'qr_scan');
+        
+        // Check if using global QR mode
+        $useGlobalQr = !empty($settings['attendance_use_global_qr']);
+        
+        if ($useGlobalQr) {
+            // Global QR mode (scan-triggered rotating)
+            $result = $this->firebase->processGlobalQrScanWithRegeneration($waiterId, 'clock_out', (string) $scannedValue);
+        } else {
+            // Per-waiter QR mode (original)
+            $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_out', (string) $scannedValue, 'qr_scan');
+        }
 
         return response()->json($result);
     }

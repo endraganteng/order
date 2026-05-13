@@ -107,6 +107,19 @@
                 </select>
             </div>
 
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 600;">Mode Absensi QR</label>
+                <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                    <strong>Global QR (Scan Berurutan):</strong> Semua waiter scan QR yang sama. QR berubah otomatis setelah ada yang scan. Waiter harus login portal dulu.<br>
+                    <strong>Per-Waiter QR:</strong> Kasir pilih waiter dulu, lalu QR muncul khusus untuk waiter tersebut (mode lama).
+                </p>
+                <select name="attendance_use_global_qr"
+                    style="width: 300px; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    <option value="1" {{ old('attendance_use_global_qr', $settings['attendance_use_global_qr'] ?? false) ? 'selected' : '' }}>Global QR (Scan Berurutan)</option>
+                    <option value="0" {{ !old('attendance_use_global_qr', $settings['attendance_use_global_qr'] ?? false) ? 'selected' : '' }}>Per-Waiter QR (Mode Lama)</option>
+                </select>
+            </div>
+
             <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
         </form>
     </div>

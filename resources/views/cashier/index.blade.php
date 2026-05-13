@@ -20,6 +20,132 @@
             padding: 20px;
         }
 
+        /* ========== TOP BAR (Test Sound & Status) ========== */
+        #btn-test-sound {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            z-index: 1000;
+        }
+
+        #btn-test-sound:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        #connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        #connection-status.online {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.4);
+            color: #22c55e;
+        }
+
+        #connection-status.offline {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            color: #ef4444;
+        }
+
+        /* ========== SCAN NOTIFICATION TOAST ========== */
+        #scan-notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
+            z-index: 1001;
+            min-width: 320px;
+            max-width: 400px;
+            transform: translateX(450px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        #scan-notification.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        #scan-notification.hide {
+            transform: translateX(450px);
+            opacity: 0;
+        }
+
+        .scan-notification-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .scan-notification-icon {
+            font-size: 28px;
+            animation: bounce 0.6s ease;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .scan-notification-title {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .scan-notification-body {
+            font-size: 14px;
+            line-height: 1.5;
+            padding-left: 38px;
+        }
+
+        .scan-notification-waiter {
+            font-weight: 700;
+            font-size: 15px;
+        }
+
+        .scan-notification-time {
+            opacity: 0.9;
+            font-size: 13px;
+        }
+
+        /* QR Pulse Animation */
+        @keyframes qr-pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .qr-changed {
+            animation: qr-pulse 0.6s ease;
+        }
+
         /* ========== TAB NAVIGATION ========== */
         .tab-bar {
             display: flex;
@@ -158,53 +284,116 @@
         }
 
         .order-waiter { font-size: 18px; font-weight: 600; }
-        .order-time { font-size: 12px; opacity: 0.8; margin-top: 5px; }
 
+        /* ========== PRODUCT LIST ========== */
         .product-item {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 6px;
-            padding: 10px;
-            margin-bottom: 8px;
             display: flex;
             align-items: flex-start;
-            gap: 10px;
+            gap: 0;
+            padding: 12px 16px;
+            margin-top: 10px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
         }
 
         .product-badge {
-            background: transparent;
-            color: rgba(255, 255, 255, 0.4);
-            width: auto;
-            height: auto;
-            border-radius: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: normal;
-            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 600;
+            font-size: 10px;
+            line-height: 1;
+            margin-right: 4px;
+            margin-top: 2px;
             flex-shrink: 0;
-            margin-top: 0;
-            margin-right: 6px;
         }
 
         .product-details {
-            flex-grow: 1;
+            flex: 1;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            gap: 15px;
+            justify-content: space-between;
+            gap: 16px;
         }
 
-        .product-name { font-weight: 600; font-size: 18px; flex-grow: 1; }
+        .product-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: white;
+            flex: 1;
+            line-height: 1.2;
+        }
 
         .product-price {
-            font-size: 20px;
+            font-size: 18px;
+            color: #fbbf24;
             font-weight: 700;
-            color: #ffd700;
             white-space: nowrap;
-            flex-shrink: 0;
         }
 
-        /* ========== TASK CARDS ========== */
+        /* ========== EMPTY STATES ========== */
+        .no-orders, .no-tasks, .no-expired-orders {
+            text-align: center;
+            padding: 60px 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .empty-icon {
+            font-size: 64px;
+            display: block;
+            margin-bottom: 16px;
+        }
+
+        .expired-history-note {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            margin-bottom: 20px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .expired-pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        .expired-pagination button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .expired-pagination button:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .expired-pagination button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .expired-pagination button.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* ========== TASKS CONTAINER ========== */
         #tasks-container {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -214,445 +403,139 @@
         }
 
         .task-card {
-            border-radius: 14px;
-            padding: 22px;
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
             animation: slideIn 0.3s ease-out;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .task-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-        }
-
-        .task-card.priority-urgent {
-            background: linear-gradient(135deg, #f5576c 0%, #ff6b6b 100%);
-        }
-        .task-card.priority-urgent::before {
-            background: #ff0000;
-            height: 5px;
-            animation: urgentGlow 1.5s ease-in-out infinite;
-        }
-
-        .task-card.priority-normal {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-        .task-card.priority-normal::before {
-            background: #00d9ff;
-        }
-
-        .task-card.priority-low {
-            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-            color: #333;
-        }
-        .task-card.priority-low::before {
-            background: #a8edea;
-        }
-
-        @keyframes urgentGlow {
-            0%, 100% { box-shadow: 0 0 5px rgba(255, 0, 0, 0.3); }
-            50% { box-shadow: 0 0 20px rgba(255, 0, 0, 0.6); }
         }
 
         .task-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
             padding-bottom: 10px;
-            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .task-card.priority-low .task-header {
-            border-bottom-color: rgba(0,0,0,0.1);
-        }
-
-        .task-priority-badge {
-            font-size: 13px;
-            font-weight: 700;
-            padding: 4px 12px;
-            border-radius: 20px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            background: rgba(255, 255, 255, 0.25);
-        }
-
-        .task-card.priority-low .task-priority-badge {
-            background: rgba(0, 0, 0, 0.1);
-            color: #555;
-        }
-
-        .task-time {
-            font-size: 13px;
-            opacity: 0.85;
+            margin-bottom: 15px;
         }
 
         .task-title {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 700;
-            margin-bottom: 6px;
-            line-height: 1.3;
+            margin-bottom: 8px;
+        }
+
+        .task-meta {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 4px;
         }
 
         .task-description {
-            font-size: 15px;
-            opacity: 0.9;
-            margin-bottom: 18px;
-            line-height: 1.5;
-        }
-
-        .task-card.priority-low .task-description {
-            color: #555;
-        }
-
-        .task-assigned {
-            font-size: 12px;
-            opacity: 0.7;
+            font-size: 14px;
+            line-height: 1.6;
             margin-bottom: 15px;
+            color: rgba(255, 255, 255, 0.9);
         }
 
         .task-actions {
             display: flex;
-            flex-direction: column;
             gap: 10px;
-        }
-
-        .cashier-worker-select {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid rgba(255, 255, 255, 0.45);
-            border-radius: 8px;
-            background: rgba(0, 0, 0, 0.18);
-            color: #fff;
-            font-size: 14px;
-            outline: none;
-        }
-
-        .cashier-worker-select option {
-            color: #111;
-        }
-
-        .task-worker-help {
-            font-size: 12px;
-            opacity: 0.8;
-            margin-bottom: 8px;
+            margin-top: 15px;
         }
 
         .task-btn {
             flex: 1;
-            padding: 10px 16px;
+            padding: 10px;
             border: none;
             border-radius: 8px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-
-        .task-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-
-        .task-btn:active {
-            transform: translateY(0);
-        }
-
-        .task-btn.done-btn {
-            background: rgba(255, 255, 255, 0.95);
-            color: #28a745;
-        }
-
-        .task-btn.skip-btn {
-            background: rgba(255, 255, 255, 0.25);
-            color: white;
-        }
-
-        .task-card.priority-low .task-btn.skip-btn {
-            background: rgba(0, 0, 0, 0.1);
-            color: #666;
-        }
-
-        .task-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none !important;
-        }
-
-        /* ========== EMPTY STATE ========== */
-        .no-orders, .no-tasks, .no-expired-orders {
-            text-align: center;
-            color: #888;
-            font-size: 20px;
-            margin-top: 80px;
-        }
-
-        .expired-history-note {
-            text-align: center;
-            margin: -10px 0 16px 0;
-            color: rgba(255, 255, 255, 0.75);
-            font-size: 14px;
-        }
-
-        .expired-pagination {
-            max-width: 1400px;
-            margin: 18px auto 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .expired-pagination-info {
-            color: rgba(255, 255, 255, 0.78);
-            font-size: 13px;
-        }
-
-        .expired-pagination-controls {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .expired-pagination-btn {
-            border: 1px solid rgba(255, 255, 255, 0.28);
-            background: rgba(255, 255, 255, 0.1);
-            color: #fff;
-            border-radius: 8px;
-            padding: 8px 12px;
-            font-size: 13px;
-            cursor: pointer;
-        }
-
-        .expired-pagination-btn:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-        }
-
-        .expired-pagination-page {
-            font-size: 13px;
-            color: #e2e8f0;
-            font-weight: 600;
-        }
-
-        .no-tasks .empty-icon {
-            font-size: 64px;
-            margin-bottom: 15px;
-            display: block;
-        }
-
-        /* ========== STATUS INDICATORS ========== */
-        #connection-status {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #ffc107;
-            color: #333;
-            padding: 8px 16px;
-            border-radius: 20px;
             font-size: 14px;
             font-weight: 600;
-            display: block;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            transition: all 0.3s ease;
+            cursor: pointer;
+            transition: all 0.2s ease;
         }
 
-        #connection-status.offline {
-            background: #dc3545;
-            color: white;
-            animation: pulse 2s infinite;
-        }
-
-        #connection-status.online {
-            background: #28a745;
+        .task-btn-done {
+            background: rgba(34, 197, 94, 0.9);
             color: white;
         }
 
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.7; }
-            100% { opacity: 1; }
+        .task-btn-done:hover {
+            background: rgba(34, 197, 94, 1);
         }
 
+        /* ========== TOAST NOTIFICATIONS ========== */
         #toast-container {
             position: fixed;
-            top: 60px;
+            top: 80px;
             right: 20px;
-            z-index: 2000;
+            z-index: 9999;
             display: flex;
             flex-direction: column;
             gap: 10px;
+            pointer-events: none;
         }
 
         .toast {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            animation: slideDown 0.3s ease-out;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            font-size: 15px;
             font-weight: 600;
-            min-width: 300px;
-            justify-content: center;
-        }
-
-        .toast.toast-order { background: #28a745; }
-        .toast.toast-task { background: linear-gradient(135deg, #f093fb, #f5576c); }
-
-        @keyframes slideDown {
-            from { transform: translateY(-20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .attendance-qr-widget {
-            position: fixed;
-            right: 20px;
-            bottom: 20px;
-            width: min(360px, calc(100vw - 40px));
-            background: rgba(15, 23, 42, 0.94);
-            border: 1px solid rgba(148, 163, 184, 0.28);
-            border-radius: 20px;
-            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
-            padding: 18px;
-            z-index: 1500;
-            backdrop-filter: blur(14px);
-        }
-
-        .attendance-qr-header {
+            min-width: 280px;
+            max-width: 400px;
+            pointer-events: auto;
+            animation: slideInRight 0.3s ease-out;
             display: flex;
             align-items: center;
-            justify-content: space-between;
             gap: 12px;
-            margin-bottom: 12px;
         }
 
-        .attendance-qr-title {
-            font-size: 17px;
-            font-weight: 700;
-            color: #f8fafc;
+        .toast.order {
+            background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);
         }
 
-        .attendance-qr-subtitle {
-            font-size: 12px;
-            color: #cbd5e1;
-            margin-top: 4px;
+        .toast.success {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
         }
 
-        .attendance-qr-badge {
-            font-size: 11px;
-            font-weight: 700;
-            padding: 6px 10px;
-            border-radius: 999px;
-            background: rgba(34, 197, 94, 0.18);
-            color: #86efac;
-            white-space: nowrap;
+        .toast.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
         }
 
-        .attendance-qr-select {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            color: #fff;
-            border-radius: 12px;
-            padding: 12px 14px;
-            font-size: 14px;
-            margin-bottom: 12px;
-            outline: none;
-        }
-
-        .attendance-qr-select option {
-            color: #111827;
-        }
-
-        .attendance-qr-status {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .attendance-qr-purpose {
-            font-size: 13px;
-            font-weight: 700;
-            color: #facc15;
-            letter-spacing: 0.02em;
-            text-transform: uppercase;
-        }
-
-        .attendance-qr-date {
-            font-size: 12px;
-            color: #94a3b8;
-        }
-
-        .attendance-qr-code-shell {
-            min-height: 220px;
-            border-radius: 16px;
-            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(241,245,249,0.98));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-            margin-bottom: 12px;
-        }
-
-        .attendance-qr-code {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .attendance-qr-code > img,
-        .attendance-qr-code > canvas {
-            border-radius: 12px;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-        }
-
-        .attendance-qr-empty {
-            text-align: center;
-            color: #334155;
-            font-size: 13px;
-            line-height: 1.5;
-            padding: 0 8px;
-        }
-
-        .attendance-qr-message {
-            font-size: 13px;
-            color: #e2e8f0;
-            line-height: 1.55;
-        }
-
-        .attendance-qr-meta {
-            margin-top: 8px;
-            font-size: 12px;
-            color: #94a3b8;
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
 
         /* ========== RESPONSIVE ========== */
+        @media (max-width: 768px) {
+            #tab-attendance > div > div {
+                grid-template-columns: 1fr !important;
+            }
+            #toast-container {
+                top: auto;
+                bottom: 20px;
+                right: 10px;
+                left: 10px;
+            }
+            .toast {
+                min-width: auto;
+                width: 100%;
+            }
+        }
+
         @media (max-width: 480px) {
             .tab-btn { padding: 10px 18px; font-size: 15px; }
             .section-title { font-size: 22px; }
             #tasks-container { grid-template-columns: 1fr; }
-            .attendance-qr-widget {
-                right: 12px;
-                bottom: 12px;
-                width: calc(100vw - 24px);
-                padding: 16px;
+            #orders-container, #expired-orders-container {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -660,37 +543,24 @@
 
 <body>
     <div id="toast-container"></div>
+    
+    <!-- Scan Notification Toast -->
+    <div id="scan-notification">
+        <div class="scan-notification-header">
+            <div class="scan-notification-icon">🎉</div>
+            <div class="scan-notification-title">Absensi Berhasil!</div>
+        </div>
+        <div class="scan-notification-body">
+            <div class="scan-notification-waiter" id="scan-notification-waiter"></div>
+            <div class="scan-notification-time" id="scan-notification-time"></div>
+        </div>
+    </div>
+    
+    <button id="btn-test-sound">
+        🔊 Test Suara
+    </button>
+    
     <div id="connection-status">⌛ Connecting...</div>
-    <div class="attendance-qr-widget" id="attendance-qr-widget">
-        <div class="attendance-qr-header">
-            <div>
-                <div class="attendance-qr-title">QR Absensi Waiter</div>
-                <div class="attendance-qr-subtitle">Pilih waiter, lalu minta waiter scan QR ini dari portal waiter.</div>
-            </div>
-            <div class="attendance-qr-badge">1x Pakai</div>
-        </div>
-
-        <select id="attendance-qr-waiter-select" class="attendance-qr-select"></select>
-
-        <div class="attendance-qr-status">
-            <div id="attendance-qr-purpose" class="attendance-qr-purpose">Memuat...</div>
-            <div id="attendance-qr-date" class="attendance-qr-date"></div>
-        </div>
-
-        <div class="attendance-qr-code-shell">
-            <div id="attendance-qr-code" class="attendance-qr-code"></div>
-            <div id="attendance-qr-empty" class="attendance-qr-empty" style="display: none;"></div>
-        </div>
-
-        <div id="attendance-qr-message" class="attendance-qr-message">Menyiapkan QR absensi...</div>
-        <div id="attendance-qr-meta" class="attendance-qr-meta"></div>
-    </div>
-
-    <div style="position: absolute; top: 20px; left: 20px;">
-        <button id="btn-test-sound" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
-            🔊 Test Suara & Aktifkan
-        </button>
-    </div>
 
     <!-- TAB NAVIGATION -->
     <div class="tab-bar">
@@ -699,6 +569,10 @@
         </button>
         <button class="tab-btn" data-tab="expired-orders" onclick="switchTab('expired-orders')">
             🕓 Riwayat Expired
+        </button>
+        <button class="tab-btn" data-tab="attendance" onclick="switchTab('attendance')">
+            👤 Absensi
+            <span id="attendance-badge" class="tab-badge zero">0</span>
         </button>
         <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks')">
             📝 Tugas Supervisor
@@ -723,6 +597,78 @@
         <div id="expired-orders-pagination" class="expired-pagination"></div>
     </div>
 
+    <!-- TAB: ATTENDANCE -->
+    <div id="tab-attendance" class="tab-content">
+        <h1 class="section-title">👤 Absensi Waiter</h1>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: 0 auto;">
+            <!-- QR Absensi Section -->
+            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 16px; padding: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div>
+                        <div style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px;">QR Absensi</div>
+                        <div id="attendance-qr-subtitle-tab" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">Memuat...</div>
+                    </div>
+                    <div id="attendance-qr-badge-tab" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 20px;">1x Pakai</div>
+                </div>
+
+                <!-- Per-Waiter Mode (Original) -->
+                <select id="attendance-qr-waiter-select" class="attendance-qr-select" style="display: none; width: 100%; padding: 10px; border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 8px; background: rgba(255, 255, 255, 0.05); color: white; font-size: 14px; margin-bottom: 15px;"></select>
+
+                <!-- Global QR Mode -->
+                <div id="attendance-global-mode" style="display: none; text-align: center; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; margin-bottom: 15px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #00d9ff; margin-bottom: 5px;">Mode: Scan Berurutan</div>
+                    <div style="font-size: 12px; color: rgba(255, 255, 255, 0.7);">Total scan hari ini: <span id="global-scan-count">0</span></div>
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <div id="attendance-qr-purpose" style="font-size: 16px; font-weight: 600; color: #00d9ff; margin-bottom: 4px;">Memuat...</div>
+                    <div id="attendance-qr-date" style="font-size: 13px; color: rgba(255, 255, 255, 0.5);"></div>
+                </div>
+
+                <div style="background: white; border-radius: 12px; padding: 20px; display: flex; align-items: center; justify-content: center; min-height: 280px; margin-bottom: 15px;">
+                    <div id="attendance-qr-code" style="display: flex; align-items: center; justify-content: center;"></div>
+                    <div id="attendance-qr-empty" style="display: none; text-align: center; color: #64748b;"></div>
+                </div>
+
+                <div id="attendance-qr-message" style="text-align: center; font-size: 13px; color: rgba(255, 255, 255, 0.7); margin-bottom: 8px;">Menyiapkan QR absensi...</div>
+                <div id="attendance-qr-meta" style="text-align: center; font-size: 12px; color: #94a3b8;"></div>
+            </div>
+
+            <!-- Waiters Not Yet Clocked Section -->
+            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 16px; padding: 24px; max-height: 600px; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid rgba(255, 255, 255, 0.1);">
+                    <div style="font-size: 20px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px;">
+                        ⚠️ Belum Absen
+                    </div>
+                    <div id="waiters-not-clocked-count-tab" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 20px; min-width: 32px; text-align: center;">0</div>
+                </div>
+                <div id="waiters-not-clocked-list-tab">
+                    @if(isset($waitersNotYetClocked) && count($waitersNotYetClocked) > 0)
+                        @foreach($waitersNotYetClocked as $waiter)
+                        <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 14px; margin-bottom: 12px; transition: all 0.2s ease;" onmouseover="this.style.background='rgba(255, 255, 255, 0.08)'; this.style.borderColor='rgba(255, 255, 255, 0.2)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.borderColor='rgba(255, 255, 255, 0.1)'">
+                            <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 8px;">{{ $waiter['name'] }}</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    📅 {{ $waiter['shift_name'] }}
+                                </div>
+                                <div style="color: #fbbf24; font-weight: 600;">
+                                    🕐 {{ $waiter['clock_in_time'] }}
+                                </div>
+                            </div>
+                        </div>
+                        @endforeach
+                    @else
+                        <div style="text-align: center; padding: 40px 20px; color: rgba(255, 255, 255, 0.5); font-size: 14px;">
+                            <div style="font-size: 48px; margin-bottom: 12px;">✅</div>
+                            <div>Semua waiter sudah absen</div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- TAB: TASKS -->
     <div id="tab-tasks" class="tab-content">
         <h1 class="section-title tasks">📝 Tugas dari Supervisor</h1>
@@ -737,6 +683,42 @@
     <script id="cashier-workers-data" type="application/json">{!! json_encode($cashierWorkers ?? []) !!}</script>
     <script id="attendance-waiters-data" type="application/json">{!! json_encode($attendanceWaiters ?? []) !!}</script>
     <script src="{{ asset('js/vendor/qrcode.min.js') }}"></script>
+
+    <!-- Global Functions (must be outside module scope for onclick handlers) -->
+    <script>
+        // Tab switching function
+        function switchTab(tabName) {
+            // Hide all tab contents
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => {
+                content.classList.remove('active');
+            });
+
+            // Remove active class from all tab buttons
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            tabButtons.forEach(btn => {
+                btn.classList.remove('active');
+                btn.classList.remove('active-tasks');
+            });
+
+            // Show selected tab content
+            const selectedTab = document.getElementById('tab-' + tabName);
+            if (selectedTab) {
+                selectedTab.classList.add('active');
+            }
+
+            // Add active class to selected button
+            const selectedButton = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
+            if (selectedButton) {
+                selectedButton.classList.add(tabName === 'tasks' ? 'active-tasks' : 'active');
+            }
+            
+            // Load expired orders when switching to that tab
+            if (tabName === 'expired-orders' && typeof loadExpiredOrdersPage === 'function') {
+                loadExpiredOrdersPage(1, true);
+            }
+        }
+    </script>
 
     <script type="module">
         // Firebase Realtime Database configuration
@@ -770,7 +752,14 @@
         const attendanceQrMessageEl = document.getElementById('attendance-qr-message');
         const attendanceQrMetaEl = document.getElementById('attendance-qr-meta');
         const attendanceQrEndpoint = @json(route('cashier.attendance_qr', [], false));
+        const attendanceQrGlobalEndpoint = @json(route('cashier.attendance_qr_global', [], false));
         const attendanceQrStorageKey = 'cashier_attendance_waiter_id';
+        const useGlobalQrMode = @json($settings['attendance_use_global_qr'] ?? false);
+        
+        // Debug: Log mode
+        console.log('Attendance Mode:', useGlobalQrMode ? 'GLOBAL QR' : 'PER-WAITER');
+        console.log('Settings:', @json($settings ?? []));
+        
         let cashierWorkers = [];
         let attendanceWaiters = [];
         let attendanceQrIntervalId = null;
@@ -787,6 +776,12 @@
         }
 
         function renderAttendanceWaiterOptions() {
+            // Guard: Don't run in global QR mode
+            if (useGlobalQrMode) {
+                console.log('Skipping waiter options render (global mode active)');
+                return;
+            }
+            
             if (!attendanceWaiterSelectEl) return;
             attendanceWaiterSelectEl.innerHTML = '';
 
@@ -851,7 +846,202 @@
             });
         }
 
+        // Global QR Mode Functions
+        let lastQrValue = null;
+        let lastScanCount = 0;
+        
+        async function loadGlobalAttendanceQr() {
+            try {
+                const response = await fetch(attendanceQrGlobalEndpoint, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.message || 'Gagal memuat QR absensi.');
+                }
+                
+                // Detect QR change (someone just scanned)
+                const qrChanged = lastQrValue !== null && lastQrValue !== data.qr_value;
+                const scanCountIncreased = data.scan_count > lastScanCount;
+                
+                if (qrChanged && scanCountIncreased && data.last_scanned_waiter_name) {
+                    // Show notification
+                    showScanNotification(data.last_scanned_waiter_name);
+                    
+                    // Play sound
+                    playNotificationSound();
+                    
+                    // Add pulse animation to QR
+                    if (attendanceQrCodeEl) {
+                        attendanceQrCodeEl.classList.add('qr-changed');
+                        setTimeout(() => {
+                            attendanceQrCodeEl.classList.remove('qr-changed');
+                        }, 600);
+                    }
+                }
+                
+                // Update tracking variables
+                lastQrValue = data.qr_value;
+                lastScanCount = data.scan_count;
+                
+                // Render QR
+                if (attendanceQrCodeEl && data.qr_value) {
+                    attendanceQrCodeEl.innerHTML = '';
+                    new QRCode(attendanceQrCodeEl, {
+                        text: data.qr_value,
+                        width: 180,
+                        height: 180,
+                        colorDark: '#0f172a',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.H,
+                    });
+                }
+                
+                // Hide empty state
+                if (attendanceQrEmptyEl) {
+                    attendanceQrEmptyEl.style.display = 'none';
+                }
+                
+                // Update purpose
+                if (attendanceQrPurposeEl) {
+                    attendanceQrPurposeEl.textContent = 'QR Absensi Global';
+                }
+                
+                // Update date
+                if (attendanceQrDateEl) {
+                    attendanceQrDateEl.textContent = data.date || '';
+                }
+                
+                // Update scan count
+                const scanCountEl = document.getElementById('global-scan-count');
+                if (scanCountEl) {
+                    scanCountEl.textContent = data.scan_count || 0;
+                }
+                
+                // Update message
+                if (attendanceQrMessageEl) {
+                    attendanceQrMessageEl.textContent = data.message || 'Scan QR untuk absen';
+                }
+                
+                // Update stats
+                if (attendanceQrMetaEl && data.stats) {
+                    const s = data.stats;
+                    attendanceQrMetaEl.textContent = 
+                        `Belum: ${s.not_yet} | Masuk: ${s.clocked_in} | Pulang: ${s.clocked_out}`;
+                }
+                
+                // Update "Belum Absen" list with real-time data
+                updateWaitersNotClockedList(data.stats, data.waiters_not_yet_clocked);
+                
+            } catch (error) {
+                console.error('Failed to load global QR:', error);
+                if (attendanceQrEmptyEl) {
+                    attendanceQrEmptyEl.style.display = 'block';
+                    attendanceQrEmptyEl.textContent = error?.message || 'Gagal memuat QR absensi.';
+                }
+            }
+        }
+        
+        function showScanNotification(waiterName) {
+            const notificationEl = document.getElementById('scan-notification');
+            const waiterEl = document.getElementById('scan-notification-waiter');
+            const timeEl = document.getElementById('scan-notification-time');
+            
+            if (!notificationEl || !waiterEl || !timeEl) return;
+            
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            waiterEl.textContent = waiterName;
+            timeEl.textContent = `⏰ ${timeStr}`;
+            
+            // Show notification
+            notificationEl.classList.remove('hide');
+            notificationEl.classList.add('show');
+            
+            // Auto-hide after 4 seconds
+            setTimeout(() => {
+                notificationEl.classList.remove('show');
+                notificationEl.classList.add('hide');
+            }, 4000);
+        }
+        
+        function playNotificationSound() {
+            try {
+                if (notificationSound) {
+                    notificationSound.currentTime = 0;
+                    notificationSound.play().catch(err => {
+                        console.warn('Could not play notification sound:', err);
+                    });
+                }
+            } catch (error) {
+                console.warn('Notification sound error:', error);
+            }
+        }
+        
+        function updateWaitersNotClockedList(stats, waitersNotYetClocked) {
+            // Update counter
+            const countEl = document.getElementById('waiters-not-clocked-count-tab');
+            if (countEl && stats) {
+                countEl.textContent = stats.not_yet || 0;
+            }
+            
+            // Update badge
+            const badgeEl = document.getElementById('attendance-badge');
+            if (badgeEl && stats) {
+                badgeEl.textContent = stats.not_yet || 0;
+                if (stats.not_yet > 0) {
+                    badgeEl.classList.remove('zero');
+                } else {
+                    badgeEl.classList.add('zero');
+                }
+            }
+            
+            // Update list content
+            const listEl = document.getElementById('waiters-not-clocked-list-tab');
+            if (!listEl) return;
+            
+            if (!waitersNotYetClocked || waitersNotYetClocked.length === 0) {
+                // Show empty state
+                listEl.innerHTML = `
+                    <div style="text-align: center; padding: 40px 20px; color: rgba(255, 255, 255, 0.5); font-size: 14px;">
+                        <div style="font-size: 48px; margin-bottom: 12px;">✅</div>
+                        <div>Semua waiter sudah absen</div>
+                    </div>
+                `;
+            } else {
+                // Render waiter cards
+                const cardsHtml = waitersNotYetClocked.map(waiter => `
+                    <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 14px; margin-bottom: 12px; transition: all 0.2s ease;" 
+                         onmouseover="this.style.background='rgba(255, 255, 255, 0.08)'; this.style.borderColor='rgba(255, 255, 255, 0.2)'" 
+                         onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.borderColor='rgba(255, 255, 255, 0.1)'">
+                        <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 8px;">${escapeHtml(waiter.name || 'Unknown')}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                📅 ${escapeHtml(waiter.shift_name || 'Shift')}
+                            </div>
+                            <div style="color: #fbbf24; font-weight: 600;">
+                                🕐 ${escapeHtml(waiter.clock_in_time || '-')}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                
+                listEl.innerHTML = cardsHtml;
+            }
+        }
+
         async function loadAttendanceQrForSelectedWaiter() {
+            // Guard: Don't run in global QR mode
+            if (useGlobalQrMode) {
+                console.log('Skipping per-waiter QR load (global mode active)');
+                return;
+            }
+            
             const waiterId = attendanceWaiterSelectEl?.value || '';
             if (!waiterId) {
                 renderAttendanceQr({
@@ -894,6 +1084,12 @@
         }
 
         function startAttendanceQrPolling() {
+            // Guard: Don't run in global QR mode
+            if (useGlobalQrMode) {
+                console.log('Skipping per-waiter polling (global mode active)');
+                return;
+            }
+            
             if (attendanceQrIntervalId) {
                 clearInterval(attendanceQrIntervalId);
             }
@@ -909,10 +1105,49 @@
             attendanceQrIntervalId = null;
         }
 
-        renderAttendanceWaiterOptions();
-        loadAttendanceQrForSelectedWaiter();
-        startAttendanceQrPolling();
-        attendanceWaiterSelectEl?.addEventListener('change', loadAttendanceQrForSelectedWaiter);
+        // Initialize attendance QR based on mode
+        if (useGlobalQrMode) {
+            // Global QR Mode
+            const subtitleEl = document.getElementById('attendance-qr-subtitle');
+            const badgeEl = document.getElementById('attendance-qr-badge');
+            
+            if (subtitleEl) {
+                subtitleEl.textContent = 'Semua waiter scan QR yang sama. QR berubah otomatis setelah ada yang scan.';
+            }
+            if (badgeEl) {
+                badgeEl.textContent = 'Scan Berurutan';
+            }
+            
+            document.getElementById('attendance-qr-waiter-select').style.display = 'none';
+            document.getElementById('attendance-global-mode').style.display = 'block';
+            
+            loadGlobalAttendanceQr();
+            
+            // Poll every 2 seconds for QR changes
+            attendanceQrIntervalId = window.setInterval(() => {
+                loadGlobalAttendanceQr();
+            }, 2000);
+            
+        } else {
+            // Per-Waiter Mode (original)
+            const subtitleEl = document.getElementById('attendance-qr-subtitle');
+            const badgeEl = document.getElementById('attendance-qr-badge');
+            
+            if (subtitleEl) {
+                subtitleEl.textContent = 'Pilih waiter, lalu minta waiter scan QR ini dari portal waiter.';
+            }
+            if (badgeEl) {
+                badgeEl.textContent = '1x Pakai';
+            }
+            
+            document.getElementById('attendance-qr-waiter-select').style.display = 'block';
+            document.getElementById('attendance-global-mode').style.display = 'none';
+            
+            renderAttendanceWaiterOptions();
+            loadAttendanceQrForSelectedWaiter();
+            startAttendanceQrPolling();
+            attendanceWaiterSelectEl?.addEventListener('change', loadAttendanceQrForSelectedWaiter);
+        }
 
         let serverTimeOffsetMs = 0;
         const serverTimeOffsetRef = ref(database, '.info/serverTimeOffset');
@@ -1096,7 +1331,7 @@
 
             const queryConstraints = [
                 ref(database, 'orders'),
-                orderByChild('expires_at'),
+                orderByChild('created_at'),  // Changed from expires_at to use existing index
                 startAt(range.startSeconds),
             ];
 
@@ -1113,6 +1348,13 @@
                 const snapshot = await get(pageQuery);
                 const rows = [];
 
+                console.log('Expired orders query result:', {
+                    exists: snapshot.exists(),
+                    range: range,
+                    nowSeconds: nowSeconds,
+                    targetPage: targetPage
+                });
+
                 if (snapshot.exists()) {
                     snapshot.forEach((childSnapshot) => {
                         const order = childSnapshot.val() || {};
@@ -1124,6 +1366,8 @@
                         }
                     });
                 }
+
+                console.log('Filtered expired orders:', rows.length);
 
                 rows.sort((a, b) => Number(b.expires_at || 0) - Number(a.expires_at || 0));
 
@@ -1172,12 +1416,34 @@
 
                 expiredOrdersToday = pageRows;
                 expiredHasOlderPages = hasOlderPages;
+                
+                console.log('Rendering expired orders:', {
+                    pageRows: pageRows.length,
+                    hasOlderPages: hasOlderPages,
+                    targetPage: targetPage
+                });
+                
                 renderExpiredOrdersTab();
             } catch (error) {
-                console.log('Failed loading expired orders:', error);
+                console.error('Failed loading expired orders:', error);
+                
+                // Check if it's an index error
+                if (error.message && error.message.includes('Index not defined')) {
+                    expiredOrdersContainer.innerHTML = `
+                        <div class="no-expired-orders">
+                            ⚠️ Firebase index belum dikonfigurasi.<br>
+                            <small style="font-size: 13px; margin-top: 8px; display: block;">
+                                Tambahkan ".indexOn": "expires_at" di Firebase Database Rules.<br>
+                                <a href="https://console.firebase.google.com" target="_blank" style="color: #00d9ff;">Buka Firebase Console →</a>
+                            </small>
+                        </div>
+                    `;
+                } else {
+                    expiredOrdersContainer.innerHTML = '<div class="no-expired-orders">❌ Gagal memuat data. Silakan refresh halaman.</div>';
+                }
+                
                 expiredOrdersToday = [];
                 expiredHasOlderPages = false;
-                renderExpiredOrdersTab();
             } finally {
                 expiredIsLoading = false;
             }
@@ -1269,23 +1535,6 @@
         }
 
         loadCashierWorkersFromBackend();
-
-        // Tab switching
-        window.switchTab = function(tab) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => {
-                el.classList.remove('active');
-                el.classList.remove('active-tasks');
-            });
-
-            document.getElementById('tab-' + tab).classList.add('active');
-            const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
-            btn.classList.add(tab === 'tasks' ? 'active-tasks' : 'active');
-
-            if (tab === 'expired-orders') {
-                loadExpiredOrdersPage(expiredOrdersPage || 1, true);
-            }
-        };
 
         // Button Test Sound
         document.getElementById('btn-test-sound').addEventListener('click', () => {
@@ -1692,6 +1941,45 @@
                 statusDiv.style.opacity = '1';
             }
         });
+
+        // ========== ATTENDANCE TAB BADGE ==========
+        const attendanceBadge = document.getElementById('attendance-badge');
+        const waitersNotClockedCountTab = document.getElementById('waiters-not-clocked-count-tab');
+
+        function initAttendanceBadge() {
+            const waitersNotYetClocked = @json($waitersNotYetClocked ?? []);
+            const count = waitersNotYetClocked.length;
+
+            // Update tab badge
+            if (attendanceBadge) {
+                attendanceBadge.textContent = count;
+                if (count === 0) {
+                    attendanceBadge.classList.add('zero');
+                } else {
+                    attendanceBadge.classList.remove('zero');
+                }
+            }
+
+            // Update count in tab content
+            if (waitersNotClockedCountTab) {
+                waitersNotClockedCountTab.textContent = count;
+                if (count === 0) {
+                    waitersNotClockedCountTab.style.background = 'rgba(34, 197, 94, 0.3)';
+                    waitersNotClockedCountTab.style.color = '#22c55e';
+                } else {
+                    waitersNotClockedCountTab.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+                    waitersNotClockedCountTab.style.color = 'white';
+                }
+            }
+        }
+
+        // Initialize badge on page load
+        initAttendanceBadge();
+
+        // Refresh page every 60 seconds to update attendance data
+        setInterval(() => {
+            window.location.reload();
+        }, 60000);
     </script>
 </body>
 

@@ -187,6 +187,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 Route::get('cashier', [CashierController::class, 'index'])->name('cashier.index');
 Route::get('cashier/workers', [CashierController::class, 'getCashierWorkers'])->name('cashier.workers');
 Route::get('cashier/attendance-qr', [CashierController::class, 'getAttendanceQr'])->name('cashier.attendance_qr');
+Route::get('cashier/attendance-qr/global', [CashierController::class, 'getGlobalAttendanceQr'])->name('cashier.attendance_qr_global');
 
 // Cashier task actions (no auth, accessible from cashier page)
 Route::post('cashier/tasks/sync-due', [CashierController::class, 'syncDueTasks'])
