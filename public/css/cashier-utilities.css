@@ -327,11 +327,219 @@
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 
+/* ========== CASHIER ATTENDANCE COMPONENTS ========== */
+.cashier-attendance-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-xl);
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.cashier-attendance-panel {
+    background: linear-gradient(135deg, var(--color-dark-start) 0%, var(--color-dark-end) 100%);
+    border: 2px solid var(--border-medium);
+    border-radius: var(--radius-xl);
+    padding: var(--space-2xl);
+}
+
+.cashier-attendance-panel-scroll {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.cashier-attendance-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xl);
+}
+
+.cashier-attendance-panel-header-bordered {
+    padding-bottom: var(--space-lg);
+    border-bottom: 2px solid var(--border-light);
+}
+
+.cashier-attendance-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cashier-attendance-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: var(--space-xs);
+}
+
+.cashier-attendance-mode {
+    display: none;
+    text-align: center;
+    padding: var(--space-md);
+    background: var(--bg-overlay);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-lg);
+}
+
+.cashier-attendance-mode-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #00d9ff;
+    margin-bottom: var(--space-xs);
+}
+
+.cashier-attendance-mode-meta {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.cashier-attendance-select {
+    display: none;
+    width: 100%;
+    padding: 10px;
+    border: 2px solid var(--border-medium);
+    border-radius: var(--radius-md);
+    background: var(--bg-overlay);
+    color: var(--text-primary);
+    font-size: 14px;
+    margin-bottom: var(--space-lg);
+}
+
+.cashier-attendance-purpose {
+    margin-bottom: var(--space-lg);
+}
+
+.cashier-attendance-purpose-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #00d9ff;
+    margin-bottom: var(--space-xs);
+}
+
+.cashier-attendance-date {
+    font-size: 13px;
+    color: var(--text-subtle);
+}
+
+.cashier-attendance-qr-box {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: var(--space-xl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 280px;
+    margin-bottom: var(--space-lg);
+}
+
+.cashier-attendance-qr-code {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cashier-attendance-empty {
+    display: none;
+    text-align: center;
+    color: #64748b;
+}
+
+.cashier-attendance-message {
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: var(--space-sm);
+}
+
+.cashier-attendance-meta {
+    text-align: center;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.cashier-attendance-section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cashier-attendance-count {
+    background: linear-gradient(135deg, var(--color-error-start) 0%, var(--color-error-end) 100%);
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    min-width: 32px;
+    text-align: center;
+}
+
+.cashier-attendance-count.is-zero {
+    background: rgba(34, 197, 94, 0.3);
+    color: #22c55e;
+}
+
+.cashier-waiter-card {
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: var(--space-md);
+    transition: var(--transition-base);
+}
+
+.cashier-waiter-card:hover {
+    background: var(--bg-overlay-hover);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.cashier-waiter-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-sm);
+}
+
+.cashier-waiter-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.cashier-waiter-shift {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cashier-waiter-time {
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+.cashier-attendance-empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-subtle);
+    font-size: 14px;
+}
+
+.cashier-attendance-empty-icon {
+    font-size: 48px;
+    margin-bottom: var(--space-md);
+}
+
 /* ========== RESPONSIVE UTILITIES ========== */
 @media (max-width: 768px) {
     .md\:grid-cols-1 { grid-template-columns: repeat(1, 1fr); }
     .md\:flex-col { flex-direction: column; }
     .md\:text-center { text-align: center; }
+
+    .cashier-attendance-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 480px) {

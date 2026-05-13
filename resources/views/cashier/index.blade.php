@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Kasir - Order & Tasks Display</title>
+    <link rel="stylesheet" href="{{ asset('css/cashier-utilities.css') }}">
     <style>
         * {
             margin: 0;
@@ -515,9 +516,6 @@
 
         /* ========== RESPONSIVE ========== */
         @media (max-width: 768px) {
-            #tab-attendance > div > div {
-                grid-template-columns: 1fr !important;
-            }
             #toast-container {
                 top: auto;
                 bottom: 20px;
@@ -601,66 +599,66 @@
     <div id="tab-attendance" class="tab-content">
         <h1 class="section-title">👤 Absensi Waiter</h1>
         
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: 0 auto;">
+        <div class="cashier-attendance-grid">
             <!-- QR Absensi Section -->
-            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 16px; padding: 24px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div class="cashier-attendance-panel">
+                <div class="cashier-attendance-panel-header">
                     <div>
-                        <div style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px;">QR Absensi</div>
-                        <div id="attendance-qr-subtitle-tab" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">Memuat...</div>
+                        <div class="cashier-attendance-title">QR Absensi</div>
+                        <div id="attendance-qr-subtitle-tab" class="cashier-attendance-subtitle">Memuat...</div>
                     </div>
-                    <div id="attendance-qr-badge-tab" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 20px;">1x Pakai</div>
+                    <div id="attendance-qr-badge-tab" class="badge badge-primary">1x Pakai</div>
                 </div>
 
                 <!-- Per-Waiter Mode (Original) -->
-                <select id="attendance-qr-waiter-select" class="attendance-qr-select" style="display: none; width: 100%; padding: 10px; border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 8px; background: rgba(255, 255, 255, 0.05); color: white; font-size: 14px; margin-bottom: 15px;"></select>
+                <select id="attendance-qr-waiter-select" class="cashier-attendance-select"></select>
 
                 <!-- Global QR Mode -->
-                <div id="attendance-global-mode" style="display: none; text-align: center; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; margin-bottom: 15px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #00d9ff; margin-bottom: 5px;">Mode: Scan Berurutan</div>
-                    <div style="font-size: 12px; color: rgba(255, 255, 255, 0.7);">Total scan hari ini: <span id="global-scan-count">0</span></div>
+                <div id="attendance-global-mode" class="cashier-attendance-mode">
+                    <div class="cashier-attendance-mode-title">Mode: Scan Berurutan</div>
+                    <div class="cashier-attendance-mode-meta">Total scan hari ini: <span id="global-scan-count">0</span></div>
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <div id="attendance-qr-purpose" style="font-size: 16px; font-weight: 600; color: #00d9ff; margin-bottom: 4px;">Memuat...</div>
-                    <div id="attendance-qr-date" style="font-size: 13px; color: rgba(255, 255, 255, 0.5);"></div>
+                <div class="cashier-attendance-purpose">
+                    <div id="attendance-qr-purpose" class="cashier-attendance-purpose-title">Memuat...</div>
+                    <div id="attendance-qr-date" class="cashier-attendance-date"></div>
                 </div>
 
-                <div style="background: white; border-radius: 12px; padding: 20px; display: flex; align-items: center; justify-content: center; min-height: 280px; margin-bottom: 15px;">
-                    <div id="attendance-qr-code" style="display: flex; align-items: center; justify-content: center;"></div>
-                    <div id="attendance-qr-empty" style="display: none; text-align: center; color: #64748b;"></div>
+                <div class="cashier-attendance-qr-box">
+                    <div id="attendance-qr-code" class="cashier-attendance-qr-code"></div>
+                    <div id="attendance-qr-empty" class="cashier-attendance-empty"></div>
                 </div>
 
-                <div id="attendance-qr-message" style="text-align: center; font-size: 13px; color: rgba(255, 255, 255, 0.7); margin-bottom: 8px;">Menyiapkan QR absensi...</div>
-                <div id="attendance-qr-meta" style="text-align: center; font-size: 12px; color: #94a3b8;"></div>
+                <div id="attendance-qr-message" class="cashier-attendance-message">Menyiapkan QR absensi...</div>
+                <div id="attendance-qr-meta" class="cashier-attendance-meta"></div>
             </div>
 
             <!-- Waiters Not Yet Clocked Section -->
-            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 16px; padding: 24px; max-height: 600px; overflow-y: auto;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid rgba(255, 255, 255, 0.1);">
-                    <div style="font-size: 20px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px;">
+            <div class="cashier-attendance-panel cashier-attendance-panel-scroll">
+                <div class="cashier-attendance-panel-header cashier-attendance-panel-header-bordered">
+                    <div class="cashier-attendance-title cashier-attendance-section-title">
                         ⚠️ Belum Absen
                     </div>
-                    <div id="waiters-not-clocked-count-tab" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 20px; min-width: 32px; text-align: center;">0</div>
+                    <div id="waiters-not-clocked-count-tab" class="cashier-attendance-count">0</div>
                 </div>
                 <div id="waiters-not-clocked-list-tab">
                     @if(isset($waitersNotYetClocked) && count($waitersNotYetClocked) > 0)
                         @foreach($waitersNotYetClocked as $waiter)
-                        <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 14px; margin-bottom: 12px; transition: all 0.2s ease;" onmouseover="this.style.background='rgba(255, 255, 255, 0.08)'; this.style.borderColor='rgba(255, 255, 255, 0.2)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.borderColor='rgba(255, 255, 255, 0.1)'">
-                            <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 8px;">{{ $waiter['name'] }}</div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: rgba(255, 255, 255, 0.6);">
-                                <div style="display: flex; align-items: center; gap: 6px;">
+                        <div class="cashier-waiter-card">
+                            <div class="cashier-waiter-name">{{ $waiter['name'] }}</div>
+                            <div class="cashier-waiter-meta-row">
+                                <div class="cashier-waiter-shift">
                                     📅 {{ $waiter['shift_name'] }}
                                 </div>
-                                <div style="color: #fbbf24; font-weight: 600;">
+                                <div class="cashier-waiter-time">
                                     🕐 {{ $waiter['clock_in_time'] }}
                                 </div>
                             </div>
                         </div>
                         @endforeach
                     @else
-                        <div style="text-align: center; padding: 40px 20px; color: rgba(255, 255, 255, 0.5); font-size: 14px;">
-                            <div style="font-size: 48px; margin-bottom: 12px;">✅</div>
+                        <div class="cashier-attendance-empty-state">
+                            <div class="cashier-attendance-empty-icon">✅</div>
                             <div>Semua waiter sudah absen</div>
                         </div>
                     @endif
@@ -988,6 +986,7 @@
             const countEl = document.getElementById('waiters-not-clocked-count-tab');
             if (countEl && stats) {
                 countEl.textContent = stats.not_yet || 0;
+                countEl.classList.toggle('is-zero', Number(stats.not_yet || 0) === 0);
             }
             
             // Update badge
@@ -1006,25 +1005,21 @@
             if (!listEl) return;
             
             if (!waitersNotYetClocked || waitersNotYetClocked.length === 0) {
-                // Show empty state
                 listEl.innerHTML = `
-                    <div style="text-align: center; padding: 40px 20px; color: rgba(255, 255, 255, 0.5); font-size: 14px;">
-                        <div style="font-size: 48px; margin-bottom: 12px;">✅</div>
+                    <div class="cashier-attendance-empty-state">
+                        <div class="cashier-attendance-empty-icon">✅</div>
                         <div>Semua waiter sudah absen</div>
                     </div>
                 `;
             } else {
-                // Render waiter cards
                 const cardsHtml = waitersNotYetClocked.map(waiter => `
-                    <div style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 14px; margin-bottom: 12px; transition: all 0.2s ease;" 
-                         onmouseover="this.style.background='rgba(255, 255, 255, 0.08)'; this.style.borderColor='rgba(255, 255, 255, 0.2)'" 
-                         onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.borderColor='rgba(255, 255, 255, 0.1)'">
-                        <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 8px;">${escapeHtml(waiter.name || 'Unknown')}</div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: rgba(255, 255, 255, 0.6);">
-                            <div style="display: flex; align-items: center; gap: 6px;">
+                    <div class="cashier-waiter-card">
+                        <div class="cashier-waiter-name">${escapeHtml(waiter.name || 'Unknown')}</div>
+                        <div class="cashier-waiter-meta-row">
+                            <div class="cashier-waiter-shift">
                                 📅 ${escapeHtml(waiter.shift_name || 'Shift')}
                             </div>
-                            <div style="color: #fbbf24; font-weight: 600;">
+                            <div class="cashier-waiter-time">
                                 🕐 ${escapeHtml(waiter.clock_in_time || '-')}
                             </div>
                         </div>
@@ -1105,11 +1100,23 @@
             attendanceQrIntervalId = null;
         }
 
+        function startGlobalAttendanceQrPolling() {
+            if (!useGlobalQrMode) {
+                return;
+            }
+
+            stopAttendanceQrPolling();
+            loadGlobalAttendanceQr();
+            attendanceQrIntervalId = window.setInterval(() => {
+                loadGlobalAttendanceQr();
+            }, 2000);
+        }
+
         // Initialize attendance QR based on mode
         if (useGlobalQrMode) {
             // Global QR Mode
-            const subtitleEl = document.getElementById('attendance-qr-subtitle');
-            const badgeEl = document.getElementById('attendance-qr-badge');
+            const subtitleEl = document.getElementById('attendance-qr-subtitle-tab');
+            const badgeEl = document.getElementById('attendance-qr-badge-tab');
             
             if (subtitleEl) {
                 subtitleEl.textContent = 'Semua waiter scan QR yang sama. QR berubah otomatis setelah ada yang scan.';
@@ -1118,20 +1125,17 @@
                 badgeEl.textContent = 'Scan Berurutan';
             }
             
-            document.getElementById('attendance-qr-waiter-select').style.display = 'none';
+            if (attendanceWaiterSelectEl) {
+                attendanceWaiterSelectEl.style.display = 'none';
+            }
             document.getElementById('attendance-global-mode').style.display = 'block';
-            
-            loadGlobalAttendanceQr();
-            
-            // Poll every 2 seconds for QR changes
-            attendanceQrIntervalId = window.setInterval(() => {
-                loadGlobalAttendanceQr();
-            }, 2000);
+
+            startGlobalAttendanceQrPolling();
             
         } else {
             // Per-Waiter Mode (original)
-            const subtitleEl = document.getElementById('attendance-qr-subtitle');
-            const badgeEl = document.getElementById('attendance-qr-badge');
+            const subtitleEl = document.getElementById('attendance-qr-subtitle-tab');
+            const badgeEl = document.getElementById('attendance-qr-badge-tab');
             
             if (subtitleEl) {
                 subtitleEl.textContent = 'Pilih waiter, lalu minta waiter scan QR ini dari portal waiter.';
@@ -1140,7 +1144,9 @@
                 badgeEl.textContent = '1x Pakai';
             }
             
-            document.getElementById('attendance-qr-waiter-select').style.display = 'block';
+            if (attendanceWaiterSelectEl) {
+                attendanceWaiterSelectEl.style.display = 'block';
+            }
             document.getElementById('attendance-global-mode').style.display = 'none';
             
             renderAttendanceWaiterOptions();
@@ -1331,7 +1337,7 @@
 
             const queryConstraints = [
                 ref(database, 'orders'),
-                orderByChild('created_at'),  // Changed from expires_at to use existing index
+                orderByChild('expires_at'),
                 startAt(range.startSeconds),
             ];
 
@@ -1917,10 +1923,15 @@
             loadCashierWorkersFromBackend();
             syncDueRecurringTasks();
             refreshExpiredOrdersForToday();
-            loadAttendanceQrForSelectedWaiter();
             stopCashierPollingIntervals();
             startCashierPollingIntervals();
-            startAttendanceQrPolling();
+
+            if (useGlobalQrMode) {
+                startGlobalAttendanceQrPolling();
+            } else {
+                loadAttendanceQrForSelectedWaiter();
+                startAttendanceQrPolling();
+            }
         });
 
         const connectedRef = ref(database, '.info/connected');
@@ -1964,22 +1975,15 @@
             if (waitersNotClockedCountTab) {
                 waitersNotClockedCountTab.textContent = count;
                 if (count === 0) {
-                    waitersNotClockedCountTab.style.background = 'rgba(34, 197, 94, 0.3)';
-                    waitersNotClockedCountTab.style.color = '#22c55e';
+                    waitersNotClockedCountTab.classList.add('is-zero');
                 } else {
-                    waitersNotClockedCountTab.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
-                    waitersNotClockedCountTab.style.color = 'white';
+                    waitersNotClockedCountTab.classList.remove('is-zero');
                 }
             }
         }
 
         // Initialize badge on page load
         initAttendanceBadge();
-
-        // Refresh page every 60 seconds to update attendance data
-        setInterval(() => {
-            window.location.reload();
-        }, 60000);
     </script>
 </body>
 
