@@ -3978,14 +3978,15 @@ class FirebaseService
         $ref = $this->database->getReference('attendance_config/global_qr');
         $snapshot = $ref->getSnapshot();
         $data = $snapshot->exists() ? $snapshot->getValue() : [];
+        $today = date('Y-m-d');
         
         $qrValue = $data['qr_value'] ?? '';
         $generatedAt = $data['generated_at'] ?? 0;
         $scanCount = $data['scan_count'] ?? 0;
         $lastScannedBy = $data['last_scanned_by'] ?? null;
         
-        // Generate new QR if empty
-        if ($qrValue === '') {
+        // Generate a fresh daily QR so scan_count matches the displayed date.
+        if ($qrValue === '' || ($data['date'] ?? null) !== $today) {
             return $this->regenerateGlobalAttendanceQr();
         }
         
@@ -3994,6 +3995,7 @@ class FirebaseService
             'generated_at' => $generatedAt,
             'scan_count' => $scanCount,
             'last_scanned_by' => $lastScannedBy,
+            'date' => $today,
         ];
     }
 
@@ -4003,6 +4005,7 @@ class FirebaseService
     public function regenerateGlobalAttendanceQr(): array
     {
         $now = time();
+        $today = date('Y-m-d', $now);
         $qrValue = 'ATTENDANCE:GLOBAL:' . bin2hex(random_bytes(16));
         
         $data = [
@@ -4010,6 +4013,7 @@ class FirebaseService
             'generated_at' => $now,
             'scan_count' => 0,
             'updated_at' => $now,
+            'date' => $today,
         ];
         
         $this->database->getReference('attendance_config/global_qr')->set($data);
@@ -4071,8 +4075,9 @@ class FirebaseService
             
             $qrData = $qrSnapshot->getValue();
             $currentQr = $qrData['qr_value'] ?? '';
+            $currentQrDate = $qrData['date'] ?? null;
             
-            if ($currentQr !== $scannedValue) {
+            if ($currentQr !== $scannedValue || $currentQrDate !== $today) {
                 $result = ['success' => false, 'message' => 'QR code tidak valid atau sudah berubah. Silakan scan ulang.'];
                 return;
             }
@@ -4169,6 +4174,7 @@ class FirebaseService
                 'generated_at' => $now,
                 'scan_count' => ($qrData['scan_count'] ?? 0) + 1,
                 'updated_at' => $now,
+                'date' => $today,
                 'last_scanned_by' => $waiterId,
             ];
             

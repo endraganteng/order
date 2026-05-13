@@ -69,6 +69,7 @@ class FirebaseServiceTest extends TestCase
     public function test_process_attendance_qr_scan_rotates_tokens_and_requires_new_token_for_clock_out(): void
     {
         $today = date('Y-m-d');
+        $todayName = strtolower(date('l', strtotime($today)));
         [$database, $store] = $this->makeDatabaseWithState([
             'allowed_waiters' => [
                 'waiter-1' => [
@@ -77,6 +78,19 @@ class FirebaseServiceTest extends TestCase
                     'is_active' => true,
                     'attendance_exempt' => false,
                 ],
+            ],
+            'waiter_schedule_template' => [
+                'waiter-1' => [
+                    $todayName => 'shift-1',
+                ],
+            ],
+            'work_shifts/shift-1' => [
+                'id' => 'shift-1',
+                'name' => 'Shift Pagi',
+                'clock_in_time' => '00:00',
+                'clock_out_time' => '23:59',
+                'late_tolerance_minutes' => 0,
+                'is_active' => true,
             ],
             'settings' => ['clock_out_enabled' => true],
         ]);
