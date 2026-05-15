@@ -26,6 +26,16 @@ class WaiterBonusController extends Controller
         $waiterName = session('waiter_name', 'Waiter');
         $month = $request->get('month', date('Y-m'));
         $progress = $this->bonus->getWaiterMonthlyProgress((string) $waiterId, $month);
+
+        // Fetch waiter role for sales eligibility check in dashboard.
+        $waiterRole = '';
+        try {
+            $waiter = $this->firebase->getWaiterById((string) $waiterId);
+            $waiterRole = (string) ($waiter['waiter_role'] ?? $waiter['role'] ?? '');
+        } catch (\Throwable $e) {
+            // Tidak fatal; treat as unknown role (akan dianggap eligible default).
+            $waiterRole = '';
+        }
         
         $config = $progress['config'];
         $monthlyPoints = $progress['monthly_points'];
@@ -57,7 +67,7 @@ class WaiterBonusController extends Controller
         }
         
         return view('waiter.bonus_dashboard', compact(
-            'waiterId', 'waiterName', 'month', 'config',
+            'waiterId', 'waiterName', 'waiterRole', 'month', 'config',
             'monthlyPoints', 'penalties', 'salesTarget', 'bonusSummary',
             'leaderboard', 'myRank',
             'totalEarned', 'totalPenalties', 'netPoints', 'daysScored', 'perfectDays',

@@ -204,6 +204,7 @@
     </style>
 </head>
 <body>
+@include('partials.firebase-rtdb-client')
 
 <div id="flash-message">Berhasil disimpan!</div>
 
@@ -294,6 +295,34 @@
 </div>
 
 <script>
+    // Bandwidth: limitToLast(20) — PO terbaru saja yang relevan untuk halaman ini.
+    // PO completed/cancelled lama tidak dipantau real-time.
+    (function setupRestockListener() {
+        if (!window.RTDB_READY || !window.firebaseDB) return;
+        const debounceMs = 1500; // longer debounce: PO update lebih jarang
+        let pending = false;
+        const trigger = () => {
+            if (pending) return;
+            pending = true;
+            setTimeout(() => {
+                pending = false;
+                window.location.reload();
+            }, debounceMs);
+        };
+        try {
+            window.firebaseDB.ref('purchase_orders').limitToLast(20).on('value', trigger);
+        } catch (e) {
+            console.warn('[RTDB] restock listener failed:', e);
+        }
+    })();
+
+    const poReceiveFormInstanceByPo = new Map();
+
+    const newFormInstanceId = () => {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+        return Math.random().toString(36).slice(2) + Date.now().toString(36);
+    };
+
     function showFlash(message) {
         const flash = document.getElementById('flash-message');
         flash.textContent = message;
@@ -304,6 +333,10 @@
     }
 
     function receiveItem(poId, restockId, maxQty) {
+        const poKey = String(poId || '');
+        if (poKey && !poReceiveFormInstanceByPo.has(poKey)) {
+            poReceiveFormInstanceByPo.set(poKey, newFormInstanceId());
+        }
         const input = document.getElementById(`input-${restockId}`);
         let qty = parseInt(input.value);
         
@@ -331,7 +364,8 @@
             },
             body: JSON.stringify({
                 restock_id: restockId,
-                received_qty: qty
+                received_qty: qty,
+                idempotency_key: `po-receive:${poId}:${poReceiveFormInstanceByPo.get(poKey) || newFormInstanceId()}`
             })
         })
         .then(response => response.json())
@@ -367,6 +401,7 @@
                 }
                 
                 if (data.po_completed) {
+                    poReceiveFormInstanceByPo.delete(poKey);
                     showFlash('🎉 PO selesai! Semua barang sudah diterima.');
                     setTimeout(() => window.location.reload(), 2000);
                 }

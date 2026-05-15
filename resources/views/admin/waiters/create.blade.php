@@ -48,6 +48,7 @@
                     style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
                     <option value="pelayan" {{ old('waiter_role', 'pelayan') === 'pelayan' ? 'selected' : '' }}>Pelayan</option>
                     <option value="kasir" {{ old('waiter_role') === 'kasir' ? 'selected' : '' }}>Kasir</option>
+                    <option value="backup" {{ old('waiter_role') === 'backup' ? 'selected' : '' }}>Backup / Flexible</option>
                     <option value="supervisor" {{ old('waiter_role') === 'supervisor' ? 'selected' : '' }}>Supervisor</option>
                 </select>
                 <div style="font-size:12px; color:#666; margin-top:6px;">

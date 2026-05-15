@@ -396,11 +396,12 @@ class RackProductController extends Controller
 
         $allProducts = $this->firebase->getActiveProducts();
         $rackProducts = $this->firebase->getRackProducts($rackId);
+        $liveStockMap = $this->firebase->getRackProductLiveStock($rackId, $rackProducts);
         $assignedProductIds = array_values(array_map(function ($product) {
             return (string) ($product['id'] ?? '');
         }, $rackProducts));
 
-        return view('admin.products.rack_products', compact('rack', 'allProducts', 'rackProducts', 'assignedProductIds'));
+        return view('admin.products.rack_products', compact('rack', 'allProducts', 'rackProducts', 'assignedProductIds', 'liveStockMap'));
     }
 
     public function saveRackProducts(Request $request, $rackId)
@@ -464,5 +465,19 @@ class RackProductController extends Controller
             return redirect()->route('admin.racks.products', $rackId)
                 ->with('error', 'Gagal menyimpan produk rak.');
         }
+    }
+
+    public function auditTrail(string $id)
+    {
+        $product = $this->firebase->getProductById($id);
+        if (! $product) {
+            abort(404);
+        }
+
+        $events = $this->firebase->getProductAuditTrail($id, 200);
+        $stats = $this->firebase->getProductStats($id);
+        $racks = $this->firebase->getRacks();
+
+        return view('admin.products.audit_trail', compact('product', 'events', 'stats', 'racks'));
     }
 }

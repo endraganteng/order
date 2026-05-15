@@ -435,6 +435,28 @@
             color: #64748b;
             margin-top: 8px;
         }
+        .stocktake-movement-list {
+            margin-top: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fff;
+        }
+        .stocktake-movement-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            gap: 8px;
+            align-items: center;
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .stocktake-movement-row:last-child { border-bottom: none; }
+        .stocktake-movement-row input[type="number"] {
+            width: 84px;
+            margin-bottom: 0;
+            text-align: center;
+            padding: 6px 8px;
+        }
         .mobile-nav {
             display: none;
         }
@@ -879,6 +901,140 @@
         details[open] > summary > span:first-child {
             transform: rotate(90deg);
         }
+        /* Quick Actions tiles */
+        .quick-actions {
+            margin-bottom: 14px;
+        }
+        .quick-actions-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 8px;
+        }
+        .quick-actions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .quick-action-tile {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: 80px;
+            padding: 14px 14px 14px 16px;
+            border-radius: 13px;
+            text-decoration: none;
+            box-shadow: 0 3px 14px rgba(0,0,0,0.08);
+            transition: transform 0.12s, box-shadow 0.12s;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        .quick-action-tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 22px rgba(0,0,0,0.13);
+        }
+        .quick-action-tile:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .quick-action-tile--stock {
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+            border: 1px solid #7dd3fc;
+        }
+        .quick-action-tile--restock {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            border: 1px solid #6ee7b7;
+        }
+        .quick-action-tile__icon {
+            font-size: 30px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .quick-action-tile__body {
+            flex: 1;
+            min-width: 0;
+        }
+        .quick-action-tile__title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e3a5f;
+            line-height: 1.25;
+            margin-bottom: 3px;
+        }
+        .quick-action-tile--restock .quick-action-tile__title {
+            color: #065f46;
+        }
+        .quick-action-tile__sub {
+            font-size: 11px;
+            color: #0369a1;
+            line-height: 1.35;
+        }
+        .quick-action-tile--restock .quick-action-tile__sub {
+            color: #047857;
+        }
+        .quick-action-tile__chevron {
+            font-size: 18px;
+            color: #0284c7;
+            flex-shrink: 0;
+            opacity: 0.6;
+        }
+        .quick-action-tile--restock .quick-action-tile__chevron {
+            color: #059669;
+        }
+        /* Compact tiles on mobile/tablet ≤640px */
+        @media (max-width: 640px) {
+            .quick-actions {
+                margin-bottom: 10px;
+            }
+            .quick-actions-label {
+                display: none;
+            }
+            .quick-actions-grid {
+                gap: 8px;
+            }
+            .quick-action-tile {
+                min-height: 52px;
+                gap: 10px;
+                padding: 8px 10px 8px 12px;
+                border-radius: 10px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            }
+            .quick-action-tile--stock {
+                background: #eff6ff;
+                border-color: #bfdbfe;
+            }
+            .quick-action-tile--restock {
+                background: #ecfdf5;
+                border-color: #a7f3d0;
+            }
+            .quick-action-tile__icon {
+                font-size: 22px;
+            }
+            .quick-action-tile__title {
+                font-size: 12.5px;
+                margin-bottom: 0;
+                line-height: 1.2;
+            }
+            .quick-action-tile__sub {
+                display: none;
+            }
+            .quick-action-tile__chevron {
+                font-size: 14px;
+            }
+        }
+        /* Stack only on very narrow phones */
+        @media (max-width: 340px) {
+            .quick-actions-grid {
+                grid-template-columns: 1fr;
+            }
+            .quick-action-tile__sub {
+                display: block;
+                font-size: 10.5px;
+            }
+        }
     </style>
 </head>
 
@@ -892,8 +1048,6 @@
             <button type="button" class="top-menu-btn" id="topMenuBtn" aria-label="Menu">⋮</button>
             <div class="top-dropdown" id="topDropdown">
                 <div style="padding: 10px 14px; font-size: 12px; color: #9ca3af;">Login sebagai <strong style="color:#374151;">{{ $waiterName }}</strong></div>
-                <div class="top-dropdown-divider"></div>
-                <a href="/waiter/restock" class="top-dropdown-item">📦 Penerimaan Barang</a>
                 <div class="top-dropdown-divider"></div>
                 <a href="{{ route('waiter.logout', [], false) }}" class="top-dropdown-item danger" onclick="return confirm('Yakin mau logout?')">🚪 Logout</a>
             </div>
@@ -912,6 +1066,28 @@
                 <span class="attendance-status not-yet" id="attendance-status-label">Memuat status absensi...</span>
             </div>
             <button type="button" class="btn-attendance" id="btn-attendance-action" disabled>Memuat...</button>
+        </div>
+
+        <div class="quick-actions">
+            <div class="quick-actions-label">Akses Cepat</div>
+            <div class="quick-actions-grid">
+                <a href="{{ route('waiter.stock_take', [], false) }}" class="quick-action-tile quick-action-tile--stock">
+                    <span class="quick-action-tile__icon">🧾</span>
+                    <span class="quick-action-tile__body">
+                        <span class="quick-action-tile__title">Ambil Stok Gudang</span>
+                        <span class="quick-action-tile__sub">Scan rak gudang & ambil stok</span>
+                    </span>
+                    <span class="quick-action-tile__chevron">›</span>
+                </a>
+                <a href="/waiter/restock" class="quick-action-tile quick-action-tile--restock">
+                    <span class="quick-action-tile__icon">📦</span>
+                    <span class="quick-action-tile__body">
+                        <span class="quick-action-tile__title">Penerimaan Barang</span>
+                        <span class="quick-action-tile__sub">Terima barang dari Purchase Order</span>
+                    </span>
+                    <span class="quick-action-tile__chevron">›</span>
+                </a>
+            </div>
         </div>
 
         <div class="portal-tabs">
@@ -1443,6 +1619,21 @@
         </div>
     </div>
 
+    <div id="stocktake-modal" class="photo-view-modal" aria-hidden="true">
+        <div class="photo-view-box">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                <strong id="stocktake-modal-title">🧾 Stock Take Rak Gudang</strong>
+                <button type="button" id="stocktake-modal-close-btn" class="btn" style="background:#ef4444;color:#fff;padding:6px 10px;">Tutup</button>
+            </div>
+            <div id="stocktake-modal-meta" class="muted"></div>
+            <div id="stocktake-modal-feedback" class="meta" style="margin-top:6px;color:#9a3412;">Pilih item yang akan dipindahkan lalu isi qty.</div>
+            <div id="stocktake-modal-list" class="stocktake-movement-list"></div>
+            <div style="margin-top: 10px; display:flex; gap:8px;">
+                <button type="button" id="stocktake-modal-save-btn" class="btn" style="background:#10b981;color:#fff;flex:1;">✅ Simpan Movement</button>
+            </div>
+        </div>
+    </div>
+
     <script id="waiter-context" type="application/json">{!! json_encode([
         'waiterId' => $waiterId,
         'reportDate' => $reportDate ?? date('Y-m-d'),
@@ -1461,8 +1652,9 @@
         'clockOutEnabled' => $clockOutEnabled ?? false,
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
 
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+@include('partials.firebase-rtdb-client')
+<script>
 
         const contextEl = document.getElementById('waiter-context');
         const context = contextEl ? JSON.parse(contextEl.textContent || '{}') : {};
@@ -1488,8 +1680,17 @@
         const photoPreviewImageEl = document.getElementById('photo-preview-image');
         const photoPreviewMetaEl = document.getElementById('photo-preview-meta');
         const photoPreviewCloseBtn = document.getElementById('photo-preview-close-btn');
+        const stockTakeModalEl = document.getElementById('stocktake-modal');
+        const stockTakeModalTitleEl = document.getElementById('stocktake-modal-title');
+        const stockTakeModalMetaEl = document.getElementById('stocktake-modal-meta');
+        const stockTakeModalFeedbackEl = document.getElementById('stocktake-modal-feedback');
+        const stockTakeModalListEl = document.getElementById('stocktake-modal-list');
+        const stockTakeModalSaveBtn = document.getElementById('stocktake-modal-save-btn');
+        const stockTakeModalCloseBtn = document.getElementById('stocktake-modal-close-btn');
         const csrfToken = '{{ csrf_token() }}';
         const completeUrlTemplate = "{{ route('waiter.task.complete', ['id' => '__TASK_ID__'], false) }}";
+        const claimUrlTemplate = "{{ route('waiter.task.claim', ['id' => '__TASK_ID__'], false) }}";
+        const releaseUrlTemplate = "{{ route('waiter.task.release', ['id' => '__TASK_ID__'], false) }}";
         const pollUrl = "{{ route('waiter.task.poll', [], false) }}";
         const syncDueUrl = "{{ route('waiter.task.sync_due', [], false) }}";
         const activityStoreUrl = "{{ route('waiter.activity.store', [], false) }}";
@@ -1515,8 +1716,11 @@
         const generalMenuBadgeEls = Array.from(document.querySelectorAll('.js-general-menu-badge'));
         const panelRack = document.getElementById('panel-rack');
         const panelTasks = document.getElementById('panel-tasks');
+        const panelStockTake = document.getElementById('panel-stocktake');
         const panelReports = document.getElementById('panel-reports');
         const panelBonus = document.getElementById('panel-bonus');
+        const stockTakePendingCountEl = document.getElementById('stocktake-pending-count');
+        const stockTakePendingContainer = document.getElementById('stocktake-pending-container');
         const reportDateLabelEl = document.getElementById('report-date-label');
         const activityFormEl = document.getElementById('activity-report-form');
         const activityTextEl = document.getElementById('activity-text');
@@ -1531,6 +1735,9 @@
         const photoBeforeByTask = new Map();
         const productChecklistByTask = new Map();
         const refillStepByTask = new Map(); // tracks display rack tasks in refill mode
+        const stockTakeDraftByTask = new Map();
+        const taskCompleteFormInstanceByTask = new Map();
+        let activeStockTakeTaskId = '';
         let activeScannerTaskId = '';
         let activeScannerTaskLabel = '';
         let activeScannerExpectedBarcode = '';
@@ -1557,6 +1764,11 @@
         let pollCooldownUntil = 0;
         let pollBackoffMs = 0;
         let rackSearchKeyword = '';
+
+        const newFormInstanceId = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+            return Math.random().toString(36).slice(2) + Date.now().toString(36);
+        };
 
         // === ATTENDANCE STATE & ELEMENTS ===
         const attendanceBarEl = document.getElementById('attendance-bar');
@@ -1963,6 +2175,7 @@
             const targetTab = allowedTabs.includes(tab) ? tab : 'rack';
 
             panelRack.classList.toggle('active', targetTab === 'rack');
+            panelStockTake?.classList.toggle('active', targetTab === 'stocktake');
             panelTasks.classList.toggle('active', targetTab === 'tasks');
             panelReports.classList.toggle('active', targetTab === 'reports');
             panelBonus.classList.toggle('active', targetTab === 'bonus');
@@ -2267,6 +2480,10 @@
         }
 
         function renderPendingTaskCard(task) {
+            const taskIdStr = String(task?.id || '');
+            if (taskIdStr && !taskCompleteFormInstanceByTask.has(taskIdStr)) {
+                taskCompleteFormInstanceByTask.set(taskIdStr, newFormInstanceId());
+            }
             const requiresScan = isRackScanTask(task);
             const priority = task.priority || 'normal';
             const cls = requiresScan
@@ -2433,6 +2650,10 @@
                             ${existingScan ? `✅ QR code ter-scan: <code>${escapeHtml(existingScan)}</code>` : '⚠️ Belum scan QR code rak.'}
                         </div>
                         ${hasRackProducts ? productChecklistBlock : stockReportBlock}
+                        ${(hasRackProducts && taskRackType === 'storage' && existingScan)
+                            ? `<button type="button" class="btn btn-soft js-open-stocktake-modal" data-task-id="${escapeAttr(task.id)}" style="width:100%; margin-top:8px;">🧾 Pilih Item Movement Gudang</button>
+                               <div class="meta" style="font-size:12px; color:#334155; margin-top:6px;">Gunakan modal stock take untuk pilih item dan qty movement.</div>`
+                            : ''}
                         ${renderRefillStep(task)}
                     </div>`
                 : '';
@@ -2444,6 +2665,17 @@
                    ${deadlineText}`;
 
             const isInRefillMode = refillStepByTask.has(task.id);
+            const nowTs = Math.floor(Date.now() / 1000);
+            const claimedBy = String(task?.claimed_by || '');
+            const claimedByName = String(task?.claimed_by_name || 'waiter lain');
+            const claimExpiresAt = Number(task?.claim_expires_at || 0);
+            const claimActive = claimedBy !== '' && claimExpiresAt > nowTs;
+            const claimIsMine = claimActive && claimedBy === waiterId;
+            const claimBanner = claimActive
+                ? (claimIsMine
+                    ? `<div class="meta" style="margin:6px 0; padding:6px 8px; border-radius:6px; background:#ecfdf5; color:#065f46; font-weight:600;">🔐 Anda klaim sampai ${escapeHtml(formatDateTime(claimExpiresAt))}</div>`
+                    : `<div class="meta" style="margin:6px 0; padding:6px 8px; border-radius:6px; background:#fff7ed; color:#9a3412; font-weight:600;">⏳ Sedang dikerjakan oleh ${escapeHtml(claimedByName)} sampai ${escapeHtml(formatDateTime(claimExpiresAt))}</div>`)
+                : '';
             const completeBtnLabel = isRepeatTask
                 ? (completedCount + 1 >= repeatCount ? '✅ Selesaikan (Terakhir)' : `✅ Selesai #${completedCount + 1}`)
                 : '✅ Verifikasi Selesai';
@@ -2459,16 +2691,59 @@
                        <button type="submit" class="btn btn-done">${completeBtnLabel}</button>
                    </form>`;
 
+            const claimActionBlock = String(task?.assignment_type || '') === 'single'
+                ? ''
+                : `<div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                        <button type="button" class="btn ${claimActive && !claimIsMine ? '' : 'btn-soft'} js-claim-task" data-task-id="${escapeAttr(task.id)}" ${claimActive && !claimIsMine ? 'disabled style="opacity:.6;cursor:not-allowed;"' : ''}>▶️ Mulai</button>
+                        ${claimIsMine ? `<button type="button" class="btn btn-soft js-release-task" data-task-id="${escapeAttr(task.id)}">Lepas klaim</button>` : ''}
+                   </div>`;
+
             return `<div class="card ${cls}">
                 <div class="title">${escapeHtml(task.title || '-')}</div>
                 ${requiresScan ? '' : (task.description ? `<div class="desc">${escapeHtml(task.description)}</div>` : '')}
                 ${repeatProgressBlock}
+                ${claimBanner}
                 ${defaultMetaBlock}
                 ${rackBlock}
                 ${photoBeforeBlock}
                 ${photoProofBlock}
+                ${claimActionBlock}
                 ${completeActionBlock}
             </div>`;
+        }
+
+        async function claimTask(taskId) {
+            const url = claimUrlTemplate.replace('__TASK_ID__', encodeURIComponent(taskId));
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                },
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload?.success) {
+                throw new Error(payload?.message || 'Tugas sedang dikerjakan waiter lain.');
+            }
+            return payload;
+        }
+
+        async function releaseTaskClaim(taskId) {
+            const url = releaseUrlTemplate.replace('__TASK_ID__', encodeURIComponent(taskId));
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                },
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload?.success) {
+                throw new Error(payload?.message || 'Gagal melepas klaim task.');
+            }
+            return payload;
         }
 
         function renderTaskGroupSection(title, subtitle, tasks, emptyMessage) {
@@ -2598,6 +2873,7 @@
             }
 
             const rackTasks = pendingTasks.filter((task) => isRackScanTask(task));
+            const stockTakeTasks = rackTasks.filter((task) => getRackTypeForTask(task) === 'storage');
             const generalTasks = pendingTasks.filter((task) => !isRackScanTask(task));
 
             if (rackPendingCountEl) {
@@ -2627,6 +2903,15 @@
                     ? renderRackTaskGroupSection(rackTasks)
                     : (shiftNotStartedMsg || '<div class="empty">Tidak ada tugas cek rak aktif saat ini.</div>');
                 applyRackSearchFilterInPlace();
+            }
+
+            if (stockTakePendingCountEl) {
+                stockTakePendingCountEl.textContent = String(stockTakeTasks.length);
+            }
+            if (stockTakePendingContainer) {
+                stockTakePendingContainer.innerHTML = stockTakeTasks.length
+                    ? `<section class="task-group"><div class="task-group-head"><div><h3 class="task-group-title">🧾 Rak Gudang</h3><div class="task-group-subtitle">Scan rak, cek stok saat ini, pilih item+qty movement, lalu submit.</div></div><span class="task-group-badge">${stockTakeTasks.length} tugas</span></div><div class="grid">${stockTakeTasks.map(renderPendingTaskCard).join('')}</div></section>`
+                    : '<div class="empty">Tidak ada tugas stock take rak gudang aktif saat ini.</div>';
             }
 
             if (generalPendingContainer) {
@@ -2897,6 +3182,30 @@
             }
         }
 
+        // Bandwidth: limitToLast(50) untuk batasi initial snapshot.
+        // Tasks listener mempersempit snapshot ke 50 task terbaru saja.
+        // Empty waiter_task_idempotency listener DIHAPUS (waste bandwidth).
+        (function setupTaskListener() {
+            if (!window.RTDB_READY || !window.firebaseDB) return;
+            const debounceMs = 600;
+            let pending = false;
+            const trigger = () => {
+                if (pending) return;
+                pending = true;
+                setTimeout(() => {
+                    pending = false;
+                    pollTasks().catch(() => {});
+                }, debounceMs);
+            };
+            try {
+                // limitToLast(50) untuk batasi initial download. Push-id RTDB
+                // chronological, jadi task terbaru dijamin masuk.
+                window.firebaseDB.ref('waiter_tasks').limitToLast(50).on('value', trigger);
+            } catch (e) {
+                console.warn('[RTDB] tasks listener failed:', e);
+            }
+        })();
+
         async function completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl, photoBeforeDataUrl) {
             submitButton.disabled = true;
 
@@ -2943,6 +3252,7 @@
                         photo_proof_data_url: photoProofDataUrl,
                         photo_before_data_url: photoBeforeDataUrl || '',
                         product_checklist: productChecklistJson,
+                        idempotency_key: `task-complete:${taskId}:${taskCompleteFormInstanceByTask.get(taskId) || newFormInstanceId()}`,
                     }),
                 });
 
@@ -2965,6 +3275,7 @@
                     photoBeforeByTask.delete(taskId);
                     productChecklistByTask.delete(taskId);
                     refillStepByTask.delete(taskId);
+                    taskCompleteFormInstanceByTask.delete(taskId);
                     showFlash('success', payload?.message || 'Tugas berhasil diverifikasi sebagai selesai.');
                 }
             } catch (error) {
@@ -3218,10 +3529,20 @@
                 const note = noteInput ? noteInput.value : '';
                 const stockReportItems = stockReportInput ? String(stockReportInput.value || '').trim() : '';
                 const currentTask = waiterTasks.find((task) => String(task?.id || '') === taskId);
+                if (String(currentTask?.assignment_type || '') !== 'single') {
+                    try {
+                        await claimTask(taskId);
+                    } catch (error) {
+                        showFlash('error', error?.message || 'Tugas sedang dikerjakan waiter lain.');
+                        await pollTasks();
+                        return;
+                    }
+                }
                 const requiresPhotoProof = Boolean(currentTask?.requires_photo_proof);
                 const photoProofDataUrl = String(photoProofByTask.get(taskId)?.dataUrl || '');
                 const expectedBarcode = normalizeBarcodeValue(currentTask?.rack_barcode_value || '');
                 const scannedBarcode = normalizeBarcodeValue(scannedBarcodeByTask.get(taskId) || '');
+                const currentRackType = getRackTypeForTask(currentTask);
 
                 if (isRackScanTask(currentTask) && expectedBarcode === '') {
                     showFlash('error', 'QR code rak target pada task ini belum terdaftar. Hubungi supervisor.');
@@ -3236,6 +3557,15 @@
                 if (isRackScanTask(currentTask) && scannedBarcode !== expectedBarcode) {
                     showFlash('error', `QR code tidak sesuai task. Target ${expectedBarcode}, yang ter-scan ${scannedBarcode || '-'}.`);
                     return;
+                }
+
+                if (isRackScanTask(currentTask) && currentRackType === 'storage') {
+                    const movementDraft = stockTakeDraftByTask.get(taskId);
+                    const moves = Array.isArray(movementDraft?.items) ? movementDraft.items : [];
+                    if (!moves.length) {
+                        showFlash('error', 'Untuk stock take rak gudang, pilih minimal 1 item movement dari modal terlebih dahulu.');
+                        return;
+                    }
                 }
 
                 if (requiresPhotoProof && photoProofDataUrl === '') {
@@ -3510,6 +3840,40 @@
                 }
 
                 const btn = event.target.closest('.js-open-scanner');
+                const claimBtn = event.target.closest('.js-claim-task');
+                if (claimBtn) {
+                    const taskId = String(claimBtn.getAttribute('data-task-id') || '');
+                    if (!taskId) return;
+                    try {
+                        const payload = await claimTask(taskId);
+                        showFlash('success', payload?.message || 'Tugas berhasil di-klaim.');
+                        await pollTasks();
+                    } catch (error) {
+                        showFlash('error', error?.message || 'Tugas sedang dikerjakan waiter lain.');
+                        await pollTasks();
+                    }
+                    return;
+                }
+
+                const releaseBtn = event.target.closest('.js-release-task');
+                if (releaseBtn) {
+                    const taskId = String(releaseBtn.getAttribute('data-task-id') || '');
+                    if (!taskId) return;
+                    try {
+                        const payload = await releaseTaskClaim(taskId);
+                        showFlash('success', payload?.message || 'Klaim tugas dilepas.');
+                        await pollTasks();
+                    } catch (error) {
+                        showFlash('error', error?.message || 'Gagal melepas klaim tugas.');
+                    }
+                    return;
+                }
+                const stockTakeBtn = event.target.closest('.js-open-stocktake-modal');
+                if (stockTakeBtn) {
+                    const taskId = String(stockTakeBtn.getAttribute('data-task-id') || '');
+                    openStockTakeModal(taskId);
+                    return;
+                }
                 if (!btn) {
                     return;
                 }
@@ -3526,7 +3890,114 @@
             });
         }
 
+        function closeStockTakeModal() {
+            if (!stockTakeModalEl) return;
+            stockTakeModalEl.style.display = 'none';
+            stockTakeModalEl.setAttribute('aria-hidden', 'true');
+            activeStockTakeTaskId = '';
+        }
+
+        function openStockTakeModal(taskId) {
+            const task = waiterTasks.find((item) => String(item?.id || '') === String(taskId || ''));
+            if (!task) {
+                showFlash('error', 'Task stock take tidak ditemukan.');
+                return;
+            }
+            const rackId = String(task.rack_id || '');
+            const products = rackProductsMap[rackId] || [];
+            if (!products.length) {
+                showFlash('error', 'Produk rak belum tersedia untuk stock take.');
+                return;
+            }
+
+            activeStockTakeTaskId = String(task.id || '');
+            const draft = stockTakeDraftByTask.get(activeStockTakeTaskId) || { items: [] };
+            const draftMap = new Map((draft.items || []).map((it) => [String(it.product_id || ''), it]));
+            const checklist = productChecklistByTask.get(activeStockTakeTaskId) || {};
+
+            if (stockTakeModalTitleEl) {
+                stockTakeModalTitleEl.textContent = '🧾 Stock Take Rak Gudang';
+            }
+            if (stockTakeModalMetaEl) {
+                stockTakeModalMetaEl.textContent = `Task: ${task.title || '-'} • Rak: ${task.rack_name || '-'}`;
+            }
+
+            if (stockTakeModalListEl) {
+                stockTakeModalListEl.innerHTML = products.map((p) => {
+                    const pid = String(p.id || '');
+                    const currentQty = Number(checklist[pid]?.actual_qty ?? 0);
+                    const old = draftMap.get(pid) || null;
+                    const checked = Boolean(old);
+                    const moveQty = Number(old?.move_qty || 0);
+                    return `<label class="stocktake-movement-row">
+                        <input type="checkbox" class="js-stocktake-check" data-product-id="${escapeAttr(pid)}" ${checked ? 'checked' : ''}>
+                        <div>
+                            <div style="font-weight:700; font-size:13px; color:#0f172a;">${escapeHtml(p.name || '-')}</div>
+                            <div class="muted">Stok saat ini: <b>${currentQty}</b> / standar ${Number(p.standard_qty || 0)} ${escapeHtml(p.unit || 'pcs')}</div>
+                        </div>
+                        <input type="number" min="0" class="input js-stocktake-move-qty" data-product-id="${escapeAttr(pid)}" value="${moveQty > 0 ? String(moveQty) : ''}" placeholder="Qty">
+                        <span class="muted">${escapeHtml(p.unit || 'pcs')}</span>
+                    </label>`;
+                }).join('');
+            }
+
+            if (stockTakeModalFeedbackEl) {
+                stockTakeModalFeedbackEl.textContent = 'Pilih item movement dan isi qty > 0.';
+                stockTakeModalFeedbackEl.style.color = '#9a3412';
+            }
+
+            stockTakeModalEl.style.display = 'flex';
+            stockTakeModalEl.setAttribute('aria-hidden', 'false');
+        }
+
+        function saveStockTakeModalDraft() {
+            if (!activeStockTakeTaskId || !stockTakeModalListEl) {
+                return;
+            }
+            const checkedEls = Array.from(stockTakeModalListEl.querySelectorAll('.js-stocktake-check:checked'));
+            const items = [];
+            for (const checkedEl of checkedEls) {
+                const pid = String(checkedEl.getAttribute('data-product-id') || '');
+                const qtyEl = stockTakeModalListEl.querySelector(`.js-stocktake-move-qty[data-product-id="${pid}"]`);
+                const qty = Math.max(0, parseInt(String(qtyEl?.value || '0'), 10) || 0);
+                if (qty <= 0) {
+                    if (stockTakeModalFeedbackEl) {
+                        stockTakeModalFeedbackEl.textContent = 'Qty movement harus diisi (>0) untuk item yang dipilih.';
+                        stockTakeModalFeedbackEl.style.color = '#b91c1c';
+                    }
+                    return;
+                }
+                const task = waiterTasks.find((t) => String(t?.id || '') === activeStockTakeTaskId);
+                const rackId = String(task?.rack_id || '');
+                const products = rackProductsMap[rackId] || [];
+                const p = products.find((x) => String(x.id || '') === pid);
+                if (!p) continue;
+                items.push({
+                    product_id: pid,
+                    product_name: String(p.name || ''),
+                    product_unit: String(p.unit || 'pcs'),
+                    move_qty: qty,
+                });
+            }
+
+            if (!items.length) {
+                if (stockTakeModalFeedbackEl) {
+                    stockTakeModalFeedbackEl.textContent = 'Pilih minimal satu item untuk movement.';
+                    stockTakeModalFeedbackEl.style.color = '#b91c1c';
+                }
+                return;
+            }
+
+            stockTakeDraftByTask.set(activeStockTakeTaskId, { items });
+            const reportText = items.map((it) => `${it.product_name}: movement ${it.move_qty} ${it.product_unit}`).join('\n');
+            stockReportItemsByTask.set(activeStockTakeTaskId, reportText);
+            closeStockTakeModal();
+            renderAllTasks();
+            showFlash('success', 'Draft movement stock take disimpan. Lanjutkan submit task.');
+        }
+
         attachPendingContainerListeners(rackPendingContainer);
+        attachPendingContainerListeners(stockTakePendingContainer);
         attachPendingContainerListeners(generalPendingContainer);
 
         [rackHistoryBody, generalHistoryBody].forEach((historyTarget) => {
@@ -3570,6 +4041,20 @@
         photoPreviewModalEl?.addEventListener('click', (event) => {
             if (event.target === photoPreviewModalEl) {
                 closePhotoPreviewModal();
+            }
+        });
+
+        stockTakeModalSaveBtn?.addEventListener('click', () => {
+            saveStockTakeModalDraft();
+        });
+
+        stockTakeModalCloseBtn?.addEventListener('click', () => {
+            closeStockTakeModal();
+        });
+
+        stockTakeModalEl?.addEventListener('click', (event) => {
+            if (event.target === stockTakeModalEl) {
+                closeStockTakeModal();
             }
         });
 
@@ -3838,8 +4323,20 @@
         initAttendanceFromContext();
         loadAttendanceStatus();
         syncDueTasks();
-        let pollIntervalId = setInterval(pollTasks, 30000);
-        let syncIntervalId = setInterval(syncDueTasks, 120000);
+
+        // Bandwidth: polling adaptif. Kalau RTDB listener aktif, polling cuma jadi
+        // safety net — interval longgar (5min). Kalau RTDB tidak tersedia, fallback
+        // ke 30s seperti dulu.
+        const FAST_POLL = 30000;
+        const SLOW_POLL = 300000; // 5 minutes
+        const SYNC_DUE_INTERVAL = 300000; // 5 minutes (was 2min)
+
+        function getPollInterval() {
+            return (window.RTDB_READY && !window.RTDB_DISABLED) ? SLOW_POLL : FAST_POLL;
+        }
+
+        let pollIntervalId = setInterval(pollTasks, getPollInterval());
+        let syncIntervalId = setInterval(syncDueTasks, SYNC_DUE_INTERVAL);
 
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
@@ -3851,8 +4348,8 @@
                 // Immediately poll on return, then resume intervals
                 pollTasks();
                 syncDueTasks();
-                pollIntervalId = setInterval(pollTasks, 30000);
-                syncIntervalId = setInterval(syncDueTasks, 120000);
+                pollIntervalId = setInterval(pollTasks, getPollInterval());
+                syncIntervalId = setInterval(syncDueTasks, SYNC_DUE_INTERVAL);
             }
         });
     </script>

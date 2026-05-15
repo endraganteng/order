@@ -55,7 +55,10 @@
 
 <div class="rs-page-header">
     <h2 class="rs-page-title">📦 Restock & Buat PO</h2>
-    <a href="{{ route('admin.restock.orders') }}" class="btn" style="background: var(--color-info); color: white;">📋 Purchase Orders</a>
+    <div style="display:flex;gap:8px;">
+        <button type="button" id="btn-open-manual-po" class="btn" style="background: var(--color-primary); color: white;">➕ Buat PO Manual</button>
+        <a href="{{ route('admin.restock.orders') }}" class="btn" style="background: var(--color-info); color: white;">📋 Purchase Orders</a>
+    </div>
 </div>
 
 {{-- KPI Cards --}}
@@ -87,6 +90,20 @@
     <div class="rs-kpi-card" style="border-left: 4px solid #94a3b8;">
         <div class="rs-kpi-label">Avg Fulfillment</div>
         <div class="rs-kpi-value">{{ number_format($avgFulfillment, 1) }}h</div>
+    </div>
+</div>
+
+<div id="modal-manual-po" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:var(--radius-md);width:100%;max-width:760px;padding:20px;max-height:90vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;">Buat PO Manual</h3><button type="button" class="btn-close-manual-po" style="background:none;border:none;font-size:20px;">&times;</button></div>
+        <form id="form-manual-po">
+            <div style="margin-bottom:10px;"><label>Nama Supplier *</label><input id="manual-po-supplier" required maxlength="120" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></div>
+            <div style="margin-bottom:10px;"><label>ID Rak (opsional)</label><input id="manual-po-rack" maxlength="60" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></div>
+            <table style="width:100%;border-collapse:collapse;"><thead><tr><th style="border:1px solid #e2e8f0;padding:8px;text-align:left;">Product ID</th><th style="border:1px solid #e2e8f0;padding:8px;text-align:left;">Qty</th><th style="border:1px solid #e2e8f0;padding:8px;text-align:left;">Note</th><th style="border:1px solid #e2e8f0;padding:8px;">Aksi</th></tr></thead><tbody id="manual-po-items"></tbody></table>
+            <button type="button" class="btn" id="btn-add-manual-item" style="margin-top:10px;background:#e2e8f0;color:#334155;">+ Tambah produk</button>
+            <div style="margin-top:10px;"><label>Catatan PO</label><textarea id="manual-po-notes" maxlength="500" rows="3" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></textarea></div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;"><button type="button" class="btn btn-close-manual-po" style="background:#e2e8f0;color:#475569;">Batal</button><button type="submit" class="btn" id="btn-submit-manual-po" style="background:var(--color-primary);color:white;">Simpan PO Manual</button></div>
+        </form>
     </div>
 </div>
 
@@ -228,6 +245,9 @@
     const submitBar = document.getElementById('rs-submit-bar');
     const submitBtn = document.getElementById('rs-submit-btn');
     const resetBtn = document.getElementById('rs-reset-btn');
+    const manualPoModal = document.getElementById('modal-manual-po');
+    const manualPoBtn = document.getElementById('btn-open-manual-po');
+    const manualPoForm = document.getElementById('form-manual-po');
 
     if (!pool) return; // empty state
 
@@ -235,6 +255,32 @@
     let draggedCard = null;
     let touchClone = null;
     let suppliersData = [];
+
+    function formatRelativeTime(createdAt) {
+        const ts = Number(createdAt) || 0;
+        if (!ts) return '-';
+        const now = Date.now();
+        const diffMs = Math.max(0, now - ts);
+        const mins = Math.floor(diffMs / 60000);
+        if (mins < 60) return mins + ' menit lalu';
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return hours + ' jam lalu';
+        const days = Math.floor(hours / 24);
+        return days + ' hari lalu';
+    }
+
+    function showDuplicateConfirm(conflicts) {
+        const safeConflicts = Array.isArray(conflicts) ? conflicts : [];
+        const lines = safeConflicts.map(function(c) {
+            const poNumber = c && c.po_number ? c.po_number : (c && c.po_id ? c.po_id : '-');
+            const supplierName = c && c.supplier_name ? c.supplier_name : '-';
+            const overlapCount = Array.isArray(c && c.matched_product_ids) ? c.matched_product_ids.length : 0;
+            const rel = formatRelativeTime(c && c.created_at);
+            return '• PO ' + poNumber + ' • supplier ' + supplierName + ' • dibuat ' + rel + ' • produk overlap: ' + overlapCount;
+        });
+        const body = (safeConflicts.length) + ' PO masih open untuk produk yang sama:\n\n' + lines.join('\n');
+        return window.confirm('PO duplikat terdeteksi\n\n' + body + '\n\nPilih OK = Lanjutkan tetap, Cancel = Batal.');
+    }
 
     // Fetch suppliers on load
     fetch('{{ route("admin.suppliers.index") }}', {
@@ -617,24 +663,95 @@
             submitBtn.disabled = true;
             submitBtn.textContent = '⏳ Menyimpan...';
 
-            fetch('{{ route("admin.restock.create_batch_po") }}', {
+            const submitBatch = function(forceDuplicate) {
+                return fetch('{{ route("admin.restock.create_batch_po") }}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({ orders: orders })
+                body: JSON.stringify({ orders: orders, force_duplicate: forceDuplicate ? 1 : 0 })
             })
-            .then(function(response) { return response.json(); })
+            .then(function(response) {
+                return response.json().then(function(data) {
+                    return { status: response.status, data: data };
+                });
+            });
+            };
+
+            submitBatch(false)
             .then(function(data) {
-                if (data.success && data.orders) {
+                if (data.status === 409 && data.data && data.data.code === 'po_duplicate') {
+                    const proceed = showDuplicateConfirm(data.data.conflicts || []);
+                    if (!proceed) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '📦 Buat PO';
+                        return;
+                    }
+                    return submitBatch(true).then(function(second) {
+                        data = second;
+                        if (!(data.data && data.data.success)) {
+                            alert('❌ Error: ' + ((data.data && data.data.message) || 'Gagal membuat PO'));
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = '📦 Buat PO';
+                            return;
+                        }
+
+                        const poSuccessList = document.getElementById('po-success-list');
+                        poSuccessList.innerHTML = '';
+                        const today = new Date().toLocaleDateString('id-ID');
+                        data.data.orders.forEach(function(order) {
+                            const itemsList = order.items.map(function(item) { return `- ${item.qty_ordered}x ${item.product_name}`; }).join('\n');
+                            const waText = `📦 *PURCHASE ORDER*\n\nPO: ${order.po_number}\nDari: [Nama Toko Anda]\nTanggal: ${today}\n\nDaftar Pesanan:\n${itemsList}\n\nTotal: ${order.items_count} item\n\nMohon konfirmasi ketersediaan barang.\nTerima kasih!`;
+                            const phone = (order.supplier_phone || '').replace(/\D/g, '');
+                            const waLink = phone ? `https://wa.me/${phone.startsWith('0') ? '62' + phone.substring(1) : phone}?text=${encodeURIComponent(waText)}` : '#';
+                            const waTarget = phone ? 'target="_blank"' : 'onclick="alert(\'Nomor HP supplier tidak tersedia\'); return false;"';
+                            const div = document.createElement('div');
+                            div.style.border = '1px solid #e2e8f0';
+                            div.style.borderRadius = 'var(--radius-sm)';
+                            div.style.padding = '15px';
+                            div.style.marginBottom = '15px';
+                            div.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <div>
+                                        <h4 style="margin: 0; font-size: 16px;">${order.supplier}</h4>
+                                        <div style="font-size: 13px; color: #64748b;">PO: ${order.po_number}</div>
+                                    </div>
+                                    <div style="font-size: 12px; background: #e2e8f0; padding: 2px 8px; border-radius: 10px;">${order.items_count} item</div>
+                                </div>
+                                <textarea readonly style="width: 100%; height: 120px; padding: 8px; font-family: monospace; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 10px; background: #f8fafc; resize: none;">${waText}</textarea>
+                                <div style="display: flex; gap: 10px;">
+                                    <button type="button" class="btn btn-sm btn-copy-wa" data-text="${encodeURIComponent(waText)}" style="background: white; border: 1px solid #cbd5e1; color: #334155; flex: 1;">📋 Copy Pesan</button>
+                                    <a href="${waLink}" ${waTarget} class="btn btn-sm" style="background: #25D366; color: white; flex: 1; text-align: center; text-decoration: none;">💬 Buka WhatsApp</a>
+                                </div>
+                            `;
+                            poSuccessList.appendChild(div);
+                        });
+                        poSuccessList.querySelectorAll('.btn-copy-wa').forEach(function(btn) {
+                            btn.addEventListener('click', function() {
+                                const text = decodeURIComponent(this.getAttribute('data-text'));
+                                navigator.clipboard.writeText(text).then(() => {
+                                    const originalText = this.innerHTML;
+                                    this.innerHTML = '✅ Dicopy!';
+                                    setTimeout(() => { this.innerHTML = originalText; }, 2000);
+                                }).catch(err => {
+                                    console.error('Failed to copy text: ', err);
+                                    alert('Gagal copy teks');
+                                });
+                            });
+                        });
+                        document.getElementById('modal-po-success').style.display = 'flex';
+                    });
+                }
+
+                if (data.data && data.data.success && data.data.orders) {
                     const poSuccessList = document.getElementById('po-success-list');
                     poSuccessList.innerHTML = ''; // clear
                     
                     const today = new Date().toLocaleDateString('id-ID');
 
-                    data.orders.forEach(function(order) {
+                    data.data.orders.forEach(function(order) {
                         const itemsList = order.items.map(function(item) {
                             return `- ${item.qty_ordered}x ${item.product_name}`;
                         }).join('\n');
@@ -683,11 +800,11 @@
                     });
 
                     document.getElementById('modal-po-success').style.display = 'flex';
-                } else if (data.success) {
-                    alert('✅ Berhasil membuat ' + (data.po_count || orders.length) + ' Purchase Order!');
+                } else if (data.data && data.data.success) {
+                    alert('✅ Berhasil membuat ' + (data.data.po_count || orders.length) + ' Purchase Order!');
                     window.location.reload();
                 } else {
-                    alert('❌ Error: ' + (data.message || 'Gagal membuat PO'));
+                    alert('❌ Error: ' + ((data.data && data.data.message) || 'Gagal membuat PO'));
                     submitBtn.disabled = false;
                     submitBtn.textContent = '📦 Buat PO';
                 }
@@ -728,6 +845,40 @@
         div.appendChild(document.createTextNode(text));
         return div.innerHTML;
     }
+
+    function addManualItemRow() {
+        const tb = document.getElementById('manual-po-items');
+        if (!tb) return;
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td style="border:1px solid #e2e8f0;padding:8px;"><input class="manual-product-id" required style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td><td style="border:1px solid #e2e8f0;padding:8px;"><input type="number" min="1" value="1" class="manual-product-qty" required style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td><td style="border:1px solid #e2e8f0;padding:8px;"><input class="manual-product-note" maxlength="200" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td><td style="border:1px solid #e2e8f0;padding:8px;text-align:center;"><button type="button" class="rm-manual" style="background:none;border:none;color:#ef4444;">✕</button></td>';
+        tr.querySelector('.rm-manual').addEventListener('click', function() { tr.remove(); if (!tb.querySelector('tr')) addManualItemRow(); });
+        tb.appendChild(tr);
+    }
+
+    if (manualPoBtn) manualPoBtn.addEventListener('click', function() { manualPoModal.style.display = 'flex'; document.getElementById('manual-po-items').innerHTML = ''; addManualItemRow(); });
+    document.querySelectorAll('.btn-close-manual-po').forEach(function(btn) { btn.addEventListener('click', function() { manualPoModal.style.display = 'none'; }); });
+    document.getElementById('btn-add-manual-item').addEventListener('click', addManualItemRow);
+
+    if (manualPoForm) manualPoForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const supplierName = document.getElementById('manual-po-supplier').value.trim();
+        const items = [];
+        document.querySelectorAll('#manual-po-items tr').forEach(function(tr) {
+            const product_id = tr.querySelector('.manual-product-id').value.trim();
+            const qty = parseInt(tr.querySelector('.manual-product-qty').value || '0', 10);
+            const note = tr.querySelector('.manual-product-note').value.trim();
+            if (product_id && qty > 0) items.push({ product_id: product_id, qty: qty, note: note });
+        });
+        if (!supplierName || !items.length) return alert('Isi supplier dan minimal 1 produk.');
+        const payload = { supplier_name: supplierName, rack_id: document.getElementById('manual-po-rack').value.trim(), notes: document.getElementById('manual-po-notes').value.trim(), items: items, force_duplicate: 0 };
+        const btn = document.getElementById('btn-submit-manual-po');
+        const submit = function(forceDuplicate) {
+            payload.force_duplicate = forceDuplicate ? 1 : 0;
+            btn.disabled = true; btn.textContent = '⏳ Menyimpan...';
+            return fetch('{{ route("admin.restock.create_manual_po") }}', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' }, body: JSON.stringify(payload) }).then(function(r){ return r.json().then(function(d){ return {status:r.status,data:d}; }); });
+        };
+        submit(false).then(function(res){ if (res.status === 409 && res.data && res.data.code === 'po_duplicate' && showDuplicateConfirm(res.data.conflicts || [])) return submit(true); return res; }).then(function(res){ btn.disabled = false; btn.textContent = 'Simpan PO Manual'; if (res && res.data && res.data.success) { alert('✅ PO manual berhasil dibuat.'); window.location.reload(); } else if (res && res.status === 409) { } else { alert('❌ ' + ((res && res.data && res.data.message) || 'Gagal membuat PO manual')); } }).catch(function(){ btn.disabled = false; btn.textContent = 'Simpan PO Manual'; alert('❌ Terjadi kesalahan sistem'); });
+    });
 
 })();
 </script>

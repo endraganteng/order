@@ -21,6 +21,19 @@
         </div>
     </div>
 
+    {{-- Active Sessions --}}
+    <div style="margin-bottom: 24px;">
+        <div id="lm-active-sessions" style="background: #fff; border-radius: var(--radius-lg); padding: 20px; border: 1px solid var(--color-border); box-shadow: var(--shadow-sm);">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+                <h3 style="font-size: 0.95rem; font-weight: 600; color: var(--color-text); margin:0;">📍 Sesi Aktif Sekarang</h3>
+                <span id="lm-active-sessions-count" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--color-primary-bg);color:var(--color-primary);border:1px solid var(--color-primary-border);font-size:0.78rem;font-weight:600;">0 sesi</span>
+            </div>
+            <div id="lm-active-sessions-body" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
+                <div style="color: var(--color-text-muted); font-size: 0.85rem; text-align: center; padding: 20px; border:1px dashed var(--color-border); border-radius:var(--radius-md); grid-column:1 / -1;">Memuat sesi aktif...</div>
+            </div>
+        </div>
+    </div>
+
     {{-- KPI Cards --}}
     <div id="lm-kpi" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px;">
         <div class="lm-kpi-card" style="background: #fff; border-radius: var(--radius-md); padding: 16px; border: 1px solid var(--color-border); box-shadow: var(--shadow-sm);">
@@ -94,7 +107,8 @@
     }
     @media (max-width: 768px) {
         #live-app > div:nth-child(3),
-        #live-app > div:nth-child(4) {
+        #live-app > div:nth-child(4),
+        #lm-active-sessions-body {
             grid-template-columns: 1fr !important;
         }
     }
@@ -102,6 +116,7 @@
 
 {{-- Waiter data from server --}}
 <script id="lm-waiters-data" type="application/json">{!! json_encode($waiters ?? []) !!}</script>
+@include('partials.firebase-rtdb-client')
 
 <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
@@ -148,6 +163,11 @@
     let allTasks = {};
     let feedItems = [];
     const MAX_FEED = 20;
+    const MAX_ACTIVE_SESSIONS = 20;
+    const ACTIVE_IDLE_MS = 2 * 60 * 1000;
+    const ACTIVE_STALE_MS = 5 * 60 * 1000;
+    let activeSessions = {};
+    let activeSessionRenderTimer = null;
 
     // Listen to today's tasks
     const tasksRef = query(ref(database, 'waiter_tasks'), orderByChild('scheduled_for_date'), equalTo(today));
@@ -163,6 +183,45 @@
         document.getElementById('lm-status').style.color = 'var(--color-danger)';
         document.getElementById('lm-status').style.borderColor = 'var(--color-danger-border)';
     });
+
+    // Bandwidth: limitToLast(100) — admin live monitor butuh task terbaru,
+    // tidak perlu seluruh history task.
+    (function setupCompatDeltaTrigger() {
+        if (!window.RTDB_READY || !window.firebaseDB) return;
+        const debounceMs = 600;
+        let pending = false;
+        const trigger = () => {
+            if (pending) return;
+            pending = true;
+            setTimeout(() => {
+                pending = false;
+                updateDashboard();
+            }, debounceMs);
+        };
+        try {
+            window.firebaseDB.ref('waiter_tasks').limitToLast(100).on('value', trigger);
+        } catch (e) {
+            console.warn('[RTDB] admin live listener failed:', e);
+        }
+    })();
+
+    (function setupActiveSessionsListener() {
+        if (!window.RTDB_READY || !window.firebaseDB) {
+            renderActiveSessions();
+            return;
+        }
+        try {
+            window.firebaseDB.ref('active_sessions').on('value', (snap) => {
+                activeSessions = snap.val() || {};
+                renderActiveSessions();
+            }, () => {
+                renderActiveSessions('Gagal memuat sesi aktif.');
+            });
+            activeSessionRenderTimer = setInterval(() => renderActiveSessions(), 30000);
+        } catch (e) {
+            renderActiveSessions('Gagal memuat sesi aktif.');
+        }
+    })();
 
     function updateDashboard() {
         const tasks = Object.entries(allTasks);
@@ -306,6 +365,69 @@
     function truncate(str, max) {
         if (!str) return '';
         return str.length > max ? str.substring(0, max) + '...' : str;
+    }
+
+    function formatDuration(ms) {
+        const minutes = Math.max(0, Math.floor(ms / 60000));
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        if (hours <= 0) return `${minutes} menit`;
+        if (mins <= 0) return `${hours} jam`;
+        return `${hours} jam ${mins} menit`;
+    }
+
+    function flattenActiveSessions(raw) {
+        const list = [];
+        Object.entries(raw || {}).forEach(([rackId, sessions]) => {
+            Object.entries(sessions || {}).forEach(([sessionId, s]) => {
+                if (!s || typeof s !== 'object') return;
+                list.push({ rackId, sessionId, ...s });
+            });
+        });
+        return list
+            .sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0))
+            .slice(0, MAX_ACTIVE_SESSIONS);
+    }
+
+    function renderActiveSessions(errorMessage = '') {
+        const body = document.getElementById('lm-active-sessions-body');
+        const count = document.getElementById('lm-active-sessions-count');
+        if (!body || !count) return;
+
+        if (errorMessage) {
+            count.textContent = '0 sesi';
+            body.innerHTML = `<div style="color: var(--color-danger); font-size: 0.85rem; text-align: center; padding: 20px; border:1px dashed var(--color-danger-border); border-radius:var(--radius-md); grid-column:1 / -1;">${errorMessage}</div>`;
+            return;
+        }
+
+        const sessions = flattenActiveSessions(activeSessions);
+        count.textContent = `${sessions.length} sesi`;
+
+        if (sessions.length === 0) {
+            body.innerHTML = '<div style="color: var(--color-text-muted); font-size: 0.85rem; text-align: center; padding: 20px; border:1px dashed var(--color-border); border-radius:var(--radius-md); grid-column:1 / -1;">Tidak ada waiter sedang scan rak.</div>';
+            return;
+        }
+
+        const now = Date.now();
+        body.innerHTML = sessions.map((s) => {
+            const startedAt = Number(s.started_at || 0);
+            const lastSeen = Number(s.last_seen || 0);
+            const sinceSeen = Math.max(0, now - lastSeen);
+            const isIdle = sinceSeen > ACTIVE_IDLE_MS;
+            const isStale = sinceSeen > ACTIVE_STALE_MS;
+            const duration = startedAt > 0 ? formatDuration(now - startedAt) : '-';
+            return `
+                <div style="border:1px solid var(--color-border);border-radius:var(--radius-md);padding:12px;opacity:${isStale ? '0.5' : '1'};background:${isStale ? 'var(--color-bg-muted, #f8fafc)' : '#fff'};">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+                        <div style="font-size:0.85rem;font-weight:600;color:var(--color-text);">${s.rack_name || 'Rak'}</div>
+                        <span style="font-size:0.72rem;font-weight:600;padding:3px 8px;border-radius:999px;border:1px solid ${isIdle ? 'var(--color-warning-border)' : 'var(--color-success-border)'};background:${isIdle ? 'var(--color-warning-bg)' : 'var(--color-success-bg)'};color:${isIdle ? 'var(--color-warning)' : 'var(--color-success)'};">${isIdle ? '🟡 Idle' : '🟢 Online'}</span>
+                    </div>
+                    <div style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:4px;">${s.rack_code || '-'}</div>
+                    <div style="font-size:0.82rem;color:var(--color-text);margin-bottom:4px;"><strong>${s.waiter_name || 'Waiter'}</strong></div>
+                    <div style="font-size:0.76rem;color:var(--color-text-muted);">Durasi sesi: ${duration}${isIdle ? ' · Idle' : ''}</div>
+                </div>
+            `;
+        }).join('');
     }
 
     // Visibility API: detach listener when tab hidden to save bandwidth

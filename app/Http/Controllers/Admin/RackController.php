@@ -204,7 +204,7 @@ class RackController extends Controller
             ->with('success', 'QR code rak berhasil digenerate ulang.');
     }
 
-    public function history($id)
+    public function history(Request $request, $id)
     {
         $rack = $this->firebase->getRackById($id);
         if (! $rack) {
@@ -212,11 +212,58 @@ class RackController extends Controller
         }
 
         $history = $this->firebase->getRackCheckHistory($id, 100);
+        $rackProducts = $this->firebase->getRackProducts($id);
+        $liveStockMap = $this->firebase->getRackProductLiveStock($id, $rackProducts);
+        $stockMovements = $this->firebase->getRackStockMovements($id, 800);
+
+        $filterProductId = trim((string) $request->input('movement_product_id', ''));
+        $filterStatus = trim((string) $request->input('movement_status', 'all'));
+        $filterDateFrom = trim((string) $request->input('movement_date_from', ''));
+        $filterDateTo = trim((string) $request->input('movement_date_to', ''));
+
+        $fromTimestamp = $filterDateFrom !== '' ? strtotime($filterDateFrom.' 00:00:00') : null;
+        $toTimestamp = $filterDateTo !== '' ? strtotime($filterDateTo.' 23:59:59') : null;
+
+        $filteredStockMovements = array_values(array_filter($stockMovements, function ($movement) use ($filterProductId, $filterStatus, $fromTimestamp, $toTimestamp) {
+            if ($filterProductId !== '' && (string) ($movement['product_id'] ?? '') !== $filterProductId) {
+                return false;
+            }
+
+            $isShortage = (bool) ($movement['is_shortage'] ?? false);
+            if ($filterStatus === 'shortage' && ! $isShortage) {
+                return false;
+            }
+            if ($filterStatus === 'ok' && $isShortage) {
+                return false;
+            }
+
+            $completedAt = (int) ($movement['completed_at'] ?? 0);
+            if ($fromTimestamp !== null && $completedAt < $fromTimestamp) {
+                return false;
+            }
+            if ($toTimestamp !== null && $completedAt > $toTimestamp) {
+                return false;
+            }
+
+            return true;
+        }));
 
         // Resolve waiter names
         $waiters = collect($this->firebase->getActiveWaiters())->keyBy('id')->toArray();
 
-        return view('admin.racks.history', compact('rack', 'history', 'waiters'));
+        return view('admin.racks.history', compact(
+            'rack',
+            'history',
+            'waiters',
+            'rackProducts',
+            'liveStockMap',
+            'stockMovements',
+            'filteredStockMovements',
+            'filterProductId',
+            'filterStatus',
+            'filterDateFrom',
+            'filterDateTo'
+        ));
     }
 
     public function destroy($id)

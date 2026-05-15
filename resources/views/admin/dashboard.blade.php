@@ -280,9 +280,19 @@
                                     <td>
                                         @php
                                             $role = strtolower((string) ($row['waiter_role'] ?? 'pelayan'));
-                                            $roleLabel = $role === 'kasir' ? 'Kasir' : 'Pelayan';
-                                            $roleBg = $role === 'kasir' ? '#fff7ed' : '#ecfeff';
-                                            $roleColor = $role === 'kasir' ? '#9a3412' : '#0f766e';
+                                            if ($role === 'kasir') {
+                                                $roleLabel = 'Kasir';
+                                                $roleBg = '#fff7ed';
+                                                $roleColor = '#9a3412';
+                                            } elseif ($role === 'backup') {
+                                                $roleLabel = 'Backup / Flexible';
+                                                $roleBg = '#f3e8ff';
+                                                $roleColor = '#6b21a8';
+                                            } else {
+                                                $roleLabel = 'Pelayan';
+                                                $roleBg = '#ecfeff';
+                                                $roleColor = '#0f766e';
+                                            }
                                         @endphp
                                         <span style="display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; background: {{ $roleBg }}; color: {{ $roleColor }}; border: 1px solid rgba(15,23,42,0.08);">
                                             {{ $roleLabel }}

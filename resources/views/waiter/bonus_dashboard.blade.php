@@ -197,6 +197,47 @@
             color: #999;
             margin-top: 0.5rem;
         }
+        .projection-next-tier {
+            font-size: 13px;
+            color: #64748b;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        .eval-status-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .eval-status-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 0;
+            padding: 1rem;
+            border-left: 4px solid #64748b;
+        }
+        .eval-status-card.success { border-left-color: #059669; }
+        .eval-status-card.pending { border-left-color: #f59e0b; }
+        .eval-status-card.neutral { border-left-color: #64748b; }
+        .eval-status-icon {
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+        .eval-status-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #444;
+            margin-bottom: 0.25rem;
+        }
+        .eval-status-text {
+            font-size: 0.82rem;
+            line-height: 1.35;
+        }
+        .eval-status-card.success .eval-status-text { color: #059669; }
+        .eval-status-card.pending .eval-status-text { color: #f59e0b; }
+        .eval-status-card.neutral .eval-status-text { color: #64748b; }
 
         .explain-block {
             margin-bottom: 1rem;
@@ -338,14 +379,21 @@
         }
 
         .daily-list { max-height: 400px; overflow-y: auto; }
-        .daily-item {
+        .daily-item { border-bottom: 1px solid #f0f0f0; }
+        .daily-item:last-child { border-bottom: none; }
+        .daily-item-header {
+            background: none;
+            border: 0;
+            width: 100%;
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 0.75rem 0;
-            border-bottom: 1px solid #f0f0f0;
+            color: inherit;
+            font: inherit;
+            text-align: left;
         }
-        .daily-item:last-child { border-bottom: none; }
         .daily-date {
             font-size: 0.8rem;
             color: #666;
@@ -371,6 +419,35 @@
             width: 40px;
             text-align: right;
         }
+        .daily-expand-icon {
+            width: 18px;
+            text-align: right;
+            color: #888;
+            font-size: 0.85rem;
+        }
+        .daily-detail {
+            padding: 8px 12px;
+            background: #f8fafc;
+            font-size: 13px;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+        }
+        .daily-detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 0.5rem;
+            padding: 4px 0;
+        }
+        .ddr-label { font-weight: 600; color: #4a5568; }
+        .ddr-points { font-weight: 700; color: #2d3748; white-space: nowrap; }
+        .ddr-reason {
+            color: #64748b;
+            flex: 1;
+            text-align: right;
+        }
+        .penalty-row .ddr-label,
+        .penalty-row .ddr-points { color: #e53e3e; }
 
         .penalty-item {
             padding: 0.75rem 0;
@@ -496,6 +573,7 @@
         .bg-yellow { background: #fffff0; }
         .bg-orange { background: #fffaf0; }
         .bg-red { background: #fff5f5; }
+
     </style>
 </head>
 <body>
@@ -565,6 +643,70 @@
                 </div>
             </div>
             <span class="progress-tier {{ $tierBg }} {{ $tierColor }}">{{ $tierLabel }}</span>
+        </div>
+
+        @php
+            $currentMonth = date('Y-m');
+            $resolvedWaiterRole = $waiterRole ?? '';
+            $salesTargetRoles = $config['sales_target_roles'] ?? [];
+            // Default eligible kalau role kosong (unknown) supaya tidak salah-tampil "N/A".
+            $isSalesEligible = empty($salesTargetRoles)
+                || $resolvedWaiterRole === ''
+                || in_array($resolvedWaiterRole, $salesTargetRoles, true);
+
+            $serviceEvaluated = false;
+            $salesEvaluated = false;
+            $servicePoints = 0;
+            $salesPoints = 0;
+            $serviceMax = (int)($config['point_categories']['service']['max_daily_points'] ?? 5);
+            $salesMax = (int)($config['point_categories']['sales']['max_daily_points'] ?? 5);
+
+            foreach ($monthlyPoints as $date => $record) {
+                if (strpos((string)$date, $currentMonth) !== 0) {
+                    continue;
+                }
+
+                $serviceData = $record['categories']['service'] ?? [];
+                $salesData = $record['categories']['sales'] ?? [];
+                $autoDetails = $record['auto_details'] ?? [];
+                $dayServicePoints = (int)($serviceData['points'] ?? $record['service'] ?? 0);
+                $daySalesPoints = (int)($salesData['points'] ?? $record['sales'] ?? 0);
+
+                $servicePoints = max($servicePoints, $dayServicePoints);
+                $salesPoints = max($salesPoints, $daySalesPoints);
+                $serviceEvaluated = $serviceEvaluated
+                    || $dayServicePoints > 0
+                    || !empty($serviceData['evaluated_at'])
+                    || (($autoDetails['service_evaluated'] ?? false) === true);
+                $salesEvaluated = $salesEvaluated
+                    || $daySalesPoints > 0
+                    || !empty($salesData['evaluated_at'])
+                    || (($autoDetails['sales_evaluated'] ?? false) === true)
+                    || (($autoDetails['sales_manual_evaluated'] ?? false) === true);
+            }
+        @endphp
+
+        <div class="eval-status-row">
+            <div class="card eval-status-card {{ $serviceEvaluated ? 'success' : 'pending' }}">
+                <span class="eval-status-icon">🤝</span>
+                <div>
+                    <div class="eval-status-label">Pelayanan</div>
+                    <div class="eval-status-text">{{ $serviceEvaluated ? ('Sudah dinilai: ' . $servicePoints . '/' . $serviceMax . ' poin') : 'Belum dinilai bulan ini' }}</div>
+                </div>
+            </div>
+            <div class="card eval-status-card {{ !$isSalesEligible ? 'neutral' : ($salesEvaluated ? 'success' : 'pending') }}">
+                <span class="eval-status-icon">🎯</span>
+                <div>
+                    <div class="eval-status-label">Penjualan</div>
+                    <div class="eval-status-text">
+                        @if(!$isSalesEligible)
+                            N/A — bukan role spesialis
+                        @else
+                            {{ $salesEvaluated ? ('Sudah dinilai: ' . $salesPoints . '/' . $salesMax . ' poin') : 'Belum dinilai bulan ini' }}
+                        @endif
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="stats-grid">
@@ -681,6 +823,30 @@
 
             $maxPointsBonus = (int)collect($pointsTiers)->max('bonus_amount');
             $maxSalesBonus = (int)collect($salesTiers)->max('bonus_amount');
+
+            $nextPointsTier = null;
+            foreach (array_reverse($pointsTiers) as $tier) {
+                if ((float)($tier['min_percentage'] ?? 0) > $percentage) {
+                    $nextPointsTier = $tier;
+                    break;
+                }
+            }
+            $pointsNeeded = $nextPointsTier !== null
+                ? (int)ceil((((float)$nextPointsTier['min_percentage'] - $percentage) / 100) * $theoreticalMax)
+                : 0;
+
+            $nextSalesTier = null;
+            if (!empty($salesTarget)) {
+                foreach (array_reverse($salesTiers) as $tier) {
+                    if ((float)($tier['min_percentage'] ?? 0) > $salesPercentageProjection) {
+                        $nextSalesTier = $tier;
+                        break;
+                    }
+                }
+            }
+            $salesNeeded = ($nextSalesTier !== null && $salesGoalProjection > 0)
+                ? (int)ceil((((float)$nextSalesTier['min_percentage'] - $salesPercentageProjection) / 100) * $salesGoalProjection)
+                : 0;
         @endphp
 
         <div class="card projected-bonus">
@@ -688,6 +854,39 @@
             <div class="projected-tier-label">Poin tugas: {{ $percentage }}% • Target penjualan: {{ $salesPercentageProjection }}%</div>
             <div class="projected-amount {{ $projectedAmount > 0 ? 'color-green' : 'color-red' }}">Rp {{ number_format($projectedAmount, 0, ',', '.') }}</div>
             <div class="projected-note">Rp {{ number_format($pointsBonusProjection, 0, ',', '.') }} (poin) + Rp {{ number_format($salesBonusProjection, 0, ',', '.') }} (penjualan)</div>
+            @php
+                // FIX #3: Next tier projection
+                $nextPointsTier = null;
+                foreach (array_reverse($pointsTiers) as $tier) {
+                    if ((int)($tier['min_percentage'] ?? 0) > (int)$percentage) {
+                        $nextPointsTier = $tier;
+                        break;
+                    }
+                }
+                $pointsNeeded = $nextPointsTier
+                    ? (int)ceil(((int)($nextPointsTier['min_percentage'] ?? 0) - (int)$percentage) / 100 * $theoreticalMax)
+                    : 0;
+                $nextSalesTier = null;
+                $salesNeeded = 0;
+                if (!empty($salesTarget)) {
+                    foreach (array_reverse($salesTiers) as $tier) {
+                        if ((int)($tier['min_percentage'] ?? 0) > (int)$salesPercentageProjection) {
+                            $nextSalesTier = $tier;
+                            break;
+                        }
+                    }
+                    if ($nextSalesTier) {
+                        $salesGoalForNextTier = (int)($salesGoalProjection * ((int)($nextSalesTier['min_percentage'] ?? 0) / 100));
+                        $salesNeeded = max(0, $salesGoalForNextTier - $salesAchievedProjection);
+                    }
+                }
+            @endphp
+            @if($nextPointsTier !== null)
+                <div class="projection-next-tier">⬆️ +{{ $pointsNeeded }} poin lagi untuk tier Rp {{ number_format((int)$nextPointsTier['bonus_amount'], 0, ',', '.') }}</div>
+            @endif
+            @if($nextSalesTier !== null)
+                <div class="projection-next-tier">🎯 +Rp {{ number_format($salesNeeded, 0, ',', '.') }} penjualan lagi untuk tier Rp {{ number_format((int)$nextSalesTier['bonus_amount'], 0, ',', '.') }}</div>
+            @endif
         </div>
 
         <div class="card">
@@ -798,18 +997,43 @@
                 @endphp
                 @forelse($sortedDays as $date => $record)
                     <div class="daily-item">
-                        <span class="daily-date">{{ \Carbon\Carbon::parse($date)->format('d M') }}</span>
-                        <div class="daily-categories">
+                        <button class="daily-item-header" onclick="toggleDailyDetail('{{ $date }}')" type="button">
+                            <span class="daily-date">{{ \Carbon\Carbon::parse($date)->format('d M') }}</span>
+                            <div class="daily-categories">
+                                @foreach($categories as $key => $label)
+                                    @php
+                                        $catPts = (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
+                                        $catMax = $categoryMaxes[$key];
+                                        $opacity = $catMax > 0 ? max(0.2, $catPts / $catMax) : 0.2;
+                                    @endphp
+                                    <div class="daily-cat-dot" style="background: {{ $categoryColors[$key] ?? '#667eea' }}; opacity: {{ $opacity }};"></div>
+                                @endforeach
+                            </div>
+                            <span class="daily-total">{{ $record['daily_total'] ?? 0 }}</span>
+                            <span class="daily-expand-icon" id="exp-{{ $date }}">▾</span>
+                        </button>
+                        <div class="daily-detail" id="det-{{ $date }}" style="display:none;">
                             @foreach($categories as $key => $label)
                                 @php
                                     $catPts = (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
                                     $catMax = $categoryMaxes[$key];
-                                    $opacity = $catMax > 0 ? max(0.2, $catPts / $catMax) : 0.2;
+                                    $reason = $record['auto_details'][$key.'_reason'] ?? $record['categories'][$key]['reason'] ?? '';
                                 @endphp
-                                <div class="daily-cat-dot" style="background: {{ $categoryColors[$key] ?? '#667eea' }}; opacity: {{ $opacity }};"></div>
+                                <div class="daily-detail-row">
+                                    <span class="ddr-label">{{ $label }}</span>
+                                    <span class="ddr-points">{{ $catPts }}/{{ $catMax }}</span>
+                                    @if($reason)
+                                        <span class="ddr-reason">{{ $reason }}</span>
+                                    @endif
+                                </div>
                             @endforeach
+                            @if(!empty($record['penalties']) || !empty($record['penalty_total']))
+                                <div class="daily-detail-row penalty-row">
+                                    <span class="ddr-label">Penalti</span>
+                                    <span class="ddr-points">-{{ abs((int)($record['penalty_total'] ?? 0)) }}</span>
+                                </div>
+                            @endif
                         </div>
-                        <span class="daily-total">{{ $record['daily_total'] ?? 0 }}</span>
                     </div>
                 @empty
                     <div class="empty-state">Belum ada data harian</div>
@@ -884,6 +1108,15 @@
     </div>
 
     <script>
+        function toggleDailyDetail(date) {
+            const det = document.getElementById('det-' + date);
+            const exp = document.getElementById('exp-' + date);
+            if (!det || !exp) return;
+            const isHidden = det.style.display === 'none';
+            det.style.display = isHidden ? 'block' : 'none';
+            exp.textContent = isHidden ? '▴' : '▾';
+        }
+
         document.getElementById('monthPicker').addEventListener('change', function() {
             const month = this.value;
             if (month) {

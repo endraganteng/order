@@ -28,7 +28,7 @@ class StoreTaskRequest extends FormRequest
             'rack_ids.*' => 'nullable|string',
             'assignment_type' => 'required_without:batch_tasks_json|in:single,all,role',
             'assigned_waiter_id' => 'nullable|string',
-            'assigned_waiter_role' => 'nullable|in:kasir,pelayan,supervisor',
+            'assigned_waiter_role' => 'nullable|in:kasir,pelayan,backup,supervisor',
             'role_assignment_mode' => 'nullable|in:all,rolling,selected',
             'selected_waiter_ids' => 'nullable|array',
             'selected_waiter_ids.*' => 'nullable|string',

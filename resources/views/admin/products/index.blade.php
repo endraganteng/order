@@ -337,6 +337,7 @@
                             </td>
                             <td>
                                 <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <a href="{{ route('admin.products.audit_trail', $productId) }}" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;">📜 Audit</a>
                                     <button type="button" class="btn btn-warning btn-sm" onclick="openProductModal('{{ $productId }}', '{{ addslashes($productName) }}', {{ $standardQty }}, '{{ addslashes($unit) }}', {{ $isActive ? 'true' : 'false' }}, '{{ $productCategoryId }}')">Edit</button>
                                     <form method="POST" action="{{ route('admin.products.destroy', $productId) }}" data-confirm="Yakin hapus produk ini?">
                                         @csrf
@@ -396,6 +397,7 @@
                     </div>
                 </div>
                 <div class="product-mobile-actions">
+                    <a href="{{ route('admin.products.audit_trail', $productId) }}" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;">📜 Audit</a>
                     <button type="button" class="btn btn-warning btn-sm" onclick="openProductModal('{{ $productId }}', '{{ addslashes($productName) }}', {{ $standardQty }}, '{{ addslashes($unit) }}', {{ $isActive ? 'true' : 'false' }}, '{{ $productCategoryId }}')">Edit</button>
                     <form method="POST" action="{{ route('admin.products.destroy', $productId) }}" data-confirm="Yakin hapus produk ini?">
                         @csrf

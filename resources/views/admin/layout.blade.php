@@ -113,6 +113,29 @@
             background: rgba(255, 255, 255, 0.15);
         }
 
+        /* Fix B: Active-group indicator */
+        .dropdown-toggle.is-active-group {
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: inset 0 -2px 0 white;
+        }
+
+        @media (max-width: 768px) {
+            .dropdown-toggle.is-active-group {
+                box-shadow: none;
+                background: rgba(255, 255, 255, 0.12);
+            }
+            .dropdown-toggle.is-active-group::before {
+                content: '';
+                display: inline-block;
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: white;
+                margin-right: 8px;
+                flex-shrink: 0;
+            }
+        }
+
         .dropdown-toggle .caret {
             font-size: 10px;
             transition: transform 0.2s;
@@ -182,10 +205,20 @@
             display: none;
             flex-direction: column;
             cursor: pointer;
-            padding: 5px;
+            padding: 11px 11px;
+            min-width: 44px;
+            min-height: 44px;
+            align-items: center;
+            justify-content: center;
             margin-left: auto;
             border: none;
             background: transparent;
+        }
+
+        .hamburger:focus-visible {
+            outline: 2px solid rgba(255,255,255,0.8);
+            outline-offset: 2px;
+            border-radius: var(--radius-sm);
         }
 
         .hamburger span {
@@ -199,26 +232,59 @@
 
         /* ===== Mobile ===== */
         @media (max-width: 768px) {
+            /* Fix D: keep header row non-wrapping */
             .navbar-container {
-                flex-wrap: wrap;
+                flex-wrap: nowrap;
             }
 
             .hamburger {
                 display: flex;
             }
 
-            .navbar-menu {
+            /* Fix D: Drawer backdrop */
+            .nav-backdrop {
                 display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.45);
+                z-index: 1009;
+                opacity: 0;
+                transition: opacity 0.22s ease;
+            }
+
+            .nav-backdrop.active {
+                display: block;
+                opacity: 1;
+            }
+
+            /* Fix D: Drawer panel */
+            .navbar-menu {
+                position: fixed;
+                top: 0;
+                right: 0;
+                width: min(85vw, 320px);
+                height: 100vh;
+                height: 100dvh;
+                background: linear-gradient(160deg, #667eea 0%, #764ba2 100%);
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
                 flex-direction: column;
-                width: 100%;
                 gap: 0;
-                padding: 8px 0 12px;
-                border-top: 1px solid rgba(255, 255, 255, 0.2);
-                height: auto;
+                padding: 64px 0 16px;
+                border-top: none;
+                list-style: none;
+                z-index: 1010;
+                transform: translateX(100%);
+                opacity: 0;
+                transition: transform 0.23s ease, opacity 0.23s ease;
+                display: flex;
+                pointer-events: none;
             }
 
             .navbar-menu.active {
-                display: flex;
+                transform: translateX(0);
+                opacity: 1;
+                pointer-events: auto;
             }
 
             .navbar-menu > li {
@@ -230,7 +296,7 @@
             .dropdown-toggle {
                 width: 100%;
                 justify-content: space-between;
-                padding: 10px 12px;
+                padding: 12px 16px;
                 border-radius: 0;
             }
 
@@ -1053,7 +1119,38 @@
             }
         }
 
-        /* ===== Btn Secondary ===== */
+        /* Fix E: User identity chip — mobile only */
+        .nav-user-chip {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .nav-user-chip {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                margin-left: auto;
+                margin-right: 6px;
+                background: rgba(255,255,255,0.18);
+                border-radius: 20px;
+                padding: 4px 8px;
+                max-width: 100px;
+                height: 28px;
+                overflow: hidden;
+                flex-shrink: 0;
+                text-decoration: none;
+                color: white;
+                font-size: 12px;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+
+            .nav-user-chip-text {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+        }
         .btn-secondary {
             background: #6c757d;
             color: white;
@@ -1081,16 +1178,37 @@
         <div class="navbar-container">
             <a class="navbar-brand" href="{{ route('admin.dashboard') }}">📋 Supervisor</a>
 
-            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+            @php
+                $navUserName = session('admin_email')
+                    ? explode('@', session('admin_email'))[0]
+                    : (auth()->check() ? auth()->user()->name : 'Admin');
+                $navUserName = mb_strtolower($navUserName);
+                $navUserShort = mb_substr($navUserName, 0, 10);
+            @endphp
+            <a class="nav-user-chip" href="{{ route('admin.settings') }}" title="{{ $navUserName }}">
+                <span>👤</span>
+                <span class="nav-user-chip-text">{{ $navUserShort }}</span>
+            </a>
+
+            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu" aria-expanded="false">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
 
+            <div class="nav-backdrop" id="navBackdrop" aria-hidden="true"></div>
+
             <ul class="navbar-menu" id="navMenu">
+                @php
+                    $grpRingkasan  = request()->routeIs(['admin.dashboard','admin.current_order.*','admin.test_order']);
+                    $grpTim        = request()->routeIs(['admin.waiters.*','admin.racks.*','admin.products.*','admin.product_categories.*','admin.shifts.*','admin.schedules.*']);
+                    $grpOps        = request()->routeIs(['admin.tasks.live','admin.tasks.index','admin.tasks.rack.*','admin.restock.*','admin.suppliers.*','admin.attendance.*','admin.cleanup','admin.reconciliation.*']);
+                    $grpBonus      = request()->routeIs(['admin.bonus.config','admin.bonus.daily_scoring','admin.bonus.penalties','admin.bonus.sales_targets','admin.bonus.monthly_summary','admin.bonus.leaderboard']);
+                    $grpSistem     = request()->routeIs(['admin.audit_log.*','admin.settings']);
+                @endphp
                 {{-- Ringkasan --}}
-                <li>
-                    <button class="dropdown-toggle">Ringkasan <span class="caret">▾</span></button>
+                <li class="{{ $grpRingkasan ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpRingkasan ? 'is-active-group' : '' }}">Ringkasan <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.dashboard') ? 'is-active' : '' }}" href="{{ route('admin.dashboard') }}">🏠 Dashboard</a>
                         <a class="{{ request()->routeIs('admin.current_order.*') ? 'is-active' : '' }}" href="{{ route('admin.current_order.index') }}">🧾 Current Order</a>
@@ -1099,8 +1217,8 @@
                 </li>
 
                 {{-- Tim & Area --}}
-                <li>
-                    <button class="dropdown-toggle">Tim & Area <span class="caret">▾</span></button>
+                <li class="{{ $grpTim ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpTim ? 'is-active-group' : '' }}">Tim & Area <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.waiters.*') ? 'is-active' : '' }}" href="{{ route('admin.waiters.index') }}">👥 Waiters</a>
                         <a class="{{ request()->routeIs('admin.racks.*') ? 'is-active' : '' }}" href="{{ route('admin.racks.index') }}">📦 Racks</a>
@@ -1115,8 +1233,8 @@
                 </li>
 
                 {{-- Operasional --}}
-                <li>
-                    <button class="dropdown-toggle">Operasional <span class="caret">▾</span></button>
+                <li class="{{ $grpOps ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpOps ? 'is-active-group' : '' }}">Operasional <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.tasks.live') ? 'is-active' : '' }}" href="{{ route('admin.tasks.live') }}">📡 Live Monitor</a>
                         <a class="{{ request()->routeIs('admin.tasks.index') ? 'is-active' : '' }}" href="{{ route('admin.tasks.index') }}">📝 Tugas Umum</a>
@@ -1126,13 +1244,14 @@
                         <a class="{{ request()->routeIs('admin.suppliers.*') ? 'is-active' : '' }}" href="{{ route('admin.suppliers.index') }}">🏪 Supplier</a>
                         <div class="dropdown-divider"></div>
                         <a class="{{ request()->routeIs('admin.attendance.*') ? 'is-active' : '' }}" href="{{ route('admin.attendance.index') }}">📋 Absensi</a>
+                        <a class="{{ request()->routeIs('admin.reconciliation.*') ? 'is-active' : '' }}" href="{{ route('admin.reconciliation.index') }}">🔍 Reconciliation</a>
                         <a class="{{ request()->routeIs('admin.cleanup') ? 'is-active' : '' }}" href="{{ route('admin.cleanup') }}">🧹 Cleanup</a>
                     </div>
                 </li>
 
                 {{-- Bonus & Performa --}}
-                <li>
-                    <button class="dropdown-toggle">Bonus <span class="caret">▾</span></button>
+                <li class="{{ $grpBonus ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpBonus ? 'is-active-group' : '' }}">Bonus <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.bonus.config') ? 'is-active' : '' }}" href="{{ route('admin.bonus.config') }}">⚙️ Konfigurasi</a>
                         <a class="{{ request()->routeIs('admin.bonus.daily_scoring') ? 'is-active' : '' }}" href="{{ route('admin.bonus.daily_scoring') }}">📊 Penilaian Harian</a>
@@ -1145,13 +1264,13 @@
                 </li>
 
                 {{-- Sistem --}}
-                <li>
-                    <button class="dropdown-toggle">Sistem <span class="caret">▾</span></button>
+                <li class="{{ $grpSistem ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpSistem ? 'is-active-group' : '' }}">Sistem <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.audit_log.*') ? 'is-active' : '' }}" href="{{ route('admin.audit_log.index') }}">📜 Audit Log</a>
                         <a class="{{ request()->routeIs('admin.settings') ? 'is-active' : '' }}" href="{{ route('admin.settings') }}">⚙️ Settings</a>
                         <div class="dropdown-divider"></div>
-                        <a class="is-danger" href="{{ route('admin.logout') }}">🚪 Logout</a>
+                        <a class="is-danger" href="{{ route('admin.logout') }}" onclick="return confirm('Yakin mau logout dari panel admin/supervisor?')">🚪 Logout</a>
                     </div>
                 </li>
             </ul>
@@ -1166,16 +1285,46 @@
         (function() {
             const hamburger = document.getElementById('hamburgerBtn');
             const menu = document.getElementById('navMenu');
+            const backdrop = document.getElementById('navBackdrop');
             const isMobile = () => window.innerWidth <= 768;
 
-            // Toggle mobile menu
+            function openDrawer() {
+                menu.classList.add('active');
+                hamburger.classList.add('active');
+                backdrop.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                hamburger.setAttribute('aria-expanded', 'true');
+            }
+
+            function closeDrawer() {
+                menu.classList.remove('active');
+                hamburger.classList.remove('active');
+                backdrop.classList.remove('active');
+                document.body.style.overflow = '';
+                hamburger.setAttribute('aria-expanded', 'false');
+                menu.querySelectorAll(':scope > li').forEach(function(li) {
+                    li.classList.remove('open');
+                });
+            }
+
+            // Toggle mobile drawer
             hamburger.addEventListener('click', function(e) {
                 e.stopPropagation();
-                menu.classList.toggle('active');
-                hamburger.classList.toggle('active');
+                if (isMobile()) {
+                    if (menu.classList.contains('active')) {
+                        closeDrawer();
+                    } else {
+                        openDrawer();
+                    }
+                }
             });
 
-            // Dropdown toggle (mobile: click, desktop: hover handled by CSS)
+            // Backdrop click closes drawer
+            backdrop.addEventListener('click', function() {
+                closeDrawer();
+            });
+
+            // Dropdown toggle (mobile: click accordion, desktop: hover handled by CSS)
             menu.querySelectorAll('.dropdown-toggle').forEach(function(btn) {
                 btn.addEventListener('click', function(e) {
                     e.preventDefault();
@@ -1192,25 +1341,23 @@
                 });
             });
 
-            // Close everything on outside click
+            // Close everything on outside click (desktop only needed)
             document.addEventListener('click', function(e) {
                 if (!document.querySelector('.navbar').contains(e.target)) {
-                    menu.classList.remove('active');
-                    hamburger.classList.remove('active');
-                    menu.querySelectorAll(':scope > li').forEach(function(li) {
-                        li.classList.remove('open');
-                    });
+                    if (isMobile()) {
+                        closeDrawer();
+                    } else {
+                        menu.querySelectorAll(':scope > li').forEach(function(li) {
+                            li.classList.remove('open');
+                        });
+                    }
                 }
             });
 
             // Reset on resize to desktop
             window.addEventListener('resize', function() {
                 if (!isMobile()) {
-                    menu.classList.remove('active');
-                    hamburger.classList.remove('active');
-                    menu.querySelectorAll(':scope > li').forEach(function(li) {
-                        li.classList.remove('open');
-                    });
+                    closeDrawer();
                 }
             });
         })();

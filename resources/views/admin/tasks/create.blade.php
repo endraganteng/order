@@ -106,6 +106,8 @@
         .bb-waiter-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
         .bb-waiter-avatar--pelayan { background: #6366f1; }
         .bb-waiter-avatar--kasir { background: #f59e0b; }
+        .bb-waiter-avatar--backup { background: #9333ea; }
+        .bb-waiter-avatar--supervisor { background: #2563eb; }
         .bb-waiter-lane-name { font-weight: 700; font-size: 14px; color: #0f172a; }
         .bb-waiter-lane-role { font-size: 12px; color: #64748b; text-transform: capitalize; }
         .bb-waiter-lane-count { margin-left: auto; font-size: 12px; font-weight: 700; color: #6366f1; background: #eef2ff; padding: 2px 10px; border-radius: 20px; }
@@ -190,6 +192,8 @@
         .gt-waiter-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
         .gt-waiter-avatar--pelayan { background: #6366f1; }
         .gt-waiter-avatar--kasir { background: #f59e0b; }
+        .gt-waiter-avatar--backup { background: #9333ea; }
+        .gt-waiter-avatar--supervisor { background: #2563eb; }
         .gt-waiter-lane-name { font-weight: 700; font-size: 14px; color: #0f172a; }
         .gt-waiter-lane-role { font-size: 12px; color: #64748b; text-transform: capitalize; }
         .gt-waiter-lane-count { margin-left: auto; font-size: 12px; font-weight: 700; color: #6366f1; background: #eef2ff; padding: 2px 10px; border-radius: 20px; }
@@ -219,6 +223,7 @@
                     $bbWaiters = $waiters ?? [];
                     $bbPelayanCount = collect($bbWaiters)->filter(fn($w) => strtolower($w['waiter_role'] ?? 'pelayan') === 'pelayan')->count();
                     $bbKasirCount = collect($bbWaiters)->filter(fn($w) => strtolower($w['waiter_role'] ?? 'pelayan') === 'kasir')->count();
+                    $bbBackupCount = collect($bbWaiters)->filter(fn($w) => strtolower($w['waiter_role'] ?? 'pelayan') === 'backup')->count();
                 @endphp
 
                 @php
@@ -257,6 +262,7 @@
                             <option value="all">Semua Role</option>
                             <option value="pelayan">Pelayan ({{ $bbPelayanCount }})</option>
                             <option value="kasir">Kasir ({{ $bbKasirCount }})</option>
+                            <option value="backup">Backup / Flexible ({{ $bbBackupCount }})</option>
                         </select>
                         <button type="button" id="bbQuickReset" class="bb-toolbar-btn bb-toolbar-btn--reset">🗑️ Reset</button>
                     </div>
@@ -571,6 +577,7 @@
                             <option value="all">Semua Role</option>
                             <option value="pelayan">Pelayan Saja</option>
                             <option value="kasir">Kasir Saja</option>
+                            <option value="backup">Backup / Flexible Saja</option>
                         </select>
                         <div style="margin-left: auto;">
                             <button type="button" class="gt-toolbar-btn gt-toolbar-btn--reset js-gt-btn-reset">

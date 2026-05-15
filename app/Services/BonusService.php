@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Kreait\Firebase\Contract\Database;
+use Kreait\Firebase\Exception\Database\TransactionFailed;
 
 class BonusService
 {
@@ -447,9 +448,62 @@ class BonusService
 
         $pointsDeducted = (int) ($penaltyTypes[$penaltyType]['points'] ?? 0);
         $date = (string) ($data['date'] ?? date('Y-m-d'));
+        $waiterId = (string) ($data['waiter_id'] ?? '');
+        $relatedTaskId = (string) ($data['related_task_id'] ?? '');
+        $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $date, $relatedTaskId]));
+        $indexRef = $this->database->getReference('waiter_penalties_index/'.$dedupKey);
+
+        $existingIndex = $indexRef->getValue();
+        if (is_array($existingIndex)) {
+            return [
+                'success' => true,
+                'penalty_id' => (string) ($existingIndex['penalty_id'] ?? ''),
+                'points_deducted' => (int) ($existingIndex['points_deducted'] ?? $pointsDeducted),
+                'deduplicated' => true,
+            ];
+        }
+
+        $claimed = false;
+        $indexRecord = null;
+        try {
+            $txResult = $indexRef->runTransaction(function ($current) use (&$claimed, $waiterId, $penaltyType, $date, $pointsDeducted, $relatedTaskId) {
+                if ($current !== null) {
+                    return $current;
+                }
+
+                $claimed = true;
+
+                return [
+                    'waiter_id' => $waiterId,
+                    'penalty_type' => $penaltyType,
+                    'date' => $date,
+                    'related_task_id' => $relatedTaskId,
+                    'points_deducted' => $pointsDeducted,
+                    'created_at' => time(),
+                    'penalty_id' => null,
+                ];
+            });
+
+            if (is_object($txResult) && method_exists($txResult, 'snapshot')) {
+                $indexRecord = $txResult->snapshot()->getValue();
+            } else {
+                $indexRecord = $indexRef->getValue();
+            }
+        } catch (TransactionFailed $e) {
+            $indexRecord = $indexRef->getValue();
+        }
+
+        if (! $claimed && is_array($indexRecord)) {
+            return [
+                'success' => true,
+                'penalty_id' => (string) ($indexRecord['penalty_id'] ?? ''),
+                'points_deducted' => (int) ($indexRecord['points_deducted'] ?? $pointsDeducted),
+                'deduplicated' => true,
+            ];
+        }
 
         $record = [
-            'waiter_id'          => (string) ($data['waiter_id'] ?? ''),
+            'waiter_id'          => $waiterId,
             'waiter_name'        => (string) ($data['waiter_name'] ?? ''),
             'penalty_type'       => $penaltyType,
             'penalty_label'      => (string) ($penaltyTypes[$penaltyType]['label'] ?? $penaltyType),
@@ -458,15 +512,23 @@ class BonusService
             'month'              => substr($date, 0, 7),
             'reason'             => (string) ($data['reason'] ?? ''),
             'evidence_photo_url' => (string) ($data['evidence_photo_url'] ?? ''),
-            'related_task_id'    => (string) ($data['related_task_id'] ?? ''),
+            'related_task_id'    => $relatedTaskId,
             'created_at'         => time(),
         ];
 
         $ref = $this->database->getReference('waiter_penalties')->push($record);
+        $penaltyId = (string) $ref->getKey();
+
+        if ($claimed) {
+            $indexRef->update([
+                'penalty_id' => $penaltyId,
+                'created_at' => time(),
+            ]);
+        }
 
         return [
             'success'         => true,
-            'penalty_id'      => $ref->getKey(),
+            'penalty_id'      => $penaltyId,
             'points_deducted' => $pointsDeducted,
         ];
     }

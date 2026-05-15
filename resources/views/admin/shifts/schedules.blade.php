@@ -84,6 +84,8 @@
         }
         .waiter-role-tag.kasir { background: #fff7ed; color: #9a3412; }
         .waiter-role-tag.pelayan { background: #ecfeff; color: #0f766e; }
+        .waiter-role-tag.backup { background: #f3e8ff; color: #6b21a8; }
+        .waiter-role-tag.supervisor { background: #dbeafe; color: #1e40af; }
 
         .day-header-sun { color: var(--color-danger); }
 

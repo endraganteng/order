@@ -98,6 +98,163 @@
             background: #fff;
         }
 
+        /* Filter toolbar */
+        .rack-filter-toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 90;
+            background: var(--color-bg, #f8fafc);
+            border: 1px solid var(--color-border, #e2e8f0);
+            border-radius: var(--radius-md, 8px);
+            box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.08));
+            padding: 12px 14px 10px;
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .rack-filter-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .rack-filter-row--search {
+            flex-wrap: nowrap;
+        }
+        .rack-search-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            flex: 1;
+            min-width: 0;
+        }
+        .rack-search-icon {
+            position: absolute;
+            left: 10px;
+            width: 16px;
+            height: 16px;
+            color: var(--color-text-muted, #94a3b8);
+            pointer-events: none;
+            flex-shrink: 0;
+        }
+        .rack-search-input {
+            width: 100%;
+            padding: 8px 36px 8px 34px;
+            border: 1px solid var(--color-border, #e2e8f0);
+            border-radius: var(--radius-sm, 6px);
+            font-size: 13px;
+            color: var(--color-text, #1e293b);
+            background: #fff;
+            outline: none;
+            transition: border-color 0.15s;
+            box-sizing: border-box;
+        }
+        .rack-search-input:focus {
+            border-color: var(--color-primary, #3b82f6);
+            box-shadow: 0 0 0 2px rgba(59,130,246,.15);
+        }
+        .rack-search-clear {
+            position: absolute;
+            right: 6px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--color-text-muted, #94a3b8);
+            font-size: 14px;
+            line-height: 1;
+            padding: 4px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .rack-search-clear:hover {
+            color: var(--color-text, #1e293b);
+            background: var(--color-border, #e2e8f0);
+        }
+        .rack-type-pills {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .rack-filter-pill {
+            min-height: 36px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--color-border, #e2e8f0);
+            background: #fff;
+            color: var(--color-text-muted, #64748b);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.13s, color 0.13s, border-color 0.13s;
+            line-height: 1.2;
+        }
+        .rack-filter-pill:hover {
+            border-color: var(--color-primary, #3b82f6);
+            color: var(--color-primary, #3b82f6);
+        }
+        .rack-filter-pill.active {
+            background: var(--color-primary, #3b82f6);
+            color: #fff;
+            border-color: var(--color-primary, #3b82f6);
+        }
+        .rack-filter-pill[data-type="storage"].active {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+        }
+        .rack-filter-pill[data-type="display"].active {
+            background: #047857;
+            border-color: #047857;
+        }
+        .rack-filter-counter {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--color-text-muted, #64748b);
+            white-space: nowrap;
+            background: var(--color-border, #e2e8f0);
+            border-radius: 999px;
+            padding: 3px 10px;
+            font-weight: 600;
+        }
+        .rack-filter-empty {
+            font-size: 13px;
+            color: var(--color-text-muted, #64748b);
+            text-align: center;
+            padding: 8px 0 2px;
+        }
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0,0,0,0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        @media (max-width: 600px) {
+            .rack-filter-toolbar {
+                top: 0;
+                gap: 10px;
+            }
+            .rack-filter-row--search {
+                flex-wrap: wrap;
+            }
+            .rack-search-wrap {
+                flex: 1 1 100%;
+            }
+            .rack-filter-row--type {
+                flex-wrap: wrap;
+            }
+            .rack-filter-counter {
+                margin-left: 0;
+            }
+        }
+
         /* Desktop table */
         .rack-table-desktop {
             display: block;
@@ -191,6 +348,34 @@
             </div>
         </div>
 
+        {{-- Filter Toolbar --}}
+        <div id="rackFilterToolbar" class="rack-filter-toolbar">
+            <div class="rack-filter-row rack-filter-row--search">
+                <label for="rackSearchInput" class="sr-only">Cari rak</label>
+                <div class="rack-search-wrap">
+                    <svg class="rack-search-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.8"/><path d="M14.5 14.5l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    <input
+                        type="search"
+                        id="rackSearchInput"
+                        class="rack-search-input"
+                        placeholder="Cari nama / lokasi / QR code rak..."
+                        aria-label="Cari rak"
+                        autocomplete="off"
+                    >
+                    <button type="button" id="rackSearchClear" class="rack-search-clear" aria-label="Hapus pencarian" hidden>&#x2715;</button>
+                </div>
+            </div>
+            <div class="rack-filter-row rack-filter-row--type">
+                <div class="rack-type-pills" role="group" aria-label="Filter tipe rak">
+                    <button type="button" class="rack-filter-pill active" data-type="" aria-pressed="true">Semua</button>
+                    <button type="button" class="rack-filter-pill" data-type="storage" aria-pressed="false">Storage</button>
+                    <button type="button" class="rack-filter-pill" data-type="display" aria-pressed="false">Display</button>
+                </div>
+                <span id="rackFilterCounter" class="rack-filter-counter" role="status" aria-live="polite"></span>
+            </div>
+            <div id="rackFilterEmptyMsg" class="rack-filter-empty" hidden>Tidak ada rak yang cocok dengan filter.</div>
+        </div>
+
         {{-- Desktop Table --}}
         <div class="card rack-table-desktop" style="padding: 0; overflow: hidden;">
             <div class="table-scroll" style="padding: 16px;">
@@ -217,7 +402,7 @@
                                 $rackType = (($rack['rack_type'] ?? 'storage') === 'display') ? 'display' : 'storage';
                                 $rackTypeLabel = $rackType === 'display' ? 'Display' : 'Storage';
                             @endphp
-                            <tr>
+                            <tr data-rack-name="{{ $rack['name'] ?? '' }}" data-rack-location="{{ $rack['location'] ?? '' }}" data-rack-barcode="{{ $rack['barcode_value'] ?? '' }}" data-rack-type="{{ $rackType }}">
                                 <td>
                                     @if($rackId !== '')
                                         <input type="checkbox" class="js-rack-checkbox" name="rack_ids[]" value="{{ $rackId }}">
@@ -296,7 +481,7 @@
                     $rackType = (($rack['rack_type'] ?? 'storage') === 'display') ? 'display' : 'storage';
                     $rackTypeLabel = $rackType === 'display' ? 'Display' : 'Storage';
                 @endphp
-                <div class="rack-mobile-card">
+                <div class="rack-mobile-card" data-rack-name="{{ $rack['name'] ?? '' }}" data-rack-location="{{ $rack['location'] ?? '' }}" data-rack-barcode="{{ $rack['barcode_value'] ?? '' }}" data-rack-type="{{ $rackType }}">
                     <div class="rack-mobile-header">
                         <div>
                             @if($rackId !== '')
@@ -356,42 +541,195 @@
     @include('admin.partials._qr-renderer', ['selector' => '.rack-qrcode', 'size' => 70])
     <script>
         (function() {
-            // Select all checkbox
-            var selectAllEl = document.getElementById('selectAllRacks');
-            var checkboxes = Array.from(document.querySelectorAll('.js-rack-checkbox'));
+            // ── existing bulk/select-all refs ──────────────────────────────
+            var selectAllEl    = document.getElementById('selectAllRacks');
+            var checkboxes     = Array.from(document.querySelectorAll('.js-rack-checkbox'));
             var mobileCheckboxes = Array.from(document.querySelectorAll('.js-rack-checkbox-mobile'));
             var bulkTypeButton = document.getElementById('btnBulkUpdateType');
             var bulkTypeSelect = document.getElementById('bulkRackTypeSelect');
-            var bulkTypeForm = document.getElementById('rackBulkTypeForm');
-            var bulkTypeIds = document.getElementById('bulkRackTypeIds');
-            var bulkTypeValue = document.getElementById('bulkRackTypeValue');
+            var bulkTypeForm   = document.getElementById('rackBulkTypeForm');
+            var bulkTypeIds    = document.getElementById('bulkRackTypeIds');
+            var bulkTypeValue  = document.getElementById('bulkRackTypeValue');
 
             function getSelectedRackIds() {
                 var ids = checkboxes.concat(mobileCheckboxes)
                     .filter(function(cb) { return cb.checked; })
                     .map(function(cb) { return cb.value; })
                     .filter(function(value, index, arr) { return value && arr.indexOf(value) === index; });
-
                 return ids;
             }
 
+            // ── filter refs ────────────────────────────────────────────────
+            var searchInput  = document.getElementById('rackSearchInput');
+            var searchClear  = document.getElementById('rackSearchClear');
+            var filterPills  = Array.from(document.querySelectorAll('.rack-filter-pill'));
+            var counter      = document.getElementById('rackFilterCounter');
+            var emptyMsg     = document.getElementById('rackFilterEmptyMsg');
+
+            // All desktop rows (tr) and mobile cards keyed by rack id or index
+            // We pair them by position: $racks order is the same for both loops.
+            var desktopRows  = Array.from(document.querySelectorAll('tr[data-rack-name]'));
+            var mobileCards  = Array.from(document.querySelectorAll('.rack-mobile-card[data-rack-name]'));
+            var totalRacks   = desktopRows.length; // unique rack count
+
+            // ── sessionStorage persistence ─────────────────────────────────
+            var STORAGE_KEY = 'admin.racks.filters';
+            var currentSearch = '';
+            var currentType   = '';
+
+            function loadFilterState() {
+                try {
+                    var raw = sessionStorage.getItem(STORAGE_KEY);
+                    if (raw) {
+                        var state = JSON.parse(raw);
+                        currentSearch = state.search || '';
+                        currentType   = state.type   || '';
+                    }
+                } catch(e) {}
+            }
+
+            function saveFilterState() {
+                try {
+                    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ search: currentSearch, type: currentType }));
+                } catch(e) {}
+            }
+
+            // ── apply filter ───────────────────────────────────────────────
+            function applyFilter() {
+                var q    = currentSearch.trim().toLowerCase();
+                var type = currentType;
+                var visible = 0;
+
+                for (var i = 0; i < desktopRows.length; i++) {
+                    var row  = desktopRows[i];
+                    var card = mobileCards[i] || null;
+
+                    var name     = (row.getAttribute('data-rack-name')     || '').toLowerCase();
+                    var location = (row.getAttribute('data-rack-location') || '').toLowerCase();
+                    var barcode  = (row.getAttribute('data-rack-barcode')  || '').toLowerCase();
+                    var rtype    = (row.getAttribute('data-rack-type')     || '').toLowerCase();
+
+                    var matchSearch = !q || name.indexOf(q) !== -1 || location.indexOf(q) !== -1 || barcode.indexOf(q) !== -1;
+                    var matchType   = !type || rtype === type;
+                    var show = matchSearch && matchType;
+
+                    row.style.display = show ? '' : 'none';
+                    if (card) card.style.display = show ? '' : 'none';
+
+                    // Uncheck hidden rows' checkboxes
+                    if (!show) {
+                        var cbs = row.querySelectorAll('.js-rack-checkbox');
+                        cbs.forEach(function(cb) { cb.checked = false; });
+                        if (card) {
+                            var mcbs = card.querySelectorAll('.js-rack-checkbox-mobile');
+                            mcbs.forEach(function(cb) { cb.checked = false; });
+                        }
+                    }
+
+                    if (show) visible++;
+                }
+
+                // counter
+                if (counter) {
+                    counter.textContent = visible + ' dari ' + totalRacks + ' rak';
+                }
+
+                // empty state
+                if (emptyMsg) {
+                    emptyMsg.hidden = visible > 0;
+                }
+
+                saveFilterState();
+            }
+
+            // ── search input ───────────────────────────────────────────────
+            var debounceTimer = null;
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    currentSearch = searchInput.value;
+                    if (searchClear) searchClear.hidden = !currentSearch;
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(applyFilter, 120);
+                });
+            }
+            if (searchClear) {
+                searchClear.addEventListener('click', function() {
+                    searchInput.value = '';
+                    currentSearch = '';
+                    searchClear.hidden = true;
+                    applyFilter();
+                    searchInput.focus();
+                });
+            }
+
+            // ── type pills ─────────────────────────────────────────────────
+            filterPills.forEach(function(pill) {
+                pill.addEventListener('click', function() {
+                    currentType = pill.getAttribute('data-type') || '';
+                    filterPills.forEach(function(p) {
+                        var active = p === pill;
+                        p.classList.toggle('active', active);
+                        p.setAttribute('aria-pressed', active ? 'true' : 'false');
+                    });
+                    applyFilter();
+                });
+            });
+
+            // ── select all (only visible rows) ─────────────────────────────
             if (selectAllEl) {
                 selectAllEl.addEventListener('change', function() {
-                    checkboxes.forEach(function(cb) { cb.checked = selectAllEl.checked; });
+                    desktopRows.forEach(function(row, i) {
+                        if (row.style.display === 'none') return;
+                        var cbs = row.querySelectorAll('.js-rack-checkbox');
+                        cbs.forEach(function(cb) { cb.checked = selectAllEl.checked; });
+                    });
+                    // mobile cards: same index
+                    mobileCards.forEach(function(card) {
+                        if (card.style.display === 'none') return;
+                        var cbs = card.querySelectorAll('.js-rack-checkbox-mobile');
+                        cbs.forEach(function(cb) { cb.checked = selectAllEl.checked; });
+                    });
                 });
             }
 
             checkboxes.forEach(function(cb) {
                 cb.addEventListener('change', function() {
                     if (selectAllEl) {
-                        selectAllEl.checked = checkboxes.length > 0 && checkboxes.every(function(item) { return item.checked; });
+                        var visibleCbs = checkboxes.filter(function(c) {
+                            var row = c.closest('tr[data-rack-name]');
+                            return !row || row.style.display !== 'none';
+                        });
+                        selectAllEl.checked = visibleCbs.length > 0 && visibleCbs.every(function(item) { return item.checked; });
                     }
                 });
             });
 
-            // Smart bulk actions — auto-detect selected vs all
+            // ── bulk type update ───────────────────────────────────────────
+            if (bulkTypeButton && bulkTypeForm && bulkTypeIds && bulkTypeValue && bulkTypeSelect) {
+                bulkTypeButton.addEventListener('click', function() {
+                    var selectedIds = getSelectedRackIds();
+                    if (selectedIds.length === 0) {
+                        alert('Pilih minimal satu rak untuk update tipe.');
+                        return;
+                    }
+                    var targetType = bulkTypeSelect.value === 'display' ? 'Display' : 'Storage';
+                    if (!confirm('Ubah tipe ' + selectedIds.length + ' rak menjadi ' + targetType + '?')) return;
+                    bulkTypeValue.value = bulkTypeSelect.value;
+                    bulkTypeIds.innerHTML = '';
+                    selectedIds.forEach(function(id) {
+                        var input = document.createElement('input');
+                        input.type  = 'hidden';
+                        input.name  = 'rack_ids[]';
+                        input.value = id;
+                        bulkTypeIds.appendChild(input);
+                    });
+                    bulkTypeForm.submit();
+                });
+            }
+
+            // ── print / export smart handlers ──────────────────────────────
             var bulkForm = document.getElementById('rackBulkActionForm');
-            var btnPrint = document.getElementById('btnPrint');
+            var btnPrint  = document.getElementById('btnPrint');
             var btnExport = document.getElementById('btnExport');
 
             if (bulkForm && btnPrint) {
@@ -421,35 +759,7 @@
                 });
             }
 
-            if (bulkTypeButton && bulkTypeForm && bulkTypeIds && bulkTypeValue && bulkTypeSelect) {
-                bulkTypeButton.addEventListener('click', function() {
-                    var selectedIds = getSelectedRackIds();
-                    if (selectedIds.length === 0) {
-                        alert('Pilih minimal satu rak untuk update tipe.');
-                        return;
-                    }
-
-                    var targetType = bulkTypeSelect.value === 'display' ? 'Display' : 'Storage';
-                    if (! confirm('Ubah tipe ' + selectedIds.length + ' rak menjadi ' + targetType + '?')) {
-                        return;
-                    }
-
-                    bulkTypeValue.value = bulkTypeSelect.value;
-                    bulkTypeIds.innerHTML = '';
-
-                    selectedIds.forEach(function(id) {
-                        var input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'rack_ids[]';
-                        input.value = id;
-                        bulkTypeIds.appendChild(input);
-                    });
-
-                    bulkTypeForm.submit();
-                });
-            }
-
-            // Delegated confirm handler (replaces inline onsubmit)
+            // ── delegated confirm ──────────────────────────────────────────
             document.addEventListener('submit', function(e) {
                 var form = e.target;
                 var confirmMsg = form.getAttribute('data-confirm');
@@ -457,6 +767,21 @@
                     e.preventDefault();
                 }
             });
+
+            // ── init ───────────────────────────────────────────────────────
+            loadFilterState();
+            if (searchInput && currentSearch) {
+                searchInput.value = currentSearch;
+                if (searchClear) searchClear.hidden = false;
+            }
+            if (currentType) {
+                filterPills.forEach(function(p) {
+                    var active = (p.getAttribute('data-type') || '') === currentType;
+                    p.classList.toggle('active', active);
+                    p.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
+            }
+            applyFilter();
         })();
     </script>
 @endsection

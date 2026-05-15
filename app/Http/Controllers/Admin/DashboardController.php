@@ -487,7 +487,7 @@ class DashboardController extends Controller
             $canonicalEmail = strtolower(trim((string) ($resolvedWaiter['waiter_email'] ?? '')));
 
             $normalizedRole = strtolower(trim((string) $waiterRole));
-            if (! in_array($normalizedRole, ['kasir', 'pelayan'], true)) {
+            if (! in_array($normalizedRole, ['kasir', 'pelayan', 'backup'], true)) {
                 $normalizedRole = 'pelayan';
             }
 
@@ -523,8 +523,8 @@ class DashboardController extends Controller
                 $board[$identityKey]['waiter_id'] = $canonicalId;
             }
 
-            if (! in_array((string) ($board[$identityKey]['waiter_role'] ?? ''), ['kasir', 'pelayan'], true)
-                && in_array($normalizedRole, ['kasir', 'pelayan'], true)) {
+            if (! in_array((string) ($board[$identityKey]['waiter_role'] ?? ''), ['kasir', 'pelayan', 'backup'], true)
+                && in_array($normalizedRole, ['kasir', 'pelayan', 'backup'], true)) {
                 $board[$identityKey]['waiter_role'] = $normalizedRole;
             }
 

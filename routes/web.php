@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\RackController;
+use App\Http\Controllers\Admin\ReconciliationController;
 use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\RackProductController;
 use App\Http\Controllers\Admin\RestockController;
@@ -72,6 +73,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('products/bulk-destroy', [RackProductController::class, 'bulkDestroy'])->name('products.bulk_destroy');
         Route::post('products/import', [RackProductController::class, 'importProducts'])->name('products.import');
         Route::post('products/reset', [RackProductController::class, 'resetProducts'])->name('products.reset');
+        Route::get('products/{id}/audit-trail', [RackProductController::class, 'auditTrail'])->name('products.audit_trail');
         Route::put('products/{id}', [RackProductController::class, 'update'])->name('products.update');
         Route::delete('products/{id}', [RackProductController::class, 'destroy'])->name('products.destroy');
 
@@ -111,6 +113,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Live Dashboard
         Route::get('tasks/live', [TaskController::class, 'live'])->name('tasks.live');
 
+        Route::get('reconciliation', [ReconciliationController::class, 'index'])->name('reconciliation.index');
+        Route::get('reconciliation/{isoYearWeek}/{reportId}', [ReconciliationController::class, 'show'])->name('reconciliation.show');
+        Route::post('reconciliation/run', [ReconciliationController::class, 'runNow'])->name('reconciliation.run');
+
         // Task Categories (AJAX)
         Route::get('tasks/categories', [TaskController::class, 'categoryIndex'])->name('tasks.categories.index');
         Route::post('tasks/categories', [TaskController::class, 'categoryStore'])->name('tasks.categories.store');
@@ -126,6 +132,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('restock', [RestockController::class, 'index'])->name('restock.index');
         Route::post('restock/create-po', [RestockController::class, 'createPO'])->name('restock.create_po');
         Route::post('restock/create-batch-po', [RestockController::class, 'createBatchPO'])->name('restock.create_batch_po');
+        Route::post('restock/create-manual-po', [RestockController::class, 'createManualPO'])->name('restock.create_manual_po');
         Route::get('restock/orders', [RestockController::class, 'orders'])->name('restock.orders');
         Route::get('restock/orders/{id}', [RestockController::class, 'orderDetail'])->name('restock.order_detail');
         Route::delete('restock/orders/{id}', [RestockController::class, 'cancelOrder'])->name('restock.cancel_order');
@@ -211,7 +218,12 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         Route::post('tasks/sync-due', [WaiterController::class, 'syncDueTasks'])
             ->middleware('throttle:waiter-sync-due')
             ->name('task.sync_due');
+        Route::post('tasks/{id}/claim', [WaiterController::class, 'claimTask'])->name('task.claim');
+        Route::post('tasks/{id}/release', [WaiterController::class, 'releaseTask'])->name('task.release');
         Route::post('tasks/{id}/complete', [WaiterController::class, 'completeTask'])->name('task.complete');
+        Route::get('stock-take', [WaiterController::class, 'stockTakeIndex'])->name('stock_take');
+        Route::post('stock-take/resolve-rack', [WaiterController::class, 'resolveStockTakeRack'])->name('stock_take.resolve_rack');
+        Route::post('stock-take/submit', [WaiterController::class, 'submitStockTake'])->name('stock_take.submit');
         Route::post('activity-reports', [WaiterController::class, 'storeActivityReport'])
             ->middleware('throttle:waiter-activity-store')
             ->name('activity.store');

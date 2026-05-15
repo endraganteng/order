@@ -44,8 +44,31 @@ class RestockController extends Controller
         $createdBy = session('admin_id', 'admin');
         $createdByName = session('admin_name', 'Admin');
 
+        $restockIds = $request->input('restock_ids', []);
+        $restockRows = $this->firebase->getRestockRequests();
+        $productIds = [];
+        foreach ($restockRows as $row) {
+            if (!is_array($row)) continue;
+            $rid = $row['id'] ?? null;
+            if (!is_string($rid) || !in_array($rid, $restockIds, true)) continue;
+            $pid = $row['product_id'] ?? null;
+            if (is_string($pid) && $pid !== '') $productIds[] = $pid;
+        }
+
+        $forceDuplicate = (string) $request->input('force_duplicate', '0') === '1';
+        $supplierKey = $request->input('supplier');
+        $conflicts = $this->firebase->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierKey, 86400);
+        if (!$forceDuplicate && !empty($conflicts)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'po_duplicate',
+                'message' => 'PO duplikat terdeteksi.',
+                'conflicts' => $conflicts,
+            ], 409);
+        }
+
         $poId = $this->firebase->createPurchaseOrder(
-            $request->input('restock_ids'),
+            $restockIds,
             $createdBy,
             $createdByName,
             $request->input('supplier'),
@@ -80,6 +103,17 @@ class RestockController extends Controller
         $createdBy = session('admin_id', 'admin');
         $createdByName = session('admin_name', 'Admin');
         $results = [];
+        $forceDuplicate = (string) $request->input('force_duplicate', '0') === '1';
+        $restockRows = $this->firebase->getRestockRequests();
+        $restockToProduct = [];
+        foreach ($restockRows as $row) {
+            if (!is_array($row)) continue;
+            $rid = $row['id'] ?? null;
+            $pid = $row['product_id'] ?? null;
+            if (is_string($rid) && is_string($pid) && $pid !== '') {
+                $restockToProduct[$rid] = $pid;
+            }
+        }
 
         foreach ($request->input('orders') as $order) {
             $supplierId = $order['supplier_id'] ?? null;
@@ -99,11 +133,26 @@ class RestockController extends Controller
             // Collect all restock_ids and qty_overrides for this supplier
             $restockIds = [];
             $qtyOverrides = [];
+            $productIds = [];
             foreach ($order['items'] as $item) {
                 foreach ($item['restock_ids'] as $restockId) {
                     $restockIds[] = $restockId;
                     $qtyOverrides[$restockId] = (int) $item['qty_ordered'];
+                    if (isset($restockToProduct[$restockId])) {
+                        $productIds[] = $restockToProduct[$restockId];
+                    }
                 }
+            }
+
+            $conflicts = $this->firebase->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierName, 86400);
+            if (!$forceDuplicate && !empty($conflicts)) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'po_duplicate',
+                    'message' => 'PO duplikat terdeteksi.',
+                    'conflicts' => $conflicts,
+                    'supplier' => $supplierName,
+                ], 409);
             }
 
             $poId = $this->firebase->createPurchaseOrder(
@@ -144,6 +193,103 @@ class RestockController extends Controller
             'success' => true,
             'message' => count($results) . ' Purchase Order berhasil dibuat.',
             'orders' => $results,
+        ]);
+    }
+
+    public function createManualPO(Request $request)
+    {
+        $request->validate([
+            'supplier_id' => 'nullable|string|max:60',
+            'supplier_name' => 'required|string|max:120',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|string|max:60',
+            'items.*.qty' => 'required|integer|min:1',
+            'items.*.note' => 'nullable|string|max:200',
+            'rack_id' => 'nullable|string|max:60',
+            'notes' => 'nullable|string|max:500',
+            'force_duplicate' => 'nullable|in:0,1',
+        ]);
+
+        $createdBy = session('admin_id', 'admin');
+        $createdByName = session('admin_name', 'Admin');
+
+        $supplierId = $request->input('supplier_id');
+        $supplierName = $request->input('supplier_name');
+        if ($supplierId) {
+            $supplierData = $this->firebase->getSupplierById($supplierId);
+            if ($supplierData) {
+                $supplierName = $supplierData['name'] ?? $supplierName;
+            }
+        }
+
+        $forceDuplicate = (string) $request->input('force_duplicate', '0') === '1';
+        $productIds = array_map(fn($i) => $i['product_id'], $request->input('items'));
+        $conflicts = $this->firebase->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierName, 86400);
+        if (!$forceDuplicate && !empty($conflicts)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'po_duplicate',
+                'message' => 'PO duplikat terdeteksi.',
+                'conflicts' => $conflicts,
+            ], 409);
+        }
+
+        $rackId = (string) $request->input('rack_id', '');
+        $rackName = '';
+        if ($rackId !== '') {
+            $rack = $this->firebase->getRackById($rackId);
+            $rackName = (string) ($rack['name'] ?? '');
+        }
+
+        $restockIds = [];
+        $qtyOverrides = [];
+        foreach ($request->input('items') as $item) {
+            $product = $this->firebase->getProductById($item['product_id']);
+            $qty = (int) $item['qty'];
+
+            $restockId = $this->firebase->createOrUpdateRestockRequest([
+                'product_id' => $item['product_id'],
+                'product_name' => (string) ($product['name'] ?? $item['product_id']),
+                'product_category_id' => $product['category_id'] ?? null,
+                'rack_id' => $rackId,
+                'rack_name' => $rackName,
+                'reported_qty' => 0,
+                'standard_qty' => $qty,
+                'qty_needed' => $qty,
+                'reported_by' => $createdBy,
+                'reported_by_name' => $createdByName . ' (manual PO)',
+                'date' => date('Y-m-d'),
+                'source' => 'manual',
+                'note' => $item['note'] ?? '',
+            ]);
+
+            $restockIds[] = $restockId;
+            $qtyOverrides[$restockId] = $qty;
+        }
+
+        $poId = $this->firebase->createPurchaseOrder(
+            $restockIds,
+            $createdBy,
+            $createdByName,
+            $supplierName,
+            $request->input('notes'),
+            $qtyOverrides
+        );
+
+        if (!$poId) {
+            return response()->json(['success' => false, 'message' => 'Gagal membuat PO.'], 500);
+        }
+
+        $this->firebase->logAuditAction('create', 'purchase_order', $poId, [
+            'items_count' => count($restockIds),
+            'supplier' => $supplierName,
+            'source' => 'manual',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'po_id' => $poId,
+            'message' => 'PO manual berhasil dibuat.',
         ]);
     }
 

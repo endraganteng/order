@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Kreait\Firebase\Contract\Auth;
 use Kreait\Firebase\Contract\Database;
+use Kreait\Firebase\Exception\Database\TransactionFailed;
+use RuntimeException;
 
 class FirebaseService
 {
@@ -13,10 +15,29 @@ class FirebaseService
 
     protected $auth;
 
+    /**
+     * Per-request memo cache untuk hemat Firebase download.
+     * Cleared otomatis di akhir request (PHP-FPM lifecycle).
+     * Key: cache identifier, Value: any.
+     */
+    protected array $requestCache = [];
+
     public function __construct(Database $database, Auth $auth)
     {
         $this->database = $database;
         $this->auth = $auth;
+    }
+
+    /**
+     * Bust per-request cache. Call setelah write yang invalidate cache.
+     */
+    public function bustRequestCache(?string $key = null): void
+    {
+        if ($key === null) {
+            $this->requestCache = [];
+        } else {
+            unset($this->requestCache[$key]);
+        }
     }
 
     /**
@@ -271,9 +292,18 @@ class FirebaseService
 
     /**
      * Get all rack master data.
+     *
+     * Bandwidth: per-request memo. Beberapa flow (mis. recordRackStockMovement →
+     * maybeAutoCreateRestockOnLowStock → getActiveRacks → getRacks) bisa fire
+     * berkali-kali di satu request. Cache dalam request lifecycle saja, bust
+     * otomatis hilang di akhir request PHP-FPM.
      */
     public function getRacks()
     {
+        if (isset($this->requestCache['racks'])) {
+            return $this->requestCache['racks'];
+        }
+
         $reference = $this->database->getReference('waiter_racks');
         $snapshot = $reference->getSnapshot();
 
@@ -293,6 +323,7 @@ class FirebaseService
             return ($a['name'] ?? '') <=> ($b['name'] ?? '');
         });
 
+        $this->requestCache['racks'] = $racks;
         return $racks;
     }
 
@@ -423,6 +454,778 @@ class FirebaseService
         }
 
         return $tasks;
+    }
+
+    /**
+     * Build per-product live stock snapshot for one rack from latest rack_check records.
+     *
+     * @param  array<int, array<string, mixed>>|null  $rackProducts
+     * @return array<string, array<string, mixed>>
+     */
+    public function getRackProductLiveStock(string $rackId, ?array $rackProducts = null): array
+    {
+        $assignedProducts = is_array($rackProducts) ? $rackProducts : $this->getRackProducts($rackId);
+        $assignedMap = [];
+        foreach ($assignedProducts as $product) {
+            $productId = trim((string) ($product['id'] ?? ''));
+            if ($productId === '') {
+                continue;
+            }
+            $assignedMap[$productId] = $product;
+        }
+
+        $liveMap = [];
+        foreach (array_keys($assignedMap) as $productId) {
+            $storedCurrentQty = array_key_exists('current_qty', $assignedMap[$productId]) && $assignedMap[$productId]['current_qty'] !== null
+                ? max(0, (int) $assignedMap[$productId]['current_qty'])
+                : null;
+
+            if ($storedCurrentQty !== null) {
+                $standardQty = max(0, (int) ($assignedMap[$productId]['standard_qty'] ?? 0));
+                $liveMap[$productId] = [
+                    'product_id' => $productId,
+                    'current_qty' => $storedCurrentQty,
+                    'last_updated_at' => isset($assignedMap[$productId]['last_updated_at']) ? (int) $assignedMap[$productId]['last_updated_at'] : (isset($assignedMap[$productId]['updated_at']) ? (int) $assignedMap[$productId]['updated_at'] : null),
+                    'is_shortage' => $standardQty > 0 ? $storedCurrentQty < $standardQty : false,
+                ];
+                continue;
+            }
+
+            $liveMap[$productId] = [
+                'product_id' => $productId,
+                'current_qty' => null,
+                'last_updated_at' => null,
+                'is_shortage' => null,
+            ];
+        }
+
+        if (count($assignedMap) === 0) {
+            return $liveMap;
+        }
+
+        $history = $this->getRackCheckHistory($rackId, 300);
+        foreach ($history as $task) {
+            $completedAt = $this->normalizeUnixTimestampToSeconds((int) ($task['completed_at'] ?? 0));
+            $checklist = $task['completed_product_checklist'] ?? [];
+            if (! is_array($checklist) || count($checklist) === 0) {
+                continue;
+            }
+
+            foreach ($checklist as $checklistKey => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $productId = trim((string) ($item['product_id'] ?? $checklistKey));
+                if ($productId === '' || ! isset($assignedMap[$productId])) {
+                    continue;
+                }
+
+                if (($liveMap[$productId]['last_updated_at'] ?? null) !== null) {
+                    continue;
+                }
+
+                $currentQty = max(0, (int) ($item['actual_qty'] ?? 0));
+                $standardQty = max(0, (int) ($item['standard_qty'] ?? ($assignedMap[$productId]['standard_qty'] ?? 0)));
+                $liveMap[$productId] = [
+                    'product_id' => $productId,
+                    'current_qty' => $currentQty,
+                    'last_updated_at' => $completedAt > 0 ? $completedAt : null,
+                    'is_shortage' => $standardQty > 0 ? $currentQty < $standardQty : false,
+                ];
+            }
+        }
+
+        return $liveMap;
+    }
+
+    /**
+     * Get stock movement rows (one row = one product check event) for a rack.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getRackStockMovements(string $rackId, ?int $limit = 500): array
+    {
+        $movements = [];
+
+        $ledgerSnapshot = $this->database->getReference('rack_stock_movements')
+            ->orderByChild('rack_id')
+            ->equalTo($rackId)
+            ->getSnapshot();
+
+        if ($ledgerSnapshot->exists()) {
+            foreach ($ledgerSnapshot->getValue() as $movementId => $movement) {
+                if (! is_array($movement)) {
+                    continue;
+                }
+
+                $movements[] = array_merge(['id' => $movementId], $movement);
+            }
+
+            usort($movements, function ($a, $b) {
+                return ((int) ($b['created_at'] ?? 0)) <=> ((int) ($a['created_at'] ?? 0));
+            });
+
+            if ($limit !== null && count($movements) > $limit) {
+                $movements = array_slice($movements, 0, $limit);
+            }
+
+            return $movements;
+        }
+
+        $history = $this->getRackCheckHistory($rackId, $limit);
+
+        foreach ($history as $task) {
+            $taskId = (string) ($task['id'] ?? '');
+            $completedAt = $this->normalizeUnixTimestampToSeconds((int) ($task['completed_at'] ?? 0));
+            $waiterId = (string) ($task['assigned_waiter_id'] ?? '');
+            $waiterName = (string) ($task['assigned_waiter_name'] ?? '');
+
+            $checklist = $task['completed_product_checklist'] ?? [];
+            if (! is_array($checklist) || count($checklist) === 0) {
+                continue;
+            }
+
+            foreach ($checklist as $checklistKey => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $productId = trim((string) ($item['product_id'] ?? $checklistKey));
+                if ($productId === '') {
+                    continue;
+                }
+
+                $standardQty = max(0, (int) ($item['standard_qty'] ?? 0));
+                $actualQty = max(0, (int) ($item['actual_qty'] ?? 0));
+                $delta = $actualQty - $standardQty;
+
+                $movements[] = [
+                    'id' => $taskId !== '' ? $taskId.':'.$productId : (string) count($movements),
+                    'task_id' => $taskId,
+                    'rack_id' => $rackId,
+                    'product_id' => $productId,
+                    'product_name' => trim((string) ($item['product_name'] ?? '')),
+                    'product_unit' => trim((string) ($item['product_unit'] ?? 'pcs')),
+                    'standard_qty' => $standardQty,
+                    'actual_qty' => $actualQty,
+                    'delta_qty' => $delta,
+                    'is_shortage' => $standardQty > 0 ? $actualQty < $standardQty : false,
+                    'completed_at' => $completedAt,
+                    'waiter_id' => $waiterId,
+                    'waiter_name' => $waiterName,
+                ];
+            }
+        }
+
+        usort($movements, function ($a, $b) {
+            return ((int) ($b['completed_at'] ?? 0)) <=> ((int) ($a['completed_at'] ?? 0));
+        });
+
+        return $movements;
+    }
+
+    protected function normalizeUnixTimestampToSeconds(int $timestamp): int
+    {
+        if ($timestamp <= 0) {
+            return 0;
+        }
+
+        // Compatibility for legacy millisecond timestamps.
+        if ($timestamp > 1000000000000) {
+            return (int) floor($timestamp / 1000);
+        }
+
+        return $timestamp;
+    }
+
+    /**
+     * Record a rack stock movement and persist the live balance.
+     *
+     * @return array<string, mixed>
+     */
+    protected function recordRackStockMovement(array $data): array
+    {
+        $rackId = trim((string) ($data['rack_id'] ?? ''));
+        $productId = trim((string) ($data['product_id'] ?? ''));
+        $movementType = trim((string) ($data['movement_type'] ?? 'stock_take'));
+        $source = trim((string) ($data['source'] ?? 'waiter_task'));
+        $idempotencyKey = trim((string) ($data['idempotency_key'] ?? ''));
+
+        if ($rackId === '' || $productId === '') {
+            return [
+                'success' => false,
+                'message' => 'Data rak atau produk tidak lengkap.',
+            ];
+        }
+
+        if ($idempotencyKey !== '') {
+            $idempotencySnapshot = $this->database->getReference('stock_movement_idempotency/'.$idempotencyKey)->getSnapshot();
+            if ($idempotencySnapshot->exists()) {
+                $record = $idempotencySnapshot->getValue();
+                if (is_array($record) && isset($record['response']) && is_array($record['response'])) {
+                    return $record['response'];
+                }
+            }
+        }
+
+        // Read current product object (untuk metadata fallback) — bukan untuk current_qty atomic.
+        $rackProductRef = $this->database->getReference("waiter_racks/{$rackId}/products/{$productId}");
+        $rackProductSnapshot = $rackProductRef->getSnapshot();
+        $rackProduct = $rackProductSnapshot->exists() && is_array($rackProductSnapshot->getValue())
+            ? $rackProductSnapshot->getValue()
+            : [];
+
+        // Provided values dari caller — dipakai untuk menghitung next_qty di dalam transaksi.
+        $providedActualQty = array_key_exists('actual_qty', $data) && $data['actual_qty'] !== null
+            ? (int) $data['actual_qty']
+            : (array_key_exists('current_qty', $data) && $data['current_qty'] !== null
+                ? (int) $data['current_qty']
+                : 0);
+
+        $providedDelta = array_key_exists('delta_qty', $data) && $data['delta_qty'] !== null
+            ? (int) $data['delta_qty']
+            : 0;
+
+        // Atomic CAS: read → compute → write current_qty di leaf path agar aman dari race
+        // antar waiter (misal storage_out konkuren dari stok yang sama).
+        $qtyRef = $this->database->getReference("waiter_racks/{$rackId}/products/{$productId}/current_qty");
+        $capturedPrev = null; // null = leaf belum pernah ada
+        $capturedNew = null;
+
+        $maxAttempts = 3;
+        $lastTxnError = null;
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            try {
+                $this->database->runTransaction(function ($transaction) use (
+                    $qtyRef,
+                    $movementType,
+                    $providedDelta,
+                    $providedActualQty,
+                    &$capturedPrev,
+                    &$capturedNew
+                ) {
+                    $snap = $transaction->snapshot($qtyRef);
+                    $rawValue = $snap->getValue();
+                    $hadValue = $snap->exists() && $rawValue !== null && is_numeric($rawValue);
+                    $existing = $hadValue ? (int) $rawValue : 0;
+                    $capturedPrev = $hadValue ? $existing : null;
+
+                    if ($movementType === 'stock_take') {
+                        $next = $providedActualQty; // overwrite
+                    } elseif ($movementType === 'po_receive' || $movementType === 'storage_out') {
+                        // Caller mengirim signed delta (po_receive: positif, storage_out: negatif).
+                        $next = $existing + $providedDelta;
+                    } else {
+                        $next = $existing;
+                    }
+
+                    $capturedNew = $next;
+                    $transaction->set($qtyRef, $next);
+                });
+                $lastTxnError = null;
+                break;
+            } catch (TransactionFailed $e) {
+                $lastTxnError = $e;
+                if ($attempt < $maxAttempts) {
+                    // Back-off singkat, lalu coba lagi (ETag conflict).
+                    usleep(50000 * $attempt);
+                }
+            }
+        }
+
+        if ($lastTxnError !== null) {
+            return [
+                'success' => false,
+                'message' => 'Gagal menyimpan stok rak akibat konflik penulisan, coba ulang.',
+            ];
+        }
+
+        $previousQty = $capturedPrev;
+        $currentQty = (int) $capturedNew;
+        $deltaQty = $currentQty - ($previousQty ?? 0);
+
+        $now = time();
+        $movementPayload = [
+            'rack_id' => $rackId,
+            'product_id' => $productId,
+            'product_name' => trim((string) ($data['product_name'] ?? ($rackProduct['product_name'] ?? ($rackProduct['name'] ?? '')))),
+            'product_unit' => trim((string) ($data['product_unit'] ?? 'pcs')),
+            'movement_type' => $movementType,
+            'source' => $source,
+            'task_id' => trim((string) ($data['task_id'] ?? '')),
+            'po_id' => trim((string) ($data['po_id'] ?? '')),
+            'restock_id' => trim((string) ($data['restock_id'] ?? '')),
+            'waiter_id' => trim((string) ($data['waiter_id'] ?? '')),
+            'waiter_name' => trim((string) ($data['waiter_name'] ?? '')),
+            'reported_by' => trim((string) ($data['reported_by'] ?? '')),
+            'reported_by_name' => trim((string) ($data['reported_by_name'] ?? '')),
+            'note' => trim((string) ($data['note'] ?? '')),
+            'standard_qty' => max(0, (int) ($data['standard_qty'] ?? 0)),
+            'min_qty' => max(0, (int) ($data['min_qty'] ?? 0)),
+            'previous_qty' => $previousQty,
+            'current_qty' => $currentQty,
+            'from_qty' => $previousQty,
+            'to_qty' => $currentQty,
+            'delta_qty' => $deltaQty,
+            'actual_qty' => array_key_exists('actual_qty', $data) ? (int) $data['actual_qty'] : null,
+            'idempotency_key' => $idempotencyKey !== '' ? $idempotencyKey : null,
+            'created_at' => $now,
+        ];
+
+        $movementRef = $this->database->getReference('rack_stock_movements')->push($movementPayload);
+        $movementId = $movementRef->getKey();
+
+        // P0-4: stok negatif bukan diblokir / di-clamp, tapi dicatat sebagai anomali kritis
+        // agar supervisor bisa menelusuri sumbernya tanpa menghentikan operasi waiter.
+        if ($currentQty < 0) {
+            $anomalyProductName = trim((string) ($data['product_name'] ?? ''));
+            if ($anomalyProductName === '') {
+                $anomalyProductName = trim((string) ($rackProduct['product_name'] ?? ($rackProduct['name'] ?? '')));
+            }
+
+            $signedDelta = $movementType === 'stock_take' ? 'overwrite' : $deltaQty;
+
+            $this->database->getReference('audit_logs/stock_anomalies')->push([
+                'severity' => 'critical',
+                'rack_id' => $rackId,
+                'product_id' => $productId,
+                'product_name' => $anomalyProductName,
+                'movement_type' => $movementType,
+                'previous_qty' => $previousQty,
+                'delta_qty' => $signedDelta,
+                'resulting_qty' => $currentQty,
+                'actor_id' => trim((string) ($data['waiter_id'] ?? ($data['reported_by'] ?? ''))),
+                'actor_name' => trim((string) ($data['waiter_name'] ?? ($data['reported_by_name'] ?? ''))),
+                'movement_id' => $movementId,
+                'idempotency_key' => $idempotencyKey !== '' ? $idempotencyKey : null,
+                'timestamp' => ['.sv' => 'timestamp'],
+            ]);
+        }
+
+        // Tulis metadata pendamping di luar transaksi (last_movement_id, dsb).
+        // current_qty sengaja TIDAK ditulis ulang di sini agar tidak menimpa hasil CAS.
+        $rackProductUpdates = [
+            'last_updated_at' => $now,
+            'last_movement_id' => $movementId,
+            'last_movement_type' => $movementType,
+            'updated_at' => $now,
+        ];
+
+        if (array_key_exists('standard_qty', $data) && $data['standard_qty'] !== null) {
+            $rackProductUpdates['standard_qty'] = max(0, (int) $data['standard_qty']);
+        }
+        if (array_key_exists('min_qty', $data) && $data['min_qty'] !== null) {
+            $rackProductUpdates['min_qty'] = max(0, (int) $data['min_qty']);
+        }
+
+        $rackProductRef->update($rackProductUpdates);
+
+        $response = [
+            'success' => true,
+            'movement_id' => $movementId,
+            'rack_id' => $rackId,
+            'product_id' => $productId,
+            'current_qty' => $currentQty,
+            'previous_qty' => $previousQty,
+            'delta_qty' => $deltaQty,
+        ];
+
+        // P1-3: deteksi shortage berbasis threshold, independen dari lifecycle task.
+        try {
+            $this->maybeAutoCreateRestockOnLowStock(
+                $rackId,
+                $productId,
+                $currentQty,
+                $rackProduct,
+                $data
+            );
+        } catch (\Throwable $e) {
+            // Jangan ganggu flow utama pergerakan stok jika auto-restock gagal.
+            report($e);
+        }
+
+        if ($idempotencyKey !== '') {
+            $this->database->getReference('stock_movement_idempotency/'.$idempotencyKey)->set([
+                'scope' => 'rack_stock',
+                'movement_id' => $movementId,
+                'response' => $response,
+                'created_at' => $now,
+            ]);
+        }
+
+        return $response;
+    }
+
+    protected function findActiveRackByBarcode(string $barcodeValue): ?array
+    {
+        $candidates = $this->extractRackBarcodeCandidates($barcodeValue);
+        if (count($candidates) === 0) {
+            return null;
+        }
+
+        foreach ($this->getActiveRacks() as $rack) {
+            $rackBarcode = strtoupper(trim((string) ($rack['barcode_value'] ?? '')));
+            if ($rackBarcode === '') {
+                continue;
+            }
+
+            foreach ($candidates as $candidate) {
+                if ($candidate === $rackBarcode) {
+                    return $rack;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve storage rack from barcode/QR payload.
+     * If multiple racks share same barcode, prefer the one that already has assigned products.
+     *
+     * @return array<string,mixed>|null
+     */
+    protected function resolveStorageRackByBarcode(string $barcodeValue): ?array
+    {
+        $candidates = $this->extractRackBarcodeCandidates($barcodeValue);
+        if (count($candidates) === 0) {
+            return null;
+        }
+
+        $matchedStorageRacks = [];
+        foreach ($this->getActiveRacks() as $rack) {
+            $rackType = trim((string) ($rack['rack_type'] ?? 'storage'));
+            if ($rackType !== 'storage') {
+                continue;
+            }
+
+            $rackBarcode = strtoupper(trim((string) ($rack['barcode_value'] ?? '')));
+            if ($rackBarcode === '') {
+                continue;
+            }
+
+            if (in_array($rackBarcode, $candidates, true)) {
+                $matchedStorageRacks[] = $rack;
+            }
+        }
+
+        if (count($matchedStorageRacks) === 0) {
+            return null;
+        }
+
+        foreach ($matchedStorageRacks as $rack) {
+            $rackId = trim((string) ($rack['id'] ?? ''));
+            if ($rackId === '') {
+                continue;
+            }
+
+            if (count($this->getRackProducts($rackId)) > 0) {
+                return $rack;
+            }
+        }
+
+        return $matchedStorageRacks[0] ?? null;
+    }
+
+    /**
+     * Extract possible rack barcode values from raw QR payload.
+     * Supports plain text, URL query/path, and simple JSON payload.
+     *
+     * @return array<int, string>
+     */
+    protected function extractRackBarcodeCandidates(string $rawValue): array
+    {
+        $raw = trim($rawValue);
+        if ($raw === '') {
+            return [];
+        }
+
+        $candidates = [];
+        $push = static function (array &$list, string $value): void {
+            $normalized = strtoupper(trim($value));
+            if ($normalized === '') {
+                return;
+            }
+            if (! in_array($normalized, $list, true)) {
+                $list[] = $normalized;
+            }
+        };
+
+        $push($candidates, $raw);
+
+        $decodedJson = json_decode($raw, true);
+        if (is_array($decodedJson)) {
+            foreach (['rack_barcode_value', 'barcode_value', 'rack_barcode', 'barcode', 'rack_code', 'code'] as $key) {
+                if (isset($decodedJson[$key])) {
+                    $push($candidates, (string) $decodedJson[$key]);
+                }
+            }
+        }
+
+        $url = filter_var($raw, FILTER_VALIDATE_URL) ? $raw : null;
+        if ($url) {
+            $parts = parse_url($url);
+            if (is_array($parts)) {
+                if (isset($parts['query'])) {
+                    parse_str((string) $parts['query'], $query);
+                    if (is_array($query)) {
+                        foreach (['rack_barcode_value', 'barcode_value', 'rack_barcode', 'barcode', 'rack_code', 'code'] as $key) {
+                            if (isset($query[$key])) {
+                                $push($candidates, (string) $query[$key]);
+                            }
+                        }
+                    }
+                }
+
+                if (isset($parts['path'])) {
+                    $pathSegments = array_values(array_filter(explode('/', (string) $parts['path']), static function ($segment) {
+                        return trim((string) $segment) !== '';
+                    }));
+                    if (count($pathSegments) > 0) {
+                        $push($candidates, (string) end($pathSegments));
+                    }
+                }
+            }
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * Standalone stock take: waiter takes stock from storage rack without task flow.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function submitStandaloneStockTake(array $payload): array
+    {
+        $waiterId = trim((string) ($payload['waiter_id'] ?? ''));
+        $waiterName = trim((string) ($payload['waiter_name'] ?? 'Waiter'));
+        $rackBarcodeValue = strtoupper(trim((string) ($payload['rack_barcode_value'] ?? '')));
+        $items = $payload['items'] ?? [];
+        $note = trim((string) ($payload['note'] ?? ''));
+        $idempotencyPrefix = trim((string) ($payload['idempotency_key'] ?? ''));
+
+        if ($waiterId === '') {
+            return ['success' => false, 'message' => 'Sesi waiter tidak valid.'];
+        }
+        if ($rackBarcodeValue === '') {
+            return ['success' => false, 'message' => 'Barcode rak wajib diisi.'];
+        }
+        if (! is_array($items) || count($items) === 0) {
+            return ['success' => false, 'message' => 'Pilih minimal satu item yang diambil.'];
+        }
+
+        $rack = $this->resolveStorageRackByBarcode($rackBarcodeValue);
+        if (! $rack) {
+            return ['success' => false, 'message' => 'Rak tidak ditemukan atau tidak aktif.'];
+        }
+
+        $rackId = trim((string) ($rack['id'] ?? ''));
+
+        $rackProducts = $this->getRackProducts($rackId);
+        $rackProductMap = [];
+        foreach ($rackProducts as $product) {
+            $productId = trim((string) ($product['id'] ?? ''));
+            if ($productId === '') {
+                continue;
+            }
+            $rackProductMap[$productId] = $product;
+        }
+
+        $movementRows = [];
+        $invalidRows = [];
+
+        foreach ($items as $index => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $productId = trim((string) ($item['product_id'] ?? ''));
+            $takeQty = max(0, (int) ($item['qty'] ?? 0));
+            if ($productId === '' || $takeQty <= 0) {
+                continue;
+            }
+
+            if (! isset($rackProductMap[$productId])) {
+                $invalidRows[] = ['product_id' => $productId, 'message' => 'Produk tidak terdaftar di rak ini.'];
+                continue;
+            }
+
+            $rackProduct = $rackProductMap[$productId];
+            $currentQty = array_key_exists('current_qty', $rackProduct) && $rackProduct['current_qty'] !== null
+                ? max(0, (int) $rackProduct['current_qty'])
+                : max(0, (int) ($rackProduct['standard_qty'] ?? 0));
+
+            if ($currentQty <= 0) {
+                $invalidRows[] = [
+                    'product_id' => $productId,
+                    'product_name' => (string) ($rackProduct['name'] ?? ''),
+                    'message' => 'Stok '.($rackProduct['name'] ?? 'produk').' kosong. Tambah stok rak dulu sebelum diambil.',
+                ];
+                continue;
+            }
+
+            if ($takeQty > $currentQty) {
+                $invalidRows[] = [
+                    'product_id' => $productId,
+                    'product_name' => (string) ($rackProduct['name'] ?? ''),
+                    'message' => 'Qty diambil ('.$takeQty.') melebihi stok tersedia ('.$currentQty.') untuk '.($rackProduct['name'] ?? 'produk').'.',
+                ];
+                continue;
+            }
+
+            $nextQty = max(0, $currentQty - $takeQty);
+
+            $movementRows[] = [
+                'product_id' => $productId,
+                'product_name' => (string) ($rackProduct['name'] ?? ''),
+                'product_unit' => (string) ($rackProduct['unit'] ?? 'pcs'),
+                'standard_qty' => max(0, (int) ($rackProduct['standard_qty'] ?? 0)),
+                'min_qty' => max(0, (int) ($rackProduct['min_qty'] ?? 0)),
+                'taken_qty' => $takeQty,
+                'previous_qty' => $currentQty,
+                'current_qty' => $nextQty,
+                'idempotency_key' => $idempotencyPrefix !== ''
+                    ? $idempotencyPrefix.':'.$rackId.':'.$productId.':'.$index
+                    : '',
+            ];
+        }
+
+        if (count($movementRows) === 0) {
+            // Build human-readable summary from invalid items so frontend can show actionable error
+            $summary = '';
+            if (count($invalidRows) > 0) {
+                $messages = array_values(array_filter(array_map(static function ($row) {
+                    return is_array($row) && isset($row['message']) ? (string) $row['message'] : '';
+                }, $invalidRows)));
+                $summary = implode(' ', array_slice($messages, 0, 3));
+            }
+
+            return [
+                'success' => false,
+                'message' => $summary !== ''
+                    ? $summary
+                    : 'Tidak ada item valid untuk diproses.',
+                'invalid_items' => $invalidRows,
+            ];
+        }
+
+        $movementResults = [];
+        foreach ($movementRows as $row) {
+            $movementResult = $this->recordRackStockMovement([
+                'rack_id' => $rackId,
+                'product_id' => $row['product_id'],
+                'movement_type' => 'storage_out',
+                'source' => 'waiter_stock_take',
+                'waiter_id' => $waiterId,
+                'waiter_name' => $waiterName,
+                'product_name' => $row['product_name'],
+                'product_unit' => $row['product_unit'],
+                'standard_qty' => $row['standard_qty'],
+                'min_qty' => $row['min_qty'],
+                'current_qty' => $row['current_qty'],
+                'delta_qty' => -$row['taken_qty'],
+                'actual_qty' => $row['current_qty'],
+                'note' => $note !== '' ? $note : 'Pengambilan stok gudang mandiri',
+                'idempotency_key' => $row['idempotency_key'],
+            ]);
+
+            if (! ($movementResult['success'] ?? false)) {
+                return [
+                    'success' => false,
+                    'message' => (string) ($movementResult['message'] ?? 'Gagal menyimpan movement stok.'),
+                ];
+            }
+
+            $movementResults[] = [
+                'movement_id' => (string) ($movementResult['movement_id'] ?? ''),
+                'product_id' => $row['product_id'],
+                'product_name' => $row['product_name'],
+                'taken_qty' => $row['taken_qty'],
+                'previous_qty' => $row['previous_qty'],
+                'current_qty' => (int) ($movementResult['current_qty'] ?? $row['current_qty']),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'rack_id' => $rackId,
+            'rack_name' => (string) ($rack['name'] ?? ''),
+            'rack_barcode_value' => $rackBarcodeValue,
+            'processed_items' => $movementResults,
+            'invalid_items' => $invalidRows,
+            'message' => 'Pengambilan stok berhasil disimpan.',
+        ];
+    }
+
+    /**
+     * Resolve storage rack by barcode and return assigned products.
+     *
+     * @return array<string,mixed>
+     */
+    public function getStorageRackProductsByBarcode(string $barcodeValue): array
+    {
+        $rack = $this->resolveStorageRackByBarcode($barcodeValue);
+        if (! $rack) {
+            return [
+                'success' => false,
+                'message' => 'Rak tidak ditemukan atau tidak aktif.',
+            ];
+        }
+
+        $rackId = trim((string) ($rack['id'] ?? ''));
+        $rackType = 'storage';
+
+        return [
+            'success' => true,
+            'rack' => [
+                'id' => $rackId,
+                'name' => (string) ($rack['name'] ?? ''),
+                'barcode_value' => strtoupper(trim((string) ($rack['barcode_value'] ?? ''))),
+                'rack_type' => $rackType,
+                'location' => (string) ($rack['location'] ?? ''),
+            ],
+            'products' => $this->getRackProducts($rackId),
+        ];
+    }
+
+    /**
+     * Resolve storage rack by barcode and return active product list.
+     *
+     * @return array<string, mixed>
+     */
+    public function getStorageRackByBarcode(string $barcodeValue): array
+    {
+        $barcode = strtoupper(trim($barcodeValue));
+        if ($barcode === '') {
+            return ['success' => false, 'message' => 'Barcode rak wajib diisi.'];
+        }
+
+        $rack = $this->findActiveRackByBarcode($barcode);
+        if (! $rack) {
+            return ['success' => false, 'message' => 'Rak tidak ditemukan atau tidak aktif.'];
+        }
+
+        $rackType = trim((string) ($rack['rack_type'] ?? 'storage'));
+        if ($rackType !== 'storage') {
+            return ['success' => false, 'message' => 'Rak ini bukan tipe storage/gudang.'];
+        }
+
+        $rackId = trim((string) ($rack['id'] ?? ''));
+
+        return [
+            'success' => true,
+            'rack' => [
+                'id' => $rackId,
+                'name' => (string) ($rack['name'] ?? ''),
+                'location' => (string) ($rack['location'] ?? ''),
+                'barcode_value' => (string) ($rack['barcode_value'] ?? ''),
+                'rack_type' => $rackType,
+            ],
+            'products' => $this->getRackProducts($rackId),
+        ];
     }
 
     /**
@@ -833,20 +1636,26 @@ class FirebaseService
         if ($snapshot->exists()) {
             foreach ($snapshot->getValue() as $productId => $assignment) {
                 $productId = trim((string) $productId);
-                if ($productId === '' || ! isset($masterMap[$productId])) {
+                if ($productId === '') {
                     continue;
                 }
 
-                $masterProduct = $masterMap[$productId];
+                $masterProduct = $masterMap[$productId] ?? [];
+                $fallbackName = trim((string) ($assignment['product_name'] ?? ''));
+                $fallbackUnit = trim((string) ($assignment['product_unit'] ?? 'pcs'));
                 $products[] = [
                     'id' => $productId,
-                    'name' => (string) ($masterProduct['name'] ?? ''),
+                    'name' => (string) ($masterProduct['name'] ?? ($fallbackName !== '' ? $fallbackName : ('Produk #'.$productId))),
                     'standard_qty' => isset($assignment['standard_qty'])
                         ? max(0, (int) $assignment['standard_qty'])
                         : max(0, (int) ($masterProduct['standard_qty'] ?? 0)),
                     'min_qty' => max(0, (int) ($assignment['min_qty'] ?? 0)),
-                    'unit' => (string) ($masterProduct['unit'] ?? 'pcs'),
-                    'is_active' => ($masterProduct['is_active'] ?? true) !== false,
+                    'current_qty' => array_key_exists('current_qty', $assignment) && $assignment['current_qty'] !== null
+                        ? max(0, (int) $assignment['current_qty'])
+                        : null,
+                    'last_updated_at' => $assignment['last_updated_at'] ?? ($assignment['updated_at'] ?? null),
+                    'unit' => (string) ($masterProduct['unit'] ?? ($fallbackUnit !== '' ? $fallbackUnit : 'pcs')),
+                    'is_active' => ! isset($masterProduct['is_active']) || ($masterProduct['is_active'] !== false),
                     'assigned_at' => $assignment['assigned_at'] ?? null,
                     'updated_at' => $assignment['updated_at'] ?? null,
                 ];
@@ -899,6 +1708,9 @@ class FirebaseService
                 'product_id' => $productId,
                 'standard_qty' => $standardQty,
                 'min_qty' => $minQty,
+                'current_qty' => array_key_exists('current_qty', $existingProducts[$productId] ?? []) && $existingProducts[$productId]['current_qty'] !== null
+                    ? max(0, (int) $existingProducts[$productId]['current_qty'])
+                    : null,
                 'assigned_at' => $existingProducts[$productId]['assigned_at'] ?? $now,
                 'updated_at' => $now,
             ];
@@ -955,6 +1767,9 @@ class FirebaseService
                     'product_id' => $productId,
                     'standard_qty' => $standardQty,
                     'min_qty' => $minQty,
+                    'current_qty' => array_key_exists('current_qty', $existingProducts[$productId] ?? []) && $existingProducts[$productId]['current_qty'] !== null
+                        ? max(0, (int) $existingProducts[$productId]['current_qty'])
+                        : null,
                     'assigned_at' => $existingProducts[$productId]['assigned_at'] ?? $now,
                     'updated_at' => $now,
                 ];
@@ -993,23 +1808,30 @@ class FirebaseService
             $products = [];
             foreach ($rackProducts as $productId => $assignment) {
                 $productId = trim((string) $productId);
-                if ($productId === '' || ! isset($masterMap[$productId])) {
+                if ($productId === '') {
                     continue;
                 }
 
-                $masterProduct = $masterMap[$productId];
-                if (($masterProduct['is_active'] ?? true) === false) {
+                $masterProduct = $masterMap[$productId] ?? [];
+                if (isset($masterProduct['is_active']) && ($masterProduct['is_active'] === false)) {
                     continue;
                 }
+
+                $fallbackName = trim((string) ($assignment['product_name'] ?? ''));
+                $fallbackUnit = trim((string) ($assignment['product_unit'] ?? 'pcs'));
 
                 $products[] = [
                     'id' => $productId,
-                    'name' => (string) ($masterProduct['name'] ?? ''),
+                    'name' => (string) ($masterProduct['name'] ?? ($fallbackName !== '' ? $fallbackName : ('Produk #'.$productId))),
                     'standard_qty' => isset($assignment['standard_qty'])
                         ? max(0, (int) $assignment['standard_qty'])
                         : max(0, (int) ($masterProduct['standard_qty'] ?? 0)),
                     'min_qty' => max(0, (int) ($assignment['min_qty'] ?? 0)),
-                    'unit' => (string) ($masterProduct['unit'] ?? 'pcs'),
+                    'current_qty' => array_key_exists('current_qty', $assignment) && $assignment['current_qty'] !== null
+                        ? max(0, (int) $assignment['current_qty'])
+                        : null,
+                    'last_updated_at' => $assignment['last_updated_at'] ?? ($assignment['updated_at'] ?? null),
+                    'unit' => (string) ($masterProduct['unit'] ?? ($fallbackUnit !== '' ? $fallbackUnit : 'pcs')),
                     'is_active' => true,
                     'assigned_at' => $assignment['assigned_at'] ?? null,
                     'updated_at' => $assignment['updated_at'] ?? null,
@@ -1041,6 +1863,35 @@ class FirebaseService
         }
 
         return $map;
+    }
+
+    /**
+     * Get total current qty for one product across all active storage racks.
+     */
+    public function getTotalStorageQtyForProduct(string $productId): int
+    {
+        $productId = trim($productId);
+        if ($productId === '') {
+            return 0;
+        }
+
+        $total = 0;
+        foreach ($this->getActiveRacks() as $rack) {
+            $rackType = (string) ($rack['rack_type'] ?? 'storage');
+            if ($rackType !== 'storage') {
+                continue;
+            }
+
+            $rackProducts = $rack['products'] ?? [];
+            if (! is_array($rackProducts) || ! array_key_exists($productId, $rackProducts)) {
+                continue;
+            }
+
+            $currentQty = $rackProducts[$productId]['current_qty'] ?? 0;
+            $total += max(0, (int) $currentQty);
+        }
+
+        return $total;
     }
 
     /**
@@ -1681,8 +2532,20 @@ class FirebaseService
         $noOutOfStock = false,
         $photoProofDataUrl = null,
         $productChecklist = null,
-        $photoBeforeDataUrl = null
+        $photoBeforeDataUrl = null,
+        ?string $idempotencyKey = null
     ) {
+        $idempotencyKey = trim((string) $idempotencyKey);
+        if ($idempotencyKey !== '') {
+            $idempotencySnapshot = $this->database->getReference('waiter_task_idempotency/'.$idempotencyKey)->getSnapshot();
+            if ($idempotencySnapshot->exists()) {
+                $stored = $idempotencySnapshot->getValue();
+                if (is_array($stored) && isset($stored['response']) && is_array($stored['response'])) {
+                    return $stored['response'];
+                }
+            }
+        }
+
         $taskReference = $this->database->getReference('waiter_tasks/'.$taskId);
         $snapshot = $taskReference->getSnapshot();
 
@@ -1711,6 +2574,18 @@ class FirebaseService
         }
 
         $now = time();
+        $assignmentType = (string) ($task['assignment_type'] ?? 'single');
+        if ($assignmentType !== 'single') {
+            $claimedBy = trim((string) ($task['claimed_by'] ?? ''));
+            $claimExpiresAt = (int) ($task['claim_expires_at'] ?? 0);
+            $claimStillValid = $claimedBy !== '' && $claimExpiresAt > $now;
+            if ($claimStillValid && $claimedBy !== (string) $waiterId) {
+                return [
+                    'success' => false,
+                    'message' => 'Tugas sedang dikerjakan oleh '.((string) ($task['claimed_by_name'] ?? 'waiter lain')).'.',
+                ];
+            }
+        }
         $deadlineAt = (int) ($task['deadline_at'] ?? 0);
         if ($deadlineAt > 0 && $now > $deadlineAt) {
             $taskReference->update([
@@ -1734,6 +2609,7 @@ class FirebaseService
         $requiresStockReport = $taskType === 'rack_check';
         $requiresPhotoProof = (bool) ($task['requires_photo_proof'] ?? false);
         $validatedExpectedBarcode = null;
+        $stockMovements = [];
 
         $normalizedPhoto = $this->normalizePhotoProofDataUrl($photoProofDataUrl);
         if (! ($normalizedPhoto['success'] ?? false)) {
@@ -1917,6 +2793,25 @@ class FirebaseService
                     'product_name' => trim((string) ($checkData['product_name'] ?? '')),
                     'product_unit' => trim((string) ($checkData['product_unit'] ?? 'pcs')),
                 ];
+
+                $stockMovements[] = [
+                    'rack_id' => (string) ($task['rack_id'] ?? ''),
+                    'product_id' => $productId,
+                    'movement_type' => 'stock_take',
+                    'source' => 'waiter_task',
+                    'task_id' => (string) $taskId,
+                    'waiter_id' => (string) $waiterId,
+                    'waiter_name' => (string) $waiterName,
+                    'product_name' => trim((string) ($checkData['product_name'] ?? '')),
+                    'product_unit' => trim((string) ($checkData['product_unit'] ?? 'pcs')),
+                    'standard_qty' => $standardQty,
+                    'actual_qty' => $actualQty,
+                    'note' => trim((string) ($note ?? '')),
+                    // P0-3: per-product idempotency_key derived dari task idempotency_key.
+                    // Stabil antar retry → recordRackStockMovement bisa pakai cache untuk
+                    // produk yang sudah berhasil di attempt sebelumnya.
+                    'idempotency_key' => $idempotencyKey !== '' ? $idempotencyKey.':sm:'.$productId : '',
+                ];
             }
             if (count($validatedChecklist) > 0) {
                 $updates['completed_product_checklist'] = $validatedChecklist;
@@ -1942,25 +2837,226 @@ class FirebaseService
             $updates['completed_note'] = $note;
         }
 
+        // P0-3: ATOMICITY GUARANTEE — shortage signal harus persist sebelum task
+        // ditandai 'done'. Urutan write:
+        //   STAGE 1: semua stock_movements (atomic CAS per produk + idempotent).
+        //   STAGE 2: semua restock_requests (dedup by product+rack+pending).
+        //   STAGE 3: barulah update task status.
+        // Kalau STAGE 1 atau 2 gagal: ABORT — task tetap pending/in_progress,
+        // idempotency_key TIDAK di-cache → waiter retry akan re-process.
+        // Stable idempotency keys (per task instance) memastikan retry tidak
+        // duplikasi movement/restock yang sudah berhasil.
+        foreach ($stockMovements as $movement) {
+            $movementResult = $this->recordRackStockMovement($movement);
+            if (! ($movementResult['success'] ?? false)) {
+                $errMsg = (string) ($movementResult['message'] ?? 'Gagal mencatat movement stok.');
+                report(new \RuntimeException(sprintf(
+                    '[completeTask P0-3] Stock movement gagal: rack=%s product=%s task=%s err=%s',
+                    $movement['rack_id'] ?? '',
+                    $movement['product_id'] ?? '',
+                    $taskId,
+                    $errMsg
+                )));
+
+                return [
+                    'success' => false,
+                    'message' => 'Gagal menyimpan stok produk: '.$errMsg.' Silakan coba lagi.',
+                ];
+            }
+        }
+
+        if ($taskType === 'rack_check' && is_array($productChecklist) && count($productChecklist) > 0) {
+            $restockResult = $this->writeRestockRequestsForCompletion(
+                (string) $taskId,
+                $task,
+                $productChecklist,
+                (string) $waiterId,
+                (string) $waiterName
+            );
+            if (! ($restockResult['success'] ?? false)) {
+                $errMsg = (string) ($restockResult['message'] ?? 'Gagal mencatat restock request.');
+                report(new \RuntimeException(sprintf(
+                    '[completeTask P0-3] Restock request gagal: task=%s err=%s',
+                    $taskId,
+                    $errMsg
+                )));
+
+                return [
+                    'success' => false,
+                    'message' => 'Gagal menyimpan permintaan restock: '.$errMsg.' Silakan coba lagi.',
+                ];
+            }
+        }
+
+        // STAGE 3: semua shortage signal aman, sekarang flip status task.
         $taskReference->update($updates);
 
+        $response = null;
+
         if ($isRepeatTask && ! $isFullyDone) {
-            return [
+            $response = [
                 'success' => true,
                 'partial' => true,
                 'completed_count' => $newCompletedCount,
                 'repeat_count' => $repeatCount,
                 'message' => "Pengulangan #{$newCompletedCount} dari {$repeatCount} selesai.",
             ];
+
+            if ($idempotencyKey !== '') {
+                $this->database->getReference('waiter_task_idempotency/'.$idempotencyKey)->set([
+                    'task_id' => (string) $taskId,
+                    'response' => $response,
+                    'created_at' => $now,
+                ]);
+            }
+
+            return $response;
         }
 
-        return [
+        $response = [
             'success' => true,
             'partial' => false,
             'completed_count' => $newCompletedCount,
             'repeat_count' => $repeatCount,
             'message' => 'Tugas berhasil diverifikasi.',
         ];
+
+        if ($idempotencyKey !== '') {
+            $this->database->getReference('waiter_task_idempotency/'.$idempotencyKey)->set([
+                'task_id' => (string) $taskId,
+                'response' => $response,
+                'created_at' => $now,
+            ]);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Claim a task with expiry window.
+     */
+    public function claimWaiterTask(string $taskId, string $waiterId, string $waiterName): array
+    {
+        if ($taskId === '' || $waiterId === '') {
+            return ['success' => false, 'message' => 'Data klaim tidak lengkap.'];
+        }
+
+        $now = time();
+        $claimDuration = 15 * 60;
+        $expiresAt = $now + $claimDuration;
+        $taskRef = $this->database->getReference('waiter_tasks/'.$taskId);
+
+        $claimResult = ['success' => false, 'message' => 'Gagal klaim tugas.'];
+
+        try {
+            $this->database->runTransaction(function ($transaction) use ($taskRef, $waiterId, $waiterName, $now, $expiresAt, &$claimResult) {
+                $snap = $transaction->snapshot($taskRef);
+                if (! $snap->exists()) {
+                    $claimResult = ['success' => false, 'message' => 'Tugas tidak ditemukan.'];
+                    return;
+                }
+
+                $task = (array) $snap->getValue();
+                $assignmentType = (string) ($task['assignment_type'] ?? 'single');
+                if ($assignmentType === 'single') {
+                    $claimResult = [
+                        'success' => true,
+                        'message' => 'Task assignment single tidak perlu klaim.',
+                        'expires_at' => null,
+                        'claimed_by_name' => null,
+                    ];
+                    return;
+                }
+
+                $assignedWaiterId = (string) ($task['assigned_waiter_id'] ?? '');
+                if ($assignedWaiterId === '' || $assignedWaiterId !== $waiterId) {
+                    $claimResult = ['success' => false, 'message' => 'Tugas ini bukan milik akun waiter Anda.'];
+                    return;
+                }
+
+                $status = (string) ($task['status'] ?? 'pending');
+                if (! in_array($status, ['pending', 'in_progress'], true)) {
+                    $claimResult = ['success' => false, 'message' => 'Tugas ini sudah '.$status.'.'];
+                    return;
+                }
+
+                $existingClaimer = trim((string) ($task['claimed_by'] ?? ''));
+                $existingExpiry = (int) ($task['claim_expires_at'] ?? 0);
+                if ($existingClaimer !== '' && $existingClaimer !== $waiterId && $existingExpiry > $now) {
+                    $claimResult = [
+                        'success' => false,
+                        'message' => 'Tugas sedang dikerjakan oleh '.((string) ($task['claimed_by_name'] ?? 'waiter lain')).'.',
+                        'claimed_by_name' => $task['claimed_by_name'] ?? null,
+                        'expires_at' => $existingExpiry,
+                    ];
+                    return;
+                }
+
+                $task['claimed_by'] = $waiterId;
+                $task['claimed_by_name'] = $waiterName;
+                $task['claimed_at'] = $now;
+                $task['claim_expires_at'] = $expiresAt;
+                $task['status'] = 'in_progress';
+                $transaction->set($taskRef, $task);
+
+                $claimResult = [
+                    'success' => true,
+                    'message' => 'Tugas berhasil di-klaim.',
+                    'expires_at' => $expiresAt,
+                    'claimed_by_name' => $waiterName,
+                ];
+            });
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => 'Konflik klaim. Coba lagi.'];
+        }
+
+        return $claimResult;
+    }
+
+    public function releaseWaiterTask(string $taskId, string $waiterId): array
+    {
+        if ($taskId === '' || $waiterId === '') {
+            return ['success' => false, 'message' => 'Data pelepasan klaim tidak lengkap.'];
+        }
+
+        $taskRef = $this->database->getReference('waiter_tasks/'.$taskId);
+        $snapshot = $taskRef->getSnapshot();
+        if (! $snapshot->exists()) {
+            return ['success' => false, 'message' => 'Tugas tidak ditemukan.'];
+        }
+
+        $task = (array) $snapshot->getValue();
+        $assignmentType = (string) ($task['assignment_type'] ?? 'single');
+        if ($assignmentType === 'single') {
+            return ['success' => true, 'message' => 'Task assignment single tidak memakai klaim.'];
+        }
+
+        $claimedBy = trim((string) ($task['claimed_by'] ?? ''));
+        $claimExpiresAt = (int) ($task['claim_expires_at'] ?? 0);
+        $now = time();
+        $expired = $claimExpiresAt > 0 && $claimExpiresAt <= $now;
+
+        if ($claimedBy === '') {
+            return ['success' => true, 'message' => 'Klaim sudah kosong.'];
+        }
+
+        if (! $expired && $claimedBy !== $waiterId) {
+            return ['success' => false, 'message' => 'Hanya waiter yang klaim yang bisa melepas klaim.'];
+        }
+
+        $updates = [
+            'claimed_by' => null,
+            'claimed_by_name' => null,
+            'claimed_at' => null,
+            'claim_expires_at' => null,
+        ];
+        if ((string) ($task['status'] ?? 'pending') === 'in_progress') {
+            $updates['status'] = 'pending';
+        }
+
+        $taskRef->update($updates);
+
+        return ['success' => true, 'message' => 'Klaim tugas berhasil dilepas.'];
     }
 
     /**
@@ -2047,9 +3143,9 @@ class FirebaseService
     }
 
     /**
-     * Get recurring waiter task templates.
+     * Get all recurring waiter task templates.
      */
-    public function getRecurringWaiterTaskTemplates()
+    public function getRecurringWaiterTaskTemplates(): array
     {
         $reference = $this->database->getReference('waiter_task_templates');
         $snapshot = $reference->getSnapshot();
@@ -2133,11 +3229,64 @@ class FirebaseService
      */
     public function generateDueRecurringWaiterTasks(bool $force = false)
     {
+        $todayDate = date('Y-m-d');
+        $lastRunRef = $this->database->getReference('system/scanner_last_run_at');
+        $lastRunAt = $lastRunRef->getValue();
+        $datesToProcess = [];
+
+        if ($force || empty($lastRunAt) || ! is_string($lastRunAt)) {
+            $datesToProcess = [$todayDate];
+        } elseif (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $lastRunAt)) {
+            $datesToProcess = [$todayDate];
+        } else {
+            $startDate = new \DateTimeImmutable($lastRunAt);
+            $startDate = $startDate->modify('+1 day');
+            $endDate = new \DateTimeImmutable($todayDate);
+
+            if ($startDate > $endDate) {
+                return [
+                    'generated' => 0,
+                    'dates' => [],
+                    'today' => $todayDate,
+                ];
+            }
+
+            $maxDays = 14;
+            $period = new \DatePeriod($startDate, new \DateInterval('P1D'), $endDate->modify('+1 day'));
+            $count = 0;
+            foreach ($period as $date) {
+                $datesToProcess[] = $date->format('Y-m-d');
+                $count++;
+                if ($count >= $maxDays) {
+                    break;
+                }
+            }
+        }
+
+        $generatedCount = 0;
+        foreach ($datesToProcess as $targetDate) {
+            $generatedCount += $this->generateRecurringTasksForDate($targetDate, $targetDate !== $todayDate);
+        }
+
+        $lastRunRef->set($todayDate);
+
+        return [
+            'generated' => $generatedCount,
+            'dates' => $datesToProcess,
+            'today' => $todayDate,
+        ];
+    }
+
+    /**
+     * Generate recurring waiter tasks for specific date.
+     */
+    private function generateRecurringTasksForDate(string $targetDate, bool $isCatchUp): int
+    {
         $templates = $this->getRecurringWaiterTaskTemplates();
         $generatedCount = 0;
-        $todayDate = date('Y-m-d');
         $currentTime = date('H:i');
-        $existingRecurringMap = $this->getExistingWaiterRecurringMapForDate($todayDate);
+        $isToday = $targetDate === date('Y-m-d');
+        $existingRecurringMap = $this->getExistingWaiterRecurringMapForDate($targetDate);
 
         foreach ($templates as $template) {
             if (empty($template['is_active'])) {
@@ -2155,10 +3304,10 @@ class FirebaseService
             $lastGeneratedDate = $template['last_generated_date'] ?? null;
             // For shift_relative mode, don't skip based on last_generated_date because
             // different waiters may have different shift start times throughout the day
-            $alreadyGeneratedToday = $force ? false : ($templateScheduleModeCheck === 'shift_relative' ? false : ($lastGeneratedDate === $todayDate));
+            $alreadyGeneratedToday = $templateScheduleModeCheck === 'shift_relative' ? false : ($lastGeneratedDate === $targetDate);
             // For shift_relative mode, skip the global time check (handled per-waiter in loop)
-            $isDueToday = $force ? true : ($templateScheduleModeCheck === 'shift_relative' ? true : ($currentTime >= $scheduleTime));
-            $recurrenceMatchedToday = $force ? true : $this->isTemplateDueForDate($template, $todayDate);
+            $isDueToday = $templateScheduleModeCheck === 'shift_relative' ? true : (! $isToday || $currentTime >= $scheduleTime);
+            $recurrenceMatchedToday = $this->isTemplateDueForDate($template, $targetDate);
 
             if ($alreadyGeneratedToday || ! $isDueToday || ! $recurrenceMatchedToday) {
                 continue;
@@ -2187,12 +3336,12 @@ class FirebaseService
             }
 
             // Filter out waiters who are off today (not scheduled to work)
-            $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($todayDate) {
+            $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($targetDate) {
                 $wId = $waiter['id'] ?? '';
                 if ($wId === '') {
                     return true;
                 }
-                return $this->isWorkingDay($wId, $todayDate);
+                return $this->isWorkingDay($wId, $targetDate);
             }));
 
             if (empty($targetWaiters)) {
@@ -2209,7 +3358,7 @@ class FirebaseService
                     return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
                 });
 
-                $rotationOffset = $this->resolveDailyRotationOffset($todayDate);
+                $rotationOffset = $this->resolveDailyRotationOffset($targetDate);
                 $slotIndex = $this->resolveRollingSlotIndex($template);
                 $selectedWaiterIndex = ($slotIndex + $rotationOffset) % count($targetWaiters);
                 $targetWaiters = [$targetWaiters[$selectedWaiterIndex]];
@@ -2251,24 +3400,24 @@ class FirebaseService
                 $waiterId = $waiter['id'] ?? '';
 
                 if ($templateScheduleMode === 'shift_relative' && $waiterId !== '') {
-                    $waiterShift = $this->getWaiterShiftForDate($waiterId, $todayDate);
+                    $waiterShift = $this->getWaiterShiftForDate($waiterId, $targetDate);
                     if ($waiterShift) {
                         $shiftStart = $waiterShift['clock_in_time'] ?? '08:00';
                         $shiftEnd = $waiterShift['clock_out_time'] ?? '17:00';
 
                         // Calculate schedule time: shift start + offset
-                        $shiftStartTimestamp = $this->buildScheduledTimestamp($todayDate, $shiftStart);
+                        $shiftStartTimestamp = $this->buildScheduledTimestamp($targetDate, $shiftStart);
                         $waiterScheduleTimestamp = $shiftStartTimestamp + ($templateShiftOffsetMinutes * 60);
                         $waiterScheduleTime = date('H:i', $waiterScheduleTimestamp);
 
                         // Check if current time has reached this waiter's schedule time
-                        if (! $force && $currentTime < $waiterScheduleTime) {
+                        if ($isToday && $currentTime < $waiterScheduleTime) {
                             continue; // Not yet time for this waiter
                         }
 
                         // Calculate deadline based on deadline_mode
                         if ($templateDeadlineMode === 'before_shift_end') {
-                            $shiftEndTimestamp = $this->buildScheduledTimestamp($todayDate, $shiftEnd);
+                            $shiftEndTimestamp = $this->buildScheduledTimestamp($targetDate, $shiftEnd);
                             // Handle overnight shifts (end < start)
                             if ($shiftEndTimestamp <= $shiftStartTimestamp) {
                                 $shiftEndTimestamp += 86400; // +24h
@@ -2280,14 +3429,14 @@ class FirebaseService
                     } else {
                         // Waiter has no shift today — fallback to fixed mode
                         if ($timeLimitMinutes > 0) {
-                            $scheduleTimestamp = $this->buildScheduledTimestamp($todayDate, $scheduleTime);
+                            $scheduleTimestamp = $this->buildScheduledTimestamp($targetDate, $scheduleTime);
                             $waiterDeadlineAt = $scheduleTimestamp + ($timeLimitMinutes * 60);
                         }
                     }
                 } else {
                     // Fixed mode: original behavior
                     if ($timeLimitMinutes > 0) {
-                        $scheduleTimestamp = $this->buildScheduledTimestamp($todayDate, $scheduleTime);
+                        $scheduleTimestamp = $this->buildScheduledTimestamp($targetDate, $scheduleTime);
                         $waiterDeadlineAt = $scheduleTimestamp + ($timeLimitMinutes * 60);
                     }
                 }
@@ -2295,7 +3444,7 @@ class FirebaseService
                 $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity(
                     $template['id'],
                     $waiter['id'] ?? null,
-                    $todayDate
+                    $targetDate
                 );
                 $taskNodeKey = $this->buildWaiterRecurringTaskNodeKey($recurringInstanceKey);
                 $taskReference = $this->database->getReference('waiter_tasks/'.$taskNodeKey);
@@ -2315,13 +3464,21 @@ class FirebaseService
                     'completed_by_waiter_email' => null,
                     'is_recurring_instance' => true,
                     'scheduled_time' => $waiterScheduleTime,
-                    'scheduled_for_date' => $todayDate,
+                    'scheduled_for_date' => $targetDate,
                     'source_template_id' => $template['id'],
                     'recurring_instance_key' => $recurringInstanceKey,
                     'time_limit_minutes' => $timeLimitMinutes > 0 ? $timeLimitMinutes : null,
                     'deadline_at' => $waiterDeadlineAt,
                     'recurrence_type' => $template['recurrence_type'] ?? 'daily',
                 ]);
+
+                if ($isCatchUp) {
+                    $taskData['is_overdue'] = true;
+                    $taskData['original_scheduled_date'] = $targetDate;
+                    $existingNote = trim((string) ($taskData['note'] ?? ''));
+                    $prefix = '(Tertunda dari '.$targetDate.') ';
+                    $taskData['note'] = $prefix.$existingNote;
+                }
 
                 $taskReference->set($taskData);
                 $existingRecurringMap[$mapKey] = true;
@@ -2331,7 +3488,7 @@ class FirebaseService
 
             if ($generatedForTemplate > 0) {
                 $this->database->getReference('waiter_task_templates/'.$template['id'])->update([
-                    'last_generated_date' => $todayDate,
+                    'last_generated_date' => $targetDate,
                 ]);
             }
         }
@@ -2402,7 +3559,35 @@ class FirebaseService
                     }
                 }
 
-                foreach ($snapshot->getValue() as $taskId => $task) {
+                $attendanceLookup = [];
+                $attendancePairs = [];
+                foreach ($overdueTasks as $task) {
+                    $waiterId = (string) ($task['assigned_waiter_id'] ?? '');
+                    if ($waiterId === '') {
+                        continue;
+                    }
+
+                    $taskDate = (string) ($task['scheduled_for_date'] ?? $today);
+                    if ($taskDate === '') {
+                        $taskDate = $today;
+                    }
+
+                    $cacheKey = $taskDate.'::'.$waiterId;
+                    $attendancePairs[$cacheKey] = [
+                        'date' => $taskDate,
+                        'waiter_id' => $waiterId,
+                    ];
+                }
+
+                if (! empty($attendancePairs)) {
+                    $attendanceLookup = $this->getAttendanceForBatch(array_values($attendancePairs));
+                }
+
+                foreach ($overdueTasks as $task) {
+                    $taskId = (string) ($task['id'] ?? '');
+                    if ($taskId === '') {
+                        continue;
+                    }
                     $deadlineAt = (int) ($task['deadline_at'] ?? 0);
                     if ($deadlineAt <= 0 || $now <= $deadlineAt) {
                         continue;
@@ -2422,11 +3607,25 @@ class FirebaseService
                         continue;
                     }
 
+                    $taskDate = (string) ($task['scheduled_for_date'] ?? $today);
+                    if ($taskDate === '') {
+                        $taskDate = $today;
+                    }
+
+                    $attendance = $attendanceLookup[$taskDate.'::'.$waiterId] ?? null;
+                    $attendanceStatus = strtolower((string) ($attendance['status'] ?? ''));
+                    $attendanceExempt = ! empty($attendance['attendance_exempt']);
+
+                    if (in_array($attendanceStatus, ['absent', 'sick', 'day_off'], true) || $attendanceExempt) {
+                        // Skip penalty: waiter sedang absent/sick/day_off di tanggal ini
+                        continue;
+                    }
+
                     $bonusService->applyPenalty([
                         'waiter_id' => $waiterId,
                         'waiter_name' => $waiterName,
                         'penalty_type' => 'mandatory_task_missed',
-                        'date' => $today,
+                        'date' => $taskDate,
                         'reason' => 'Tugas "'.$taskTitle.'" tidak dikerjakan tepat waktu (otomatis)',
                         'related_task_id' => $taskId,
                     ]);
@@ -2627,7 +3826,7 @@ class FirebaseService
     {
         $role = strtolower(trim((string) $waiterRole));
 
-        return in_array($role, ['kasir', 'pelayan', 'supervisor'], true) ? $role : 'pelayan';
+        return in_array($role, ['kasir', 'pelayan', 'backup', 'supervisor'], true) ? $role : 'pelayan';
     }
 
     /**
@@ -4555,6 +5754,34 @@ class FirebaseService
         $this->database->getReference("backup_coverage/{$date}/{$backupKasir}")->remove();
     }
 
+    /**
+     * Batch fetch attendance per waiter+date map.
+     *
+     * @param  array<int, array{date:string, waiter_id:string}>  $waiterDatePairs
+     * @return array<string, array|null>
+     */
+    private function getAttendanceForBatch(array $waiterDatePairs): array
+    {
+        $result = [];
+
+        foreach ($waiterDatePairs as $pair) {
+            $date = (string) ($pair['date'] ?? '');
+            $waiterId = (string) ($pair['waiter_id'] ?? '');
+            if ($date === '' || $waiterId === '') {
+                continue;
+            }
+
+            $cacheKey = $date.'::'.$waiterId;
+            if (array_key_exists($cacheKey, $result)) {
+                continue;
+            }
+
+            $result[$cacheKey] = $this->getAttendanceByDate($waiterId, $date);
+        }
+
+        return $result;
+    }
+
     public function getAttendanceByDate(string $waiterId, string $date): ?array
     {
         $ref = $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date);
@@ -5095,6 +6322,283 @@ class FirebaseService
     // ==========================================
 
     /**
+     * P0-3: dipanggil dari updateWaiterTaskStatus() SEBELUM task status flip ke 'done'.
+     * Iterasi product_checklist, decide kebutuhan restock berdasar rack_type
+     * (storage vs display), lalu call createOrUpdateRestockRequest per item.
+     *
+     * Kalau salah satu item gagal → return success=false, caller wajib abort
+     * sebelum status flip biar shortage signal tidak hilang.
+     */
+    protected function writeRestockRequestsForCompletion(
+        string $taskId,
+        array $task,
+        array $productChecklist,
+        string $waiterId,
+        string $waiterName
+    ): array {
+        $rackId = (string) ($task['rack_id'] ?? '');
+        if ($rackId === '') {
+            // Tidak ada rack target → tidak ada restock yang perlu dicatat.
+            return ['success' => true];
+        }
+
+        $rackName = (string) ($task['rack_name'] ?? ($task['title'] ?? ''));
+        $rack = $this->getRackById($rackId);
+        $rackType = (string) ($rack['rack_type'] ?? 'storage');
+
+        // Hanya storage & display rack yang punya pipeline restock.
+        if ($rackType !== 'storage' && $rackType !== 'display') {
+            return ['success' => true];
+        }
+
+        $productCategories = $this->getProductCategoriesMap();
+        $today = date('Y-m-d');
+
+        try {
+            foreach ($productChecklist as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $actualQty = (int) ($item['actual_qty'] ?? 0);
+                $standardQty = (int) ($item['standard_qty'] ?? 0);
+                $minQty = (int) ($item['min_qty'] ?? 0);
+
+                $productId = (string) ($item['product_id'] ?? '');
+
+                // P0-5: shortage detection harus independen dari `was_refilled`.
+                //
+                // STORAGE rack:
+                //   actual_qty < standard_qty → restock request langsung
+                //   (sumber barang dari supplier, jadi tidak ada fallback lain).
+                //
+                // DISPLAY rack:
+                //   actual_qty < standard_qty di display saja TIDAK cukup —
+                //   waiter biasanya bisa refill dari gudang. Tapi kalau gudang
+                //   juga rendah (combined_available < standard_qty) maka signal
+                //   harus naik ke supervisor. Was_refilled flag tetap dihormati
+                //   sebagai sumber paling jelas, tapi storage-low check bekerja
+                //   independen: kalau gudang habis sebelum waiter refill, signal
+                //   tetap muncul. createOrUpdateRestockRequest sudah dedup
+                //   per product+rack+pending sehingga aman dari double-fire.
+                $needsRestock = false;
+                $restockSource = null;
+                $totalStorageQty = 0;
+                $combinedAvailable = 0;
+
+                if ($rackType === 'storage') {
+                    if ($standardQty > 0 && $actualQty < $standardQty) {
+                        $needsRestock = true;
+                        $restockSource = 'storage_rack_shortage';
+                    }
+                } else {
+                    // DISPLAY rack
+                    $wasRefilled = (bool) ($item['was_refilled'] ?? false);
+                    $isShort = $standardQty > 0 && $actualQty < $standardQty;
+
+                    if ($isShort) {
+                        $totalStorageQty = $productId !== ''
+                            ? $this->getTotalStorageQtyForProduct($productId)
+                            : 0;
+                        $combinedAvailable = $totalStorageQty + $actualQty;
+
+                        if ($wasRefilled) {
+                            // Sudah refill tapi masih kurang → gudang tidak cukup.
+                            $needsRestock = true;
+                            $restockSource = 'display_rack_post_refill_short';
+                        } elseif ($combinedAvailable < $standardQty) {
+                            // Belum refill, dan gudang juga tidak cukup → signal harus naik
+                            // sekarang (jangan tunggu waiter refill manual).
+                            $needsRestock = true;
+                            $restockSource = 'display_rack_low_storage_low';
+                        }
+                    }
+                }
+
+                if (! $needsRestock) {
+                    continue;
+                }
+
+                // Default qty_needed: shortage di rak ini.
+                $qtyNeeded = $standardQty - $actualQty;
+
+                // P0-5: untuk display + storage_low, qty_needed harus mengakomodasi
+                // gap yang tidak bisa ditutup oleh stok gudang yang ada.
+                if ($restockSource === 'display_rack_low_storage_low') {
+                    $qtyNeeded = $standardQty - $combinedAvailable;
+                }
+
+                if ($qtyNeeded <= 0) {
+                    $qtyNeeded = $standardQty > 0 ? $standardQty : 1;
+                }
+                $qtyNeeded = max(1, (int) $qtyNeeded);
+
+                $productMaster = $productId !== '' ? $this->getProductById($productId) : null;
+                $catId = $productMaster['category_id'] ?? null;
+                $catName = ($catId && isset($productCategories[$catId]))
+                    ? ($productCategories[$catId]['name'] ?? 'Tanpa Kategori')
+                    : 'Tanpa Kategori';
+
+                $noteParts = [];
+                if ($restockSource === 'display_rack_low_storage_low') {
+                    $noteParts[] = sprintf(
+                        'Display "%s" kurang (%d/%d) dan stok gudang juga rendah (total %d).',
+                        $rackName !== '' ? $rackName : $rackId,
+                        $actualQty,
+                        $standardQty,
+                        $totalStorageQty
+                    );
+                }
+
+                $this->createOrUpdateRestockRequest([
+                    'product_id' => $productId,
+                    'product_name' => $item['product_name'] ?? ($item['name'] ?? ''),
+                    'product_category_id' => $catId,
+                    'product_category_name' => $catName,
+                    'rack_id' => $rackId,
+                    'rack_name' => $rackName,
+                    'reported_qty' => $actualQty,
+                    'standard_qty' => $standardQty,
+                    'min_qty' => $minQty,
+                    'qty_needed' => $qtyNeeded,
+                    'reported_by' => $waiterId,
+                    'reported_by_name' => $waiterName,
+                    'date' => $today,
+                    'source' => $restockSource,
+                    'note' => implode(' ', $noteParts),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+
+        return ['success' => true];
+    }
+
+    /**
+     * P1-3: auto-create restock request saat stok lewat threshold,
+     * dipicu setiap movement commit (tidak bergantung penyelesaian task).
+     */
+    private function maybeAutoCreateRestockOnLowStock(
+        string $rackId,
+        string $productId,
+        int $currentQty,
+        array $rackProduct,
+        array $movementMeta
+    ): void {
+        try {
+            $rack = $this->getRackById($rackId);
+            if (! $rack) {
+                return;
+            }
+
+            $rackType = strtolower(trim((string) ($rack['rack_type'] ?? '')));
+            if (! in_array($rackType, ['storage', 'display'], true)) {
+                return;
+            }
+
+            $rackName = trim((string) ($rack['name'] ?? ($rack['rack_name'] ?? '')));
+            $standardQty = max(0, (int) ($rackProduct['standard_qty'] ?? 0));
+            $rackMinQty = max(0, (int) ($rackProduct['min_qty'] ?? 0));
+
+            $productMaster = $this->getProductById($productId) ?? [];
+            $masterMinQty = max(0, (int) ($productMaster['min_qty'] ?? 0));
+
+            $threshold = 0;
+            $source = '';
+            $qtyNeeded = 0;
+            $note = '';
+
+            if ($rackType === 'storage') {
+                $threshold = $rackMinQty > 0 ? $rackMinQty : $masterMinQty;
+                if ($threshold <= 0) {
+                    return;
+                }
+
+                if ($currentQty >= $threshold) {
+                    return;
+                }
+
+                $targetQty = $standardQty > 0 ? $standardQty : ($threshold * 2);
+                $qtyNeeded = max(1, $targetQty - $currentQty);
+                $source = 'auto_threshold_storage';
+                $note = sprintf(
+                    'Auto threshold storage: stok rak "%s" (%d) di bawah batas minimum (%d).',
+                    $rackName !== '' ? $rackName : $rackId,
+                    $currentQty,
+                    $threshold
+                );
+            } else {
+                // DISPLAY: trigger pakai standard_qty. Jika gudang cukup refill, jangan naik jadi restock PO.
+                $threshold = $standardQty;
+                if ($threshold <= 0) {
+                    return;
+                }
+
+                if ($currentQty >= $threshold) {
+                    return;
+                }
+
+                $totalStorageQty = $this->getTotalStorageQtyForProduct($productId);
+                $combinedAvailable = $currentQty + $totalStorageQty;
+                if ($combinedAvailable >= $standardQty) {
+                    return;
+                }
+
+                $qtyNeeded = max(1, $standardQty - $combinedAvailable);
+                $source = 'auto_threshold_display_storage_low';
+                $note = sprintf(
+                    'Auto threshold display: stok display "%s" (%d/%d) dan total stok gudang (%d) belum cukup untuk refill.',
+                    $rackName !== '' ? $rackName : $rackId,
+                    $currentQty,
+                    $standardQty,
+                    $totalStorageQty
+                );
+            }
+
+            $reportedBy = trim((string) ($movementMeta['waiter_id'] ?? ($movementMeta['reported_by'] ?? 'auto')));
+            if ($reportedBy === '') {
+                $reportedBy = 'auto';
+            }
+
+            $reportedByName = trim((string) ($movementMeta['waiter_name'] ?? ($movementMeta['reported_by_name'] ?? 'System (auto-threshold)')));
+            if ($reportedByName === '') {
+                $reportedByName = 'System (auto-threshold)';
+            }
+
+            $categoryId = $productMaster['category_id'] ?? null;
+            $categoryName = trim((string) ($productMaster['category_name'] ?? ''));
+            if ($categoryName === '') {
+                $categoryName = 'Tanpa Kategori';
+            }
+
+            $this->createOrUpdateRestockRequest([
+                'product_id' => $productId,
+                'product_name' => trim((string) ($rackProduct['product_name'] ?? ($rackProduct['name'] ?? ($productMaster['name'] ?? '')))),
+                'product_category_id' => $categoryId,
+                'product_category_name' => $categoryName,
+                'rack_id' => $rackId,
+                'rack_name' => $rackName,
+                'reported_qty' => $currentQty,
+                'standard_qty' => $standardQty,
+                'min_qty' => $rackMinQty > 0 ? $rackMinQty : $masterMinQty,
+                'qty_needed' => $qtyNeeded,
+                'reported_by' => $reportedBy,
+                'reported_by_name' => $reportedByName,
+                'date' => date('Y-m-d'),
+                'source' => $source,
+                'note' => $note,
+            ]);
+        } catch (\Throwable $e) {
+            // Wajib non-blocking: auto-restock tidak boleh menggagalkan commit movement.
+            report($e);
+        }
+    }
+
+    /**
      * Create or update a restock request (dedup: same product+rack+pending = update)
      */
     public function createOrUpdateRestockRequest(array $data): string
@@ -5116,6 +6620,8 @@ class FirebaseService
                     $this->database->getReference("restock_requests/{$key}")->update([
                         'reported_qty' => (int) $data['reported_qty'],
                         'qty_needed' => (int) $data['qty_needed'],
+                        'source' => $data['source'] ?? ($entry['source'] ?? null),
+                        'note' => $data['note'] ?? ($entry['note'] ?? null),
                         'reported_by' => $data['reported_by'],
                         'reported_by_name' => $data['reported_by_name'],
                         'reported_at' => time(),
@@ -5138,6 +6644,8 @@ class FirebaseService
             'standard_qty' => (int) ($data['standard_qty'] ?? 0),
             'min_qty' => (int) ($data['min_qty'] ?? 0),
             'qty_needed' => (int) ($data['qty_needed'] ?? 0),
+            'source' => $data['source'] ?? null,
+            'note' => $data['note'] ?? null,
             'reported_by' => $data['reported_by'] ?? '',
             'reported_by_name' => $data['reported_by_name'] ?? '',
             'reported_at' => time(),
@@ -5260,6 +6768,76 @@ class FirebaseService
     }
 
     /**
+     * Find open POs (status=ordered|partial) containing any of given product IDs
+     * for given supplier, created within $windowSeconds.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function findOpenPOConflicts(array $productIds, ?string $supplierId, int $windowSeconds = 86400): array
+    {
+        if (empty($productIds)) return [];
+
+        $productIds = array_values(array_unique(array_filter($productIds, fn($id) => is_string($id) && $id !== '')));
+        if (empty($productIds)) return [];
+
+        $cutoffMs = (int) (microtime(true) * 1000) - ($windowSeconds * 1000);
+
+        // Bandwidth: pakai indexed query orderByChild('status') untuk hemat. RTDB
+        // tidak support OR di server-side, jadi 2 calls (ordered + partial).
+        // .indexOn 'status' di rules akan ditolak silently kalau belum ada — log warning.
+        $orderedSnap = $this->database->getReference('purchase_orders')
+            ->orderByChild('status')->equalTo('ordered')->getSnapshot();
+        $partialSnap = $this->database->getReference('purchase_orders')
+            ->orderByChild('status')->equalTo('partial')->getSnapshot();
+
+        $allPOs = [];
+        if ($orderedSnap->exists()) $allPOs += (array) $orderedSnap->getValue();
+        if ($partialSnap->exists()) $allPOs += (array) $partialSnap->getValue();
+
+        $conflicts = [];
+        $supKey = ($supplierId === null || $supplierId === '') ? null : $supplierId;
+
+        foreach ($allPOs as $poId => $po) {
+            if (!is_array($po)) continue;
+
+            $createdAtRaw = $po['created_at'] ?? 0;
+            $createdAt = (int) $createdAtRaw;
+            if ($createdAt > 0 && $createdAt < 1000000000000) {
+                $createdAt *= 1000;
+            }
+            if ($createdAt < $cutoffMs) continue;
+
+            $poSupplier = $po['supplier_id'] ?? null;
+            if ($poSupplier === null || $poSupplier === '') {
+                $poSupplier = $po['supplier'] ?? null;
+            }
+            $poSupKey = ($poSupplier === null || $poSupplier === '') ? null : $poSupplier;
+            if ($supKey !== $poSupKey) continue;
+
+            $matched = [];
+            foreach (($po['items'] ?? []) as $item) {
+                if (!is_array($item)) continue;
+                $pid = $item['product_id'] ?? null;
+                if (is_string($pid) && in_array($pid, $productIds, true)) {
+                    $matched[] = $pid;
+                }
+            }
+            if (empty($matched)) continue;
+
+            $conflicts[] = [
+                'po_id' => (string) $poId,
+                'po_number' => (string) ($po['po_number'] ?? $poId),
+                'supplier_id' => $po['supplier_id'] ?? null,
+                'supplier_name' => (string) ($po['supplier_name'] ?? $po['supplier'] ?? '-'),
+                'created_at' => $createdAt,
+                'matched_product_ids' => array_values(array_unique($matched)),
+            ];
+        }
+
+        return $conflicts;
+    }
+
+    /**
      * Create a Purchase Order from selected restock requests
      */
     public function createPurchaseOrder(array $restockIds, string $createdBy, string $createdByName, ?string $supplier = null, ?string $notes = null, array $qtyOverrides = []): ?string
@@ -5367,8 +6945,19 @@ class FirebaseService
     /**
      * Receive an item in a PO (partial receive with qty)
      */
-    public function receivePoItem(string $poId, string $restockId, int $receivedQty, string $receivedBy, string $receivedByName): array
+    public function receivePoItem(string $poId, string $restockId, int $receivedQty, string $receivedBy, string $receivedByName, ?string $idempotencyKey = null): array
     {
+        $idempotencyKey = trim((string) $idempotencyKey);
+        if ($idempotencyKey !== '') {
+            $idempotencySnapshot = $this->database->getReference('po_receive_idempotency/'.$idempotencyKey)->getSnapshot();
+            if ($idempotencySnapshot->exists()) {
+                $stored = $idempotencySnapshot->getValue();
+                if (is_array($stored) && isset($stored['response']) && is_array($stored['response'])) {
+                    return $stored['response'];
+                }
+            }
+        }
+
         $po = $this->getPurchaseOrder($poId);
         if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
 
@@ -5426,7 +7015,41 @@ class FirebaseService
         }
         $this->database->getReference("restock_requests/{$restockId}")->update($restockUpdates);
 
-        return [
+        $rackId = trim((string) ($item['rack_id'] ?? ''));
+        $productId = trim((string) ($item['product_id'] ?? ''));
+        if ($rackId !== '' && $productId !== '') {
+            $previousQty = null;
+            $rackProductSnapshot = $this->database->getReference("waiter_racks/{$rackId}/products/{$productId}")->getSnapshot();
+            if ($rackProductSnapshot->exists()) {
+                $rackProduct = $rackProductSnapshot->getValue();
+                if (is_array($rackProduct) && array_key_exists('current_qty', $rackProduct) && $rackProduct['current_qty'] !== null) {
+                    $previousQty = max(0, (int) $rackProduct['current_qty']);
+                }
+            }
+
+            $movementResult = $this->recordRackStockMovement([
+                'rack_id' => $rackId,
+                'product_id' => $productId,
+                'movement_type' => 'po_receive',
+                'source' => 'purchase_order',
+                'po_id' => $poId,
+                'restock_id' => $restockId,
+                'waiter_id' => $receivedBy,
+                'waiter_name' => $receivedByName,
+                'product_name' => (string) ($item['product_name'] ?? ''),
+                'product_unit' => (string) ($item['product_unit'] ?? 'pcs'),
+                'actual_qty' => $previousQty !== null ? $previousQty + $receivedQty : $receivedQty,
+                'current_qty' => $previousQty !== null ? $previousQty + $receivedQty : $receivedQty,
+                'delta_qty' => $receivedQty,
+                'note' => 'Penerimaan PO',
+            ]);
+
+            if (! ($movementResult['success'] ?? false)) {
+                report(new \RuntimeException((string) ($movementResult['message'] ?? 'Gagal mencatat movement penerimaan PO.')));
+            }
+        }
+
+        $response = [
             'success' => true,
             'po_status' => $poStatus,
             'received_count' => $receivedCount,
@@ -5436,6 +7059,17 @@ class FirebaseService
             'new_received_qty' => $newReceived,
             'qty_ordered' => $qtyOrdered,
         ];
+
+        if ($idempotencyKey !== '') {
+            $this->database->getReference('po_receive_idempotency/'.$idempotencyKey)->set([
+                'po_id' => $poId,
+                'restock_id' => $restockId,
+                'response' => $response,
+                'created_at' => time(),
+            ]);
+        }
+
+        return $response;
     }
 
     /**
@@ -5500,8 +7134,19 @@ class FirebaseService
      * Report an issue with a PO item (not received, wrong qty, damaged)
      * "Barang tidak datang" auto-closes item with received = true (qty stays 0)
      */
-    public function reportPoItemIssue(string $poId, string $restockId, string $issueNote, string $reportedBy, string $reportedByName): array
+    public function reportPoItemIssue(string $poId, string $restockId, string $issueNote, string $reportedBy, string $reportedByName, ?string $idempotencyKey = null): array
     {
+        $idempotencyKey = trim((string) $idempotencyKey);
+        if ($idempotencyKey !== '') {
+            $idempotencySnapshot = $this->database->getReference('po_issue_idempotency/'.$idempotencyKey)->getSnapshot();
+            if ($idempotencySnapshot->exists()) {
+                $stored = $idempotencySnapshot->getValue();
+                if (is_array($stored) && isset($stored['response']) && is_array($stored['response'])) {
+                    return $stored['response'];
+                }
+            }
+        }
+
         $po = $this->getPurchaseOrder($poId);
         if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
 
@@ -5563,16 +7208,38 @@ class FirebaseService
                 'updated_at' => time(),
             ]);
 
-            return [
+            $response = [
                 'success' => true,
                 'item_closed' => true,
                 'po_completed' => $poStatus === 'completed',
                 'po_status' => $poStatus,
                 'message' => 'Item ditandai tidak diterima.',
             ];
+
+            if ($idempotencyKey !== '') {
+                $this->database->getReference('po_issue_idempotency/'.$idempotencyKey)->set([
+                    'po_id' => $poId,
+                    'restock_id' => $restockId,
+                    'response' => $response,
+                    'created_at' => time(),
+                ]);
+            }
+
+            return $response;
         }
 
-        return ['success' => true, 'item_closed' => false, 'message' => 'Masalah berhasil dilaporkan.'];
+        $response = ['success' => true, 'item_closed' => false, 'message' => 'Masalah berhasil dilaporkan.'];
+
+        if ($idempotencyKey !== '') {
+            $this->database->getReference('po_issue_idempotency/'.$idempotencyKey)->set([
+                'po_id' => $poId,
+                'restock_id' => $restockId,
+                'response' => $response,
+                'created_at' => time(),
+            ]);
+        }
+
+        return $response;
     }
 
     /**
@@ -5618,6 +7285,56 @@ class FirebaseService
             $items = array_slice($items, 0, $limit);
         }
         return $items;
+    }
+
+    /**
+     * Bersihkan idempotency cache lama dari Firebase.
+     *
+     * Bandwidth: cache stock_movement_idempotency & waiter_task_idempotency
+     * tumbuh terus tanpa TTL. Setiap waiter portal load yang subscribe ke
+     * waiter_tasks juga otomatis fetch sub-tree termasuk cache idempotency
+     * lama. Dijalankan harian via scheduler. Hapus entry dengan
+     * created_at < $cutoffTs.
+     *
+     * @return array{stock_movement:int, waiter_task:int}
+     */
+    public function cleanupIdempotencyCaches(int $cutoffTs): array
+    {
+        $stats = ['stock_movement' => 0, 'waiter_task' => 0];
+
+        foreach (['stock_movement_idempotency' => 'stock_movement', 'waiter_task_idempotency' => 'waiter_task'] as $path => $statKey) {
+            try {
+                $snap = $this->database->getReference($path)->getSnapshot();
+                if (! $snap->exists()) {
+                    continue;
+                }
+
+                $entries = (array) $snap->getValue();
+                $toDelete = [];
+                foreach ($entries as $key => $entry) {
+                    if (! is_array($entry)) {
+                        continue;
+                    }
+                    $createdAt = (int) ($entry['created_at'] ?? 0);
+                    // Normalize ms timestamps ke seconds.
+                    if ($createdAt > 1000000000000) {
+                        $createdAt = (int) ($createdAt / 1000);
+                    }
+                    if ($createdAt > 0 && $createdAt < $cutoffTs) {
+                        $toDelete[(string) $key] = null;
+                    }
+                }
+
+                if (! empty($toDelete)) {
+                    $this->database->getReference($path)->update($toDelete);
+                    $stats[$statKey] = count($toDelete);
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return $stats;
     }
 
     /**
@@ -5953,5 +7670,377 @@ class FirebaseService
     {
         $this->database->getReference("suppliers/{$id}")->remove();
         return true;
+    }
+
+    public function getProductAuditTrail(string $productId, int $limit = 200): array
+    {
+        $productId = trim($productId);
+        if ($productId === '') return [];
+        $rackMap = [];
+        try {
+            foreach ($this->getRacks() as $rack) {
+                $rid = trim((string) ($rack['id'] ?? ''));
+                if ($rid !== '') $rackMap[$rid] = (string) ($rack['name'] ?? $rack['rack_name'] ?? $rid);
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+        $timeline = [];
+        try {
+            $snap = $this->database->getReference('rack_stock_movements')->orderByChild('product_id')->equalTo($productId)->getSnapshot();
+            if ($snap->exists()) foreach ((array) $snap->getValue() as $id => $mv) {
+                if (!is_array($mv)) continue;
+                $createdAt = $this->normalizeUnixTimestampToSeconds((int) ($mv['created_at'] ?? 0));
+                $rackId = trim((string) ($mv['rack_id'] ?? ''));
+                $rackName = $rackMap[$rackId] ?? (string) ($mv['rack_name'] ?? $rackId ?: '-');
+                $actor = (string) ($mv['actor_name'] ?? $mv['waiter_name'] ?? 'Sistem');
+                $prev = (int) ($mv['prev'] ?? 0);
+                $result = (int) ($mv['result'] ?? 0);
+                $delta = (int) ($mv['delta'] ?? $mv['delta_qty'] ?? 0);
+                $type = (string) ($mv['type'] ?? $mv['movement_type'] ?? 'stock_take');
+                $summary = 'Movement stok';
+                if ($type === 'stock_take') $summary = ucfirst("Cek rak: {$prev}→{$result} (" . sprintf('%+d', $delta) . ") oleh {$actor} di {$rackName}");
+                elseif ($type === 'po_receive') $summary = ucfirst("Terima PO: +" . max(0, $delta) . " pcs ke {$rackName} oleh {$actor}");
+                elseif ($type === 'storage_out') $summary = ucfirst("Ambil stok: -" . abs($delta) . " pcs dari {$rackName} oleh {$actor}");
+                $timeline[] = ['kind' => 'movement', 'created_at' => $createdAt, 'event_id' => (string) $id, 'data' => $mv, 'rack_id' => $rackId, 'rack_name' => $rackName, 'actor_name' => $actor, 'summary' => $summary];
+            }
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductAuditTrail movement: ' . $e->getMessage()));
+        }
+        try {
+            $snap = $this->database->getReference('restock_requests')->orderByChild('product_id')->equalTo($productId)->getSnapshot();
+            if ($snap->exists()) foreach ((array) $snap->getValue() as $id => $req) {
+                if (!is_array($req)) continue;
+                $createdAt = $this->normalizeUnixTimestampToSeconds((int) ($req['created_at'] ?? $req['reported_at'] ?? 0));
+                $rackId = trim((string) ($req['rack_id'] ?? ''));
+                $rackName = $rackMap[$rackId] ?? (string) ($req['rack_name'] ?? $rackId ?: '-');
+                $qtyNeeded = (int) ($req['qty_needed'] ?? 0);
+                $source = (string) ($req['source'] ?? '-');
+                $status = (string) ($req['status'] ?? '-');
+                $timeline[] = ['kind' => 'restock_request', 'created_at' => $createdAt, 'event_id' => (string) $id, 'data' => $req, 'rack_id' => $rackId, 'rack_name' => $rackName, 'summary' => ucfirst("Restock request: {$qtyNeeded} pcs untuk {$rackName} (source: {$source}, status: {$status})")];
+            }
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductAuditTrail restock_requests: ' . $e->getMessage()));
+        }
+        try {
+            $cutoff = time() - (90 * 86400);
+            foreach ($this->getPurchaseOrders() as $po) {
+                if (!is_array($po)) continue;
+                $createdAt = $this->normalizeUnixTimestampToSeconds((int) ($po['created_at'] ?? 0));
+                if ($createdAt < $cutoff) continue;
+                $matchQty = 0;
+                foreach ((array) ($po['items'] ?? []) as $item) if (is_array($item) && (string) ($item['product_id'] ?? '') === $productId) $matchQty += (int) ($item['qty_ordered'] ?? 0);
+                if ($matchQty <= 0) continue;
+                $poId = (string) ($po['id'] ?? $po['po_id'] ?? '');
+                $poNumber = (string) ($po['po_number'] ?? $poId ?: '-');
+                $supplier = (string) ($po['supplier_name'] ?? $po['supplier'] ?? '-');
+                $status = (string) ($po['status'] ?? '-');
+                $timeline[] = ['kind' => 'purchase_order', 'created_at' => $createdAt, 'event_id' => ($poId !== '' ? $poId : $poNumber), 'data' => $po, 'summary' => ucfirst("PO #{$poNumber}: {$matchQty} pcs dari {$supplier} ({$status})")];
+            }
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductAuditTrail purchase_orders: ' . $e->getMessage()));
+        }
+        try {
+            $snap = $this->database->getReference('audit_logs/stock_anomalies')->orderByChild('product_id')->equalTo($productId)->getSnapshot();
+            if ($snap->exists()) foreach ((array) $snap->getValue() as $id => $an) {
+                if (!is_array($an)) continue;
+                $createdAt = $this->normalizeUnixTimestampToSeconds((int) ($an['created_at'] ?? 0));
+                $rackId = trim((string) ($an['rack_id'] ?? ''));
+                $rackName = $rackMap[$rackId] ?? (string) ($an['rack_name'] ?? $rackId ?: '-');
+                $prev = (int) ($an['prev'] ?? 0);
+                $result = (int) ($an['result'] ?? 0);
+                $severity = (string) ($an['severity'] ?? 'low');
+                $timeline[] = ['kind' => 'anomaly', 'created_at' => $createdAt, 'event_id' => (string) $id, 'data' => $an, 'rack_id' => $rackId, 'rack_name' => $rackName, 'actor_name' => (string) ($an['actor_name'] ?? ''), 'summary' => ucfirst("⚠️ Anomali: {$prev}→{$result} (severity: {$severity})")];
+            }
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductAuditTrail stock_anomalies: ' . $e->getMessage()));
+        }
+        usort($timeline, fn($a, $b) => ((int) ($b['created_at'] ?? 0)) <=> ((int) ($a['created_at'] ?? 0)));
+        return array_slice($timeline, 0, max(1, $limit));
+    }
+
+    public function getProductStats(string $productId): array
+    {
+        $productId = trim($productId);
+        $stats = ['total_in' => 0, 'total_out' => 0, 'last_movement_at' => 0, 'active_restock_requests' => 0, 'open_pos_containing' => 0, 'racks_holding' => []];
+        if ($productId === '') return $stats;
+        $cutoff30 = time() - (30 * 86400);
+        try {
+            $snap = $this->database->getReference('rack_stock_movements')->orderByChild('product_id')->equalTo($productId)->getSnapshot();
+            if ($snap->exists()) foreach ((array) $snap->getValue() as $mv) {
+                if (!is_array($mv)) continue;
+                $createdAt = $this->normalizeUnixTimestampToSeconds((int) ($mv['created_at'] ?? 0));
+                $delta = (int) ($mv['delta'] ?? $mv['delta_qty'] ?? 0);
+                if ($createdAt > $stats['last_movement_at']) $stats['last_movement_at'] = $createdAt;
+                if ($createdAt >= $cutoff30) {
+                    if ($delta > 0) $stats['total_in'] += $delta;
+                    if ($delta < 0) $stats['total_out'] += abs($delta);
+                }
+            }
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductStats movements: ' . $e->getMessage()));
+        }
+        try {
+            $pending = $this->database->getReference('restock_requests')->orderByChild('status')->equalTo('pending')->getSnapshot();
+            if ($pending->exists()) foreach ((array) $pending->getValue() as $req) if (is_array($req) && (string) ($req['product_id'] ?? '') === $productId) $stats['active_restock_requests']++;
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductStats restocks: ' . $e->getMessage()));
+        }
+        try {
+            foreach ($this->getPurchaseOrders() as $po) {
+                if (!is_array($po) || !in_array((string) ($po['status'] ?? ''), ['ordered', 'partial'], true)) continue;
+                foreach ((array) ($po['items'] ?? []) as $item) if (is_array($item) && (string) ($item['product_id'] ?? '') === $productId) {
+                    $stats['open_pos_containing']++;
+                    break;
+                }
+            }
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductStats purchase_orders: ' . $e->getMessage()));
+        }
+        try {
+            foreach ($this->getRacks() as $rack) {
+                $rackId = trim((string) ($rack['id'] ?? ''));
+                if ($rackId === '') continue;
+                $snap = $this->database->getReference("waiter_racks/{$rackId}/products/{$productId}")->getSnapshot();
+                $row = $snap->exists() ? $snap->getValue() : null;
+                if (is_array($row) && (int) ($row['current_qty'] ?? 0) > 0) $stats['racks_holding'][] = $rackId;
+            }
+        } catch (\Throwable $e) {
+            report(new \RuntimeException('Warning getProductStats racks_holding: ' . $e->getMessage()));
+        }
+        return $stats;
+    }
+
+    /**
+     * Jalankan rekonsiliasi stok mingguan berbasis ledger movements.
+     *
+     * @return array{report_id:string,total_racks_checked:int,total_products_checked:int,anomalies:array<int,array<string,mixed>>,iso_year_week:string}
+     */
+    public function runWeeklyReconciliation(int $windowDays = 7): array
+    {
+        $windowDays = max(1, $windowDays);
+        $nowTs = time();
+        $windowStartTs = $nowTs - ($windowDays * 86400);
+        $isoYearWeek = date('o_W', $nowTs);
+
+        $totalRacksChecked = 0;
+        $totalProductsChecked = 0;
+        $anomalies = [];
+
+        $racks = $this->getRacks();
+        foreach ($racks as $rack) {
+            $isActive = (bool) ($rack['is_active'] ?? true);
+            if (! $isActive) {
+                continue;
+            }
+
+            $rackId = trim((string) ($rack['id'] ?? ''));
+            if ($rackId === '') {
+                continue;
+            }
+
+            $totalRacksChecked++;
+            $rackName = trim((string) ($rack['name'] ?? ''));
+            $products = is_array($rack['products'] ?? null) ? $rack['products'] : [];
+            $movements = $this->getRackStockMovements($rackId, 1000);
+
+            foreach ($products as $pid => $product) {
+                if (! is_array($product)) {
+                    continue;
+                }
+
+                try {
+                    $productId = trim((string) ($product['id'] ?? $pid));
+                    if ($productId === '') {
+                        continue;
+                    }
+
+                    $currentQtyRaw = $product['current_qty'] ?? null;
+                    if ($currentQtyRaw === null) {
+                        continue;
+                    }
+
+                    $actualQty = (int) $currentQtyRaw;
+                    $totalProductsChecked++;
+
+                    $productMovements = array_values(array_filter($movements, function ($movement) use ($productId, $windowStartTs) {
+                        if (! is_array($movement)) {
+                            return false;
+                        }
+
+                        $movementProductId = trim((string) ($movement['product_id'] ?? ''));
+                        $movementTs = $this->normalizeUnixTimestampToSeconds((int) ($movement['created_at'] ?? ($movement['completed_at'] ?? 0)));
+
+                        return $movementProductId === $productId && $movementTs >= $windowStartTs;
+                    }));
+
+                    if (count($productMovements) === 0) {
+                        continue;
+                    }
+
+                    usort($productMovements, fn ($a, $b) => ((int) ($a['created_at'] ?? $a['completed_at'] ?? 0)) <=> ((int) ($b['created_at'] ?? $b['completed_at'] ?? 0)));
+
+                    $latestStockTakeIndex = null;
+                    foreach ($productMovements as $index => $movement) {
+                        $type = (string) ($movement['movement_type'] ?? $movement['type'] ?? '');
+                        if ($type === 'stock_take') {
+                            $latestStockTakeIndex = $index;
+                        }
+                    }
+
+                    if ($latestStockTakeIndex === null) {
+                        continue;
+                    }
+
+                    $stockTakeMovement = $productMovements[$latestStockTakeIndex];
+                    $expectedQty = (int) ($stockTakeMovement['result_qty'] ?? $stockTakeMovement['result'] ?? $stockTakeMovement['actual_qty'] ?? $stockTakeMovement['current_qty'] ?? 0);
+
+                    for ($i = $latestStockTakeIndex + 1; $i < count($productMovements); $i++) {
+                        $movement = $productMovements[$i];
+                        $type = (string) ($movement['movement_type'] ?? $movement['type'] ?? '');
+                        $delta = (int) ($movement['delta_qty'] ?? $movement['delta'] ?? 0);
+
+                        if ($type === 'po_receive' || $type === 'storage_out') {
+                            $expectedQty += $delta;
+                        }
+                    }
+
+                    $driftQty = $actualQty - $expectedQty;
+                    $driftPct = abs($driftQty) / max(1, abs($expectedQty)) * 100;
+
+                    if ($driftPct <= 5) {
+                        continue;
+                    }
+
+                    $severity = 'warning';
+                    if ($driftPct > 50) {
+                        $severity = 'severe';
+                    } elseif ($driftPct > 15) {
+                        $severity = 'critical';
+                    }
+
+                    $resolvedProduct = $this->getProductById($productId);
+                    $productName = trim((string) ($product['name'] ?? $product['product_name'] ?? ($resolvedProduct['name'] ?? 'Produk')));
+
+                    $anomalies[] = [
+                        'rack_id' => $rackId,
+                        'rack_name' => $rackName,
+                        'product_id' => $productId,
+                        'product_name' => $productName,
+                        'expected' => $expectedQty,
+                        'actual' => $actualQty,
+                        'drift_qty' => $driftQty,
+                        'drift_pct' => round($driftPct, 2),
+                        'severity' => $severity,
+                    ];
+                } catch (RuntimeException $e) {
+                    continue;
+                } catch (\Throwable $e) {
+                    continue;
+                }
+            }
+        }
+
+        usort($anomalies, fn ($a, $b) => (($b['drift_pct'] ?? 0) <=> ($a['drift_pct'] ?? 0)));
+
+        $payload = [
+            'iso_year_week' => $isoYearWeek,
+            'window_days' => $windowDays,
+            'window_start_at' => $windowStartTs,
+            'window_end_at' => $nowTs,
+            'total_racks_checked' => $totalRacksChecked,
+            'total_products_checked' => $totalProductsChecked,
+            'anomalies_count' => count($anomalies),
+            'anomalies' => $anomalies,
+            'generated_at' => $nowTs,
+            'created_at' => ['.sv' => 'timestamp'],
+            'generated_by' => (string) (session('admin_id') ?: 'system_scheduler'),
+        ];
+
+        $reportRef = $this->database->getReference("reconciliation_reports/{$isoYearWeek}")->push($payload);
+        $reportId = (string) $reportRef->getKey();
+
+        return [
+            'report_id' => $reportId,
+            'total_racks_checked' => $totalRacksChecked,
+            'total_products_checked' => $totalProductsChecked,
+            'anomalies' => $anomalies,
+            'iso_year_week' => $isoYearWeek,
+        ];
+    }
+
+    public function getReconciliationReports(?string $isoYearWeek = null, int $limit = 10): array
+    {
+        $limit = max(1, $limit);
+
+        if ($isoYearWeek !== null && trim($isoYearWeek) !== '') {
+            $snapshot = $this->database->getReference('reconciliation_reports/'.trim($isoYearWeek))->getSnapshot();
+            if (! $snapshot->exists()) {
+                return [];
+            }
+
+            $reports = [];
+            foreach ((array) $snapshot->getValue() as $reportId => $report) {
+                if (! is_array($report)) {
+                    continue;
+                }
+                $report['id'] = (string) $reportId;
+                $report['iso_year_week'] = (string) ($report['iso_year_week'] ?? trim($isoYearWeek));
+                $reports[] = $report;
+            }
+
+            usort($reports, fn ($a, $b) => ((int) ($b['generated_at'] ?? 0)) <=> ((int) ($a['generated_at'] ?? 0)));
+
+            return array_slice($reports, 0, $limit);
+        }
+
+        $rootSnapshot = $this->database->getReference('reconciliation_reports')
+            ->orderByKey()
+            ->limitToLast($limit)
+            ->getSnapshot();
+
+        if (! $rootSnapshot->exists()) {
+            return [];
+        }
+
+        $all = [];
+        foreach ((array) $rootSnapshot->getValue() as $week => $reports) {
+            if (! is_array($reports)) {
+                continue;
+            }
+
+            foreach ($reports as $reportId => $report) {
+                if (! is_array($report)) {
+                    continue;
+                }
+                $report['id'] = (string) $reportId;
+                $report['iso_year_week'] = (string) ($report['iso_year_week'] ?? $week);
+                $all[] = $report;
+            }
+        }
+
+        usort($all, fn ($a, $b) => ((int) ($b['generated_at'] ?? 0)) <=> ((int) ($a['generated_at'] ?? 0)));
+
+        return array_slice($all, 0, $limit);
+    }
+
+    public function getReconciliationReportById(string $isoYearWeek, string $reportId): ?array
+    {
+        $isoYearWeek = trim($isoYearWeek);
+        $reportId = trim($reportId);
+        if ($isoYearWeek === '' || $reportId === '') {
+            return null;
+        }
+
+        $snapshot = $this->database->getReference("reconciliation_reports/{$isoYearWeek}/{$reportId}")->getSnapshot();
+        if (! $snapshot->exists()) {
+            return null;
+        }
+
+        $report = (array) $snapshot->getValue();
+        $report['id'] = $reportId;
+        $report['iso_year_week'] = (string) ($report['iso_year_week'] ?? $isoYearWeek);
+
+        return $report;
     }
 }

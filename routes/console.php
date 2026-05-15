@@ -327,6 +327,17 @@ Artisan::command('waiter:send-monthly-report', function () {
     $this->info('Monthly report sent: '.($sent ? 'YES' : 'NO'));
 })->purpose('Send monthly task summary report to supervisor via WhatsApp');
 
+Artisan::command('firebase:cleanup-idempotency {--days=7 : Hapus cache yang lebih lama dari N hari}', function () {
+    $firebase = app(FirebaseService::class);
+    $days = max(1, (int) $this->option('days'));
+    $cutoff = time() - ($days * 86400);
+
+    $stats = $firebase->cleanupIdempotencyCaches($cutoff);
+    $this->info('Cutoff: '.date('Y-m-d H:i:s', $cutoff)." ({$days} hari lalu)");
+    $this->info('stock_movement_idempotency dihapus: '.$stats['stock_movement']);
+    $this->info('waiter_task_idempotency dihapus: '.$stats['waiter_task']);
+})->purpose('Bersihkan idempotency cache lama untuk hemat bandwidth Firebase');
+
 Artisan::command('waiter:check-stale-po', function () {
     $firebase = app(FirebaseService::class);
     $fonnte = app(FonnteService::class);
@@ -362,9 +373,60 @@ Artisan::command('waiter:check-stale-po', function () {
     $this->info('Stale PO reminder sent for ' . count($staleOrders) . ' PO(s).');
 })->purpose('Send WhatsApp reminder for POs not received after 3 days');
 
+Artisan::command('firebase:reconcile-stock {--days=7 : Window dalam hari}', function () {
+    $firebase = app(FirebaseService::class);
+    $fonnte = app(FonnteService::class);
+    $days = max(1, (int) $this->option('days'));
+
+    $result = $firebase->runWeeklyReconciliation($days);
+    $anomalies = $result['anomalies'] ?? [];
+
+    $this->info('Total racks: '.(int) ($result['total_racks_checked'] ?? 0));
+    $this->info('Total products: '.(int) ($result['total_products_checked'] ?? 0));
+    $this->info('Anomalies: '.count($anomalies));
+
+    foreach (array_slice($anomalies, 0, 5) as $idx => $anomaly) {
+        $this->line(sprintf(
+            '%d) %s / %s | expected=%d actual=%d drift=%+.2f%%',
+            $idx + 1,
+            (string) ($anomaly['rack_name'] ?? $anomaly['rack_id'] ?? '-'),
+            (string) ($anomaly['product_name'] ?? $anomaly['product_id'] ?? '-'),
+            (int) ($anomaly['expected'] ?? 0),
+            (int) ($anomaly['actual'] ?? 0),
+            (float) ($anomaly['drift_pct'] ?? 0)
+        ));
+    }
+
+    if (count($anomalies) > 0 && $fonnte->isAutoReportEnabled()) {
+        $reportPhone = $fonnte->getReportPhone();
+        if ($reportPhone) {
+            $lines = [];
+            foreach (array_slice($anomalies, 0, 5) as $anomaly) {
+                $lines[] = sprintf(
+                    '- %s/%s: %.2f%% (%+d)',
+                    (string) ($anomaly['rack_name'] ?? $anomaly['rack_id'] ?? '-'),
+                    (string) ($anomaly['product_name'] ?? $anomaly['product_id'] ?? '-'),
+                    (float) ($anomaly['drift_pct'] ?? 0),
+                    (int) ($anomaly['drift_qty'] ?? 0)
+                );
+            }
+
+            $body = "🚨 *Reconciliation Mingguan*\n"
+                .'Minggu: '.(string) ($result['iso_year_week'] ?? date('o_W'))."\n"
+                .'Drift terdeteksi: '.count($anomalies)."\n\n"
+                ."Top 5:\n".implode("\n", $lines)."\n\n"
+                .'Lihat detail: /admin/reconciliation';
+
+            $fonnte->sendMessage($reportPhone, $body);
+        }
+    }
+})->purpose('Rekonsiliasi stok mingguan dari ledger vs snapshot rak');
+
 Schedule::command('waiter:process-tasks')->everyMinute()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('waiter:audit-attendance')->hourly()->withoutOverlapping();
 Schedule::command('waiter:send-weekly-report')->weeklyOn(1, '07:00')->withoutOverlapping();
+Schedule::command('firebase:reconcile-stock')->weeklyOn(1, '07:30')->withoutOverlapping();
 Schedule::command('waiter:send-monthly-report')->monthlyOn(1, '07:00')->withoutOverlapping();
 Schedule::command('waiter:check-stale-po')->dailyAt('08:00')->withoutOverlapping();
+Schedule::command('firebase:cleanup-idempotency')->dailyAt('03:00')->withoutOverlapping();

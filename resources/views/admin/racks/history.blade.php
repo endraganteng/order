@@ -129,6 +129,84 @@
             color: var(--color-text-muted);
             font-size: 14px;
         }
+        .stock-live-section,
+        .movement-section {
+            margin-bottom: 20px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            background: #fff;
+        }
+        .stock-live-title,
+        .movement-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--color-text);
+            margin-bottom: 10px;
+        }
+        .stock-live-table,
+        .movement-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .stock-live-table th,
+        .stock-live-table td,
+        .movement-table th,
+        .movement-table td {
+            padding: 8px;
+            border-bottom: 1px solid var(--color-border);
+            text-align: left;
+        }
+        .stock-live-table th,
+        .movement-table th {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--color-text-muted);
+            background: var(--color-bg-secondary, #f8f9fa);
+        }
+        .movement-filter-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 10px;
+        }
+        .movement-filter-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .movement-filter-field label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+        }
+        .movement-filter-field input,
+        .movement-filter-field select {
+            min-width: 150px;
+            padding: 7px 9px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+        }
+        .status-chip {
+            display: inline-flex;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .status-chip.shortage {
+            background: var(--color-danger-bg);
+            color: var(--color-danger);
+        }
+        .status-chip.ok {
+            background: var(--color-success-bg);
+            color: var(--color-success);
+        }
 
         /* Photo modal */
         .photo-modal-overlay {
@@ -243,6 +321,131 @@
             <span class="rack-history-meta-value">{{ date('d M Y H:i', ($history[0]['completed_at'] ?? 0) / 1000) }}</span>
         </div>
         @endif
+    </div>
+
+    {{-- Live Stock per Produk --}}
+    <div class="stock-live-section">
+        <div class="stock-live-title">📦 Live Stok Per Produk</div>
+        <div style="overflow-x:auto;">
+            <table class="stock-live-table">
+                <thead>
+                    <tr>
+                        <th>Produk</th>
+                        <th>Target Qty</th>
+                        <th>Min Qty</th>
+                        <th>Current Qty</th>
+                        <th>Last Update</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($rackProducts as $product)
+                        @php
+                            $productId = (string) ($product['id'] ?? '');
+                            $live = $liveStockMap[$productId] ?? null;
+                            $currentQty = is_array($live) ? ($live['current_qty'] ?? null) : null;
+                            $lastUpdatedAt = is_array($live) ? (int) ($live['last_updated_at'] ?? 0) : 0;
+                        @endphp
+                        <tr>
+                            <td>{{ $product['name'] ?? '-' }}</td>
+                            <td>{{ (int) ($product['standard_qty'] ?? 0) }} {{ $product['unit'] ?? 'pcs' }}</td>
+                            <td>{{ (int) ($product['min_qty'] ?? 0) }} {{ $product['unit'] ?? 'pcs' }}</td>
+                            <td>
+                                @if($currentQty !== null)
+                                    {{ (int) $currentQty }} {{ $product['unit'] ?? 'pcs' }}
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            <td>{{ $lastUpdatedAt > 0 ? date('d M Y H:i', $lastUpdatedAt) : '-' }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="5" style="text-align:center; color: var(--color-text-muted);">Belum ada produk terpasang di rak ini.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {{-- Stock Movement History --}}
+    <div class="movement-section">
+        <div class="movement-title">🔄 Riwayat Pergerakan Stok</div>
+
+        <form method="GET" action="{{ route('admin.racks.history', $rack['id'] ?? '') }}" class="movement-filter-form">
+            <div class="movement-filter-field">
+                <label for="movement_product_id">Produk</label>
+                <select id="movement_product_id" name="movement_product_id">
+                    <option value="">Semua Produk</option>
+                    @foreach($rackProducts as $product)
+                        @php $optionProductId = (string) ($product['id'] ?? ''); @endphp
+                        <option value="{{ $optionProductId }}" {{ $filterProductId === $optionProductId ? 'selected' : '' }}>
+                            {{ $product['name'] ?? '-' }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="movement-filter-field">
+                <label for="movement_status">Status</label>
+                <select id="movement_status" name="movement_status">
+                    <option value="all" {{ $filterStatus === 'all' ? 'selected' : '' }}>Semua</option>
+                    <option value="shortage" {{ $filterStatus === 'shortage' ? 'selected' : '' }}>Kurang</option>
+                    <option value="ok" {{ $filterStatus === 'ok' ? 'selected' : '' }}>OK</option>
+                </select>
+            </div>
+            <div class="movement-filter-field">
+                <label for="movement_date_from">Dari Tanggal</label>
+                <input id="movement_date_from" type="date" name="movement_date_from" value="{{ $filterDateFrom }}">
+            </div>
+            <div class="movement-filter-field">
+                <label for="movement_date_to">Sampai Tanggal</label>
+                <input id="movement_date_to" type="date" name="movement_date_to" value="{{ $filterDateTo }}">
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+            <a href="{{ route('admin.racks.history', $rack['id'] ?? '') }}" class="btn btn-sm" style="background: var(--color-border);">Reset</a>
+        </form>
+
+        <div style="overflow-x:auto;">
+            <table class="movement-table">
+                <thead>
+                    <tr>
+                        <th>Waktu</th>
+                        <th>Produk</th>
+                        <th>Standar</th>
+                        <th>Aktual</th>
+                        <th>Delta</th>
+                        <th>Status</th>
+                        <th>Waiter</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($filteredStockMovements as $movement)
+                        @php
+                            $movementAt = (int) ($movement['completed_at'] ?? 0);
+                            $isShortage = !empty($movement['is_shortage']);
+                            $delta = (int) ($movement['delta_qty'] ?? 0);
+                        @endphp
+                        <tr>
+                            <td>{{ $movementAt > 0 ? date('d M Y H:i', $movementAt) : '-' }}</td>
+                            <td>{{ $movement['product_name'] ?? '-' }}</td>
+                            <td>{{ (int) ($movement['standard_qty'] ?? 0) }} {{ $movement['product_unit'] ?? 'pcs' }}</td>
+                            <td>{{ (int) ($movement['actual_qty'] ?? 0) }} {{ $movement['product_unit'] ?? 'pcs' }}</td>
+                            <td>{{ $delta > 0 ? '+' . $delta : (string) $delta }}</td>
+                            <td>
+                                <span class="status-chip {{ $isShortage ? 'shortage' : 'ok' }}">
+                                    {{ $isShortage ? 'Kurang' : 'OK' }}
+                                </span>
+                            </td>
+                            <td>{{ $movement['waiter_name'] ?? '-' }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7" style="text-align:center; color: var(--color-text-muted);">Tidak ada data movement sesuai filter.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
     </div>
 
     {{-- Photo Comparison View --}}

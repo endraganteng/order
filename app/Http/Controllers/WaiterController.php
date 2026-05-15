@@ -297,6 +297,7 @@ class WaiterController extends Controller
             'photo_proof_data_url' => 'nullable|string|max:5000000',
             'photo_before_data_url' => 'nullable|string|max:5000000',
             'product_checklist' => 'nullable|string|max:50000',
+            'idempotency_key' => 'nullable|string|max:120',
         ]);
 
         $waiterId = (string) session('waiter_id');
@@ -324,7 +325,8 @@ class WaiterController extends Controller
             $request->boolean('no_out_of_stock'),
             $request->input('photo_proof_data_url'),
             $productChecklist,
-            $request->input('photo_before_data_url')
+            $request->input('photo_before_data_url'),
+            $request->input('idempotency_key')
         );
 
         if (! ($result['success'] ?? false)) {
@@ -360,99 +362,9 @@ class WaiterController extends Controller
             report($e);
         }
 
-        // Auto-collect restock requests from product checklist (ONLY for storage racks)
-        try {
-            if ($productChecklist && is_array($productChecklist)) {
-                $task = $this->firebase->getWaiterTaskById($id);
-                $rackId = $task['rack_id'] ?? '';
-                $rackName = $task['rack_name'] ?? ($task['title'] ?? '');
-
-                // Only trigger restock for storage racks (not display racks)
-                $rack = $rackId ? $this->firebase->getRackById($rackId) : null;
-                $rackType = $rack['rack_type'] ?? 'storage';
-
-                if ($rackType === 'storage') {
-                    // STORAGE rack: shortage → masuk daftar restock (beli ke supplier)
-                    $productCategories = $this->firebase->getProductCategoriesMap();
-
-                    foreach ($productChecklist as $item) {
-                        $actualQty = (int) ($item['actual_qty'] ?? 0);
-                        $standardQty = (int) ($item['standard_qty'] ?? 0);
-                        $minQty = (int) ($item['min_qty'] ?? 0);
-
-                        $needsRestock = $standardQty > 0 && $actualQty < $standardQty;
-
-                        if ($needsRestock && $rackId) {
-                            $qtyNeeded = $standardQty - $actualQty;
-                            if ($qtyNeeded <= 0) $qtyNeeded = $standardQty;
-
-                            $productId = $item['product_id'] ?? '';
-                            $productMaster = $productId ? $this->firebase->getProductById($productId) : null;
-                            $catId = $productMaster['category_id'] ?? null;
-                            $catName = ($catId && isset($productCategories[$catId])) ? $productCategories[$catId]['name'] : 'Tanpa Kategori';
-
-                            $this->firebase->createOrUpdateRestockRequest([
-                                'product_id' => $productId,
-                                'product_name' => $item['product_name'] ?? ($item['name'] ?? ''),
-                                'product_category_id' => $catId,
-                                'product_category_name' => $catName,
-                                'rack_id' => $rackId,
-                                'rack_name' => $rackName,
-                                'reported_qty' => $actualQty,
-                                'standard_qty' => $standardQty,
-                                'min_qty' => $minQty,
-                                'qty_needed' => $qtyNeeded,
-                                'reported_by' => $waiterId,
-                                'reported_by_name' => $waiterName,
-                                'date' => date('Y-m-d'),
-                            ]);
-                        }
-                    }
-                } elseif ($rackType === 'display') {
-                    // DISPLAY rack: after refill step, if qty final still < standard → masuk restock
-                    // (waiter already did inline refill from gudang, qty submitted is the FINAL qty)
-                    $productCategories = $this->firebase->getProductCategoriesMap();
-
-                    foreach ($productChecklist as $item) {
-                        $actualQty = (int) ($item['actual_qty'] ?? 0); // qty FINAL setelah refill
-                        $standardQty = (int) ($item['standard_qty'] ?? 0);
-                        $minQty = (int) ($item['min_qty'] ?? 0);
-                        $wasRefilled = (bool) ($item['was_refilled'] ?? false);
-
-                        // Only trigger restock if item was refilled but still below standard
-                        // (meaning gudang juga tidak cukup)
-                        $needsRestock = $wasRefilled && $standardQty > 0 && $actualQty < $standardQty;
-
-                        if ($needsRestock && $rackId) {
-                            $qtyNeeded = $standardQty - $actualQty;
-
-                            $productId = $item['product_id'] ?? '';
-                            $productMaster = $productId ? $this->firebase->getProductById($productId) : null;
-                            $catId = $productMaster['category_id'] ?? null;
-                            $catName = ($catId && isset($productCategories[$catId])) ? $productCategories[$catId]['name'] : 'Tanpa Kategori';
-
-                            $this->firebase->createOrUpdateRestockRequest([
-                                'product_id' => $productId,
-                                'product_name' => $item['product_name'] ?? ($item['name'] ?? ''),
-                                'product_category_id' => $catId,
-                                'product_category_name' => $catName,
-                                'rack_id' => $rackId,
-                                'rack_name' => $rackName,
-                                'reported_qty' => $actualQty,
-                                'standard_qty' => $standardQty,
-                                'min_qty' => $minQty,
-                                'qty_needed' => $qtyNeeded,
-                                'reported_by' => $waiterId,
-                                'reported_by_name' => $waiterName,
-                                'date' => date('Y-m-d'),
-                            ]);
-                        }
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            report($e);
-        }
+        // Auto-collect restock requests sudah dipindah ke FirebaseService::updateWaiterTaskStatus
+        // (P0-3 atomicity: stock_movements + restock_requests ditulis SEBELUM task status='done',
+        // sehingga shortage signal tidak hilang kalau ada partial failure).
 
         $isPartial = (bool) ($result['partial'] ?? false);
         $responseMessage = $result['message'] ?? 'Tugas berhasil diverifikasi sebagai selesai.';
@@ -471,6 +383,40 @@ class WaiterController extends Controller
     }
 
     /**
+     * Claim waiter task for 15 minutes.
+     */
+    public function claimTask($id, Request $request)
+    {
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+
+        $result = $this->firebase->claimWaiterTask((string) $id, $waiterId, $waiterName);
+        $ok = (bool) ($result['success'] ?? false);
+
+        return response()->json([
+            'success' => $ok,
+            'message' => (string) ($result['message'] ?? ($ok ? 'Tugas berhasil di-klaim.' : 'Gagal klaim tugas.')),
+            'claim_expires_at' => $result['expires_at'] ?? null,
+            'claimed_by_name' => $result['claimed_by_name'] ?? null,
+        ], $ok ? 200 : 422);
+    }
+
+    /**
+     * Release task claim by current claimer.
+     */
+    public function releaseTask($id, Request $request)
+    {
+        $waiterId = (string) session('waiter_id');
+        $result = $this->firebase->releaseWaiterTask((string) $id, $waiterId);
+        $ok = (bool) ($result['success'] ?? false);
+
+        return response()->json([
+            'success' => $ok,
+            'message' => (string) ($result['message'] ?? ($ok ? 'Klaim tugas dilepas.' : 'Gagal melepas klaim tugas.')),
+        ], $ok ? 200 : 422);
+    }
+
+    /**
      * Get rack products map for waiter polling.
      */
     public function getRackProducts()
@@ -482,6 +428,97 @@ class WaiterController extends Controller
             'success' => true,
             'rack_products_map' => $rackProductsMap,
             'rack_types_map' => $rackTypesMap,
+        ]);
+    }
+
+    /**
+     * Standalone stock-take page for waiter.
+     */
+    public function stockTakeIndex()
+    {
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+
+        return view('waiter.stock_take', [
+            'waiterId' => $waiterId,
+            'waiterName' => $waiterName,
+        ]);
+    }
+
+    /**
+     * Resolve storage rack by scanned barcode for standalone stock take.
+     */
+    public function resolveStockTakeRack(Request $request)
+    {
+        $request->validate([
+            'rack_barcode_value' => 'required|string|max:120',
+        ]);
+
+        $result = $this->firebase->getStorageRackProductsByBarcode((string) $request->input('rack_barcode_value'));
+        if (! ($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Rak tidak valid.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'rack' => $result['rack'] ?? null,
+            'products' => $result['products'] ?? [],
+        ]);
+    }
+
+    /**
+     * Submit standalone storage stock-take movements.
+     */
+    public function submitStockTake(Request $request)
+    {
+        $request->validate([
+            'rack_barcode_value' => 'required|string|max:120',
+            'items' => 'required|string|max:120000',
+            'note' => 'nullable|string|max:500',
+            'idempotency_key' => 'nullable|string|max:120',
+        ]);
+
+        $items = json_decode((string) $request->input('items'), true);
+        if (! is_array($items)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format item pengambilan tidak valid.',
+            ], 422);
+        }
+
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+        $waiterEmail = (string) session('waiter_email', '');
+
+        $result = $this->firebase->submitStandaloneStockTake([
+            'waiter_id' => $waiterId,
+            'waiter_name' => $waiterName,
+            'waiter_email' => $waiterEmail,
+            'rack_barcode_value' => (string) $request->input('rack_barcode_value'),
+            'items' => $items,
+            'note' => (string) $request->input('note', ''),
+            'idempotency_key' => (string) $request->input('idempotency_key', ''),
+        ]);
+
+        if (! ($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Gagal menyimpan pengambilan stok.',
+                'invalid_items' => $result['invalid_items'] ?? [],
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'] ?? 'Pengambilan stok berhasil disimpan.',
+            'rack_id' => $result['rack_id'] ?? null,
+            'rack_name' => $result['rack_name'] ?? null,
+            'rack_barcode_value' => $result['rack_barcode_value'] ?? null,
+            'processed_items' => $result['processed_items'] ?? [],
+            'invalid_items' => $result['invalid_items'] ?? [],
         ]);
     }
 
@@ -766,6 +803,7 @@ class WaiterController extends Controller
         $request->validate([
             'restock_id' => 'required|string',
             'received_qty' => 'required|integer|min:1',
+            'idempotency_key' => 'nullable|string|max:120',
         ]);
 
         $waiterId = (string) session('waiter_id');
@@ -776,7 +814,8 @@ class WaiterController extends Controller
             $request->input('restock_id'),
             (int) $request->input('received_qty'),
             $waiterId,
-            $waiterName
+            $waiterName,
+            $request->input('idempotency_key')
         );
 
         return response()->json($result);
@@ -791,6 +830,7 @@ class WaiterController extends Controller
         $request->validate([
             'restock_id' => 'required|string',
             'issue_note' => 'required|string|max:500',
+            'idempotency_key' => 'nullable|string|max:120',
         ]);
 
         $waiterId = (string) session('waiter_id');
@@ -798,7 +838,7 @@ class WaiterController extends Controller
         $restockId = $request->input('restock_id');
         $issueNote = $request->input('issue_note');
 
-        $result = $this->firebase->reportPoItemIssue($poId, $restockId, $issueNote, $waiterId, $waiterName);
+        $result = $this->firebase->reportPoItemIssue($poId, $restockId, $issueNote, $waiterId, $waiterName, $request->input('idempotency_key'));
 
         return response()->json($result);
     }

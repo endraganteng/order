@@ -312,7 +312,7 @@ class TaskController extends Controller
         }
 
         if ($assignmentType === 'role') {
-            if (! in_array($assignedWaiterRole, ['kasir', 'pelayan'], true)) {
+            if (! in_array($assignedWaiterRole, ['kasir', 'pelayan', 'backup'], true)) {
                 return back()
                     ->withErrors(['assigned_waiter_role' => 'Pilih role waiter untuk delegasi berbasis role.'])
                     ->withInput();
@@ -1782,7 +1782,7 @@ class TaskController extends Controller
                 $grouped[$key]['is_role_round_robin'] = true;
 
                 $assignedWaiterRole = strtolower(trim((string) ($task['assigned_waiter_role'] ?? '')));
-                if ($grouped[$key]['assigned_waiter_role'] === '' && in_array($assignedWaiterRole, ['kasir', 'pelayan'], true)) {
+                if ($grouped[$key]['assigned_waiter_role'] === '' && in_array($assignedWaiterRole, ['kasir', 'pelayan', 'backup'], true)) {
                     $grouped[$key]['assigned_waiter_role'] = $assignedWaiterRole;
                 }
 
