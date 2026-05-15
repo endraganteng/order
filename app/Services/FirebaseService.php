@@ -8197,4 +8197,27 @@ class FirebaseService
             report($e);
         }
     }
+
+    /**
+     * Ambil seluruh active_sessions waiter (presence) untuk Live Monitor.
+     * Backend pakai service account, bypass Firebase Auth rules.
+     *
+     * @return array  shape: [rackId => [sessionId => sessionData, ...], ...]
+     */
+    public function getActiveSessions(): array
+    {
+        try {
+            $snap = $this->database->getReference('active_sessions')->getSnapshot();
+            if (! $snap->exists()) {
+                return [];
+            }
+            $value = $snap->getValue();
+
+            return is_array($value) ? $value : [];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [];
+        }
+    }
 }

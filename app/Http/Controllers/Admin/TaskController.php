@@ -1887,6 +1887,21 @@ class TaskController extends Controller
     }
 
     /**
+     * Active sessions JSON for live monitor (polled by frontend).
+     * Backend pakai service account, bypass Firebase Auth rules.
+     */
+    public function liveActiveSessions()
+    {
+        $sessions = $this->firebase->getActiveSessions();
+
+        return response()->json([
+            'success' => true,
+            'sessions' => $sessions,
+            'fetched_at' => time(),
+        ]);
+    }
+
+    /**
      * Get task categories (JSON for AJAX).
      */
     public function categoryIndex()

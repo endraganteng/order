@@ -112,6 +112,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Live Dashboard
         Route::get('tasks/live', [TaskController::class, 'live'])->name('tasks.live');
+        Route::get('tasks/live/active-sessions', [TaskController::class, 'liveActiveSessions'])->name('tasks.live.active_sessions');
 
         Route::get('reconciliation', [ReconciliationController::class, 'index'])->name('reconciliation.index');
         Route::get('reconciliation/{isoYearWeek}/{reportId}', [ReconciliationController::class, 'show'])->name('reconciliation.show');

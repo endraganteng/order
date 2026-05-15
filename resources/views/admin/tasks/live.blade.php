@@ -116,11 +116,10 @@
 
 {{-- Waiter data from server --}}
 <script id="lm-waiters-data" type="application/json">{!! json_encode($waiters ?? []) !!}</script>
-@include('partials.firebase-rtdb-client')
 
 <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-    import { getDatabase, ref, onValue, query, orderByChild, equalTo } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+    import { getDatabase, ref, onValue, query, orderByChild, equalTo, limitToLast } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
     import { getAuth, signInWithCredential, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
     const firebaseConfig = {
@@ -184,43 +183,35 @@
         document.getElementById('lm-status').style.borderColor = 'var(--color-danger-border)';
     });
 
-    // Bandwidth: limitToLast(100) — admin live monitor butuh task terbaru,
-    // tidak perlu seluruh history task.
-    (function setupCompatDeltaTrigger() {
-        if (!window.RTDB_READY || !window.firebaseDB) return;
-        const debounceMs = 600;
-        let pending = false;
-        const trigger = () => {
-            if (pending) return;
-            pending = true;
-            setTimeout(() => {
-                pending = false;
-                updateDashboard();
-            }, debounceMs);
-        };
-        try {
-            window.firebaseDB.ref('waiter_tasks').limitToLast(100).on('value', trigger);
-        } catch (e) {
-            console.warn('[RTDB] admin live listener failed:', e);
-        }
-    })();
+    // Bandwidth: listener tasksRef di atas sudah filter scheduled_for_date=today via modular SDK.
+    // Hapus duplikasi compat SDK listener — modular SDK sudah authenticated via Google credential.
 
     (function setupActiveSessionsListener() {
-        if (!window.RTDB_READY || !window.firebaseDB) {
-            renderActiveSessions();
-            return;
-        }
-        try {
-            window.firebaseDB.ref('active_sessions').on('value', (snap) => {
-                activeSessions = snap.val() || {};
-                renderActiveSessions();
-            }, () => {
+        const endpoint = "{{ route('admin.tasks.live.active_sessions') }}";
+
+        async function fetchActiveSessions() {
+            try {
+                const res = await fetch(endpoint, {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                if (json && json.success) {
+                    activeSessions = json.sessions || {};
+                    renderActiveSessions();
+                } else {
+                    renderActiveSessions('Gagal memuat sesi aktif.');
+                }
+            } catch (e) {
+                console.warn('[active_sessions] fetch failed:', e);
                 renderActiveSessions('Gagal memuat sesi aktif.');
-            });
-            activeSessionRenderTimer = setInterval(() => renderActiveSessions(), 30000);
-        } catch (e) {
-            renderActiveSessions('Gagal memuat sesi aktif.');
+            }
         }
+
+        // Initial + polling
+        fetchActiveSessions();
+        activeSessionRenderTimer = setInterval(fetchActiveSessions, 5000);
     })();
 
     function updateDashboard() {
