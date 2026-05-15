@@ -318,10 +318,22 @@ class TaskController extends Controller
                     ->withInput();
             }
 
-            $roleWaiters = $this->firebase->getActiveWaitersByRole($assignedWaiterRole);
+            // Untuk task_type='rack_check', builder support multi-role (kasir+pelayan+backup di lane berbeda).
+            // Validate selected waiters terhadap SEMUA active waiter, bukan filter per role.
+            if ($taskType === 'rack_check') {
+                $roleWaiters = $this->firebase->getActiveWaiters();
+            } else {
+                $roleWaiters = $this->firebase->getActiveWaitersByRole($assignedWaiterRole);
+            }
+
             if (count($roleWaiters) === 0) {
+                $errKey = $taskType === 'rack_check' ? 'selected_waiter_ids' : 'assigned_waiter_role';
+                $errMsg = $taskType === 'rack_check'
+                    ? 'Tidak ada waiter aktif. Aktifkan minimal satu waiter dulu.'
+                    : 'Tidak ada waiter aktif untuk role yang dipilih.';
+
                 return back()
-                    ->withErrors(['assigned_waiter_role' => 'Tidak ada waiter aktif untuk role yang dipilih.'])
+                    ->withErrors([$errKey => $errMsg])
                     ->withInput();
             }
 
@@ -354,8 +366,12 @@ class TaskController extends Controller
 
                 foreach ($selectedWaiterIds as $selectedWaiterId) {
                     if (! isset($roleWaiterMap[$selectedWaiterId])) {
+                        $errMsg = $taskType === 'rack_check'
+                            ? 'Salah satu waiter yang dipilih sudah nonaktif atau tidak ditemukan. Refresh halaman dan pilih ulang.'
+                            : 'Daftar waiter terpilih tidak valid untuk role yang dipilih.';
+
                         return back()
-                            ->withErrors(['selected_waiter_ids' => 'Daftar waiter terpilih tidak valid untuk role yang dipilih.'])
+                            ->withErrors(['selected_waiter_ids' => $errMsg])
                             ->withInput();
                     }
 
