@@ -889,12 +889,23 @@
             @endif
         </div>
 
+        @php
+            $activePointCategories = collect($config['point_categories'] ?? [])->filter(fn($meta) => ($meta['is_active'] ?? true) !== false);
+            $dailyConfiguredMax = (int)$activePointCategories
+                ->filter(fn($meta) => ($meta['scoring_type'] ?? 'daily') === 'daily')
+                ->sum(fn($meta) => (int)($meta['max_daily_points'] ?? $meta['max_monthly_points'] ?? 0));
+            $monthlyConfiguredMax = (int)$activePointCategories
+                ->filter(fn($meta) => ($meta['scoring_type'] ?? 'daily') === 'monthly')
+                ->sum(fn($meta) => (int)($meta['max_monthly_points'] ?? $meta['max_daily_points'] ?? 0));
+            $perfectDayBonus = (int)($config['perfect_day_bonus'] ?? 5);
+        @endphp
+
         <div class="card">
             <div class="card-title">💡 Cara Kerja Poin</div>
             <div class="explain-block">
                 <ul class="explain-list">
-                    <li class="explain-line"><strong>Poin harian max</strong><span>{{ $dailyMaxWithPerfect }} poin/hari (termasuk perfect day bonus)</span></li>
-                    <li class="explain-line"><strong>Poin bulanan max</strong><span>{{ $theoreticalMax }} poin ({{ $dailyMaxWithPerfect * $workingDays }} harian + {{ $monthlyServiceMax }} pelayanan + {{ $monthlySalesMax }} penjualan)</span></li>
+                    <li class="explain-line"><strong>Poin harian max</strong><span>{{ $dailyMaxWithPerfect }} poin/hari ({{ $dailyConfiguredMax }} kategori harian + {{ $perfectDayBonus }} perfect day bonus)</span></li>
+                    <li class="explain-line"><strong>Poin bulanan max</strong><span>{{ $theoreticalMax }} poin ({{ $dailyMaxWithPerfect * $workingDays }} harian + {{ $monthlyConfiguredMax }} bulanan)</span></li>
                     <li class="explain-line"><strong>Poin kamu saat ini</strong><span>{{ $netPoints }} poin ({{ $percentage }}%)</span></li>
                 </ul>
             </div>
@@ -938,12 +949,30 @@
         <div class="card">
             <div class="card-title">📊 Poin Harian Kamu</div>
             <ul class="daily-points-note">
-                <li><strong>Disiplin (max 5):</strong> Dari absensi - tepat waktu = 5 poin</li>
-                <li><strong>Operasional (max 10):</strong> Dari tugas - semua selesai = 10 poin</li>
-                <li><strong>Pelayanan (max 5):</strong> Penilaian supervisor</li>
-                <li><strong>Penjualan (max 5):</strong> Default 0, ditambah supervisor jika aktif menjual/upselling</li>
-                <li><strong>Sikap (max 5):</strong> Submit laporan kegiatan = 5 poin</li>
-                <li><strong>Perfect Day (+5):</strong> Bonus jika semua kategori &gt; 0</li>
+                @php
+                    $fallbackReasons = [
+                        'discipline'  => fn($max) => "Dari absensi - tepat waktu = {$max} poin",
+                        'operational' => fn($max) => "Dari tugas - semua selesai = {$max} poin (default poin penuh kalau tidak ada tugas)",
+                        'service'     => fn($max) => "Penilaian supervisor (bulanan)",
+                        'sales'       => fn($max) => "Default 0, ditambah supervisor jika aktif menjual/upselling (bulanan)",
+                        'attitude'    => fn($max) => "Submit laporan kegiatan = {$max} poin",
+                    ];
+                @endphp
+                @foreach(($config['point_categories'] ?? []) as $key => $meta)
+                    @if(($meta['is_active'] ?? true) === false)
+                        @continue
+                    @endif
+                    @php
+                        $catLabel = $meta['label'] ?? ucfirst($key);
+                        $scoringType = $meta['scoring_type'] ?? 'daily';
+                        $maxPoints = $scoringType === 'monthly'
+                            ? (int)($meta['max_monthly_points'] ?? $meta['max_daily_points'] ?? 5)
+                            : (int)($meta['max_daily_points'] ?? 5);
+                        $reason = $meta['description'] ?? (isset($fallbackReasons[$key]) ? $fallbackReasons[$key]($maxPoints) : "Penilaian {$catLabel}");
+                    @endphp
+                    <li><strong>{{ $catLabel }} (max {{ $maxPoints }}):</strong> {{ $reason }}</li>
+                @endforeach
+                <li><strong>Perfect Day (+{{ $perfectDayBonus }}):</strong> Bonus jika semua kategori &gt; 0</li>
             </ul>
         </div>
 

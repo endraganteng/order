@@ -360,6 +360,8 @@ class BonusService
      */
     public function autoScoreDailyPoints(string $waiterId, string $date, ?array $attendance = null, array $waiterTasks = [], array $waiterReports = []): array
     {
+        $config = $this->getBonusConfig();
+
         // -----------------------------------------------------------------
         //  DISCIPLINE (max 5) — from attendance
         // -----------------------------------------------------------------
@@ -386,9 +388,7 @@ class BonusService
         // -----------------------------------------------------------------
         //  OPERATIONAL (max 10) — from task completion
         // -----------------------------------------------------------------
-        $operationalScore = 0;
-        $operationalReason = 'Tidak ada tugas dijadwalkan';
-
+        $operationalMax = (int) ($config['point_categories']['operational']['max_daily_points'] ?? 10);
         $totalTasks = count($waiterTasks);
 
         if ($totalTasks > 0) {
@@ -396,8 +396,12 @@ class BonusService
                 return ($task['status'] ?? 'pending') === 'done';
             }));
 
-            $operationalScore = (int) round(($completedTasks / $totalTasks) * 10);
+            $operationalScore = (int) round(($completedTasks / $totalTasks) * $operationalMax);
             $operationalReason = $completedTasks . '/' . $totalTasks . ' tugas selesai';
+        } else {
+            // Tidak ada task dijadwalkan = waiter tidak bisa kontrol; default full poin agar fair.
+            $operationalScore = $operationalMax;
+            $operationalReason = 'Tidak ada tugas dijadwalkan (default poin penuh)';
         }
 
         // -----------------------------------------------------------------

@@ -422,11 +422,77 @@ Artisan::command('firebase:reconcile-stock {--days=7 : Window dalam hari}', func
     }
 })->purpose('Rekonsiliasi stok mingguan dari ledger vs snapshot rak');
 
+Artisan::command('bonus:generate-leaderboard {month? : Format Y-m, default bulan ini}', function (?string $month = null) {
+    $bonus = app(BonusService::class);
+    $month = $month ?: date('Y-m');
+
+    try {
+        $leaderboard = $bonus->generateLeaderboard($month);
+        $count = is_array($leaderboard['rankings'] ?? null) ? count($leaderboard['rankings']) : 0;
+        $this->info("Leaderboard generated for {$month}: {$count} entries.");
+    } catch (\Throwable $e) {
+        $this->error('Failed: '.$e->getMessage());
+        report($e);
+        return 1;
+    }
+    return 0;
+})->purpose('Auto-regenerate bonus leaderboard for current month');
+
+Artisan::command('bonus:reconcile-pending', function () {
+    $firebase = app(FirebaseService::class);
+    $bonus = app(BonusService::class);
+
+    $items = $firebase->getBonusPendingRecomputes(100);
+    if (empty($items)) {
+        $this->info('No pending bonus recompute items.');
+        return 0;
+    }
+
+    $this->info('Processing '.count($items).' pending bonus recompute item(s)...');
+    $success = 0;
+    $failed = 0;
+
+    foreach ($items as $item) {
+        $waiterId = (string) ($item['waiter_id'] ?? '');
+        $date = (string) ($item['date'] ?? '');
+        if ($waiterId === '' || $date === '') {
+            $firebase->clearBonusPendingFlag($item);
+            continue;
+        }
+
+        try {
+            $attendance = $firebase->getAttendanceByDate($waiterId, $date);
+            $todayTasks = $firebase->getWaiterTasksForDate($waiterId, $date);
+            $reports = $firebase->getWaiterActivityReportsByWaiterIdForDate($waiterId, $date);
+
+            $autoScores = $bonus->autoScoreDailyPoints($waiterId, $date, $attendance, $todayTasks, $reports);
+            $categoryScores = [
+                'discipline' => $autoScores['discipline'] ?? 0,
+                'operational' => $autoScores['operational'] ?? 0,
+                'attitude' => $autoScores['attitude'] ?? 0,
+            ];
+            $bonus->saveAutoDailyScore($waiterId, $date, $categoryScores, 'Auto-scored on reconcile worker', $autoScores['auto_details'] ?? []);
+
+            $firebase->clearBonusPendingFlag($item);
+            $success++;
+        } catch (\Throwable $e) {
+            report($e);
+            $failed++;
+            // Don't clear; will retry next run. But cap retry count to avoid infinite loop.
+        }
+    }
+
+    $this->info("Reconciled: {$success}, Failed: {$failed}");
+    return $failed > 0 ? 1 : 0;
+})->purpose('Retry auto-score for tasks/events that failed bonus computation');
+
 Schedule::command('waiter:process-tasks')->everyMinute()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('waiter:audit-attendance')->hourly()->withoutOverlapping();
 Schedule::command('waiter:send-weekly-report')->weeklyOn(1, '07:00')->withoutOverlapping();
 Schedule::command('firebase:reconcile-stock')->weeklyOn(1, '07:30')->withoutOverlapping();
+Schedule::command('bonus:generate-leaderboard')->dailyAt('06:00')->withoutOverlapping();
+Schedule::command('bonus:reconcile-pending')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('waiter:send-monthly-report')->monthlyOn(1, '07:00')->withoutOverlapping();
 Schedule::command('waiter:check-stale-po')->dailyAt('08:00')->withoutOverlapping();
 Schedule::command('firebase:cleanup-idempotency')->dailyAt('03:00')->withoutOverlapping();

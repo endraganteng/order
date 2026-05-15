@@ -3552,10 +3552,16 @@ class FirebaseService
 
                 // Build lookup: "taskId::waiterId" => true for existing mandatory_task_missed penalties
                 $existingPenaltyKeys = [];
+                $lateArrivalKeys = [];
                 foreach ($allMonthPenalties as $p) {
                     if (($p['penalty_type'] ?? '') === 'mandatory_task_missed') {
                         $key = ($p['related_task_id'] ?? '') . '::' . ($p['waiter_id'] ?? '');
                         $existingPenaltyKeys[$key] = true;
+                    }
+
+                    if (($p['penalty_type'] ?? '') === 'late_arrival') {
+                        $key = ($p['waiter_id'] ?? '') . '::' . ($p['date'] ?? '');
+                        $lateArrivalKeys[$key] = true;
                     }
                 }
 
@@ -3618,6 +3624,12 @@ class FirebaseService
 
                     if (in_array($attendanceStatus, ['absent', 'sick', 'day_off'], true) || $attendanceExempt) {
                         // Skip penalty: waiter sedang absent/sick/day_off di tanggal ini
+                        continue;
+                    }
+
+                    $lateKey = $waiterId . '::' . $taskDate;
+                    if (isset($lateArrivalKeys[$lateKey])) {
+                        // Skip penalty: waiter sudah kena late_arrival di tanggal ini, tidak double-penalty
                         continue;
                     }
 
@@ -8042,5 +8054,147 @@ class FirebaseService
         $report['iso_year_week'] = (string) ($report['iso_year_week'] ?? $isoYearWeek);
 
         return $report;
+    }
+
+    /**
+     * Tandai task butuh recompute bonus poin (worker akan retry).
+     */
+    public function flagTaskBonusPending(string $taskId, string $waiterId, array $context = []): void
+    {
+        try {
+            if ($taskId === '' || $waiterId === '') {
+                return;
+            }
+            $payload = [
+                'bonus_pending_recompute' => true,
+                'bonus_pending_at' => time(),
+                'bonus_pending_waiter_id' => $waiterId,
+                'bonus_pending_context' => $context,
+            ];
+            $this->database->getReference('waiter_tasks/'.$taskId)->update($payload);
+            // Index lookup: bonus_pending_recompute_index/{waiterId}/{date}/{taskId} = true
+            $date = $context['date'] ?? date('Y-m-d');
+            $this->database->getReference('bonus_pending_recompute_index/'.$waiterId.'/'.$date.'/'.$taskId)->set([
+                'created_at' => time(),
+                'context' => $context,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Tandai waiter butuh recompute bonus (untuk event non-task seperti activity_report / clock_in).
+     */
+    public function flagWaiterBonusPending(string $waiterId, string $date, array $context = []): void
+    {
+        try {
+            if ($waiterId === '' || $date === '') {
+                return;
+            }
+            $key = sha1(($context['source'] ?? 'unknown').'|'.$waiterId.'|'.$date.'|'.time());
+            $this->database->getReference('bonus_pending_waiter_index/'.$waiterId.'/'.$date.'/'.$key)->set([
+                'created_at' => time(),
+                'context' => $context,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Ambil semua bonus pending recompute (max N).
+     *
+     * @return array list of ['type'=>'task'|'waiter','waiter_id','date','task_id','context','created_at']
+     */
+    public function getBonusPendingRecomputes(int $limit = 100): array
+    {
+        $items = [];
+
+        try {
+            // Task-based
+            $taskSnap = $this->database->getReference('bonus_pending_recompute_index')->getSnapshot();
+            if ($taskSnap->exists()) {
+                foreach ((array) $taskSnap->getValue() as $waiterId => $byDate) {
+                    foreach ((array) $byDate as $date => $byTask) {
+                        foreach ((array) $byTask as $taskId => $payload) {
+                            $items[] = [
+                                'type' => 'task',
+                                'waiter_id' => (string) $waiterId,
+                                'date' => (string) $date,
+                                'task_id' => (string) $taskId,
+                                'context' => (array) ($payload['context'] ?? []),
+                                'created_at' => (int) ($payload['created_at'] ?? 0),
+                            ];
+                            if (count($items) >= $limit) {
+                                return $items;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Waiter-event-based
+            $waiterSnap = $this->database->getReference('bonus_pending_waiter_index')->getSnapshot();
+            if ($waiterSnap->exists()) {
+                foreach ((array) $waiterSnap->getValue() as $waiterId => $byDate) {
+                    foreach ((array) $byDate as $date => $byKey) {
+                        foreach ((array) $byKey as $key => $payload) {
+                            $items[] = [
+                                'type' => 'waiter',
+                                'waiter_id' => (string) $waiterId,
+                                'date' => (string) $date,
+                                'task_id' => '',
+                                'context_key' => (string) $key,
+                                'context' => (array) ($payload['context'] ?? []),
+                                'created_at' => (int) ($payload['created_at'] ?? 0),
+                            ];
+                            if (count($items) >= $limit) {
+                                return $items;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $items;
+    }
+
+    /**
+     * Hapus flag bonus pending setelah recompute sukses.
+     */
+    public function clearBonusPendingFlag(array $item): void
+    {
+        try {
+            $waiterId = (string) ($item['waiter_id'] ?? '');
+            $date = (string) ($item['date'] ?? '');
+            if ($waiterId === '' || $date === '') {
+                return;
+            }
+            $type = (string) ($item['type'] ?? '');
+
+            if ($type === 'task') {
+                $taskId = (string) ($item['task_id'] ?? '');
+                if ($taskId === '') {
+                    return;
+                }
+                $this->database->getReference('bonus_pending_recompute_index/'.$waiterId.'/'.$date.'/'.$taskId)->remove();
+                $this->database->getReference('waiter_tasks/'.$taskId)->update([
+                    'bonus_pending_recompute' => false,
+                    'bonus_pending_cleared_at' => time(),
+                ]);
+            } elseif ($type === 'waiter') {
+                $key = (string) ($item['context_key'] ?? '');
+                if ($key === '') {
+                    return;
+                }
+                $this->database->getReference('bonus_pending_waiter_index/'.$waiterId.'/'.$date.'/'.$key)->remove();
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }

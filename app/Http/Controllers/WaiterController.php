@@ -109,37 +109,6 @@ class WaiterController extends Controller
         $settings = $this->firebase->getSettings();
         $clockOutEnabled = !empty($settings['clock_out_enabled']);
 
-        // Bonus dashboard data
-        $bonusMonth = date('Y-m');
-        $bonusProgress = $this->bonus->getWaiterMonthlyProgress($waiterId, $bonusMonth);
-        $bonusConfig = $bonusProgress['config'];
-        $monthlyPoints = $bonusProgress['monthly_points'];
-        $penalties = $bonusProgress['penalties'];
-        $salesTarget = $bonusProgress['sales_target'];
-        $bonusSummary = $bonusProgress['bonus_summary'];
-        $leaderboard = $bonusProgress['leaderboard'];
-        $totalEarned = (int) $bonusProgress['total_earned'];
-        $totalPenalties = (int) $bonusProgress['total_penalties'];
-        $netPoints = (int) $bonusProgress['net_points'];
-        $daysScored = (int) $bonusProgress['days_scored'];
-        $perfectDays = (int) $bonusProgress['perfect_days'];
-        $percentage = (float) $bonusProgress['percentage'];
-        $theoreticalMax = (int) $bonusProgress['theoretical_max'];
-        $workingDays = (int) $bonusProgress['working_days'];
-        $dailyMaxWithPerfect = (int) $bonusProgress['daily_max_with_perfect'];
-        $monthlyServiceMax = (int) $bonusProgress['monthly_service_max'];
-        $monthlySalesMax = (int) $bonusProgress['monthly_sales_max'];
-
-        $myRank = null;
-        if ($leaderboard && ! empty($leaderboard['rankings'])) {
-            foreach ($leaderboard['rankings'] as $entry) {
-                if (($entry['waiter_id'] ?? '') === $waiterId) {
-                    $myRank = $entry;
-                    break;
-                }
-            }
-        }
-
         return view('waiter.tasks', [
             'waiterId' => $waiterId,
             'waiterName' => $waiterName,
@@ -153,26 +122,6 @@ class WaiterController extends Controller
             'todayAttendance' => $todayAttendance,
             'waiterShift' => $waiterShift,
             'shiftStartTime' => $waiterShift ? ($waiterShift['clock_in_time'] ?? null) : null,
-            // Bonus data
-            'bonusMonth' => $bonusMonth,
-            'bonusConfig' => $bonusConfig,
-            'monthlyPoints' => $monthlyPoints,
-            'penalties' => $penalties,
-            'salesTarget' => $salesTarget,
-            'bonusSummary' => $bonusSummary,
-            'leaderboard' => $leaderboard,
-            'myRank' => $myRank,
-            'totalEarned' => $totalEarned,
-            'totalPenalties' => $totalPenalties,
-            'netPoints' => $netPoints,
-            'daysScored' => $daysScored,
-            'perfectDays' => $perfectDays,
-            'percentage' => $percentage,
-            'theoreticalMax' => $theoreticalMax,
-            'workingDays' => $workingDays,
-            'dailyMaxWithPerfect' => $dailyMaxWithPerfect,
-            'monthlyServiceMax' => $monthlyServiceMax,
-            'monthlySalesMax' => $monthlySalesMax,
             'clockOutEnabled' => $clockOutEnabled,
         ]);
     }
@@ -270,6 +219,18 @@ class WaiterController extends Controller
             $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on activity report', $autoScores['auto_details'] ?? []);
         } catch (\Throwable $e) {
             report($e);
+            // Flag waiter untuk worker retry; jangan biarkan poin hilang silent.
+            try {
+                $this->firebase->flagWaiterBonusPending($waiterId, $reportDate, [
+                    'source' => 'activity_report',
+                    'reason' => 'auto_score_failed',
+                    'error_class' => get_class($e),
+                    'error_message' => substr($e->getMessage(), 0, 500),
+                    'report_id' => (string) ($result['report_id'] ?? ''),
+                ]);
+            } catch (\Throwable $flagErr) {
+                report($flagErr);
+            }
         }
 
         if ($request->expectsJson()) {
@@ -360,6 +321,18 @@ class WaiterController extends Controller
             $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on task completion', $autoScores['auto_details'] ?? []);
         } catch (\Throwable $e) {
             report($e);
+            // Flag task untuk worker retry; jangan biarkan poin hilang silent.
+            try {
+                $this->firebase->flagTaskBonusPending((string) $id, $waiterId, [
+                    'source' => 'complete_task',
+                    'date' => date('Y-m-d'),
+                    'reason' => 'auto_score_failed',
+                    'error_class' => get_class($e),
+                    'error_message' => substr($e->getMessage(), 0, 500),
+                ]);
+            } catch (\Throwable $flagErr) {
+                report($flagErr);
+            }
         }
 
         // Auto-collect restock requests sudah dipindah ke FirebaseService::updateWaiterTaskStatus
@@ -598,6 +571,17 @@ class WaiterController extends Controller
                 $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on clock-in', $autoScores['auto_details'] ?? []);
             } catch (\Throwable $e) {
                 report($e);
+                // Flag waiter untuk worker retry; jangan biarkan poin hilang silent.
+                try {
+                    $this->firebase->flagWaiterBonusPending($waiterId, date('Y-m-d'), [
+                        'source' => 'clock_in',
+                        'reason' => 'auto_score_failed',
+                        'error_class' => get_class($e),
+                        'error_message' => substr($e->getMessage(), 0, 500),
+                    ]);
+                } catch (\Throwable $flagErr) {
+                    report($flagErr);
+                }
             }
         }
 

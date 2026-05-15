@@ -891,6 +891,7 @@
         #panel-bonus .b-bg-red { background: #fff5f5; }
 
         @keyframes bonus-ring-fill { from { stroke-dashoffset: 440; } }
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
 
         @media (max-width: 420px) {
             #panel-bonus .tier-row { flex-wrap: wrap; gap: 0.35rem 0.65rem; }
@@ -1172,403 +1173,7 @@
         </section>
 
         <section id="panel-bonus" class="portal-panel">
-            <div class="bonus-container">
-                <div class="bonus-month-bar">
-                    <span class="bonus-month-label">🏆 Bonus Dashboard</span>
-                    <input type="month" class="bonus-month-picker" id="bonusMonthPicker" value="{{ $bonusMonth ?? date('Y-m') }}">
-                </div>
-
-                <div id="bonus-content-area">
-                @if(!empty($bonusSummary) && ($bonusSummary['status'] ?? '') === 'finalized')
-                <div class="finalized-banner">
-                    <div class="finalized-label">Bonus Final Bulan Ini</div>
-                    <div class="finalized-amount">Rp {{ number_format($bonusSummary['bonus_amount'] ?? 0, 0, ',', '.') }}</div>
-                    <div class="finalized-status">✓ Sudah Difinalisasi</div>
-                </div>
-                @endif
-
-                @php
-                    $ringColor = '#38a169';
-                    $tierLabel = 'Excellent';
-                    $tierBg = 'b-bg-green';
-                    $tierColor = 'b-color-green';
-                    if ($percentage >= 80) {
-                        $ringColor = '#38a169'; $tierLabel = 'Excellent'; $tierBg = 'b-bg-green'; $tierColor = 'b-color-green';
-                    } elseif ($percentage >= 70) {
-                        $ringColor = '#d69e2e'; $tierLabel = 'Good'; $tierBg = 'b-bg-yellow'; $tierColor = 'b-color-yellow';
-                    } elseif ($percentage >= 60) {
-                        $ringColor = '#dd6b20'; $tierLabel = 'Average'; $tierBg = 'b-bg-orange'; $tierColor = 'b-color-orange';
-                    } else {
-                        $ringColor = '#e53e3e'; $tierLabel = 'Needs Improvement'; $tierBg = 'b-bg-red'; $tierColor = 'b-color-red';
-                    }
-                    $circumference = 2 * 3.14159 * 70;
-                    $dashoffset = $circumference - ($circumference * min($percentage, 100) / 100);
-                @endphp
-
-                <div class="progress-ring-wrapper">
-                    <div class="progress-ring-container">
-                        <svg class="progress-ring-svg" viewBox="0 0 180 180">
-                            <circle class="progress-ring-bg" cx="90" cy="90" r="70"></circle>
-                            <circle class="progress-ring-fill" cx="90" cy="90" r="70"
-                                stroke="{{ $ringColor }}"
-                                stroke-dasharray="{{ $circumference }}"
-                                stroke-dashoffset="{{ $dashoffset }}"
-                                style="animation: bonus-ring-fill 1.5s ease-in-out;"></circle>
-                        </svg>
-                        <div class="progress-ring-text">
-                            <div class="progress-ring-percent {{ $tierColor }}">{{ $percentage }}%</div>
-                            <div class="progress-ring-label">dari maksimum</div>
-                        </div>
-                    </div>
-                    <span class="progress-tier {{ $tierBg }} {{ $tierColor }}">{{ $tierLabel }}</span>
-                </div>
-
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value {{ $tierColor }}">{{ $netPoints }}</div>
-                        <div class="stat-label">Total Poin</div>
-                        <div class="stat-sub">/ {{ $theoreticalMax }} maks</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{{ $daysScored }}</div>
-                        <div class="stat-label">Hari Dinilai</div>
-                        <div class="stat-sub">/ {{ $workingDays }} hari kerja</div>
-                    </div>
-                    <div class="stat-card perfect">
-                        <div class="stat-value">{{ $perfectDays }} ✨</div>
-                        <div class="stat-label">Perfect Days</div>
-                        <div class="stat-sub">skor sempurna</div>
-                    </div>
-                    <div class="stat-card penalty">
-                        <div class="stat-value">-{{ $totalPenalties }}</div>
-                        <div class="stat-label">Penalti</div>
-                        <div class="stat-sub">poin dikurangi</div>
-                    </div>
-                </div>
-
-                @php
-                    $bonusConfigLocal = $bonusConfig ?? [];
-                    $pointsTiersRaw = $bonusConfigLocal['point_bonus_tiers'] ?? [
-                        'tier_1' => ['min_percentage' => 80, 'bonus_amount' => 300000],
-                        'tier_2' => ['min_percentage' => 70, 'bonus_amount' => 250000],
-                        'tier_3' => ['min_percentage' => 60, 'bonus_amount' => 200000],
-                        'tier_4' => ['min_percentage' => 0, 'bonus_amount' => 0],
-                    ];
-                    $salesTiersRaw = $bonusConfigLocal['sales_bonus_tiers'] ?? [
-                        'tier_1' => ['min_percentage' => 100, 'bonus_amount' => 200000],
-                        'tier_2' => ['min_percentage' => 80, 'bonus_amount' => 150000],
-                        'tier_3' => ['min_percentage' => 60, 'bonus_amount' => 100000],
-                        'tier_4' => ['min_percentage' => 0, 'bonus_amount' => 0],
-                    ];
-
-                    $pointsTiers = collect($pointsTiersRaw)
-                        ->map(fn($tier) => ['min_percentage' => (int)($tier['min_percentage'] ?? 0), 'bonus_amount' => (int)($tier['bonus_amount'] ?? 0)])
-                        ->sortByDesc('min_percentage')->values()->all();
-
-                    $salesTiers = collect($salesTiersRaw)
-                        ->map(fn($tier) => ['min_percentage' => (int)($tier['min_percentage'] ?? 0), 'bonus_amount' => (int)($tier['bonus_amount'] ?? 0)])
-                        ->sortByDesc('min_percentage')->values()->all();
-
-                    $resolveTier = function (array $tiers, float $value) {
-                        foreach ($tiers as $idx => $tier) {
-                            if ($value >= (float)($tier['min_percentage'] ?? 0)) {
-                                return ['index' => $idx, 'tier' => $tier, 'amount' => (int)($tier['bonus_amount'] ?? 0)];
-                            }
-                        }
-                        return ['index' => null, 'tier' => null, 'amount' => 0];
-                    };
-
-                    $salesAchievedProjection = (int)($salesTarget['achieved'] ?? 0);
-                    $salesGoalProjection = (int)($salesTarget['target'] ?? 0);
-                    $salesPercentageProjection = $salesGoalProjection > 0 ? round(($salesAchievedProjection / $salesGoalProjection) * 100) : 0;
-
-                    $pointsProjection = $resolveTier($pointsTiers, $percentage);
-                    $salesProjection = $resolveTier($salesTiers, $salesPercentageProjection);
-
-                    $pointsBonusProjection = $pointsProjection['amount'];
-                    $salesBonusProjection = $salesProjection['amount'];
-                    $projectedAmount = $pointsBonusProjection + $salesBonusProjection;
-
-                    $buildTierRows = function (array $tiers) {
-                        $rows = [];
-                        foreach ($tiers as $idx => $tier) {
-                            $min = (int)($tier['min_percentage'] ?? 0);
-                            if ($idx === 0) {
-                                $label = '≥' . $min . '%';
-                            } else {
-                                $prevMin = (int)($tiers[$idx - 1]['min_percentage'] ?? 0);
-                                $upper = max($prevMin - 1, $min);
-                                $label = $min > 0 ? ($min . '-' . $upper . '%') : ('<' . $prevMin . '%');
-                            }
-                            $rows[] = ['label' => $label, 'bonus_amount' => (int)($tier['bonus_amount'] ?? 0)];
-                        }
-                        return $rows;
-                    };
-
-                    $pointsTierRows = $buildTierRows($pointsTiers);
-                    $salesTierRows = $buildTierRows($salesTiers);
-                    $maxPointsBonus = (int)collect($pointsTiers)->max('bonus_amount');
-                    $maxSalesBonus = (int)collect($salesTiers)->max('bonus_amount');
-                @endphp
-
-                <div class="bonus-card projected-bonus">
-                    <div class="bonus-card-title">💰 Proyeksi Bonus</div>
-                    <div class="projected-tier-label">Poin tugas: {{ $percentage }}% • Target penjualan: {{ $salesPercentageProjection }}%</div>
-                    <div class="projected-amount {{ $projectedAmount > 0 ? 'b-color-green' : 'b-color-red' }}">Rp {{ number_format($projectedAmount, 0, ',', '.') }}</div>
-                    <div class="projected-note">Rp {{ number_format($pointsBonusProjection, 0, ',', '.') }} (poin) + Rp {{ number_format($salesBonusProjection, 0, ',', '.') }} (penjualan)</div>
-                </div>
-
-                <div class="bonus-card">
-                    <div class="bonus-card-title">💡 Cara Kerja Poin</div>
-                    <div class="explain-block">
-                        <div class="explain-title">Poin Harian (Otomatis)</div>
-                        <ul class="explain-list">
-                            <li class="explain-line"><strong>Poin harian max</strong><span>{{ $dailyMaxWithPerfect }} poin/hari (termasuk perfect day bonus)</span></li>
-                            <li class="explain-line"><strong>Poin harian bulanan</strong><span>{{ $dailyMaxWithPerfect * $workingDays }} poin ({{ $dailyMaxWithPerfect }} × {{ $workingDays }} hari)</span></li>
-                        </ul>
-                    </div>
-                    <div class="explain-block">
-                        <div class="explain-title">Poin Bulanan (Supervisor)</div>
-                        <ul class="explain-list">
-                            <li class="explain-line"><strong>Pelayanan</strong><span>0-100% × max harian × {{ $workingDays }} = max {{ $monthlyServiceMax }} poin</span></li>
-                            <li class="explain-line"><strong>Penjualan</strong><span>0-100% × max harian × {{ $workingDays }} = max {{ $monthlySalesMax }} poin</span></li>
-                        </ul>
-                    </div>
-                    <div class="explain-block">
-                        <div class="explain-title">Total</div>
-                        <ul class="explain-list">
-                            <li class="explain-line"><strong>Max bulanan</strong><span>{{ $theoreticalMax }} poin</span></li>
-                            <li class="explain-line"><strong>Poin kamu saat ini</strong><span>{{ $netPoints }} poin ({{ $percentage }}%)</span></li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="bonus-card">
-                    <div class="bonus-card-title">📊 Poin Harian Kamu</div>
-                    <ul class="daily-points-note">
-                        <li><strong>Disiplin (max 5):</strong> Dari absensi - tepat waktu = 5 poin</li>
-                        <li><strong>Operasional (max 10):</strong> Dari tugas - semua selesai = 10 poin</li>
-                        <li><strong>Sikap (max 5):</strong> Submit laporan kegiatan = 5 poin</li>
-                        <li><strong>Perfect Day (+5):</strong> Bonus jika semua 3 kategori harian &gt; 0</li>
-                    </ul>
-                    <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #edf2f7;">
-                        <div style="font-size: 0.78rem; font-weight: 700; color: #4a5568; margin-bottom: 0.4rem;">Penilaian Bulanan (oleh Supervisor)</div>
-                        <ul class="daily-points-note">
-                            <li><strong>Pelayanan (0-100%):</strong> Dinilai saat finalisasi bulanan</li>
-                            <li><strong>Penjualan (0-100%):</strong> Dinilai saat finalisasi bulanan</li>
-                        </ul>
-                    </div>
-                </div>
-                </div>
-
-                <div class="bonus-card">
-                    <div class="bonus-card-title">💰 Konversi Poin ke Bonus</div>
-                    <div class="bonus-tier-wrapper">
-                        <div class="tier-box">
-                            <div class="tier-box-title">📋 Bonus dari Poin Tugas (max Rp {{ number_format($maxPointsBonus, 0, ',', '.') }})</div>
-                            @foreach($pointsTierRows as $idx => $row)
-                                @php $isActive = $pointsProjection['index'] === $idx; @endphp
-                                <div class="tier-row {{ $isActive ? 'active b-bg-green b-color-green' : '' }}">
-                                    <span class="tier-range">{{ $row['label'] }}</span>
-                                    <span class="tier-amount">Rp {{ number_format($row['bonus_amount'], 0, ',', '.') }}</span>
-                                    @if($isActive)
-                                        <span class="tier-badge b-bg-green b-color-green">KAMU DISINI</span>
-                                    @endif
-                                </div>
-                            @endforeach
-                        </div>
-
-                        <div class="tier-box">
-                            <div class="tier-box-title">🎯 Bonus dari Target Penjualan (max Rp {{ number_format($maxSalesBonus, 0, ',', '.') }})</div>
-                            @foreach($salesTierRows as $idx => $row)
-                                @php $isActive = $salesProjection['index'] === $idx; @endphp
-                                <div class="tier-row {{ $isActive ? 'active b-bg-green b-color-green' : '' }}">
-                                    <span class="tier-range">{{ $row['label'] }}</span>
-                                    <span class="tier-amount">Rp {{ number_format($row['bonus_amount'], 0, ',', '.') }}</span>
-                                    @if($isActive)
-                                        <span class="tier-badge b-bg-green b-color-green">KAMU DISINI</span>
-                                    @endif
-                                </div>
-                            @endforeach
-                        </div>
-
-                        <div class="total-max-note">Total Maksimal: Rp {{ number_format($maxPointsBonus + $maxSalesBonus, 0, ',', '.') }}/bulan</div>
-                    </div>
-                </div>
-
-                <div class="bonus-card">
-                    <div class="bonus-card-title">📊 Poin Harian Kamu</div>
-                    <ul class="daily-points-note">
-                        <li><strong>Disiplin (max 5):</strong> Dari absensi - tepat waktu = 5 poin</li>
-                        <li><strong>Operasional (max 10):</strong> Dari tugas - semua selesai = 10 poin</li>
-                        <li><strong>Pelayanan (max 5):</strong> Penilaian supervisor</li>
-                        <li><strong>Penjualan (max 5):</strong> Default 0, ditambah supervisor jika aktif menjual/upselling</li>
-                        <li><strong>Sikap (max 5):</strong> Submit laporan kegiatan = 5 poin</li>
-                        <li><strong>Perfect Day (+5):</strong> Bonus jika semua kategori &gt; 0</li>
-                    </ul>
-                </div>
-
-                @php
-                    $dailyCategories = ['discipline' => 'Disiplin', 'operational' => 'Operasional', 'attitude' => 'Sikap'];
-                    $categoryTotals = [];
-                    $categoryMaxes = [];
-                    $cats = $bonusConfigLocal['point_categories'] ?? [];
-                    foreach ($dailyCategories as $key => $label) {
-                        $categoryTotals[$key] = 0;
-                        $categoryMaxes[$key] = (int)($cats[$key]['max_daily_points'] ?? 5);
-                    }
-                    $dayCount = max(count($monthlyPoints), 1);
-                    foreach ($monthlyPoints as $record) {
-                        foreach ($dailyCategories as $key => $label) {
-                            $categoryTotals[$key] += (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
-                        }
-                    }
-                    $categoryColors = [
-                        'discipline' => '#667eea', 'operational' => '#764ba2', 'attitude' => '#e53e3e',
-                    ];
-
-                    // Monthly scores from bonus summary
-                    $monthlyServicePct = (int)($bonusSummary['monthly_service_percentage'] ?? 0);
-                    $monthlySalesPct = (int)($bonusSummary['monthly_sales_percentage'] ?? 0);
-                    $monthlyServicePts = (int)($bonusSummary['service_points'] ?? 0);
-                    $monthlySalesPts = (int)($bonusSummary['sales_points'] ?? 0);
-                    $monthlyMaxPerCat = 5 * $workingDays;
-                @endphp
-
-                <div class="bonus-card">
-                    <div class="bonus-card-title">📊 Rata-rata Harian per Kategori</div>
-                    @foreach($dailyCategories as $key => $label)
-                        @php
-                            $avg = $dayCount > 0 ? round($categoryTotals[$key] / $dayCount, 1) : 0;
-                            $maxCat = $categoryMaxes[$key];
-                            $catPercent = $maxCat > 0 ? min(100, round(($avg / $maxCat) * 100)) : 0;
-                        @endphp
-                        <div class="category-bar-row">
-                            <span class="category-bar-label">{{ $label }}</span>
-                            <div class="category-bar-track">
-                                <div class="category-bar-fill" style="width: {{ $catPercent }}%; background: {{ $categoryColors[$key] ?? '#667eea' }};"></div>
-                            </div>
-                            <span class="category-bar-value">{{ $avg }}/{{ $maxCat }}</span>
-                        </div>
-                    @endforeach
-
-                    <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid #edf2f7;">
-                        <div style="font-size: 0.78rem; font-weight: 700; color: #4a5568; margin-bottom: 0.5rem;">Skor Bulanan (dari Supervisor)</div>
-                        <div class="category-bar-row">
-                            <span class="category-bar-label">Pelayanan</span>
-                            <div class="category-bar-track">
-                                <div class="category-bar-fill" style="width: {{ $monthlyServicePct }}%; background: #38a169;"></div>
-                            </div>
-                            <span class="category-bar-value">{{ $monthlyServicePct }}%</span>
-                        </div>
-                        <div class="category-bar-row">
-                            <span class="category-bar-label">Penjualan</span>
-                            <div class="category-bar-track">
-                                <div class="category-bar-fill" style="width: {{ $monthlySalesPct }}%; background: #d69e2e;"></div>
-                            </div>
-                            <span class="category-bar-value">{{ $monthlySalesPct }}%</span>
-                        </div>
-                        @if($monthlyServicePts > 0 || $monthlySalesPts > 0)
-                            <div style="font-size: 0.72rem; color: #64748b; margin-top: 0.4rem;">
-                                Pelayanan: {{ $monthlyServicePts }}/{{ $monthlyMaxPerCat }} poin • Penjualan: {{ $monthlySalesPts }}/{{ $monthlyMaxPerCat }} poin
-                            </div>
-                        @else
-                            <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 0.4rem; font-style: italic;">
-                                Belum dinilai — akan diisi supervisor saat finalisasi bulanan
-                            </div>
-                        @endif
-                    </div>
-                </div>
-
-                <div class="bonus-card">
-                    <div class="bonus-card-title">📅 Riwayat Harian</div>
-                    <div class="daily-list">
-                        @php $sortedDays = collect($monthlyPoints)->sortKeysDesc()->take(10); @endphp
-                        @forelse($sortedDays as $date => $record)
-                            <div class="daily-item">
-                                <span class="daily-date">{{ \Carbon\Carbon::parse($date)->format('d M') }}</span>
-                                <div class="daily-categories">
-                                    @foreach($dailyCategories as $key => $label)
-                                        @php
-                                            $catPts = (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
-                                            $catMax = $categoryMaxes[$key];
-                                            $opacity = $catMax > 0 ? max(0.2, $catPts / $catMax) : 0.2;
-                                        @endphp
-                                        <div class="daily-cat-dot" style="background: {{ $categoryColors[$key] ?? '#667eea' }}; opacity: {{ $opacity }};"></div>
-                                    @endforeach
-                                </div>
-                                <span class="daily-total">{{ $record['daily_total'] ?? 0 }}</span>
-                            </div>
-                        @empty
-                            <div class="bonus-empty-state">Belum ada data harian</div>
-                        @endforelse
-                    </div>
-                </div>
-
-                @if(count($penalties) > 0)
-                <div class="bonus-card">
-                    <div class="bonus-card-title">⚠️ Penalti</div>
-                    @foreach($penalties as $penalty)
-                        <div class="penalty-item">
-                            <div class="penalty-header">
-                                <span class="penalty-type">{{ $penalty['type'] ?? $penalty['penalty_type'] ?? 'Pelanggaran' }}</span>
-                                <span class="penalty-points">-{{ abs((int)($penalty['points_deducted'] ?? 0)) }} poin</span>
-                            </div>
-                            <div class="penalty-reason">{{ $penalty['reason'] ?? $penalty['notes'] ?? '-' }}</div>
-                            <div class="penalty-date">{{ $penalty['date'] ?? $penalty['created_at'] ?? '' }}</div>
-                        </div>
-                    @endforeach
-                </div>
-                @endif
-
-                @if(!empty($salesTarget))
-                @php
-                    $salesAchieved = (int)($salesTarget['achieved'] ?? 0);
-                    $salesGoal = (int)($salesTarget['target'] ?? 1);
-                    $salesPercent = $salesGoal > 0 ? min(100, round(($salesAchieved / $salesGoal) * 100)) : 0;
-                @endphp
-                <div class="bonus-card">
-                    <div class="bonus-card-title">🎯 Target Penjualan</div>
-                    <div class="sales-progress-bar">
-                        <div class="sales-progress-fill" style="width: {{ $salesPercent }}%;"></div>
-                    </div>
-                    <div class="sales-stats">
-                        <span>Rp {{ number_format($salesAchieved, 0, ',', '.') }}</span>
-                        <span>{{ $salesPercent }}%</span>
-                        <span>Rp {{ number_format($salesGoal, 0, ',', '.') }}</span>
-                    </div>
-                </div>
-                @endif
-
-                @if(!empty($leaderboard) && !empty($leaderboard['rankings']))
-                <div class="bonus-card">
-                    <div class="bonus-card-title">🏅 Leaderboard</div>
-                    @php $topRankings = array_slice($leaderboard['rankings'], 0, 5); @endphp
-                    @foreach($topRankings as $idx => $entry)
-                        @php
-                            $rankNum = $idx + 1;
-                            $rankClass = match($rankNum) { 1 => 'gold', 2 => 'silver', 3 => 'bronze', default => '' };
-                            $isMe = ($entry['waiter_id'] ?? '') === $waiterId;
-                        @endphp
-                        <div class="leaderboard-item {{ $isMe ? 'is-me' : '' }}">
-                            <div class="leaderboard-rank {{ $rankClass }}">{{ $rankNum }}</div>
-                            <div class="leaderboard-name">{{ $entry['waiter_name'] ?? 'Waiter' }}{{ $isMe ? ' (Anda)' : '' }}</div>
-                            <div class="leaderboard-points">{{ $entry['total_points'] ?? $entry['net_points'] ?? 0 }} pts</div>
-                        </div>
-                    @endforeach
-
-                    @if($myRank && ($myRank['rank'] ?? 0) > 5)
-                        <div style="text-align: center; padding: 0.5rem; color: #aaa; font-size: 0.75rem;">···</div>
-                        <div class="leaderboard-item is-me">
-                            <div class="leaderboard-rank">{{ $myRank['rank'] ?? '?' }}</div>
-                            <div class="leaderboard-name">{{ $waiterName }} (Anda)</div>
-                            <div class="leaderboard-points">{{ $myRank['total_points'] ?? $myRank['net_points'] ?? 0 }} pts</div>
-                        </div>
-                    @endif
-                </div>
-                @endif
-                </div>{{-- end #bonus-content-area --}}
-            </div>
+            @include('waiter._bonus_summary', ['lazyLoad' => true])
         </section>
     </div>
 
@@ -3205,6 +2810,139 @@
                 console.warn('[RTDB] tasks listener failed:', e);
             }
         })();
+
+        (function lazyLoadBonusSummary() {
+            const widget = document.getElementById('bonusSummaryMini');
+            if (!widget || widget.dataset.lazy !== '1') return;
+
+            const fetchAndRender = async () => {
+                try {
+                    const res = await fetch(`{{ route('waiter.bonus.api') }}`, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    renderBonusSummary(data);
+                } catch (e) {
+                    console.warn('Lazy bonus fetch failed', e);
+                }
+            };
+
+            window.__lazyLoadBonusSummary = fetchAndRender;
+
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(() => fetchAndRender(), { timeout: 1500 });
+            } else {
+                setTimeout(fetchAndRender, 800);
+            }
+
+            function renderBonusSummary(d) {
+                const netPoints = parseInt(d.net_points || 0, 10);
+                const theoreticalMax = parseInt(d.theoretical_max || 0, 10);
+                const percentage = parseFloat(d.percentage || 0);
+                const projectedAmount = computeProjectedAmount(d);
+                const tier = computeTier(percentage);
+
+                const grid = widget.querySelector('.bsm-grid');
+                if (!grid) return;
+                grid.innerHTML = `
+                    <div class="bsm-stat"><div class="bsm-stat-value ${tier.color}">${netPoints} <span class="bsm-stat-sub">/ ${theoreticalMax}</span></div><div class="bsm-stat-label">Total Poin</div></div>
+                    <div class="bsm-stat"><div class="bsm-stat-value">${percentage.toFixed(0)}%</div><div class="bsm-stat-label">${tier.label}</div></div>
+                    <div class="bsm-stat"><div class="bsm-stat-value">Rp ${formatRp(projectedAmount)}</div><div class="bsm-stat-label">Proyeksi Bonus</div></div>
+                `;
+                widget.dataset.lazy = '0';
+            }
+
+            function computeTier(pct) {
+                if (pct >= 80) return { label: 'Excellent', color: 'color-green' };
+                if (pct >= 70) return { label: 'Good', color: 'color-green' };
+                if (pct >= 60) return { label: 'Average', color: 'color-orange' };
+                return { label: 'Needs Improvement', color: 'color-red' };
+            }
+
+            function computeProjectedAmount(d) {
+                const pct = parseFloat(d.percentage || 0);
+                if (pct >= 80) return 300000;
+                if (pct >= 70) return 250000;
+                if (pct >= 60) return 200000;
+                return 0;
+            }
+
+            function formatRp(n) {
+                return (parseInt(n, 10) || 0).toLocaleString('id-ID');
+            }
+        })();
+
+        (function attachPenaltyListener() {
+            if (!window.RTDB_READY || !window.firebase || !window.firebaseDB) return;
+
+            const waiterId = '{{ session('waiter_id') }}';
+            if (!waiterId) return;
+
+            const sessionStart = Math.floor(Date.now() / 1000);
+            const seenPenalties = new Set();
+
+            window.firebaseDB.ref('waiter_penalties')
+                .orderByChild('waiter_id')
+                .equalTo(waiterId)
+                .limitToLast(20)
+                .on('child_added', (snap) => {
+                    const data = snap.val() || {};
+                    const id = snap.key;
+                    const createdAt = parseInt(data.created_at || 0, 10);
+
+                    if (createdAt < sessionStart - 5) return;
+                    if (seenPenalties.has(id)) return;
+                    seenPenalties.add(id);
+
+                    const label = data.penalty_label || data.penalty_type || 'Pelanggaran';
+                    const points = Math.abs(parseInt(data.points_deducted || 0, 10));
+                    const reason = data.reason || '';
+
+                    showPenaltyToast({
+                        title: `Penalty: ${label}`,
+                        points: points,
+                        reason: reason,
+                    });
+
+                    setTimeout(() => {
+                        const lazyFn = window.__lazyLoadBonusSummary;
+                        if (typeof lazyFn === 'function') lazyFn();
+                    }, 1500);
+                });
+        })();
+
+        function showPenaltyToast({ title, points, reason }) {
+            let wrap = document.getElementById('penaltyToastWrap');
+            if (!wrap) {
+                wrap = document.createElement('div');
+                wrap.id = 'penaltyToastWrap';
+                wrap.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:340px;';
+                document.body.appendChild(wrap);
+            }
+
+            const toast = document.createElement('div');
+            toast.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;padding:12px 14px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);animation:slideInRight 0.3s ease;';
+            toast.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;font-size:14px;color:#991b1b;margin-bottom:4px;">⚠️ ${escapeHtml(title)}</div>
+                        <div style="font-size:13px;color:#7f1d1d;font-weight:600;margin-bottom:4px;">-${points} poin</div>
+                        ${reason ? `<div style="font-size:12px;color:#64748b;">${escapeHtml(reason)}</div>` : ''}
+                    </div>
+                    <button type="button" style="background:none;border:0;font-size:18px;color:#991b1b;cursor:pointer;padding:0 4px;line-height:1;">×</button>
+                </div>
+            `;
+            const closer = toast.firstElementChild?.querySelector('button');
+            if (closer) closer.addEventListener('click', () => toast.remove());
+
+            wrap.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.transition = 'opacity 0.3s, transform 0.3s';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(20px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 8000);
+        }
 
         async function completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl, photoBeforeDataUrl) {
             submitButton.disabled = true;
