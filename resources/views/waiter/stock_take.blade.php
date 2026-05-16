@@ -287,9 +287,10 @@
 
         /* ─── Toast ─── */
         .toast-wrap { position: fixed; top: 16px; right: 16px; z-index: 10000; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
-        .toast { padding: 11px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg); pointer-events: auto; animation: toastIn .25s ease; max-width: 300px; }
+        .toast { padding: 11px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg); pointer-events: auto; animation: toastIn .25s ease; max-width: 300px; white-space: pre-line; }
         .toast.ok  { background: var(--c-success-bg); color: var(--c-success-text); border: 1px solid var(--c-success-border); }
         .toast.err { background: var(--c-danger-bg);  color: var(--c-danger-text);  border: 1px solid var(--c-danger-border); }
+        .toast.info { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; }
         @keyframes toastIn { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
 
         /* ─── Scanner modal ─── */
@@ -1066,6 +1067,9 @@
             rackMeta.innerHTML = `
                 <strong>${currentRack.name}</strong>
                 <div class="chips">
+                    <span class="chip" style="background: #dbeafe; color: #1e40af; border-color: #93c5fd;" title="Stok di rak ini diambil ke display rack">
+                        🟦 Gudang Storage
+                    </span>
                     <span class="chip">
                         <svg width="11" height="11" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-6 6c0 4 6 10 6 10s6-6 6-10a6 6 0 00-6-6zm0 8a2 2 0 110-4 2 2 0 010 4z"/></svg>
                         ${currentRack.location || '-'}
@@ -1182,6 +1186,28 @@
             }
             showFeedback('ok', data.message || 'Pengambilan stok berhasil disimpan.');
             showToast('ok', data.message || 'Pengambilan stok berhasil disimpan!');
+
+            // F3: Tampilkan summary restock_request yg ter-create otomatis (transparency
+            // ke waiter supaya ngerti kenapa setelah cek rak ada task baru muncul).
+            const createdRestocks = Array.isArray(data.created_restock_requests) ? data.created_restock_requests : [];
+            if (createdRestocks.length > 0) {
+                const supplierItems = createdRestocks.filter(r => r && (r.source === 'auto_threshold_storage' || r.source === 'storage_rack_shortage'));
+                const refillItems = createdRestocks.filter(r => r && (r.source === 'auto_threshold_display_storage_low' || r.source === 'display_rack_post_refill_short' || r.source === 'display_rack_low_storage_low'));
+
+                const lines = [];
+                if (refillItems.length > 0) {
+                    lines.push(`🟡 ${refillItems.length} produk akan di-refill dari gudang ke display`);
+                }
+                if (supplierItems.length > 0) {
+                    lines.push(`🔴 ${supplierItems.length} produk perlu di-PO ke supplier`);
+                }
+                if (lines.length > 0) {
+                    setTimeout(() => {
+                        showToast('info', 'Auto-restock dibuat:\n' + lines.join('\n'), 6000);
+                    }, 800);
+                }
+            }
+
             clearDraftLocal(getDraftKey());
             stockTakeNote.value = '';
             await resolveRack();

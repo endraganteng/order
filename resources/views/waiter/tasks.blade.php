@@ -1076,7 +1076,7 @@
                     <span class="quick-action-tile__icon">🧾</span>
                     <span class="quick-action-tile__body">
                         <span class="quick-action-tile__title">Ambil Stok Gudang</span>
-                        <span class="quick-action-tile__sub">Scan rak gudang & ambil stok</span>
+                        <span class="quick-action-tile__sub">Pindahkan stok dari gudang ke display</span>
                     </span>
                     <span class="quick-action-tile__chevron">›</span>
                 </a>
@@ -1084,7 +1084,7 @@
                     <span class="quick-action-tile__icon">📦</span>
                     <span class="quick-action-tile__body">
                         <span class="quick-action-tile__title">Penerimaan Barang</span>
-                        <span class="quick-action-tile__sub">Terima barang dari Purchase Order</span>
+                        <span class="quick-action-tile__sub">Catat barang masuk dari supplier (PO)</span>
                     </span>
                     <span class="quick-action-tile__chevron">›</span>
                 </a>

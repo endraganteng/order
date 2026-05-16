@@ -22,6 +22,14 @@ class FirebaseService
      */
     protected array $requestCache = [];
 
+    /**
+     * Capture-bag untuk restock_request yg ter-create otomatis dalam transaksi top-level
+     * (e.g. submitStandaloneStockTake). Caller reset di awal, baca di akhir untuk expose
+     * ke response API. Internal struct: [{product_id, product_name, source, qty_needed,
+     * rack_id, rack_name, rack_type, restock_request_id}, ...]
+     */
+    protected array $lastCreatedRestocks = [];
+
     public function __construct(Database $database, Auth $auth)
     {
         $this->database = $database;
@@ -1000,6 +1008,9 @@ class FirebaseService
      */
     public function submitStandaloneStockTake(array $payload): array
     {
+        // Reset capture-bag untuk ekspos restock_requests yg ter-create otomatis di end-of-call
+        $this->lastCreatedRestocks = [];
+
         $waiterId = trim((string) ($payload['waiter_id'] ?? ''));
         $waiterName = trim((string) ($payload['waiter_name'] ?? 'Waiter'));
         $rackBarcodeValue = strtoupper(trim((string) ($payload['rack_barcode_value'] ?? '')));
@@ -1156,6 +1167,7 @@ class FirebaseService
             'rack_barcode_value' => $rackBarcodeValue,
             'processed_items' => $movementResults,
             'invalid_items' => $invalidRows,
+            'created_restock_requests' => $this->lastCreatedRestocks,
             'message' => 'Pengambilan stok berhasil disimpan.',
         ];
     }
@@ -6834,7 +6846,7 @@ class FirebaseService
                 $categoryName = 'Tanpa Kategori';
             }
 
-            $this->createOrUpdateRestockRequest([
+            $restockRequestId = $this->createOrUpdateRestockRequest([
                 'product_id' => $productId,
                 'product_name' => trim((string) ($rackProduct['product_name'] ?? ($rackProduct['name'] ?? ($productMaster['name'] ?? '')))),
                 'product_category_id' => $categoryId,
@@ -6851,6 +6863,20 @@ class FirebaseService
                 'source' => $source,
                 'note' => $note,
             ]);
+
+            // Capture untuk caller (post-submit summary di response API).
+            $this->lastCreatedRestocks[] = [
+                'product_id' => $productId,
+                'product_name' => trim((string) ($rackProduct['product_name'] ?? ($rackProduct['name'] ?? ($productMaster['name'] ?? '')))),
+                'rack_id' => $rackId,
+                'rack_name' => $rackName,
+                'rack_type' => $rackType,
+                'source' => $source,
+                'qty_needed' => $qtyNeeded,
+                'reported_qty' => $currentQty,
+                'standard_qty' => $standardQty,
+                'restock_request_id' => $restockRequestId,
+            ];
         } catch (\Throwable $e) {
             // Wajib non-blocking: auto-restock tidak boleh menggagalkan commit movement.
             report($e);
