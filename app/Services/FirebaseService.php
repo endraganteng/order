@@ -2134,7 +2134,8 @@ class FirebaseService
         $assignedWaiterId = $data['assigned_waiter_id'] ?? null;
         $assignedWaiterRole = $data['assigned_waiter_role'] ?? null;
         $selectedWaiterIds = $data['selected_waiter_ids'] ?? [];
-        $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId, $assignedWaiterRole, $selectedWaiterIds);
+        $taskTypeForResolve = (string) ($data['task_type'] ?? 'general');
+        $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId, $assignedWaiterRole, $selectedWaiterIds, $taskTypeForResolve);
         $count = 0;
         $createdEntries = [];
 
@@ -3330,7 +3331,8 @@ class FirebaseService
                 $templateAssignmentType,
                 $template['assigned_waiter_id'] ?? null,
                 $assignedWaiterRole,
-                $template['selected_waiter_ids'] ?? []
+                $template['selected_waiter_ids'] ?? [],
+                (string) ($template['task_type'] ?? 'general')
             );
 
             if (empty($targetWaiters)) {
@@ -3869,7 +3871,7 @@ class FirebaseService
     /**
      * Resolve target waiters from assignment.
      */
-    protected function resolveTargetWaiters($assignmentType, $assignedWaiterId = null, $assignedWaiterRole = null, $selectedWaiterIdsInput = [])
+    protected function resolveTargetWaiters($assignmentType, $assignedWaiterId = null, $assignedWaiterRole = null, $selectedWaiterIdsInput = [], $taskType = 'general')
     {
         if ($assignmentType === 'single') {
             if (! $assignedWaiterId) {
@@ -3885,11 +3887,6 @@ class FirebaseService
         }
 
         if ($assignmentType === 'role') {
-            if (! $assignedWaiterRole) {
-                return [];
-            }
-
-            $roleWaiters = $this->getActiveWaitersByRole($assignedWaiterRole);
             if (! is_array($selectedWaiterIdsInput)) {
                 $selectedWaiterIdsInput = explode(',', (string) $selectedWaiterIdsInput);
             }
@@ -3899,6 +3896,27 @@ class FirebaseService
             }, $selectedWaiterIdsInput), function ($waiterId) {
                 return $waiterId !== '';
             })));
+
+            // Untuk rack_check dgn selected waiters, BYPASS filter role.
+            // Builder rack_check support multi-role (kasir + pelayan + backup di lane berbeda),
+            // jadi resolveTargetWaiters harus return semua selected waiter terlepas role mereka.
+            if ($taskType === 'rack_check' && count($selectedWaiterIds) > 0) {
+                $allActive = $this->getActiveWaiters();
+                $selectedWaiterMap = array_fill_keys($selectedWaiterIds, true);
+
+                return array_values(array_filter($allActive, function ($waiter) use ($selectedWaiterMap) {
+                    $waiterId = trim((string) ($waiter['id'] ?? ''));
+
+                    return $waiterId !== '' && isset($selectedWaiterMap[$waiterId]);
+                }));
+            }
+
+            // General task: tetap filter role-based seperti sebelumnya
+            if (! $assignedWaiterRole) {
+                return [];
+            }
+
+            $roleWaiters = $this->getActiveWaitersByRole($assignedWaiterRole);
 
             if (count($selectedWaiterIds) === 0) {
                 return $roleWaiters;
