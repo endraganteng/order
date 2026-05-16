@@ -29,10 +29,13 @@
     <div style="margin-bottom: 16px;">
         <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
             <form id="filterForm" method="GET" action="{{ route('admin.products.index') }}" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; flex: 1;">
-                <input type="text" name="search" value="{{ $search }}" placeholder="Cari produk..."
-                    id="productSearchInput"
-                    autocomplete="off"
-                    style="padding: 9px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: 14px; min-width: 200px; flex: 1; max-width: 350px;">
+                <div style="position: relative; flex: 1; max-width: 350px; min-width: 200px;">
+                    <input type="text" name="search" value="{{ $search }}" placeholder="Cari produk..."
+                        id="productSearchInput"
+                        autocomplete="off"
+                        style="padding: 9px 36px 9px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: 14px; width: 100%; box-sizing: border-box;">
+                    <span id="searchSpinner" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.7s linear infinite; align-items: center; justify-content: center;"></span>
+                </div>
                 @if(count($categories ?? []) > 0)
                 <select name="category" id="productCategoryFilter" onchange="document.getElementById('filterForm').submit()"
                     style="padding: 9px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: 14px; min-width: 160px;">
@@ -44,32 +47,32 @@
                 </select>
                 @endif
                 <button type="submit" class="btn btn-primary btn-sm">Cari</button>
-                @if($search !== '' || $categoryFilter !== '')
-                    <a href="{{ route('admin.products.index') }}" class="btn btn-sm" style="background: var(--color-border);">Reset semua</a>
-                @endif
+                <a href="{{ route('admin.products.index') }}" class="btn btn-sm" id="resetAllBtn" style="background: var(--color-border); {{ ($search === '' && $categoryFilter === '') ? 'display:none;' : '' }}">Reset semua</a>
             </form>
-            <span style="font-size: 13px; color: var(--color-text-muted);">{{ $totalFiltered }} produk</span>
+            <span id="productCountSpan" style="font-size: 13px; color: var(--color-text-muted);">{{ $totalFiltered }} produk</span>
         </div>
 
-        @if($search !== '' || $categoryFilter !== '')
-        <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <span style="font-size: 12px; color: var(--color-text-muted); font-weight: 600;">Filter aktif:</span>
-            @if($search !== '')
-                <a href="{{ route('admin.products.index', array_filter(['category' => $categoryFilter])) }}"
-                   style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #dbeafe; color: #1e40af; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #93c5fd;"
-                   title="Hapus filter pencarian">
-                    🔍 "{{ $search }}" <span style="font-weight: 700;">×</span>
-                </a>
-            @endif
-            @if($categoryFilter !== '')
-                <a href="{{ route('admin.products.index', array_filter(['search' => $search])) }}"
-                   style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #fbbf24;"
-                   title="Hapus filter kategori">
-                    📁 {{ $activeCatLabel ?: 'Kategori' }} <span style="font-weight: 700;">×</span>
-                </a>
+        <div id="activeFilterChips" style="margin-top: 10px; display: {{ ($search !== '' || $categoryFilter !== '') ? 'flex' : 'none' }}; gap: 8px; align-items: center; flex-wrap: wrap;">
+            @if($search !== '' || $categoryFilter !== '')
+                <span style="font-size: 12px; color: var(--color-text-muted); font-weight: 600;">Filter aktif:</span>
+                @if($search !== '')
+                    <a href="{{ route('admin.products.index', array_filter(['category' => $categoryFilter])) }}"
+                       data-clear="search"
+                       style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #dbeafe; color: #1e40af; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #93c5fd;"
+                       title="Hapus filter pencarian">
+                        🔍 "{{ $search }}" <span style="font-weight: 700;">×</span>
+                    </a>
+                @endif
+                @if($categoryFilter !== '')
+                    <a href="{{ route('admin.products.index', array_filter(['search' => $search])) }}"
+                       data-clear="category"
+                       style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #fbbf24;"
+                       title="Hapus filter kategori">
+                        📁 {{ $activeCatLabel ?: 'Kategori' }} <span style="font-weight: 700;">×</span>
+                    </a>
+                @endif
             @endif
         </div>
-        @endif
     </div>
 
     @if(session('success'))
@@ -304,6 +307,12 @@
                 border-top: 1px solid var(--color-border);
             }
         }
+
+        /* AJAX live search */
+        @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+        #searchSpinner { display: none; }
+        #searchSpinner[style*="display: inline-flex"] { display: inline-flex !important; }
+        #productSearchInput.searching { background-color: #fafafa; }
     </style>
     @endpush
 
@@ -335,7 +344,7 @@
                         <th>Aksi</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="productsTbody">
                     @forelse($products as $product)
                         @php
                             $productId = (string) ($product['id'] ?? '');
@@ -397,7 +406,7 @@
     </div>
 
     {{-- Mobile Card Layout --}}
-    <div class="product-cards-mobile">
+    <div class="product-cards-mobile" id="productsCards">
         @forelse($products as $product)
             @php
                 $productId = (string) ($product['id'] ?? '');
@@ -458,18 +467,20 @@
     </div>
 
     {{-- Pagination --}}
-    @if($totalPages > 1)
-    <div class="pagination-bar">
+    <div class="pagination-bar" id="paginationWrap" style="display: {{ $totalPages > 1 ? 'flex' : 'none' }};">
+        @if($totalPages > 1)
         @php
             $baseParams = array_filter(['search' => $search, 'category' => $categoryFilter, 'per_page' => $perPage != 50 ? $perPage : null]);
         @endphp
 
         <a href="{{ route('admin.products.index', array_merge($baseParams, ['page' => $page - 1])) }}"
+           data-page="{{ $page - 1 }}"
            class="page-btn {{ $page <= 1 ? 'disabled' : '' }}">&laquo;</a>
 
         @for($p = 1; $p <= $totalPages; $p++)
             @if($p == 1 || $p == $totalPages || abs($p - $page) <= 2)
                 <a href="{{ route('admin.products.index', array_merge($baseParams, ['page' => $p])) }}"
+                   data-page="{{ $p }}"
                    class="page-btn {{ $p == $page ? 'active' : '' }}">{{ $p }}</a>
             @elseif($p == 2 && $page > 4)
                 <span class="page-info">...</span>
@@ -479,11 +490,12 @@
         @endfor
 
         <a href="{{ route('admin.products.index', array_merge($baseParams, ['page' => $page + 1])) }}"
+           data-page="{{ $page + 1 }}"
            class="page-btn {{ $page >= $totalPages ? 'disabled' : '' }}">&raquo;</a>
 
         <span class="page-info">Hal {{ $page }}/{{ $totalPages }}</span>
+        @endif
     </div>
-    @endif
 
     {{-- Product Modal --}}
     <div class="modal-overlay" id="productModal">
@@ -620,29 +632,339 @@
     </div>
 
     <script>
-        // UX rule: search input itu UNIVERSAL di semua kategori.
-        // Klik tombol Cari atau tekan Enter di search → kategori di-clear,
-        // hasil ditampilkan lintas kategori. Untuk gabungkan, user pilih
-        // dropdown kategori (auto-submit, search tetap dipertahankan).
+        // ======================================================================
+        // AJAX live search for products list.
+        // ======================================================================
         (function() {
             const searchInput = document.getElementById('productSearchInput');
             const categorySelect = document.getElementById('productCategoryFilter');
             const filterForm = document.getElementById('filterForm');
-            if (!searchInput || !categorySelect || !filterForm) return;
+            const tbody = document.getElementById('productsTbody');
+            const cardsWrap = document.getElementById('productsCards');
+            const counterSpan = document.getElementById('productCountSpan');
+            const filterChipsWrap = document.getElementById('activeFilterChips');
 
-            // Flag untuk bedakan submit dari dropdown auto-submit vs tombol Cari/Enter
-            let categoryAutoSubmit = false;
-            categorySelect.addEventListener('change', function() {
-                categoryAutoSubmit = true;
+            if (!searchInput || !categorySelect || !filterForm || !tbody) return;
+
+            const SEARCH_URL = @json(route('admin.products.search'));
+            const INDEX_URL = @json(route('admin.products.index'));
+            const PER_PAGE = {{ $perPage }};
+            const CATEGORY_LABEL_MAP = @json($categoryMap);
+
+            let inflight = null;
+            let debounceTimer = null;
+            let currentPage = {{ $page }};
+            let currentSearch = @json($search);
+            let currentCategory = @json($categoryFilter);
+            let isFetching = false;
+
+            // Helper: HTML escape
+            function esc(s) {
+                return String(s == null ? '' : s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+            function attr(s) { return esc(s); }
+            function jsArg(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+            // Build category dropdown URL keeping search query
+            function buildIndexUrl(params) {
+                const u = new URL(INDEX_URL, window.location.origin);
+                Object.entries(params).forEach(([k, v]) => {
+                    if (v !== '' && v !== null && v !== undefined) {
+                        u.searchParams.set(k, v);
+                    }
+                });
+                return u.toString();
+            }
+
+            // Render row HTML for desktop tbody
+            function renderRow(p) {
+                const catBadge = p.category_name
+                    ? `<span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #eef2ff; color: #4338ca;">${esc(p.category_name)}</span>`
+                    : `<span style="color: var(--color-text-muted); font-size: 13px;">-</span>`;
+                const statusBadge = p.is_active
+                    ? `<span class="badge-status active">Aktif</span>`
+                    : `<span class="badge-status inactive">Nonaktif</span>`;
+                const auditUrl = `{{ url('admin/products') }}/${encodeURIComponent(p.id)}/audit-trail`;
+                const destroyUrl = `{{ url('admin/products') }}/${encodeURIComponent(p.id)}`;
+                return `
+                    <tr class="js-product-row" data-category="${attr(p.category_id)}" data-product-id="${attr(p.id)}" data-name="${attr(p.name)}">
+                        <td class="js-select-col" style="display: none;"><input type="checkbox" class="product-checkbox js-product-select" value="${attr(p.id)}" onchange="updateBulkCount()"></td>
+                        <td><div style="font-weight: 600;">${esc(p.name)}</div></td>
+                        <td>${catBadge}</td>
+                        <td>${p.standard_qty}</td>
+                        <td>${esc(p.unit)}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <a href="${auditUrl}" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;">📜 Audit</a>
+                                <button type="button" class="btn btn-warning btn-sm" onclick="openProductModal('${jsArg(p.id)}', '${jsArg(p.name)}', ${p.standard_qty}, '${jsArg(p.unit)}', ${p.is_active ? 'true' : 'false'}, '${jsArg(p.category_id)}')">Edit</button>
+                                <form method="POST" action="${destroyUrl}" data-confirm="Yakin hapus produk ini?" style="display:inline;">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>`;
+            }
+
+            function renderCard(p) {
+                const catBadge = p.category_name
+                    ? `<span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #eef2ff; color: #4338ca; margin-top: 4px;">${esc(p.category_name)}</span>`
+                    : '';
+                const statusBadge = p.is_active
+                    ? `<span class="badge-status active">Aktif</span>`
+                    : `<span class="badge-status inactive">Nonaktif</span>`;
+                const auditUrl = `{{ url('admin/products') }}/${encodeURIComponent(p.id)}/audit-trail`;
+                const destroyUrl = `{{ url('admin/products') }}/${encodeURIComponent(p.id)}`;
+                return `
+                    <div class="product-mobile-card js-product-card" data-category="${attr(p.category_id)}" data-product-id="${attr(p.id)}" data-name="${attr(p.name)}">
+                        <div class="product-mobile-header">
+                            <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                <input type="checkbox" class="product-checkbox js-product-select-mobile" value="${attr(p.id)}" onchange="updateBulkCount()" style="display: none; margin-top: 3px;">
+                                <div>
+                                    <div class="product-mobile-name">${esc(p.name)}</div>
+                                    ${catBadge}
+                                </div>
+                            </div>
+                            ${statusBadge}
+                        </div>
+                        <div class="product-mobile-grid">
+                            <div><div class="product-mobile-field-label">Qty Standar</div><div>${p.standard_qty}</div></div>
+                            <div><div class="product-mobile-field-label">Satuan</div><div>${esc(p.unit)}</div></div>
+                        </div>
+                        <div class="product-mobile-actions">
+                            <a href="${auditUrl}" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;">📜 Audit</a>
+                            <button type="button" class="btn btn-warning btn-sm" onclick="openProductModal('${jsArg(p.id)}', '${jsArg(p.name)}', ${p.standard_qty}, '${jsArg(p.unit)}', ${p.is_active ? 'true' : 'false'}, '${jsArg(p.category_id)}')">Edit</button>
+                            <form method="POST" action="${destroyUrl}" data-confirm="Yakin hapus produk ini?" style="display:inline;">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
+                            </form>
+                        </div>
+                    </div>`;
+            }
+
+            function renderEmptyState(hasFilter) {
+                const msg = hasFilter
+                    ? `<div style="font-size: 14px; margin-bottom: 6px;">🔍 Tidak ada produk yang cocok dengan filter aktif.</div>
+                       <div style="font-size: 13px;">Coba <a href="${INDEX_URL}" style="color: #2563eb; font-weight: 600;">reset filter</a> atau ubah kata kunci.</div>`
+                    : `Belum ada data produk. Silakan tambah produk master.`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--color-text-muted); padding: 24px;">${msg}</td></tr>`;
+                if (cardsWrap) {
+                    cardsWrap.innerHTML = `<div class="empty">${msg}</div>`;
+                }
+            }
+
+            function renderFilterChips(search, category) {
+                if (!filterChipsWrap) return;
+                if (!search && !category) {
+                    filterChipsWrap.style.display = 'none';
+                    filterChipsWrap.innerHTML = '';
+                    return;
+                }
+                let catLabel = '';
+                if (category === '__none__') catLabel = 'Tanpa Kategori';
+                else if (category) catLabel = CATEGORY_LABEL_MAP[category] || 'Kategori';
+
+                let html = `<span style="font-size: 12px; color: var(--color-text-muted); font-weight: 600;">Filter aktif:</span>`;
+                if (search) {
+                    const url = buildIndexUrl({ category: category });
+                    html += `<a href="${url}" data-clear="search" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #dbeafe; color: #1e40af; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #93c5fd;" title="Hapus filter pencarian">🔍 "${esc(search)}" <span style="font-weight: 700;">×</span></a>`;
+                }
+                if (category) {
+                    const url = buildIndexUrl({ search: search });
+                    html += `<a href="${url}" data-clear="category" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #fbbf24;" title="Hapus filter kategori">📁 ${esc(catLabel)} <span style="font-weight: 700;">×</span></a>`;
+                }
+                filterChipsWrap.innerHTML = html;
+                filterChipsWrap.style.display = 'flex';
+
+                // Intercept chip click → ajax fetch instead of full reload
+                filterChipsWrap.querySelectorAll('a[data-clear]').forEach(a => {
+                    a.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const which = this.dataset.clear;
+                        if (which === 'search') {
+                            currentSearch = '';
+                            searchInput.value = '';
+                        } else if (which === 'category') {
+                            currentCategory = '';
+                            categorySelect.value = '';
+                        }
+                        currentPage = 1;
+                        runSearch();
+                    });
+                });
+            }
+
+            // Render pagination - simple prev/next/info, intercepted via ajax
+            function renderPagination(pagination) {
+                const wrap = document.getElementById('paginationWrap');
+                if (!wrap) return;
+                if (pagination.total_pages <= 1) {
+                    wrap.style.display = 'none';
+                    wrap.innerHTML = '';
+                    return;
+                }
+                wrap.style.display = 'flex';
+                const p = pagination.page;
+                const tp = pagination.total_pages;
+                let html = `<a href="#" data-page="${Math.max(1, p - 1)}" class="page-btn ${p <= 1 ? 'disabled' : ''}">&laquo;</a>`;
+                // 5 page window
+                let start = Math.max(1, p - 2);
+                let end = Math.min(tp, start + 4);
+                if (end - start < 4) start = Math.max(1, end - 4);
+                if (start > 1) html += `<a href="#" data-page="1" class="page-btn">1</a>`;
+                if (start > 2) html += `<span class="page-info">…</span>`;
+                for (let i = start; i <= end; i++) {
+                    html += `<a href="#" data-page="${i}" class="page-btn ${i === p ? 'active' : ''}">${i}</a>`;
+                }
+                if (end < tp - 1) html += `<span class="page-info">…</span>`;
+                if (end < tp) html += `<a href="#" data-page="${tp}" class="page-btn">${tp}</a>`;
+                html += `<a href="#" data-page="${Math.min(tp, p + 1)}" class="page-btn ${p >= tp ? 'disabled' : ''}">&raquo;</a>`;
+                html += `<span class="page-info">Hal ${p}/${tp}</span>`;
+                wrap.innerHTML = html;
+
+                wrap.querySelectorAll('a[data-page]').forEach(a => {
+                    a.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        if (this.classList.contains('disabled') || this.classList.contains('active')) return;
+                        currentPage = parseInt(this.dataset.page, 10) || 1;
+                        runSearch();
+                    });
+                });
+            }
+
+            function setLoadingState(on) {
+                const indicator = document.getElementById('searchSpinner');
+                if (indicator) indicator.style.display = on ? 'inline-flex' : 'none';
+                searchInput.classList.toggle('searching', on);
+            }
+
+            function syncUrlState() {
+                const u = new URL(INDEX_URL, window.location.origin);
+                if (currentSearch) u.searchParams.set('search', currentSearch);
+                if (currentCategory) u.searchParams.set('category', currentCategory);
+                if (currentPage > 1) u.searchParams.set('page', currentPage);
+                history.replaceState({ search: currentSearch, category: currentCategory, page: currentPage }, '', u.toString());
+            }
+
+            async function runSearch() {
+                if (inflight) inflight.abort();
+                const ctrl = new AbortController();
+                inflight = ctrl;
+                isFetching = true;
+                setLoadingState(true);
+
+                const params = new URLSearchParams();
+                if (currentSearch) params.set('search', currentSearch);
+                if (currentCategory) params.set('category', currentCategory);
+                if (currentPage) params.set('page', currentPage);
+                if (PER_PAGE !== 50) params.set('per_page', PER_PAGE);
+
+                try {
+                    const resp = await fetch(`${SEARCH_URL}?${params.toString()}`, {
+                        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        credentials: 'same-origin',
+                        signal: ctrl.signal,
+                    });
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    const data = await resp.json();
+                    if (!data || !data.success) throw new Error('Bad payload');
+
+                    currentPage = data.pagination.page;
+                    if (data.products.length === 0) {
+                        renderEmptyState(currentSearch !== '' || currentCategory !== '');
+                    } else {
+                        tbody.innerHTML = data.products.map(renderRow).join('');
+                        if (cardsWrap) cardsWrap.innerHTML = data.products.map(renderCard).join('');
+                    }
+                    if (counterSpan) counterSpan.textContent = `${data.pagination.total_filtered} produk`;
+                    renderFilterChips(currentSearch, currentCategory);
+                    renderPagination(data.pagination);
+                    syncUrlState();
+                    // Reset bulk select
+                    const selAll = document.getElementById('selectAllCheckbox');
+                    if (selAll) selAll.checked = false;
+                    if (typeof updateBulkCount === 'function') updateBulkCount();
+                } catch (e) {
+                    if (e.name === 'AbortError') return;
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #b91c1c; padding: 16px;">⚠️ Gagal memuat hasil. <a href="#" id="retrySearch" style="color: #2563eb; font-weight: 600;">Coba lagi</a></td></tr>`;
+                    const retry = document.getElementById('retrySearch');
+                    if (retry) retry.addEventListener('click', function(e) { e.preventDefault(); runSearch(); });
+                } finally {
+                    isFetching = false;
+                    setLoadingState(false);
+                    if (inflight === ctrl) inflight = null;
+                }
+            }
+
+            // Debounced trigger from typing
+            searchInput.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    currentSearch = searchInput.value.trim();
+                    // Universal: typing search → clear category
+                    if (currentCategory) {
+                        currentCategory = '';
+                        categorySelect.value = '';
+                    }
+                    currentPage = 1;
+                    runSearch();
+                }, 280);
             });
 
-            filterForm.addEventListener('submit', function() {
-                if (!categoryAutoSubmit) {
-                    // Tombol Cari atau Enter di search → search universal di semua kategori
-                    categorySelect.value = '';
+            // Enter key submits immediately
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    clearTimeout(debounceTimer);
+                    currentSearch = searchInput.value.trim();
+                    if (currentCategory) {
+                        currentCategory = '';
+                        categorySelect.value = '';
+                    }
+                    currentPage = 1;
+                    runSearch();
                 }
-                // Reset flag setelah submit (mencegah leak ke navigation berikutnya)
-                categoryAutoSubmit = false;
+            });
+
+            // Category dropdown change → run search keeping current search
+            categorySelect.addEventListener('change', function() {
+                currentCategory = categorySelect.value;
+                currentPage = 1;
+                runSearch();
+            });
+
+            // Original button still works (no full reload)
+            filterForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                currentSearch = searchInput.value.trim();
+                // Tombol Cari = universal, clear kategori
+                currentCategory = '';
+                categorySelect.value = '';
+                currentPage = 1;
+                runSearch();
+            });
+
+            // Reset link (button "Reset semua")
+            document.querySelectorAll('a[href="' + INDEX_URL + '"]').forEach(a => {
+                if (a.textContent.trim().toLowerCase().includes('reset')) {
+                    a.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        currentSearch = '';
+                        currentCategory = '';
+                        currentPage = 1;
+                        searchInput.value = '';
+                        categorySelect.value = '';
+                        runSearch();
+                    });
+                }
             });
         })();
 

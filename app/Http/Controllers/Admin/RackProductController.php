@@ -17,6 +17,62 @@ class RackProductController extends Controller
 
     public function index(Request $request)
     {
+        [$products, $categories, $categoryMap, $page, $totalPages, $totalFiltered, $perPage, $search, $categoryFilter] = $this->buildFilteredProducts($request);
+
+        return view('admin.products.index', compact(
+            'products', 'categories', 'categoryMap',
+            'page', 'totalPages', 'totalFiltered', 'perPage', 'search', 'categoryFilter'
+        ));
+    }
+
+    /**
+     * AJAX live search endpoint. Return JSON struct yang sama dengan view payload
+     * untuk kebutuhan frontend re-render rows + pagination tanpa full page reload.
+     */
+    public function searchJson(Request $request)
+    {
+        [$products, $categories, $categoryMap, $page, $totalPages, $totalFiltered, $perPage, $search, $categoryFilter] = $this->buildFilteredProducts($request);
+
+        // Trim payload yang dikirim - frontend hanya butuh field yang ditampilkan.
+        $rows = [];
+        foreach ($products as $p) {
+            $catId = (string) ($p['category_id'] ?? '');
+            $rows[] = [
+                'id' => (string) ($p['id'] ?? ''),
+                'name' => (string) ($p['name'] ?? '-'),
+                'category_id' => $catId,
+                'category_name' => $catId !== '' ? ($categoryMap[$catId] ?? '-') : '',
+                'standard_qty' => (int) ($p['standard_qty'] ?? 0),
+                'unit' => (string) ($p['unit'] ?? 'pcs'),
+                'is_active' => ($p['is_active'] ?? true) === true,
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'products' => $rows,
+            'pagination' => [
+                'page' => $page,
+                'total_pages' => $totalPages,
+                'total_filtered' => $totalFiltered,
+                'per_page' => $perPage,
+            ],
+            'filters' => [
+                'search' => $search,
+                'category' => $categoryFilter,
+            ],
+        ]);
+    }
+
+    /**
+     * Shared filter logic - dipakai oleh index() (full render) dan
+     * searchJson() (AJAX). Return positional array agar destructuring di
+     * caller bersih.
+     *
+     * @return array{0:array,1:array,2:array,3:int,4:int,5:int,6:int,7:string,8:string}
+     */
+    private function buildFilteredProducts(Request $request): array
+    {
         $allProducts = $this->firebase->getProducts();
         $categories = $this->firebase->getActiveProductCategories();
 
@@ -56,10 +112,7 @@ class RackProductController extends Controller
         $page = min($page, $totalPages);
         $products = array_slice($filtered, ($page - 1) * $perPage, $perPage);
 
-        return view('admin.products.index', compact(
-            'products', 'categories', 'categoryMap',
-            'page', 'totalPages', 'totalFiltered', 'perPage', 'search', 'categoryFilter'
-        ));
+        return [$products, $categories, $categoryMap, $page, $totalPages, $totalFiltered, $perPage, $search, $categoryFilter];
     }
 
     public function store(Request $request)

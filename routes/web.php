@@ -67,6 +67,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Product management
         Route::get('products', [RackProductController::class, 'index'])->name('products.index');
+        Route::get('products/search', [RackProductController::class, 'searchJson'])->name('products.search');
         Route::post('products', [RackProductController::class, 'store'])->name('products.store');
         Route::get('products/bulk-assign', [RackProductController::class, 'bulkAssign'])->name('products.bulk_assign');
         Route::post('products/bulk-assign', [RackProductController::class, 'saveBulkAssign'])->name('products.bulk_assign.save');
