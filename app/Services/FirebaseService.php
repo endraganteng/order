@@ -3289,6 +3289,8 @@ class FirebaseService
         $existingRecurringMap = $this->getExistingWaiterRecurringMapForDate($targetDate);
 
         foreach ($templates as $template) {
+            $effectiveTargetDate = $targetDate;
+            $rescheduledFromDate = null;
             if (empty($template['is_active'])) {
                 continue;
             }
@@ -3304,10 +3306,10 @@ class FirebaseService
             $lastGeneratedDate = $template['last_generated_date'] ?? null;
             // For shift_relative mode, don't skip based on last_generated_date because
             // different waiters may have different shift start times throughout the day
-            $alreadyGeneratedToday = $templateScheduleModeCheck === 'shift_relative' ? false : ($lastGeneratedDate === $targetDate);
+            $alreadyGeneratedToday = $templateScheduleModeCheck === 'shift_relative' ? false : ($lastGeneratedDate === $effectiveTargetDate);
             // For shift_relative mode, skip the global time check (handled per-waiter in loop)
             $isDueToday = $templateScheduleModeCheck === 'shift_relative' ? true : (! $isToday || $currentTime >= $scheduleTime);
-            $recurrenceMatchedToday = $this->isTemplateDueForDate($template, $targetDate);
+            $recurrenceMatchedToday = $this->isTemplateDueForDate($template, $effectiveTargetDate);
 
             if ($alreadyGeneratedToday || ! $isDueToday || ! $recurrenceMatchedToday) {
                 continue;
@@ -3336,16 +3338,33 @@ class FirebaseService
             }
 
             // Filter out waiters who are off today (not scheduled to work)
-            $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($targetDate) {
+            $originalTargetWaiters = $targetWaiters;
+            $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($effectiveTargetDate) {
                 $wId = $waiter['id'] ?? '';
                 if ($wId === '') {
                     return true;
                 }
-                return $this->isWorkingDay($wId, $targetDate);
+                return $this->isWorkingDay($wId, $effectiveTargetDate);
             }));
 
             if (empty($targetWaiters)) {
-                continue;
+                $rescheduleResult = $this->tryRescheduleRecurringTask(
+                    $template,
+                    $originalTargetWaiters,
+                    $effectiveTargetDate
+                );
+
+                if (! ($rescheduleResult['rescheduled'] ?? false)) {
+                    continue;
+                }
+
+                $effectiveTargetDate = (string) ($rescheduleResult['new_date'] ?? $effectiveTargetDate);
+                $targetWaiters = $rescheduleResult['waiters'] ?? [];
+                $rescheduledFromDate = (string) ($rescheduleResult['original_date'] ?? $targetDate);
+                $isToday = $effectiveTargetDate === date('Y-m-d');
+                $existingRecurringMap = $this->getExistingWaiterRecurringMapForDate($effectiveTargetDate);
+            } else {
+                $rescheduledFromDate = null;
             }
 
             if ($isRackRollingTemplate) {
@@ -3358,7 +3377,7 @@ class FirebaseService
                     return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
                 });
 
-                $rotationOffset = $this->resolveDailyRotationOffset($targetDate);
+                $rotationOffset = $this->resolveDailyRotationOffset($effectiveTargetDate);
                 $slotIndex = $this->resolveRollingSlotIndex($template);
                 $selectedWaiterIndex = ($slotIndex + $rotationOffset) % count($targetWaiters);
                 $targetWaiters = [$targetWaiters[$selectedWaiterIndex]];
@@ -3400,13 +3419,13 @@ class FirebaseService
                 $waiterId = $waiter['id'] ?? '';
 
                 if ($templateScheduleMode === 'shift_relative' && $waiterId !== '') {
-                    $waiterShift = $this->getWaiterShiftForDate($waiterId, $targetDate);
+                    $waiterShift = $this->getWaiterShiftForDate($waiterId, $effectiveTargetDate);
                     if ($waiterShift) {
                         $shiftStart = $waiterShift['clock_in_time'] ?? '08:00';
                         $shiftEnd = $waiterShift['clock_out_time'] ?? '17:00';
 
                         // Calculate schedule time: shift start + offset
-                        $shiftStartTimestamp = $this->buildScheduledTimestamp($targetDate, $shiftStart);
+                        $shiftStartTimestamp = $this->buildScheduledTimestamp($effectiveTargetDate, $shiftStart);
                         $waiterScheduleTimestamp = $shiftStartTimestamp + ($templateShiftOffsetMinutes * 60);
                         $waiterScheduleTime = date('H:i', $waiterScheduleTimestamp);
 
@@ -3417,7 +3436,7 @@ class FirebaseService
 
                         // Calculate deadline based on deadline_mode
                         if ($templateDeadlineMode === 'before_shift_end') {
-                            $shiftEndTimestamp = $this->buildScheduledTimestamp($targetDate, $shiftEnd);
+                            $shiftEndTimestamp = $this->buildScheduledTimestamp($effectiveTargetDate, $shiftEnd);
                             // Handle overnight shifts (end < start)
                             if ($shiftEndTimestamp <= $shiftStartTimestamp) {
                                 $shiftEndTimestamp += 86400; // +24h
@@ -3429,14 +3448,14 @@ class FirebaseService
                     } else {
                         // Waiter has no shift today — fallback to fixed mode
                         if ($timeLimitMinutes > 0) {
-                            $scheduleTimestamp = $this->buildScheduledTimestamp($targetDate, $scheduleTime);
+                            $scheduleTimestamp = $this->buildScheduledTimestamp($effectiveTargetDate, $scheduleTime);
                             $waiterDeadlineAt = $scheduleTimestamp + ($timeLimitMinutes * 60);
                         }
                     }
                 } else {
                     // Fixed mode: original behavior
                     if ($timeLimitMinutes > 0) {
-                        $scheduleTimestamp = $this->buildScheduledTimestamp($targetDate, $scheduleTime);
+                        $scheduleTimestamp = $this->buildScheduledTimestamp($effectiveTargetDate, $scheduleTime);
                         $waiterDeadlineAt = $scheduleTimestamp + ($timeLimitMinutes * 60);
                     }
                 }
@@ -3444,7 +3463,7 @@ class FirebaseService
                 $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity(
                     $template['id'],
                     $waiter['id'] ?? null,
-                    $targetDate
+                    $effectiveTargetDate
                 );
                 $taskNodeKey = $this->buildWaiterRecurringTaskNodeKey($recurringInstanceKey);
                 $taskReference = $this->database->getReference('waiter_tasks/'.$taskNodeKey);
@@ -3464,19 +3483,22 @@ class FirebaseService
                     'completed_by_waiter_email' => null,
                     'is_recurring_instance' => true,
                     'scheduled_time' => $waiterScheduleTime,
-                    'scheduled_for_date' => $targetDate,
+                    'scheduled_for_date' => $effectiveTargetDate,
                     'source_template_id' => $template['id'],
                     'recurring_instance_key' => $recurringInstanceKey,
                     'time_limit_minutes' => $timeLimitMinutes > 0 ? $timeLimitMinutes : null,
                     'deadline_at' => $waiterDeadlineAt,
                     'recurrence_type' => $template['recurrence_type'] ?? 'daily',
+                    'is_rescheduled' => $rescheduledFromDate !== null,
+                    'rescheduled_from_date' => $rescheduledFromDate,
+                    'original_due_date' => $rescheduledFromDate,
                 ]);
 
                 if ($isCatchUp) {
                     $taskData['is_overdue'] = true;
-                    $taskData['original_scheduled_date'] = $targetDate;
+                    $taskData['original_scheduled_date'] = $effectiveTargetDate;
                     $existingNote = trim((string) ($taskData['note'] ?? ''));
-                    $prefix = '(Tertunda dari '.$targetDate.') ';
+                    $prefix = '(Tertunda dari '.$effectiveTargetDate.') ';
                     $taskData['note'] = $prefix.$existingNote;
                 }
 
@@ -3487,13 +3509,77 @@ class FirebaseService
             }
 
             if ($generatedForTemplate > 0) {
+                $markGeneratedDate = $rescheduledFromDate !== null ? $rescheduledFromDate : $effectiveTargetDate;
                 $this->database->getReference('waiter_task_templates/'.$template['id'])->update([
-                    'last_generated_date' => $targetDate,
+                    'last_generated_date' => $markGeneratedDate,
                 ]);
             }
         }
 
         return $generatedCount;
+    }
+
+    /**
+     * Cari hari kerja terdekat (max +7 hari) untuk waiter assignee.
+     * Return ['rescheduled' => bool, 'new_date' => Y-m-d, 'original_date' => Y-m-d, 'waiters' => array]
+     */
+    private function tryRescheduleRecurringTask(array $template, array $originalTargetWaiters, string $originalDate): array
+    {
+        $maxDaysAhead = 7;
+
+        for ($offset = 1; $offset <= $maxDaysAhead; $offset++) {
+            $candidateDate = date('Y-m-d', strtotime($originalDate.' +'.$offset.' days'));
+
+            $availableWaiters = array_values(array_filter($originalTargetWaiters, function ($waiter) use ($candidateDate) {
+                $wId = $waiter['id'] ?? '';
+                if ($wId === '') {
+                    return true;
+                }
+
+                return $this->isWorkingDay($wId, $candidateDate);
+            }));
+
+            if (empty($availableWaiters)) {
+                continue;
+            }
+
+            try {
+                $fonnte = app(\App\Services\FonnteService::class);
+                $fonnte->notifyTaskRescheduled(
+                    $template,
+                    $originalTargetWaiters[0] ?? [],
+                    $availableWaiters[0],
+                    $originalDate,
+                    $candidateDate
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+
+            return [
+                'rescheduled' => true,
+                'new_date' => $candidateDate,
+                'original_date' => $originalDate,
+                'waiters' => $availableWaiters,
+            ];
+        }
+
+        try {
+            $this->database->getReference('audit_logs/reschedule_failures')->push([
+                'template_id' => $template['id'] ?? null,
+                'template_title' => $template['title'] ?? '',
+                'rack_name' => $template['rack_name'] ?? '',
+                'original_date' => $originalDate,
+                'reason' => 'Semua assignee libur dalam 7 hari ke depan',
+                'created_at' => time(),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return [
+            'rescheduled' => false,
+        ];
     }
 
     /**

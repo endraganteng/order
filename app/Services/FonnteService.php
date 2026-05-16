@@ -350,6 +350,48 @@ class FonnteService
         return is_array($result) && ($result['status'] ?? false);
     }
 
+    /**
+     * Notify supervisor saat task recurring di-reschedule karena waiter libur.
+     *
+     * @param array $template       Template data (title, rack_name, etc.)
+     * @param array $waiterOriginal Waiter assignee asli yang libur
+     * @param array $waiterNew      Waiter baru yang akan kerjakan (sama orang, beda hari)
+     * @param string $originalDate  Tanggal cycle asli (Y-m-d)
+     * @param string $newDate       Tanggal task akan dijalankan (Y-m-d)
+     */
+    public function notifyTaskRescheduled(array $template, array $waiterOriginal, array $waiterNew, string $originalDate, string $newDate): bool
+    {
+        $phone = $this->getReportPhone();
+        if (! $phone || ! $this->isEnabled()) {
+            return false;
+        }
+
+        $taskTitle = (string) ($template['title'] ?? 'Tugas');
+        $rackName = (string) ($template['rack_name'] ?? '');
+        $waiterOrigName = (string) ($waiterOriginal['name'] ?? 'Waiter');
+        $waiterNewName = (string) ($waiterNew['name'] ?? 'Waiter');
+
+        $message = "📅 *Task Direschedule*\n\n";
+        $message .= "Task: {$taskTitle}";
+        if ($rackName !== '') {
+            $message .= " ({$rackName})";
+        }
+        $message .= "\n";
+        $message .= "Tanggal asli: {$originalDate}\n";
+        $message .= "Tanggal baru: {$newDate}\n";
+        $message .= "Alasan: Waiter {$waiterOrigName} libur di tanggal asli.\n";
+
+        if ($waiterOrigName === $waiterNewName) {
+            $message .= 'Waiter sama akan kerjakan di hari masuk berikutnya.';
+        } else {
+            $message .= "Akan dikerjakan oleh: {$waiterNewName}";
+        }
+
+        $result = $this->sendMessage($phone, $message);
+
+        return is_array($result) && ($result['status'] ?? false);
+    }
+
     protected function resolveClockInTimestamp(?array $attendance, string $date): ?int
     {
         if (! $attendance) {
