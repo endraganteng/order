@@ -14,7 +14,12 @@ Artisan::command('inspire', function () {
 Artisan::command('waiter:process-tasks', function () {
     $firebase = app(FirebaseService::class);
     $fonnte = app(FonnteService::class);
-    $generated = $firebase->generateDueRecurringWaiterTasks();
+    $generateResult = $firebase->generateDueRecurringWaiterTasks();
+    $generatedCount = is_array($generateResult)
+        ? (int) ($generateResult['generated'] ?? 0)
+        : (int) $generateResult;
+    $generatedDates = is_array($generateResult) ? ($generateResult['dates'] ?? []) : [];
+
     $overdueResult = $firebase->markOverdueWaiterTasks();
     $notified = 0;
 
@@ -33,7 +38,10 @@ Artisan::command('waiter:process-tasks', function () {
         $notified++;
     }
 
-    $this->info("Generated recurring tasks: {$generated}");
+    $this->info("Generated recurring tasks: {$generatedCount}");
+    if (! empty($generatedDates)) {
+        $this->info('Dates processed: '.implode(', ', $generatedDates));
+    }
     $this->info('Marked overdue tasks: '.(int) ($overdueResult['count'] ?? 0));
     $this->info("Sent overdue notifications: {$notified}");
 })->purpose('Generate recurring waiter tasks and mark overdue tasks');

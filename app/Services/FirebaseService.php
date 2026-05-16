@@ -3265,7 +3265,7 @@ class FirebaseService
 
         $generatedCount = 0;
         foreach ($datesToProcess as $targetDate) {
-            $generatedCount += $this->generateRecurringTasksForDate($targetDate, $targetDate !== $todayDate);
+            $generatedCount += $this->generateRecurringTasksForDate($targetDate, $targetDate !== $todayDate, $force);
         }
 
         $lastRunRef->set($todayDate);
@@ -3280,7 +3280,7 @@ class FirebaseService
     /**
      * Generate recurring waiter tasks for specific date.
      */
-    private function generateRecurringTasksForDate(string $targetDate, bool $isCatchUp): int
+    private function generateRecurringTasksForDate(string $targetDate, bool $isCatchUp, bool $force = false): int
     {
         $templates = $this->getRecurringWaiterTaskTemplates();
         $generatedCount = 0;
