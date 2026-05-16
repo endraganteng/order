@@ -3816,11 +3816,57 @@ class FirebaseService
     }
 
     /**
-     * Delete recurring waiter template.
+     * Delete recurring waiter template + soft-cancel pending tasks linked to it.
+     *
+     * Task done/overdue/cancelled tetap utuh (audit trail). Hanya pending dan
+     * in_progress yang dialihkan ke status='cancelled' dgn note.
+     *
+     * @return array ['deleted_template' => bool, 'cancelled_tasks' => int]
      */
     public function deleteRecurringWaiterTaskTemplate($id)
     {
+        $cancelledCount = 0;
+
+        // Soft-cancel pending tasks linked ke template ini
+        try {
+            $reference = $this->database->getReference('waiter_tasks')
+                ->orderByChild('source_template_id')
+                ->equalTo((string) $id);
+            $snapshot = $reference->getSnapshot();
+
+            if ($snapshot->exists()) {
+                $now = time();
+                $updates = [];
+                foreach ((array) $snapshot->getValue() as $taskId => $task) {
+                    $status = (string) ($task['status'] ?? 'pending');
+                    if (! in_array($status, ['pending', 'in_progress'], true)) {
+                        continue;
+                    }
+                    $updates[$taskId.'/status'] = 'cancelled';
+                    $updates[$taskId.'/cancelled_at'] = $now;
+                    $updates[$taskId.'/cancelled_by_template_delete'] = true;
+                    $existingNote = (string) ($task['completed_note'] ?? '');
+                    $cancelNote = 'Template induk dihapus oleh admin';
+                    $updates[$taskId.'/completed_note'] = $existingNote !== ''
+                        ? $existingNote.' | '.$cancelNote
+                        : $cancelNote;
+                    $cancelledCount++;
+                }
+
+                if (! empty($updates)) {
+                    $this->database->getReference('waiter_tasks')->update($updates);
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         $this->database->getReference('waiter_task_templates/'.$id)->remove();
+
+        return [
+            'deleted_template' => true,
+            'cancelled_tasks' => $cancelledCount,
+        ];
     }
 
     /**

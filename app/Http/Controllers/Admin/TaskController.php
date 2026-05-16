@@ -633,10 +633,15 @@ class TaskController extends Controller
         $template = $this->firebase->getRecurringWaiterTaskTemplateById($id);
         $redirectRouteName = $this->resolveRouteNameByTaskType((string) ($template['task_type'] ?? 'general'));
 
-        $this->firebase->deleteRecurringWaiterTaskTemplate($id);
+        $result = $this->firebase->deleteRecurringWaiterTaskTemplate($id);
+        $cancelledTasks = is_array($result) ? (int) ($result['cancelled_tasks'] ?? 0) : 0;
 
-        return redirect()->route($redirectRouteName)
-            ->with('success', 'Template task berulang berhasil dihapus');
+        $message = 'Template task berulang berhasil dihapus.';
+        if ($cancelledTasks > 0) {
+            $message .= ' '.$cancelledTasks.' task pending/in-progress dibatalkan otomatis.';
+        }
+
+        return redirect()->route($redirectRouteName)->with('success', $message);
     }
 
     /**
@@ -646,20 +651,26 @@ class TaskController extends Controller
     {
         $templateIds = $request->input('template_ids', []);
         $deletedCount = 0;
+        $totalCancelled = 0;
 
         foreach ($templateIds as $templateId) {
             $template = $this->firebase->getRecurringWaiterTaskTemplateById($templateId);
             if ($template) {
-                $this->firebase->deleteRecurringWaiterTaskTemplate($templateId);
+                $result = $this->firebase->deleteRecurringWaiterTaskTemplate($templateId);
                 $deletedCount++;
+                $totalCancelled += is_array($result) ? (int) ($result['cancelled_tasks'] ?? 0) : 0;
             }
         }
 
         $redirectScope = $request->input('redirect_scope', 'rack_check');
         $redirectRouteName = $redirectScope === 'rack_check' ? 'admin.tasks.rack.index' : 'admin.tasks.index';
 
-        return redirect()->route($redirectRouteName)
-            ->with('success', "{$deletedCount} template jadwal berulang berhasil dihapus.");
+        $message = "{$deletedCount} template jadwal berulang berhasil dihapus.";
+        if ($totalCancelled > 0) {
+            $message .= " Total {$totalCancelled} task pending/in-progress dibatalkan otomatis.";
+        }
+
+        return redirect()->route($redirectRouteName)->with('success', $message);
     }
 
     /**
