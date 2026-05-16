@@ -3306,11 +3306,18 @@ class FirebaseService
 
             $lastGeneratedDate = $template['last_generated_date'] ?? null;
             // For shift_relative mode, don't skip based on last_generated_date because
-            // different waiters may have different shift start times throughout the day
-            $alreadyGeneratedToday = $templateScheduleModeCheck === 'shift_relative' ? false : ($lastGeneratedDate === $effectiveTargetDate);
-            // For shift_relative mode, skip the global time check (handled per-waiter in loop)
-            $isDueToday = $templateScheduleModeCheck === 'shift_relative' ? true : (! $isToday || $currentTime >= $scheduleTime);
-            $recurrenceMatchedToday = $this->isTemplateDueForDate($template, $effectiveTargetDate);
+            // different waiters may have different shift start times throughout the day.
+            // Saat $force=true (Force Generate manual), bypass juga untuk re-generate task
+            // yg mungkin sudah di-cancel admin.
+            $alreadyGeneratedToday = $force
+                ? false
+                : ($templateScheduleModeCheck === 'shift_relative' ? false : ($lastGeneratedDate === $effectiveTargetDate));
+            // For shift_relative mode, skip the global time check (handled per-waiter in loop).
+            // Saat $force=true, bypass juga schedule_time check.
+            $isDueToday = $force
+                ? true
+                : ($templateScheduleModeCheck === 'shift_relative' ? true : (! $isToday || $currentTime >= $scheduleTime));
+            $recurrenceMatchedToday = $force ? true : $this->isTemplateDueForDate($template, $effectiveTargetDate);
 
             if ($alreadyGeneratedToday || ! $isDueToday || ! $recurrenceMatchedToday) {
                 continue;
@@ -3515,10 +3522,17 @@ class FirebaseService
                 );
                 $taskNodeKey = $this->buildWaiterRecurringTaskNodeKey($recurringInstanceKey);
                 $taskReference = $this->database->getReference('waiter_tasks/'.$taskNodeKey);
-                if ($taskReference->getSnapshot()->exists()) {
-                    $existingRecurringMap[$mapKey] = true;
+                $existingTaskSnap = $taskReference->getSnapshot();
+                if ($existingTaskSnap->exists()) {
+                    $existingTaskValue = (array) $existingTaskSnap->getValue();
+                    $existingStatus = (string) ($existingTaskValue['status'] ?? '');
+                    // Kalau task lama berstatus cancelled, allow overwrite (regenerate fresh).
+                    // Kalau status lain (pending/in_progress/done/overdue), skip seperti biasa.
+                    if ($existingStatus !== 'cancelled') {
+                        $existingRecurringMap[$mapKey] = true;
 
-                    continue;
+                        continue;
+                    }
                 }
 
                 $taskData = $this->buildWaiterTaskPayload($template, $waiter, [
@@ -4344,6 +4358,12 @@ class FirebaseService
             $sourceTemplateId = $task['source_template_id'] ?? null;
             $assignedWaiterId = $task['assigned_waiter_id'] ?? null;
             if (! $sourceTemplateId || ! $assignedWaiterId) {
+                continue;
+            }
+
+            // Skip cancelled tasks — supaya scanner bisa re-generate kalau template
+            // tetap aktif setelah admin cancel pending task lama.
+            if ((string) ($task['status'] ?? '') === 'cancelled') {
                 continue;
             }
 
