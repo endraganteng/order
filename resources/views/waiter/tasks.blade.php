@@ -1342,6 +1342,53 @@
         const refillStepByTask = new Map(); // tracks display rack tasks in refill mode
         const stockTakeDraftByTask = new Map();
         const taskCompleteFormInstanceByTask = new Map();
+
+        // ─── Draft autosave helpers ───
+        const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+        function saveDraftLocal(key, data) {
+            try {
+                localStorage.setItem(key, JSON.stringify({ data: data, saved_at: Date.now() }));
+            } catch (e) { console.warn('[draft] save failed:', e); }
+        }
+        function loadDraftLocal(key) {
+            try {
+                const stored = localStorage.getItem(key);
+                if (!stored) return null;
+                const parsed = JSON.parse(stored);
+                if (!parsed || typeof parsed !== 'object') return null;
+                const savedAt = parseInt(parsed.saved_at || 0, 10);
+                if (Date.now() - savedAt > DRAFT_TTL_MS) { localStorage.removeItem(key); return null; }
+                return parsed.data || null;
+            } catch (e) { return null; }
+        }
+        function clearDraftLocal(key) {
+            try { localStorage.removeItem(key); } catch (e) {}
+        }
+        const _draftSaveTimers = {};
+        function debounceSaveDraft(key, getDataFn) {
+            clearTimeout(_draftSaveTimers[key]);
+            _draftSaveTimers[key] = setTimeout(() => {
+                const data = getDataFn();
+                if (data && Object.keys(data).length > 0) saveDraftLocal(key, data);
+            }, 500);
+        }
+        function taskDraftKey(taskId) { return `waiter_draft:complete_task:${taskId}`; }
+        function activityDraftKey(date) { return `waiter_draft:activity_report:${date}`; }
+        function restoreTaskDraft(taskId) {
+            const draft = loadDraftLocal(taskDraftKey(taskId));
+            if (!draft) return;
+            if (draft.note) noteDraftByTask.set(taskId, draft.note);
+            if (draft.scanned_barcode) scannedBarcodeByTask.set(taskId, draft.scanned_barcode);
+            if (draft.product_checklist && typeof draft.product_checklist === 'object') {
+                productChecklistByTask.set(taskId, draft.product_checklist);
+            }
+        }
+        function collectTaskDraft(taskId) {
+            const note = noteDraftByTask.get(taskId) || '';
+            const scanned_barcode = scannedBarcodeByTask.get(taskId) || '';
+            const product_checklist = productChecklistByTask.get(taskId) || {};
+            return { note, scanned_barcode, product_checklist };
+        }
         let activeStockTakeTaskId = '';
         let activeScannerTaskId = '';
         let activeScannerTaskLabel = '';
@@ -2089,6 +2136,10 @@
             if (taskIdStr && !taskCompleteFormInstanceByTask.has(taskIdStr)) {
                 taskCompleteFormInstanceByTask.set(taskIdStr, newFormInstanceId());
             }
+            // Restore draft from localStorage if not yet in memory state
+            if (taskIdStr && !noteDraftByTask.has(taskIdStr) && !scannedBarcodeByTask.has(taskIdStr)) {
+                restoreTaskDraft(taskIdStr);
+            }
             const requiresScan = isRackScanTask(task);
             const priority = task.priority || 'normal';
             const cls = requiresScan
@@ -2681,6 +2732,7 @@
 
                 showFlash('success', payload?.message || 'Laporan kegiatan berhasil disimpan.');
                 hydrateActivityFromPayload(payload);
+                clearDraftLocal(activityDraftKey(reportDate));
 
                 if (activityTextEl) {
                     activityTextEl.value = '';
@@ -3015,6 +3067,7 @@
                     noteDraftByTask.delete(taskId);
                     photoProofByTask.delete(taskId);
                     photoBeforeByTask.delete(taskId);
+                    clearDraftLocal(taskDraftKey(taskId));
                     showFlash('success', payload?.message || `Pengulangan ${payload.completed_count}/${payload.repeat_count} selesai.`);
                 } else {
                     scannedBarcodeByTask.delete(taskId);
@@ -3025,6 +3078,7 @@
                     productChecklistByTask.delete(taskId);
                     refillStepByTask.delete(taskId);
                     taskCompleteFormInstanceByTask.delete(taskId);
+                    clearDraftLocal(taskDraftKey(taskId));
                     showFlash('success', payload?.message || 'Tugas berhasil diverifikasi sebagai selesai.');
                 }
             } catch (error) {
@@ -3233,6 +3287,7 @@
 
                         scannedBarcodeByTask.set(activeScannerTaskId, cleanBarcode);
                         scannerFeedbackEl.textContent = `✅ QR code cocok: ${cleanBarcode}`;
+                        debounceSaveDraft(taskDraftKey(activeScannerTaskId), () => collectTaskDraft(activeScannerTaskId));
                         renderAllTasks();
                         await closeScannerModal();
                     },
@@ -3435,6 +3490,7 @@
                             is_shortage: isFilled && actualQty < standardQty,
                         };
                         productChecklistByTask.set(taskId, checklist);
+                        debounceSaveDraft(taskDraftKey(taskId), () => collectTaskDraft(taskId));
                     }
                     return;
                 }
@@ -3450,6 +3506,7 @@
                 }
 
                 noteDraftByTask.set(taskId, String(noteField.value || ''));
+                debounceSaveDraft(taskDraftKey(taskId), () => collectTaskDraft(taskId));
             });
 
             container.addEventListener('change', async (event) => {
@@ -4058,7 +4115,20 @@
             }
 
             await submitActivityReport(activityText);
+            clearDraftLocal(activityDraftKey(reportDate));
         });
+
+        // Autosave activity text draft
+        if (activityTextEl) {
+            activityTextEl.addEventListener('input', () => {
+                debounceSaveDraft(activityDraftKey(reportDate), () => ({ text: activityTextEl.value }));
+            });
+            // Restore activity draft on page load
+            const actDraft = loadDraftLocal(activityDraftKey(reportDate));
+            if (actDraft && actDraft.text && activityTextEl.value === '') {
+                activityTextEl.value = actDraft.text;
+            }
+        }
 
         window.addEventListener('beforeunload', () => {
             if (scannerInstance && scannerRunning) {

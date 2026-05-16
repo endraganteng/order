@@ -323,6 +323,79 @@
         return Math.random().toString(36).slice(2) + Date.now().toString(36);
     };
 
+    // ─── Draft autosave helpers ───
+    const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+    function saveDraftLocal(key, data) {
+        try {
+            localStorage.setItem(key, JSON.stringify({ data: data, saved_at: Date.now() }));
+        } catch (e) { console.warn('[draft] save failed:', e); }
+    }
+    function loadDraftLocal(key) {
+        try {
+            const stored = localStorage.getItem(key);
+            if (!stored) return null;
+            const parsed = JSON.parse(stored);
+            if (!parsed || typeof parsed !== 'object') return null;
+            const savedAt = parseInt(parsed.saved_at || 0, 10);
+            if (Date.now() - savedAt > DRAFT_TTL_MS) { localStorage.removeItem(key); return null; }
+            return parsed.data || null;
+        } catch (e) { return null; }
+    }
+    function clearDraftLocal(key) {
+        try { localStorage.removeItem(key); } catch (e) {}
+    }
+    const _draftSaveTimers = {};
+    function debounceSaveDraft(key, getDataFn) {
+        clearTimeout(_draftSaveTimers[key]);
+        _draftSaveTimers[key] = setTimeout(() => {
+            const data = getDataFn();
+            if (data && Object.keys(data).length > 0) saveDraftLocal(key, data);
+        }, 500);
+    }
+    function poDraftKey(poId) { return `waiter_draft:po_receive:${poId}`; }
+
+    // Restore all PO item drafts on page load
+    (function restoreAllPoDrafts() {
+        document.querySelectorAll('.po-card').forEach(poCard => {
+            const poId = (poCard.id || '').replace('po-', '');
+            if (!poId) return;
+            const draft = loadDraftLocal(poDraftKey(poId));
+            if (!draft || !draft.qty) return;
+            Object.entries(draft.qty).forEach(([restockId, qty]) => {
+                const input = document.getElementById(`input-${restockId}`);
+                if (input && !input.closest('.item-card.completed')) {
+                    input.value = qty;
+                }
+            });
+        });
+    })();
+
+    // Attach input listeners to all qty inputs for draft save
+    (function attachPoQtyListeners() {
+        document.querySelectorAll('.qty-input').forEach(input => {
+            const itemCard = input.closest('.item-card');
+            const poCard = input.closest('.po-card');
+            if (!itemCard || !poCard || itemCard.classList.contains('completed')) return;
+            const poId = (poCard.id || '').replace('po-', '');
+            const restockId = (itemCard.id || '').replace('item-', '');
+            if (!poId || !restockId) return;
+
+            input.addEventListener('input', () => {
+                debounceSaveDraft(poDraftKey(poId), () => {
+                    const qtyMap = {};
+                    poCard.querySelectorAll('.qty-input').forEach(inp => {
+                        const iCard = inp.closest('.item-card');
+                        if (!iCard || iCard.classList.contains('completed')) return;
+                        const rId = (iCard.id || '').replace('item-', '');
+                        const v = parseFloat(inp.value);
+                        if (rId && v > 0) qtyMap[rId] = v;
+                    });
+                    return { qty: qtyMap };
+                });
+            });
+        });
+    })();
+
     function showFlash(message) {
         const flash = document.getElementById('flash-message');
         flash.textContent = message;
@@ -391,6 +464,14 @@
                     itemCard.classList.add('completed');
                     const receiveAction = itemCard.querySelector('.receive-action');
                     if (receiveAction) receiveAction.innerHTML = '<div class="completed-msg">✅ Item sudah diterima penuh</div>';
+                    // Clear just this item from draft
+                    if (poCard) {
+                        const poId = (poCard.id || '').replace('po-', '');
+                        const draft = loadDraftLocal(poDraftKey(poId)) || { qty: {} };
+                        delete draft.qty[restockId];
+                        if (Object.keys(draft.qty).length > 0) saveDraftLocal(poDraftKey(poId), draft);
+                        else clearDraftLocal(poDraftKey(poId));
+                    }
                 } else {
                     const newMax = (data.qty_ordered || maxQty) - newReceived;
                     input.value = newMax > 0 ? newMax : 1;
@@ -401,7 +482,9 @@
                 }
                 
                 if (data.po_completed) {
-                    poReceiveFormInstanceByPo.delete(poKey);
+                    const poId2 = String(poId || '');
+                    poReceiveFormInstanceByPo.delete(poId2);
+                    clearDraftLocal(poDraftKey(poId2));
                     showFlash('🎉 PO selesai! Semua barang sudah diterima.');
                     setTimeout(() => window.location.reload(), 2000);
                 }

@@ -522,6 +522,59 @@
     let _activeSessionOnDisconnect = null;
     let _activeSessionHeartbeat = null;
 
+    // ─── Draft autosave helpers ───
+    const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+    function saveDraftLocal(key, data) {
+        try {
+            localStorage.setItem(key, JSON.stringify({ data: data, saved_at: Date.now() }));
+        } catch (e) { console.warn('[draft] save failed:', e); }
+    }
+    function loadDraftLocal(key) {
+        try {
+            const stored = localStorage.getItem(key);
+            if (!stored) return null;
+            const parsed = JSON.parse(stored);
+            if (!parsed || typeof parsed !== 'object') return null;
+            const savedAt = parseInt(parsed.saved_at || 0, 10);
+            if (Date.now() - savedAt > DRAFT_TTL_MS) { localStorage.removeItem(key); return null; }
+            return parsed.data || null;
+        } catch (e) { return null; }
+    }
+    function clearDraftLocal(key) {
+        try { localStorage.removeItem(key); } catch (e) {}
+    }
+    let _draftSaveTimer = null;
+    function debounceSaveDraft(key, getDataFn) {
+        clearTimeout(_draftSaveTimer);
+        _draftSaveTimer = setTimeout(() => {
+            const data = getDataFn();
+            if (data && Object.keys(data).length > 0) saveDraftLocal(key, data);
+        }, 500);
+    }
+    function getDraftKey() {
+        const rackId = currentRack?.id || '';
+        return `waiter_draft:stocktake:${rackId}`;
+    }
+    function collectDraftData() {
+        const qtyData = {};
+        getQtyInputs().forEach(inp => {
+            const idx = Number(inp.dataset.index);
+            const p = currentProducts[idx];
+            if (!p) return;
+            const val = parseFloat(inp.value || 0);
+            if (val > 0) qtyData[p.id] = val;
+        });
+        return {
+            qty: qtyData,
+            note: stockTakeNote.value || '',
+        };
+    }
+    function showDraftBanner(savedAt) {
+        const mins = Math.round((Date.now() - savedAt) / 60000);
+        const msg = mins < 1 ? 'baru saja' : `${mins} menit lalu`;
+        showToast('ok', `📋 Draft dipulihkan (dari ${msg})`);
+    }
+
     const resolveWaiterName = () => {
         if (typeof window.WAITER_NAME === 'string' && window.WAITER_NAME.trim()) return window.WAITER_NAME.trim();
         const bladeWaiterName = @json($waiterName ?? '');
@@ -609,6 +662,8 @@
         productsCard.style.display = 'none';
         actionBar.classList.remove('visible');
         stockTakeFormInstanceId = '';
+        // Clear draft when user explicitly changes rack
+        if (currentRack?.id) clearDraftLocal(`waiter_draft:stocktake:${currentRack.id}`);
     }
 
     function attachRackLiveListener(rackId) {
@@ -904,6 +959,7 @@
                     updateFilledState(inp);
                     syncTwinInputs(idx, val);
                 });
+                debounceSaveDraft(getDraftKey(), collectDraftData);
             });
             container.addEventListener('input', (e) => {
                 const inp = e.target.closest('.js-take-qty');
@@ -919,11 +975,41 @@
                 inp.value = val;
                 updateFilledState(inp);
                 syncTwinInputs(idx, val, inp);
+                debounceSaveDraft(getDraftKey(), collectDraftData);
             });
         });
 
         applyFilter();
         refreshFilledCounter();
+
+        // Restore draft after products rendered
+        const draftKey = getDraftKey();
+        const draft = loadDraftLocal(draftKey);
+        if (draft && draft.qty && Object.keys(draft.qty).length > 0) {
+            let restored = false;
+            currentProducts.forEach((p, i) => {
+                const savedQty = draft.qty[p.id];
+                if (savedQty == null) return;
+                document.querySelectorAll(`.js-take-qty[data-index="${i}"]`).forEach(inp => {
+                    if (inp.disabled) return;
+                    const maxAttr = parseInt(inp.getAttribute('max') || '', 10);
+                    const ceiling = Number.isFinite(maxAttr) && maxAttr > 0 ? maxAttr : Number.POSITIVE_INFINITY;
+                    inp.value = Math.min(ceiling, Math.max(0, savedQty));
+                    updateFilledState(inp);
+                    restored = true;
+                });
+            });
+            if (draft.note) {
+                stockTakeNote.value = draft.note;
+            }
+            if (restored) {
+                const savedAt = (() => { try { return JSON.parse(localStorage.getItem(draftKey))?.saved_at || 0; } catch(e){ return 0; } })();
+                showDraftBanner(savedAt || Date.now());
+                refreshFilledCounter();
+            }
+        }
+
+        // Attach debounced save on qty inputs (delegate via container events registered below)
     }
 
     // Sync table + card qty inputs for same product
@@ -1096,6 +1182,7 @@
             }
             showFeedback('ok', data.message || 'Pengambilan stok berhasil disimpan.');
             showToast('ok', data.message || 'Pengambilan stok berhasil disimpan!');
+            clearDraftLocal(getDraftKey());
             stockTakeNote.value = '';
             await resolveRack();
         } catch (e) {
@@ -1137,6 +1224,10 @@
     toggleNote.addEventListener('click', () => {
         toggleNote.classList.toggle('open');
         noteBody.classList.toggle('open');
+    });
+
+    stockTakeNote.addEventListener('input', () => {
+        debounceSaveDraft(getDraftKey(), collectDraftData);
     });
 
     btnConfirmOk.addEventListener('click', doSubmit);
