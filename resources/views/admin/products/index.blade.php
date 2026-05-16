@@ -620,19 +620,29 @@
     </div>
 
     <script>
-        // Auto-reset filter kategori saat user mulai ketik di search input.
-        // Cegah confusion: user search "781" tapi tidak sadar dropdown kategori
-        // masih sticky dari filter sebelumnya, sehingga hasil 0.
+        // UX rule: search input itu UNIVERSAL di semua kategori.
+        // Klik tombol Cari atau tekan Enter di search → kategori di-clear,
+        // hasil ditampilkan lintas kategori. Untuk gabungkan, user pilih
+        // dropdown kategori (auto-submit, search tetap dipertahankan).
         (function() {
             const searchInput = document.getElementById('productSearchInput');
             const categorySelect = document.getElementById('productCategoryFilter');
-            if (!searchInput || !categorySelect) return;
-            let typedAfterLoad = false;
-            searchInput.addEventListener('input', function() {
-                if (!typedAfterLoad && categorySelect.value !== '') {
+            const filterForm = document.getElementById('filterForm');
+            if (!searchInput || !categorySelect || !filterForm) return;
+
+            // Flag untuk bedakan submit dari dropdown auto-submit vs tombol Cari/Enter
+            let categoryAutoSubmit = false;
+            categorySelect.addEventListener('change', function() {
+                categoryAutoSubmit = true;
+            });
+
+            filterForm.addEventListener('submit', function() {
+                if (!categoryAutoSubmit) {
+                    // Tombol Cari atau Enter di search → search universal di semua kategori
                     categorySelect.value = '';
-                    typedAfterLoad = true;
                 }
+                // Reset flag setelah submit (mencegah leak ke navigation berikutnya)
+                categoryAutoSubmit = false;
             });
         })();
 
