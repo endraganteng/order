@@ -226,6 +226,9 @@
         });
 
         tasks.forEach(([id, task]) => {
+            // Skip task yg cancelled dari semua counter (Live Monitor monitor task aktif/done saja)
+            if (task.status === 'cancelled') return;
+
             total++;
             const wId = task.assigned_waiter_id;
             if (waiterStats[wId]) waiterStats[wId].total++;
