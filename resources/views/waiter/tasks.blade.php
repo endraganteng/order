@@ -2600,12 +2600,14 @@
                 .map(normalizeTask)
                 .filter((task) => task.assigned_waiter_id === waiterId && task.id !== '');
 
+            // Pending = pending + in_progress (task ter-klaim tetap di list pending,
+            // bukan pindah ke history)
             const pendingTasks = normalized
-                .filter((task) => task.status === 'pending')
+                .filter((task) => task.status === 'pending' || task.status === 'in_progress')
                 .sort((a, b) => b.created_at - a.created_at);
 
             const historyTasks = normalized
-                .filter((task) => task.status !== 'pending')
+                .filter((task) => task.status !== 'pending' && task.status !== 'in_progress')
                 .sort((a, b) => {
                     const bScore = b.completed_at || b.created_at;
                     const aScore = a.completed_at || a.created_at;
