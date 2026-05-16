@@ -829,8 +829,11 @@ class TaskController extends Controller
             return ($task['status'] ?? '') === 'done';
         }));
 
+        // Cancelled tidak masuk "belum selesai" — sudah explicitly batal
         $dateNotDoneTasks = array_values(array_filter($dateTasks, function ($task) {
-            return ($task['status'] ?? '') !== 'done';
+            $status = (string) ($task['status'] ?? '');
+
+            return $status !== 'done' && $status !== 'cancelled';
         }));
 
         $dateWaiterTrackingBoard = $this->buildWaiterTrackingBoard($dateDoneTasks, $dateNotDoneTasks);
@@ -1946,6 +1949,11 @@ class TaskController extends Controller
                 continue;
             }
 
+            // Skip cancelled task dari monitoring (audit hilang dari counter pending)
+            if ((string) ($task['status'] ?? '') === 'cancelled') {
+                continue;
+            }
+
             $rackId = (string) ($task['rack_id'] ?? '');
             $rackCode = (string) ($task['rack_barcode_value'] ?? '');
             $key = $rackId !== '' ? $rackId : 'barcode::'.$rackCode;
@@ -2040,6 +2048,11 @@ class TaskController extends Controller
         $breakdown = [];
 
         foreach ($tasks as $task) {
+            // Skip cancelled task — bukan kontribusi yg di-monitor
+            if ((string) ($task['status'] ?? '') === 'cancelled') {
+                continue;
+            }
+
             $catId = $task['category_id'] ?? null;
             $catName = $task['category_name'] ?? null;
             $key = $catId ?? '__uncategorized__';
