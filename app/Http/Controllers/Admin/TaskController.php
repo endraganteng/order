@@ -168,6 +168,36 @@ class TaskController extends Controller
             }
         }
 
+        // Parse per-rack recurrence map: { "rackId": {type, weekly_day?, interval_days?}, ... }
+        $rackRecurrenceMap = [];
+        $rackRecurrenceMapRaw = trim((string) $request->input('rack_recurrence_map', ''));
+        if ($rackRecurrenceMapRaw !== '' && $taskType === 'rack_check') {
+            $decodedRecurrenceMap = json_decode($rackRecurrenceMapRaw, true);
+            if (is_array($decodedRecurrenceMap)) {
+                foreach ($decodedRecurrenceMap as $rackId => $entry) {
+                    $rackId = trim((string) $rackId);
+                    if ($rackId === '' || ! is_array($entry)) {
+                        continue;
+                    }
+
+                    $entryType = (string) ($entry['type'] ?? 'daily');
+                    if (! in_array($entryType, ['daily', 'weekly', 'every_n_days'], true)) {
+                        $entryType = 'daily';
+                    }
+
+                    $rackRecurrenceMap[$rackId] = [
+                        'type' => $entryType,
+                        'weekly_day' => $entryType === 'weekly'
+                            ? max(1, min(7, (int) ($entry['weekly_day'] ?? 1)))
+                            : null,
+                        'interval_days' => $entryType === 'every_n_days'
+                            ? max(1, (int) ($entry['interval_days'] ?? 1))
+                            : null,
+                    ];
+                }
+            }
+        }
+
         // ── Batch Board Builder Mode (general tasks) ──
         $batchTasksJson = trim((string) $request->input('batch_tasks_json', ''));
         if ($batchTasksJson !== '' && $taskType === 'general') {
@@ -450,6 +480,7 @@ class TaskController extends Controller
                 $assignmentStrategy,
                 $selectedRoleWaiters,
                 $fixedRackAssignments,
+                $rackRecurrenceMap,
                 $recurrenceType,
                 $request,
                 $redirectRouteName
@@ -872,6 +903,7 @@ class TaskController extends Controller
         ?string $assignmentStrategy,
         array $selectedRoleWaiters,
         array $fixedRackAssignments,
+        array $rackRecurrenceMap,
         string $recurrenceType,
         Request $request,
         string $redirectRouteName
@@ -928,6 +960,26 @@ class TaskController extends Controller
                     : [];
             }
 
+            $effectiveRecurrenceType = $recurrenceType;
+            $effectiveWeeklyDay = $recurrenceType === 'weekly' ? (int) $request->weekly_day : null;
+            $effectiveIntervalDays = $recurrenceType === 'every_n_days' ? (int) $request->interval_days : null;
+
+            if ($taskType === 'rack_check') {
+                $perRackRec = $rackRecurrenceMap[$currentRackId] ?? null;
+                if (is_array($perRackRec)) {
+                    $effectiveRecurrenceType = (string) ($perRackRec['type'] ?? 'daily');
+                    if (! in_array($effectiveRecurrenceType, ['daily', 'weekly', 'every_n_days'], true)) {
+                        $effectiveRecurrenceType = 'daily';
+                    }
+                    $effectiveWeeklyDay = $effectiveRecurrenceType === 'weekly'
+                        ? max(1, min(7, (int) ($perRackRec['weekly_day'] ?? 1)))
+                        : null;
+                    $effectiveIntervalDays = $effectiveRecurrenceType === 'every_n_days'
+                        ? max(1, (int) ($perRackRec['interval_days'] ?? 1))
+                        : null;
+                }
+            }
+
             $this->firebase->createRecurringWaiterTaskTemplate([
                 'title' => $resolvedTaskTitle,
                 'description' => $taskDescription,
@@ -956,9 +1008,10 @@ class TaskController extends Controller
                 'shift_offset_minutes' => (int) $request->input('shift_offset_minutes', 0),
                 'deadline_mode' => (string) $request->input('deadline_mode', 'fixed'),
                 'deadline_before_end_minutes' => (int) $request->input('deadline_before_end_minutes', 60),
-                'recurrence_type' => $recurrenceType,
-                'weekly_day' => $recurrenceType === 'weekly' ? (int) $request->weekly_day : null,
-                'interval_days' => $recurrenceType === 'every_n_days' ? (int) $request->interval_days : null,
+                'recurrence_type' => $effectiveRecurrenceType,
+                'weekly_day' => $effectiveWeeklyDay,
+                'interval_days' => $effectiveIntervalDays,
+                'recurrence_anchor_date' => (string) $request->input('recurrence_anchor_date', date('Y-m-d')),
             ]);
             $templateCount++;
         }

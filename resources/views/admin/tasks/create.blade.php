@@ -365,6 +365,7 @@
                 <input type="hidden" id="assigned_waiter_id" name="assigned_waiter_id" value="">
                 <input type="hidden" id="assigned_waiter_role" name="assigned_waiter_role" value="pelayan">
                 <input type="hidden" id="role_assignment_mode" name="role_assignment_mode" value="rolling">
+                <input type="hidden" id="rack_recurrence_map" name="rack_recurrence_map" value="">
                 <div id="bbHiddenSelectedWaiterIds"></div>
                 <input type="hidden" id="fixed_rack_assignments" name="fixed_rack_assignments" value="">
 
@@ -1901,6 +1902,7 @@
                             // Add to pool list and track
                             poolList.appendChild(card);
                             allRackCards.push(card);
+                            ensureRackRecurrenceControls(card);
 
                             // Attach drag events to new card
                             attachDragToCard(card);
@@ -2022,6 +2024,88 @@
                 if (idx !== -1) assignments[waiterId].splice(idx, 1);
             }
 
+            function getWeeklyDayNameShort(day) {
+                var dayNames = ['', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+                var d = parseInt(day, 10) || 1;
+                if (d < 1 || d > 7) d = 1;
+                return dayNames[d];
+            }
+
+            function updateRackRecurrenceBadge(rackId) {
+                var card = findRackCardByRackId(rackId);
+                if (!card) return;
+                var sel = card.querySelector('.bb-rack-recurrence');
+                var weeklySel = card.querySelector('.bb-rack-weekly-day');
+                var badge = card.querySelector('.bb-rack-recurrence-badge');
+                if (!sel || !weeklySel || !badge) return;
+
+                var val = sel.value || 'daily';
+                weeklySel.style.display = val === 'weekly' ? 'inline-block' : 'none';
+
+                var label = '📅';
+                if (val === 'weekly') {
+                    label = '🗓️ ' + getWeeklyDayNameShort(weeklySel.value);
+                } else if (val.indexOf('every_') === 0) {
+                    var n = parseInt(val.replace('every_', ''), 10) || 1;
+                    label = '🔁 ' + n + 'd';
+                }
+                badge.textContent = label;
+            }
+
+            function buildRackCardRecurrenceControls(rackId) {
+                var rid = String(rackId || '');
+                var escRid = escapeHtml(rid);
+                return '' +
+                    '<div style="margin-top:4px; display:flex; align-items:center; gap:4px; flex-wrap:wrap;">' +
+                        '<select class="bb-rack-recurrence" data-rack-id="' + escRid + '" style="font-size:11px; padding:2px 4px;">' +
+                            '<option value="daily">📅 Harian</option>' +
+                            '<option value="weekly">🗓️ Mingguan</option>' +
+                            '<option value="every_3">🔁 Setiap 3 hari</option>' +
+                            '<option value="every_7">🔁 Setiap 7 hari</option>' +
+                        '</select>' +
+                        '<select class="bb-rack-weekly-day" data-rack-id="' + escRid + '" style="display:none; font-size:11px; padding:2px 4px;">' +
+                            '<option value="1">Senin</option>' +
+                            '<option value="2">Selasa</option>' +
+                            '<option value="3">Rabu</option>' +
+                            '<option value="4">Kamis</option>' +
+                            '<option value="5">Jumat</option>' +
+                            '<option value="6">Sabtu</option>' +
+                            '<option value="7">Minggu</option>' +
+                        '</select>' +
+                        '<span class="bb-rack-recurrence-badge" data-rack-id="' + escRid + '" style="font-size:11px; font-weight:700; color:#334155;">📅</span>' +
+                    '</div>';
+            }
+
+            function ensureRackRecurrenceControls(card) {
+                if (!card) return;
+                var rid = card.getAttribute('data-rack-id');
+                if (!rid) return;
+                if (card.querySelector('.bb-rack-recurrence')) {
+                    updateRackRecurrenceBadge(rid);
+                    return;
+                }
+
+                var info = card.querySelector('.bb-rack-card-info');
+                if (!info) return;
+                info.insertAdjacentHTML('beforeend', buildRackCardRecurrenceControls(rid));
+
+                var recSel = card.querySelector('.bb-rack-recurrence');
+                var daySel = card.querySelector('.bb-rack-weekly-day');
+                if (recSel) {
+                    recSel.addEventListener('change', function() {
+                        updateRackRecurrenceBadge(rid);
+                        syncHiddenFields();
+                    });
+                }
+                if (daySel) {
+                    daySel.addEventListener('change', function() {
+                        updateRackRecurrenceBadge(rid);
+                        syncHiddenFields();
+                    });
+                }
+                updateRackRecurrenceBadge(rid);
+            }
+
             // ── Render ──
             function renderBoard() {
                 var assignedIds = getAssignedRackIds();
@@ -2029,6 +2113,7 @@
                 // Show/hide pool cards
                 var poolVisible = 0;
                 allRackCards.forEach(function(card) {
+                    ensureRackRecurrenceControls(card);
                     var rid = card.getAttribute('data-rack-id');
                     var isAssigned = assignedIds.indexOf(rid) !== -1;
                     card.style.display = isAssigned ? 'none' : 'flex';
@@ -2191,6 +2276,7 @@
                 var roleModeEl = document.getElementById('role_assignment_mode');
                 var hiddenWaiterContainer = document.getElementById('bbHiddenSelectedWaiterIds');
                 var fixedRackEl = document.getElementById('fixed_rack_assignments');
+                var rackRecurrenceEl = document.getElementById('rack_recurrence_map');
 
                 hiddenWaiterContainer.innerHTML = '';
 
@@ -2216,6 +2302,35 @@
 
                 // Set fixed_rack_assignments JSON
                 fixedRackEl.value = hasFixed ? JSON.stringify(fixedMap) : '';
+
+                // Build per-rack recurrence map
+                var rackRecurrenceMap = {};
+                assignedRackIds.forEach(function(rid) {
+                    var card = findRackCardByRackId(rid);
+                    if (!card) return;
+                    var recSel = card.querySelector('.bb-rack-recurrence');
+                    var daySel = card.querySelector('.bb-rack-weekly-day');
+                    var val = recSel ? recSel.value : 'daily';
+                    var entry = { type: 'daily' };
+
+                    if (val === 'weekly') {
+                        var day = daySel ? (parseInt(daySel.value, 10) || 1) : 1;
+                        if (day < 1 || day > 7) day = 1;
+                        entry = { type: 'weekly', weekly_day: day };
+                    } else if (typeof val === 'string' && val.indexOf('every_') === 0) {
+                        var n = parseInt(val.replace('every_', ''), 10) || 1;
+                        if (n < 1) n = 1;
+                        entry = { type: 'every_n_days', interval_days: n };
+                    }
+
+                    rackRecurrenceMap[rid] = entry;
+                });
+
+                if (rackRecurrenceEl) {
+                    rackRecurrenceEl.value = Object.keys(rackRecurrenceMap).length > 0
+                        ? JSON.stringify(rackRecurrenceMap)
+                        : '';
+                }
 
                 if (waitersWithRacks.length === 0) {
                     // No waiters assigned — default to role/rolling
