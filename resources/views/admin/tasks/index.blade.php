@@ -634,6 +634,13 @@
                     ⚡ Force Generate
                 </button>
             </form>
+            <form method="POST" action="{{ route('admin.tasks.bulk_cancel_today') }}" style="display:inline;" onsubmit="return confirm('Yakin batalkan SEMUA task pending hari ini? Audit history tetap tersimpan.');">
+                @csrf
+                <input type="hidden" name="task_scope" value="{{ $createScope ?? 'rack_check' }}">
+                <button type="submit" class="btn" style="background:#fee2e2; color:#991b1b; border:1px solid #f87171;" title="Batalkan semua task pending/in-progress hari ini (status -> cancelled)">
+                    🚫 Cancel Pending Hari Ini
+                </button>
+            </form>
         </div>
     </div>
 

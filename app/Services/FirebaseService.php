@@ -8447,4 +8447,89 @@ class FirebaseService
             return [];
         }
     }
+
+    /**
+     * Bulk cancel waiter tasks by ID list. Status pending/in_progress -> cancelled.
+     * Task yg sudah done/overdue/cancelled tidak disentuh.
+     *
+     * @param  array  $taskIds  list of waiter_tasks IDs
+     * @param  string $note     reason note untuk completed_note
+     * @return int    jumlah task yg ter-cancel
+     */
+    public function bulkCancelWaiterTasks(array $taskIds, string $note = 'Dibatalkan admin'): int
+    {
+        if (empty($taskIds)) {
+            return 0;
+        }
+
+        $cancelled = 0;
+        $now = time();
+        $updates = [];
+
+        foreach ($taskIds as $taskId) {
+            $taskId = trim((string) $taskId);
+            if ($taskId === '') {
+                continue;
+            }
+
+            $taskRef = $this->database->getReference('waiter_tasks/'.$taskId);
+            $snapshot = $taskRef->getSnapshot();
+            if (! $snapshot->exists()) {
+                continue;
+            }
+
+            $task = (array) $snapshot->getValue();
+            $status = (string) ($task['status'] ?? 'pending');
+            if (! in_array($status, ['pending', 'in_progress'], true)) {
+                continue;
+            }
+
+            $existingNote = (string) ($task['completed_note'] ?? '');
+
+            $updates[$taskId.'/status'] = 'cancelled';
+            $updates[$taskId.'/cancelled_at'] = $now;
+            $updates[$taskId.'/cancelled_by_admin_bulk'] = true;
+            $updates[$taskId.'/completed_note'] = $existingNote !== ''
+                ? $existingNote.' | '.$note
+                : $note;
+
+            $cancelled++;
+        }
+
+        if (! empty($updates)) {
+            $this->database->getReference('waiter_tasks')->update($updates);
+        }
+
+        return $cancelled;
+    }
+
+    /**
+     * Bulk cancel pending/in_progress waiter tasks by date and optional task_type filter.
+     *
+     * @param  string  $date          Y-m-d
+     * @param  string|null  $taskType  filter (e.g. 'rack_check') or null for all
+     * @param  string  $note          reason note
+     * @return int     jumlah task yg ter-cancel
+     */
+    public function bulkCancelPendingTasksForDate(string $date, ?string $taskType = null, string $note = 'Dibatalkan admin (bulk cancel)'): int
+    {
+        $tasks = $this->getWaiterTasksByDate($date);
+        $cancelTaskIds = [];
+
+        foreach ($tasks as $task) {
+            if ($taskType !== null && ($task['task_type'] ?? '') !== $taskType) {
+                continue;
+            }
+            $status = (string) ($task['status'] ?? 'pending');
+            if (! in_array($status, ['pending', 'in_progress'], true)) {
+                continue;
+            }
+            $taskId = (string) ($task['id'] ?? '');
+            if ($taskId !== '') {
+                $cancelTaskIds[] = $taskId;
+            }
+        }
+
+        return $this->bulkCancelWaiterTasks($cancelTaskIds, $note);
+    }
 }

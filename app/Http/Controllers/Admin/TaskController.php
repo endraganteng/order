@@ -607,6 +607,30 @@ class TaskController extends Controller
     }
 
     /**
+     * Bulk cancel pending/in_progress task hari ini sesuai task_scope.
+     */
+    public function bulkCancelToday(Request $request)
+    {
+        $scope = (string) $request->input('task_scope', 'rack_check');
+        $taskType = $scope === 'rack_check' ? 'rack_check' : 'general';
+
+        $today = date('Y-m-d');
+        $note = 'Dibatalkan admin via bulk cancel ('.$today.')';
+
+        $cancelled = $this->firebase->bulkCancelPendingTasksForDate($today, $taskType, $note);
+
+        $redirectRouteName = $taskType === 'rack_check'
+            ? 'admin.tasks.rack.index'
+            : 'admin.tasks.index';
+
+        $message = $cancelled > 0
+            ? "{$cancelled} task pending/in-progress hari ini berhasil dibatalkan."
+            : 'Tidak ada task pending hari ini untuk dibatalkan.';
+
+        return redirect()->route($redirectRouteName)->with('success', $message);
+    }
+
+    /**
      * Delete task.
      */
     public function destroy($id)

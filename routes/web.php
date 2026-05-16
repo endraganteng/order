@@ -100,6 +100,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('tasks/rack-check', [TaskController::class, 'rackIndex'])->name('tasks.rack.index');
         Route::post('tasks/rack-check/reset', [TaskController::class, 'rackReset'])->name('tasks.rack.reset');
         Route::post('tasks/force-generate', [TaskController::class, 'forceGenerate'])->name('tasks.force_generate');
+        Route::post('tasks/bulk-cancel-today', [TaskController::class, 'bulkCancelToday'])->name('tasks.bulk_cancel_today');
         Route::get('tasks/create', [TaskController::class, 'create'])->name('tasks.create');
         Route::post('tasks', [TaskController::class, 'store'])->name('tasks.store');
         Route::post('tasks/cashiers', [TaskController::class, 'cashierStore'])->name('tasks.cashiers.store');
