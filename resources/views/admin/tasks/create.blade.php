@@ -407,6 +407,7 @@
                 <input type="hidden" id="is_recurring" name="is_recurring" value="1">
 
                 <div id="recurring-time-wrapper" style="margin-bottom: 25px; display: block;">
+                    <div id="recurrence-pattern-wrapper" data-rack-check-hide="1">
                     <div style="margin-bottom: 14px;">
                         <label for="recurrence_type" style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
                             Pola Perulangan <span style="color: #dc3545;">*</span>
@@ -461,6 +462,12 @@
                         <div style="font-size: 13px; color: #666; margin-top: 8px;">
                             Contoh: isi 2 berarti task muncul setiap 2 hari sekali.
                         </div>
+                    </div>
+                    </div>{{-- /#recurrence-pattern-wrapper --}}
+
+                    <div id="rack-check-recurrence-note" data-rack-check-show="1" style="display:none; margin-bottom: 14px; padding: 12px 14px; border: 1px dashed #818cf8; border-radius: 10px; background: #eef2ff; color: #3730a3; font-size: 13px; line-height: 1.5;">
+                        <strong>📅 Pola Perulangan per Rak</strong><br>
+                        Pola perulangan untuk tugas cek rak diatur per rak via dropdown di kartu rak (📅 Harian / 🗓️ Mingguan / 🔁 Setiap N hari). Default = Harian. Anda hanya perlu mengatur jam mulai &amp; deadline di bawah.
                     </div>
 
                     {{-- Schedule Mode --}}
@@ -1753,6 +1760,29 @@
         toggleAssignmentFields();
         toggleRecurringFields();
         toggleTaskTypeFields();
+
+        // Hide global recurrence pattern selector di rack-check (per-rak dropdown jadi single source).
+        // Tampilkan note penjelasan + biarkan schedule mode + jam mulai + deadline tetap visible.
+        (function applyRackCheckRecurrenceVisibility() {
+            var taskTypeEl = document.getElementById('task_type');
+            if (!taskTypeEl) return;
+            var isRackCheck = taskTypeEl.value === 'rack_check';
+
+            document.querySelectorAll('[data-rack-check-hide="1"]').forEach(function(el) {
+                el.style.display = isRackCheck ? 'none' : '';
+            });
+            document.querySelectorAll('[data-rack-check-show="1"]').forEach(function(el) {
+                el.style.display = isRackCheck ? 'block' : 'none';
+            });
+
+            // Disable required pada select recurrence_type kalau hidden, supaya validation lulus.
+            var recurrenceSelect = document.getElementById('recurrence_type');
+            if (recurrenceSelect && isRackCheck) {
+                recurrenceSelect.removeAttribute('required');
+                // Set ke 'daily' sebagai fallback. Per-rak map override real.
+                recurrenceSelect.value = 'daily';
+            }
+        })();
 
         /* ================================================================
          * Board Builder IIFE — rack_check mode only
