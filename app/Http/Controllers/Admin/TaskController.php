@@ -601,7 +601,10 @@ class TaskController extends Controller
      */
     public function forceGenerate()
     {
-        $count = $this->firebase->generateDueRecurringWaiterTasks(true);
+        $result = $this->firebase->generateDueRecurringWaiterTasks(true);
+        $count = is_array($result)
+            ? (int) ($result['generated'] ?? 0)
+            : (int) $result;
 
         return back()->with('success', "Force generate selesai: {$count} task dibuat.");
     }
