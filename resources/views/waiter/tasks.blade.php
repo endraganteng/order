@@ -2296,7 +2296,16 @@
                        <button type="submit" class="btn btn-done">${completeBtnLabel}</button>
                    </form>`;
 
-            const claimActionBlock = String(task?.assignment_type || '') === 'single'
+            // Klaim hanya berguna untuk task yg dishare oleh banyak waiter sekaligus.
+            // Sembunyikan untuk:
+            // - assignment_type='single' (sudah jelas 1 waiter)
+            // - assignment_strategy='role_round_robin' (rolling rotation: scanner sudah pilih 1 waiter)
+            // Tampilkan klaim untuk role-based shared task (semua role member punya akses task sama).
+            const taskAssignmentType = String(task?.assignment_type || '');
+            const taskAssignmentStrategy = String(task?.assignment_strategy || '');
+            const showClaimAction = taskAssignmentType !== 'single'
+                && taskAssignmentStrategy !== 'role_round_robin';
+            const claimActionBlock = !showClaimAction
                 ? ''
                 : `<div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
                         <button type="button" class="btn ${claimActive && !claimIsMine ? '' : 'btn-soft'} js-claim-task" data-task-id="${escapeAttr(task.id)}" ${claimActive && !claimIsMine ? 'disabled style="opacity:.6;cursor:not-allowed;"' : ''}>▶️ Mulai</button>
