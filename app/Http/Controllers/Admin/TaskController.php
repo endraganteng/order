@@ -93,6 +93,9 @@ class TaskController extends Controller
 
         // Build rack check status for today (for progress indicator in board builder)
         $rackCheckStatus = [];
+        // Build map of racks already assigned in active templates (rack_check only)
+        // Format: rackId => ['template_id', 'waiter_label', 'recurrence_type', 'assignment_type', 'is_fixed_locked']
+        $rackTemplateAssignments = [];
         if ($taskScope === 'rack_check') {
             $allTasks = $this->firebase->getWaiterTasksByDate($today);
             foreach ($allTasks as $task) {
@@ -111,9 +114,58 @@ class TaskController extends Controller
                     $rackCheckStatus[$rackId]['done']++;
                 }
             }
+
+            // Cek active templates yang sudah ada untuk rack_check
+            try {
+                $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+                foreach ($existingTemplates as $tpl) {
+                    if (($tpl['task_type'] ?? 'general') !== 'rack_check') {
+                        continue;
+                    }
+                    if (empty($tpl['is_active'])) {
+                        continue;
+                    }
+                    $rackId = (string) ($tpl['rack_id'] ?? '');
+                    if ($rackId === '') {
+                        continue;
+                    }
+                    if (isset($rackTemplateAssignments[$rackId])) {
+                        // sudah ada entry; skip (atau bisa append, tapi cukup tampilkan first)
+                        continue;
+                    }
+                    $assignmentType = (string) ($tpl['assignment_type'] ?? 'all');
+                    $strategy = (string) ($tpl['assignment_strategy'] ?? '');
+                    $waiterName = (string) ($tpl['assigned_waiter_name'] ?? '');
+                    $waiterRole = (string) ($tpl['assigned_waiter_role'] ?? '');
+
+                    if ($assignmentType === 'single' && $waiterName !== '') {
+                        $waiterLabel = $waiterName . ' (Fixed)';
+                        $isFixedLocked = true;
+                    } elseif ($assignmentType === 'role' && $strategy === 'role_round_robin') {
+                        $waiterLabel = 'Rotasi (' . ($waiterRole ?: 'pelayan') . ')';
+                        $isFixedLocked = false;
+                    } elseif ($assignmentType === 'role') {
+                        $waiterLabel = 'Role ' . ($waiterRole ?: 'pelayan');
+                        $isFixedLocked = false;
+                    } else {
+                        $waiterLabel = 'Semua waiter';
+                        $isFixedLocked = false;
+                    }
+
+                    $rackTemplateAssignments[$rackId] = [
+                        'template_id' => (string) ($tpl['id'] ?? ''),
+                        'waiter_label' => $waiterLabel,
+                        'recurrence_type' => (string) ($tpl['recurrence_type'] ?? 'daily'),
+                        'assignment_type' => $assignmentType,
+                        'is_fixed_locked' => $isFixedLocked,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
-        return view('admin.tasks.create', compact('waiters', 'racks', 'taskScope', 'backRouteName', 'requestedTaskType', 'waiterDayOffMap', 'categories', 'rackCheckStatus'));
+        return view('admin.tasks.create', compact('waiters', 'racks', 'taskScope', 'backRouteName', 'requestedTaskType', 'waiterDayOffMap', 'categories', 'rackCheckStatus', 'rackTemplateAssignments'));
     }
 
     /**
@@ -297,6 +349,44 @@ class TaskController extends Controller
                 return back()
                     ->withErrors(['rack_ids' => 'Ada rak yang tidak valid atau nonaktif. Silakan pilih ulang rak target.'])
                     ->withInput();
+            }
+
+            // Backend guard: reject rak yang sudah punya template aktif (cegah duplikat).
+            try {
+                $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+                $lockedRackMap = [];
+                foreach ($existingTemplates as $tpl) {
+                    if (($tpl['task_type'] ?? 'general') !== 'rack_check') {
+                        continue;
+                    }
+                    if (empty($tpl['is_active'])) {
+                        continue;
+                    }
+                    $lockedRackId = (string) ($tpl['rack_id'] ?? '');
+                    if ($lockedRackId === '') {
+                        continue;
+                    }
+                    $lockedRackMap[$lockedRackId] = (string) ($tpl['assigned_waiter_name'] ?? 'lain');
+                }
+
+                $conflictRackIds = array_values(array_filter($selectedRackIds, function ($rackId) use ($lockedRackMap) {
+                    return isset($lockedRackMap[$rackId]);
+                }));
+
+                if (count($conflictRackIds) > 0) {
+                    $conflictNames = array_map(function ($rackId) use ($activeRackMap, $lockedRackMap) {
+                        $rackName = (string) ($activeRackMap[$rackId]['name'] ?? $rackId);
+                        $waiterName = $lockedRackMap[$rackId];
+
+                        return $rackName.' (sudah ditugaskan ke '.$waiterName.')';
+                    }, $conflictRackIds);
+
+                    return back()
+                        ->withErrors(['rack_ids' => 'Rak berikut sudah punya template aktif: '.implode('; ', $conflictNames).'. Hapus/nonaktifkan template lama dulu di halaman Cek Rak.'])
+                        ->withInput();
+                }
+            } catch (\Throwable $e) {
+                report($e);
             }
 
             $selectedRacks = [];

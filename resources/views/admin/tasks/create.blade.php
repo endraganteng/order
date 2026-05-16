@@ -95,6 +95,10 @@
         .bb-rack-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; cursor: grab; transition: box-shadow 0.2s, border-color 0.2s, opacity 0.2s; user-select: none; -webkit-user-select: none; }
         .bb-rack-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: #94a3b8; }
         .bb-rack-card:active, .bb-rack-card.is-dragging { cursor: grabbing; opacity: 0.5; }
+        .bb-rack-card.is-locked { cursor: not-allowed; opacity: 0.6; background: #fafafa; border-color: #cbd5e1; border-style: dashed; }
+        .bb-rack-card.is-locked:hover { box-shadow: none; border-color: #cbd5e1; }
+        .bb-rack-card.is-locked:active { cursor: not-allowed; opacity: 0.6; }
+        .bb-rack-card-badge { font-size: 11px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; padding: 2px 6px; border-radius: 4px; margin-top: 4px; display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
         .bb-rack-card-icon { width: 36px; height: 36px; border-radius: 8px; background: #fff7ed; border: 1px solid #fdba74; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
         .bb-rack-card-info { min-width: 0; flex: 1; }
         .bb-rack-card-name { font-weight: 700; font-size: 13px; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -282,17 +286,24 @@
                                         $rStatus = ($rackCheckStatus[$rId] ?? null);
                                         $rDone = $rStatus['done'] ?? 0;
                                         $rTotal = $rStatus['total'] ?? 0;
+                                        $rExisting = $rackTemplateAssignments[$rId] ?? null;
+                                        $rIsLocked = $rExisting !== null;
                                     @endphp
-                                    <div class="bb-rack-card"
-                                         draggable="true"
+                                    <div class="bb-rack-card{{ $rIsLocked ? ' is-locked' : '' }}"
+                                         draggable="{{ $rIsLocked ? 'false' : 'true' }}"
                                          data-rack-id="{{ $rId }}"
                                          data-rack-name="{{ $rack['name'] ?? '-' }}"
                                          data-rack-location="{{ $rack['location'] ?? '-' }}"
-                                         data-rack-barcode="{{ $rack['barcode_value'] ?? '-' }}">
+                                         data-rack-barcode="{{ $rack['barcode_value'] ?? '-' }}"
+                                         data-locked="{{ $rIsLocked ? '1' : '0' }}"
+                                         @if($rIsLocked) title="Rak sudah punya template aktif: {{ $rExisting['waiter_label'] }} - tidak bisa di-drag" @endif>
                                         <div class="bb-rack-card-icon">📦</div>
                                         <div class="bb-rack-card-info">
                                             <div class="bb-rack-card-name">{{ $rack['name'] ?? '-' }}</div>
                                             <div class="bb-rack-card-loc">📍 {{ $rack['location'] ?? '-' }}</div>
+                                            @if($rIsLocked)
+                                                <div class="bb-rack-card-badge">🔒 {{ $rExisting['waiter_label'] }}</div>
+                                            @endif
                                         </div>
                                         @if($rTotal > 0)
                                             <div style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 10px; white-space: nowrap; {{ $rDone >= $rTotal ? 'background: #d1fae5; color: #065f46;' : 'background: #fef3c7; color: #92400e;' }}">
@@ -2429,6 +2440,14 @@
 
             // ── HTML5 Drag & Drop: Rack Cards ──
             function attachDragToCard(card) {
+                // Skip locked card (sudah ada template aktif)
+                if (card.getAttribute('data-locked') === '1') {
+                    card.addEventListener('dragstart', function(e) {
+                        e.preventDefault();
+                        return false;
+                    });
+                    return;
+                }
                 card.addEventListener('dragstart', function(e) {
                     var rid = card.getAttribute('data-rack-id');
                     e.dataTransfer.setData('text/plain', rid);
