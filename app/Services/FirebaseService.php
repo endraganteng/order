@@ -3348,21 +3348,67 @@ class FirebaseService
             }));
 
             if (empty($targetWaiters)) {
-                $rescheduleResult = $this->tryRescheduleRecurringTask(
-                    $template,
-                    $originalTargetWaiters,
-                    $effectiveTargetDate
-                );
+                // PRIORITY 1: Peer fallback (Opsi E)
+                // Kalau template assignment_type=single dan single-assignee libur,
+                // coba cari peer dgn role sama yang masuk hari cycle asli.
+                // Untuk role/selected mode, peer set sudah complete via $originalTargetWaiters.
+                $peerFallbackUsed = false;
+                if ($templateAssignmentType === 'single' && $assignedWaiterRole !== null && $assignedWaiterRole !== '') {
+                    try {
+                        $peerWaiters = $this->getActiveWaitersByRole($assignedWaiterRole);
+                        // Exclude assignee asli (sudah dicek libur)
+                        $assigneeId = (string) ($originalTargetWaiters[0]['id'] ?? '');
+                        $peerCandidates = array_values(array_filter($peerWaiters, function ($w) use ($effectiveTargetDate, $assigneeId) {
+                            $wId = (string) ($w['id'] ?? '');
+                            if ($wId === '' || $wId === $assigneeId) {
+                                return false;
+                            }
+                            return $this->isWorkingDay($wId, $effectiveTargetDate);
+                        }));
 
-                if (! ($rescheduleResult['rescheduled'] ?? false)) {
-                    continue;
+                        if (! empty($peerCandidates)) {
+                            $targetWaiters = $peerCandidates;
+                            $peerFallbackUsed = true;
+                            $rescheduledFromDate = null;
+
+                            // Notify admin singkat: peer fallback (bukan reschedule, hari sama)
+                            try {
+                                $fonnte = app(\App\Services\FonnteService::class);
+                                $fonnte->notifyTaskRescheduled(
+                                    $template,
+                                    $originalTargetWaiters[0] ?? [],
+                                    $peerCandidates[0],
+                                    $effectiveTargetDate,
+                                    $effectiveTargetDate // same date, beda waiter
+                                );
+                            } catch (\Throwable $e) {
+                                report($e);
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        report($e);
+                    }
                 }
 
-                $effectiveTargetDate = (string) ($rescheduleResult['new_date'] ?? $effectiveTargetDate);
-                $targetWaiters = $rescheduleResult['waiters'] ?? [];
-                $rescheduledFromDate = (string) ($rescheduleResult['original_date'] ?? $targetDate);
-                $isToday = $effectiveTargetDate === date('Y-m-d');
-                $existingRecurringMap = $this->getExistingWaiterRecurringMapForDate($effectiveTargetDate);
+                if (! $peerFallbackUsed) {
+                    // PRIORITY 2: Reschedule ke hari kerja terdekat (max +7) dgn cap load
+                    $rescheduleResult = $this->tryRescheduleRecurringTask(
+                        $template,
+                        $originalTargetWaiters,
+                        $effectiveTargetDate
+                    );
+
+                    if (! ($rescheduleResult['rescheduled'] ?? false)) {
+                        // PRIORITY 3: Failed (sudah handled di tryReschedule: log audit + WA URGENT)
+                        continue;
+                    }
+
+                    $effectiveTargetDate = (string) ($rescheduleResult['new_date'] ?? $effectiveTargetDate);
+                    $targetWaiters = $rescheduleResult['waiters'] ?? [];
+                    $rescheduledFromDate = (string) ($rescheduleResult['original_date'] ?? $targetDate);
+                    $isToday = $effectiveTargetDate === date('Y-m-d');
+                    $existingRecurringMap = $this->getExistingWaiterRecurringMapForDate($effectiveTargetDate);
+                }
             } else {
                 $rescheduledFromDate = null;
             }
@@ -3521,22 +3567,45 @@ class FirebaseService
 
     /**
      * Cari hari kerja terdekat (max +7 hari) untuk waiter assignee.
+     * Cap load 5 task pending per waiter per hari kandidat (Opsi E - distribusi adil).
+     * Kalau gagal: log audit + notif WA URGENT ke admin.
+     *
      * Return ['rescheduled' => bool, 'new_date' => Y-m-d, 'original_date' => Y-m-d, 'waiters' => array]
      */
     private function tryRescheduleRecurringTask(array $template, array $originalTargetWaiters, string $originalDate): array
     {
         $maxDaysAhead = 7;
+        $loadCap = 5; // max task pending per waiter per hari
 
         for ($offset = 1; $offset <= $maxDaysAhead; $offset++) {
             $candidateDate = date('Y-m-d', strtotime($originalDate.' +'.$offset.' days'));
 
-            $availableWaiters = array_values(array_filter($originalTargetWaiters, function ($waiter) use ($candidateDate) {
+            $availableWaiters = array_values(array_filter($originalTargetWaiters, function ($waiter) use ($candidateDate, $loadCap) {
                 $wId = $waiter['id'] ?? '';
                 if ($wId === '') {
                     return true;
                 }
 
-                return $this->isWorkingDay($wId, $candidateDate);
+                if (! $this->isWorkingDay($wId, $candidateDate)) {
+                    return false;
+                }
+
+                // Cap load: skip waiter kalau sudah punya >= $loadCap task pending/in_progress di hari kandidat
+                try {
+                    $existingTasks = $this->getWaiterTasksForDate($wId, $candidateDate);
+                    $activeCount = count(array_filter($existingTasks, function ($t) {
+                        $status = (string) ($t['status'] ?? 'pending');
+
+                        return in_array($status, ['pending', 'in_progress'], true);
+                    }));
+
+                    return $activeCount < $loadCap;
+                } catch (\Throwable $e) {
+                    report($e);
+
+                    // Fail open: kalau cek load gagal, izinkan supaya task tidak hilang
+                    return true;
+                }
             }));
 
             if (empty($availableWaiters)) {
@@ -3570,9 +3639,17 @@ class FirebaseService
                 'template_title' => $template['title'] ?? '',
                 'rack_name' => $template['rack_name'] ?? '',
                 'original_date' => $originalDate,
-                'reason' => 'Semua assignee libur dalam 7 hari ke depan',
+                'reason' => 'Tidak ada waiter available dgn load < '.$loadCap.' task dalam '.$maxDaysAhead.' hari ke depan',
                 'created_at' => time(),
             ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // Notif WA URGENT ke admin
+        try {
+            $fonnte = app(\App\Services\FonnteService::class);
+            $fonnte->notifyTaskUrgentNoCoverage($template, $originalDate, $maxDaysAhead);
         } catch (\Throwable $e) {
             report($e);
         }

@@ -392,6 +392,42 @@ class FonnteService
         return is_array($result) && ($result['status'] ?? false);
     }
 
+    /**
+     * Notify supervisor URGENT saat task tidak bisa direschedule
+     * (semua waiter libur > 7 hari atau load semua sudah penuh).
+     *
+     * @param  array  $template       Template data
+     * @param  string $originalDate   Tanggal cycle asli (Y-m-d)
+     * @param  int    $daysSearched   Berapa hari ke depan dicari (default 7)
+     */
+    public function notifyTaskUrgentNoCoverage(array $template, string $originalDate, int $daysSearched = 7): bool
+    {
+        $phone = $this->getReportPhone();
+        if (! $phone || ! $this->isEnabled()) {
+            return false;
+        }
+
+        $taskTitle = (string) ($template['title'] ?? 'Tugas');
+        $rackName = (string) ($template['rack_name'] ?? '');
+
+        $message = "🚨 *URGENT: Task Tidak Bisa Dijalankan*\n\n";
+        $message .= "Task: {$taskTitle}";
+        if ($rackName !== '') {
+            $message .= " ({$rackName})";
+        }
+        $message .= "\n";
+        $message .= "Tanggal asli: {$originalDate}\n";
+        $message .= "Tidak ada waiter masuk dalam {$daysSearched} hari ke depan,\n";
+        $message .= "atau load semua waiter sudah penuh (>=5 task/hari).\n\n";
+        $message .= "Aksi yang disarankan:\n";
+        $message .= "• Assign manual ke waiter lain via panel admin\n";
+        $message .= "• Atau skip cycle ini, tunggu cycle berikutnya";
+
+        $result = $this->sendMessage($phone, $message);
+
+        return is_array($result) && ($result['status'] ?? false);
+    }
+
     protected function resolveClockInTimestamp(?array $attendance, string $date): ?int
     {
         if (! $attendance) {
