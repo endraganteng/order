@@ -85,8 +85,8 @@
         .bb-toolbar-btn--reset { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
         .bb-toolbar-btn--reset:hover { background: #fee2e2; border-color: #f87171; }
         .bb-toolbar-select { padding: 7px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; color: #334155; background: #fff; cursor: pointer; }
-        .bb-board { display: grid; grid-template-columns: 280px 1fr; gap: 16px; min-height: 320px; }
-        .bb-rack-pool { background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 12px; min-height: 280px; transition: border-color 0.2s, background 0.2s; }
+        .bb-board { display: grid; grid-template-columns: 280px 1fr; gap: 16px; min-height: 320px; align-items: start; }
+        .bb-rack-pool { background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 12px; min-height: 280px; max-height: 520px; overflow-y: auto; position: sticky; top: 16px; transition: border-color 0.2s, background 0.2s; }
         .bb-rack-pool.is-drag-over { border-color: #818cf8; background: #eef2ff; }
         .bb-rack-pool-header { font-weight: 700; font-size: 14px; color: #475569; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
         .bb-rack-pool-count { font-size: 12px; font-weight: 600; color: #94a3b8; }
@@ -2695,6 +2695,71 @@
                     }
                 });
             }
+
+            // ── Auto-scroll saat drag (UX untuk rak banyak) ──
+            // Browser native HTML5 drag-drop tidak auto-scroll containers.
+            // Kalau cursor saat drag dekat top/bottom edge dari pool atau lanes,
+            // scroll smoothly supaya user bisa drop ke lane atas saat sedang drag dari rak bawah.
+            (function setupAutoScrollDuringDrag() {
+                var rackPoolEl = document.getElementById('bbRackPool');
+                var lanesEl = document.getElementById('bbWaiterLanes');
+                var scrollables = [rackPoolEl, lanesEl, document.scrollingElement || document.documentElement].filter(Boolean);
+                var dragActive = false;
+                var scrollTimer = null;
+                var EDGE_PX = 70;
+                var SCROLL_PX = 14;
+
+                function isDragOverElement(el, x, y) {
+                    if (!el) return false;
+                    var rect = el.getBoundingClientRect();
+                    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+                }
+
+                function scrollHotEdge(el, x, y) {
+                    if (!el || el === document.scrollingElement || el === document.documentElement) {
+                        // Window-level scroll: pakai window.scrollY
+                        var topEdge = y < EDGE_PX;
+                        var bottomEdge = y > window.innerHeight - EDGE_PX;
+                        if (topEdge) window.scrollBy(0, -SCROLL_PX);
+                        else if (bottomEdge) window.scrollBy(0, SCROLL_PX);
+                        return;
+                    }
+                    var rect = el.getBoundingClientRect();
+                    var topEdge = y - rect.top < EDGE_PX;
+                    var bottomEdge = rect.bottom - y < EDGE_PX;
+                    if (topEdge) el.scrollTop = Math.max(0, el.scrollTop - SCROLL_PX);
+                    else if (bottomEdge) el.scrollTop = el.scrollTop + SCROLL_PX;
+                }
+
+                document.addEventListener('dragstart', function() {
+                    dragActive = true;
+                });
+                document.addEventListener('dragend', function() {
+                    dragActive = false;
+                    if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = null; }
+                });
+                document.addEventListener('drop', function() {
+                    dragActive = false;
+                    if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = null; }
+                });
+
+                document.addEventListener('dragover', function(e) {
+                    if (!dragActive) return;
+                    var x = e.clientX, y = e.clientY;
+                    // Stop existing timer; we'll start fresh based on current position
+                    if (scrollTimer) { clearInterval(scrollTimer); scrollTimer = null; }
+                    // Detect which scrollable cursor is over (priority: lanes > pool > window)
+                    var target = null;
+                    if (isDragOverElement(lanesEl, x, y)) target = lanesEl;
+                    else if (isDragOverElement(rackPoolEl, x, y)) target = rackPoolEl;
+                    else target = document.scrollingElement || document.documentElement;
+
+                    // Continuous scroll while cursor stays in hot edge
+                    scrollTimer = setInterval(function() {
+                        scrollHotEdge(target, x, y);
+                    }, 16);
+                });
+            })();
 
             // Initial render
             renderBoard();
