@@ -18,26 +18,58 @@
     </div>
 
     {{-- Search & Filter Bar --}}
-    <div style="margin-bottom: 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-        <form id="filterForm" method="GET" action="{{ route('admin.products.index') }}" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; flex: 1;">
-            <input type="text" name="search" value="{{ $search }}" placeholder="Cari produk..."
-                style="padding: 9px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: 14px; min-width: 200px; flex: 1; max-width: 350px;">
-            @if(count($categories ?? []) > 0)
-            <select name="category" onchange="document.getElementById('filterForm').submit()"
-                style="padding: 9px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: 14px; min-width: 160px;">
-                <option value="">Semua Kategori</option>
-                <option value="__none__" {{ $categoryFilter === '__none__' ? 'selected' : '' }}>Tanpa Kategori</option>
-                @foreach($categories as $cat)
-                    <option value="{{ $cat['id'] }}" {{ $categoryFilter === (string)$cat['id'] ? 'selected' : '' }}>{{ $cat['name'] }}</option>
-                @endforeach
-            </select>
+    @php
+        $activeCatLabel = '';
+        if ($categoryFilter === '__none__') {
+            $activeCatLabel = 'Tanpa Kategori';
+        } elseif ($categoryFilter !== '') {
+            $activeCatLabel = $categoryMap[$categoryFilter] ?? '';
+        }
+    @endphp
+    <div style="margin-bottom: 16px;">
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+            <form id="filterForm" method="GET" action="{{ route('admin.products.index') }}" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; flex: 1;">
+                <input type="text" name="search" value="{{ $search }}" placeholder="Cari produk..."
+                    id="productSearchInput"
+                    autocomplete="off"
+                    style="padding: 9px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: 14px; min-width: 200px; flex: 1; max-width: 350px;">
+                @if(count($categories ?? []) > 0)
+                <select name="category" id="productCategoryFilter" onchange="document.getElementById('filterForm').submit()"
+                    style="padding: 9px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); font-size: 14px; min-width: 160px;">
+                    <option value="">Semua Kategori</option>
+                    <option value="__none__" {{ $categoryFilter === '__none__' ? 'selected' : '' }}>Tanpa Kategori</option>
+                    @foreach($categories as $cat)
+                        <option value="{{ $cat['id'] }}" {{ $categoryFilter === (string)$cat['id'] ? 'selected' : '' }}>{{ $cat['name'] }}</option>
+                    @endforeach
+                </select>
+                @endif
+                <button type="submit" class="btn btn-primary btn-sm">Cari</button>
+                @if($search !== '' || $categoryFilter !== '')
+                    <a href="{{ route('admin.products.index') }}" class="btn btn-sm" style="background: var(--color-border);">Reset semua</a>
+                @endif
+            </form>
+            <span style="font-size: 13px; color: var(--color-text-muted);">{{ $totalFiltered }} produk</span>
+        </div>
+
+        @if($search !== '' || $categoryFilter !== '')
+        <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <span style="font-size: 12px; color: var(--color-text-muted); font-weight: 600;">Filter aktif:</span>
+            @if($search !== '')
+                <a href="{{ route('admin.products.index', array_filter(['category' => $categoryFilter])) }}"
+                   style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #dbeafe; color: #1e40af; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #93c5fd;"
+                   title="Hapus filter pencarian">
+                    🔍 "{{ $search }}" <span style="font-weight: 700;">×</span>
+                </a>
             @endif
-            <button type="submit" class="btn btn-primary btn-sm">Cari</button>
-            @if($search !== '' || $categoryFilter !== '')
-                <a href="{{ route('admin.products.index') }}" class="btn btn-sm" style="background: var(--color-border);">Reset</a>
+            @if($categoryFilter !== '')
+                <a href="{{ route('admin.products.index', array_filter(['search' => $search])) }}"
+                   style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid #fbbf24;"
+                   title="Hapus filter kategori">
+                    📁 {{ $activeCatLabel ?: 'Kategori' }} <span style="font-weight: 700;">×</span>
+                </a>
             @endif
-        </form>
-        <span style="font-size: 13px; color: var(--color-text-muted);">{{ $totalFiltered }} produk</span>
+        </div>
+        @endif
     </div>
 
     @if(session('success'))
@@ -349,7 +381,14 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" style="text-align: center; color: var(--color-text-muted);">Belum ada data produk. Silakan tambah produk master.</td>
+                            <td colspan="6" style="text-align: center; color: var(--color-text-muted); padding: 24px;">
+                                @if($search !== '' || $categoryFilter !== '')
+                                    <div style="font-size: 14px; margin-bottom: 6px;">🔍 Tidak ada produk yang cocok dengan filter aktif.</div>
+                                    <div style="font-size: 13px;">Coba <a href="{{ route('admin.products.index') }}" style="color: #2563eb; font-weight: 600;">reset filter</a> atau ubah kata kunci.</div>
+                                @else
+                                    Belum ada data produk. Silakan tambah produk master.
+                                @endif
+                            </td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -407,7 +446,14 @@
                 </div>
             </div>
         @empty
-            <div class="empty">Belum ada data produk. Silakan tambah produk master.</div>
+            <div class="empty">
+                @if($search !== '' || $categoryFilter !== '')
+                    <div style="font-size: 14px; margin-bottom: 6px;">🔍 Tidak ada produk yang cocok dengan filter aktif.</div>
+                    <div style="font-size: 13px;">Coba <a href="{{ route('admin.products.index') }}" style="color: #2563eb; font-weight: 600;">reset filter</a> atau ubah kata kunci.</div>
+                @else
+                    Belum ada data produk. Silakan tambah produk master.
+                @endif
+            </div>
         @endforelse
     </div>
 
@@ -574,6 +620,22 @@
     </div>
 
     <script>
+        // Auto-reset filter kategori saat user mulai ketik di search input.
+        // Cegah confusion: user search "781" tapi tidak sadar dropdown kategori
+        // masih sticky dari filter sebelumnya, sehingga hasil 0.
+        (function() {
+            const searchInput = document.getElementById('productSearchInput');
+            const categorySelect = document.getElementById('productCategoryFilter');
+            if (!searchInput || !categorySelect) return;
+            let typedAfterLoad = false;
+            searchInput.addEventListener('input', function() {
+                if (!typedAfterLoad && categorySelect.value !== '') {
+                    categorySelect.value = '';
+                    typedAfterLoad = true;
+                }
+            });
+        })();
+
         function openProductModal(id = null, name = '', qty = 0, unit = 'pcs', isActive = true, categoryId = '') {
             const modal = document.getElementById('productModal');
             const title = document.getElementById('productModalTitle');
