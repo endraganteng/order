@@ -67,6 +67,55 @@ class TaskController extends Controller
     }
 
     /**
+     * Reset ALL tasks (waiter_tasks + templates + idempotency cache + reminder state).
+     * Destructive — requires the admin to type the confirmation phrase in the request body.
+     */
+    public function resetAll(Request $request)
+    {
+        $expectedPhrase = 'RESET SEMUA TUGAS';
+        $request->validate([
+            'confirmation' => 'required|string',
+        ]);
+
+        if (trim((string) $request->input('confirmation')) !== $expectedPhrase) {
+            return redirect()->route('admin.tasks.index')
+                ->with('error', 'Konfirmasi tidak cocok. Ketik "'.$expectedPhrase.'" untuk reset.');
+        }
+
+        try {
+            $result = $this->firebase->resetAllTasks();
+            $counts = $result['counts'] ?? [];
+            $total = (int) ($result['total'] ?? 0);
+
+            $this->firebase->logAuditAction('reset_all', 'tasks', null, [
+                'pre_counts' => $counts,
+                'total_removed' => $total,
+                'phrase' => $expectedPhrase,
+            ]);
+
+            if ($total === 0) {
+                return redirect()->route('admin.tasks.index')
+                    ->with('success', 'Tidak ada data tugas untuk di-reset.');
+            }
+
+            $summary = sprintf(
+                'Reset berhasil. Hapus %d waiter_tasks, %d templates, %d idempotency cache, %d reminder state.',
+                (int) ($counts['waiter_tasks'] ?? 0),
+                (int) ($counts['waiter_task_templates'] ?? 0),
+                (int) ($counts['waiter_task_idempotency'] ?? 0),
+                (int) ($counts['waiter_task_reminder_state'] ?? 0)
+            );
+
+            return redirect()->route('admin.tasks.index')->with('success', $summary);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->route('admin.tasks.index')
+                ->with('error', 'Reset semua tugas gagal: '.$e->getMessage());
+        }
+    }
+
+    /**
      * Show create task form.
      */
     public function create(Request $request)
@@ -770,6 +819,154 @@ class TaskController extends Controller
     }
 
     /**
+     * Board view: semua template recurring dikelompokkan per kolom jadwal.
+     * ?scope=general (default) atau ?scope=rack_check
+     */
+    public function templatesBoard(Request $request)
+    {
+        $scope = $request->query('scope', 'general');
+        if (! in_array($scope, ['general', 'rack_check'], true)) {
+            $scope = 'general';
+        }
+
+        $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+        $waiters = $this->firebase->getActiveWaiters();
+
+        // Filter by scope (task_type)
+        $templates = array_values(array_filter($allTemplates, function ($t) use ($scope) {
+            return ($t['task_type'] ?? 'general') === $scope;
+        }));
+
+        // Waiter map id => name
+        $waiterMap = [];
+        foreach ($waiters as $w) {
+            $waiterMap[$w['id'] ?? ''] = $w['name'] ?? '-';
+        }
+
+        // Kolom definitions — urutan tampil
+        $columns = [
+            'inactive'  => ['label' => 'Tidak Aktif',  'key' => 'inactive'],
+            'daily'     => ['label' => 'Setiap Hari',   'key' => 'daily'],
+            '1'         => ['label' => 'Senin',          'key' => '1'],
+            '2'         => ['label' => 'Selasa',         'key' => '2'],
+            '3'         => ['label' => 'Rabu',           'key' => '3'],
+            '4'         => ['label' => 'Kamis',          'key' => '4'],
+            '5'         => ['label' => 'Jumat',          'key' => '5'],
+            '6'         => ['label' => 'Sabtu',          'key' => '6'],
+            '7'         => ['label' => 'Minggu',         'key' => '7'],
+            'every_n'   => ['label' => 'Setiap N Hari', 'key' => 'every_n'],
+        ];
+
+        // Group templates ke kolom
+        $grouped = array_fill_keys(array_keys($columns), []);
+        foreach ($templates as $t) {
+            if (! ($t['is_active'] ?? true)) {
+                $grouped['inactive'][] = $t;
+                continue;
+            }
+            $rt = $t['recurrence_type'] ?? 'daily';
+            if ($rt === 'daily') {
+                $grouped['daily'][] = $t;
+            } elseif ($rt === 'weekly') {
+                $day = (string) ($t['weekly_day'] ?? '1');
+                if (isset($grouped[$day])) {
+                    $grouped[$day][] = $t;
+                } else {
+                    $grouped['1'][] = $t;
+                }
+            } elseif ($rt === 'every_n_days') {
+                $grouped['every_n'][] = $t;
+            } else {
+                $grouped['daily'][] = $t;
+            }
+        }
+
+        return view('admin.tasks.templates_board', compact('scope', 'columns', 'grouped', 'waiterMap'));
+    }
+
+    /**
+     * AJAX PATCH: update schedule fields of a recurring template (board drag-drop).
+     * Body: {recurrence_type?, weekly_day?, is_active?}
+     */
+    public function recurringScheduleUpdate($id, Request $request)
+    {
+        if (! $request->expectsJson() && ! $request->ajax()) {
+            return response()->json(['success' => false, 'message' => 'JSON only'], 400);
+        }
+
+        $allowed = ['daily', 'weekly', 'every_n_days'];
+
+        $patch = [];
+
+        if ($request->has('recurrence_type')) {
+            $rt = (string) $request->input('recurrence_type');
+            if (! in_array($rt, $allowed, true)) {
+                return response()->json(['success' => false, 'message' => 'recurrence_type tidak valid'], 422);
+            }
+            $patch['recurrence_type'] = $rt;
+        }
+
+        if ($request->has('weekly_day')) {
+            $day = (int) $request->input('weekly_day');
+            if ($day < 1 || $day > 7) {
+                return response()->json(['success' => false, 'message' => 'weekly_day harus 1-7'], 422);
+            }
+            $patch['weekly_day'] = $day;
+        }
+
+        if ($request->has('is_active')) {
+            $patch['is_active'] = (bool) $request->input('is_active');
+        }
+
+        if (empty($patch)) {
+            return response()->json(['success' => false, 'message' => 'Tidak ada field yang diupdate'], 422);
+        }
+
+        $result = $this->firebase->updateRecurringScheduleDays($id, $patch);
+
+        if (! $result['success']) {
+            return response()->json(['success' => false, 'message' => $result['error']], 422);
+        }
+
+        $this->firebase->logAuditAction('schedule_update', 'task_template', $id, [
+            'patch'  => $patch,
+            'admin'  => auth()->user()?->email ?? 'unknown',
+        ]);
+
+        return response()->json([
+            'success'  => true,
+            'template' => $result['template'],
+            'message'  => 'Jadwal template berhasil diperbarui',
+        ]);
+    }
+
+    /**
+     * Force-trigger generation for a single recurring template (today).
+     * Bypasses last_generated_date and schedule_time checks but still respects:
+     * is_active, days_of_week, recurrence_type, working day filter, peer fallback.
+     */
+    public function recurringForceGenerate($id, Request $request)
+    {
+        $result = $this->firebase->forceGenerateForTemplate((string) $id);
+
+        $this->firebase->logAuditAction('force_generate', 'task_template', $id, [
+            'generated' => $result['generated'] ?? 0,
+            'date'      => $result['date'] ?? null,
+            'admin'     => auth()->user()?->email ?? session('admin_name', 'unknown'),
+        ]);
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
+        }
+
+        if (! ($result['success'] ?? false)) {
+            return back()->withErrors(['force_generate' => $result['message'] ?? 'Gagal trigger generate']);
+        }
+
+        return back()->with('success', $result['message'] ?? 'Trigger berhasil');
+    }
+
+    /**
      * Add cashier worker master data.
      */
     public function cashierStore(StoreCashierWorkerRequest $request)
@@ -1452,48 +1649,108 @@ class TaskController extends Controller
                 $repeatCount = max(1, (int) ($task['repeat_count'] ?? 1));
                 $deadlineTime = trim((string) ($task['deadline_time'] ?? ''));
 
-                // Calculate deadline_at timestamp from deadline_time (HH:MM format)
-                $deadlineAt = null;
-                if ($deadlineTime !== '' && preg_match('/^\d{2}:\d{2}$/', $deadlineTime)) {
-                    $todayDate = now()->format('Y-m-d');
-                    $deadlineAt = strtotime($todayDate . ' ' . $deadlineTime . ':00');
-                    if ($deadlineAt === false || $deadlineAt <= time()) {
-                        $deadlineAt = null; // Ignore past deadlines
-                    }
-                }
+                // Per-task recurring fields
+                $taskIsRecurring = (bool) ($task['is_recurring'] ?? false);
+                $taskRecurrenceType = (string) ($task['recurrence_type'] ?? 'daily');
+                $taskDaysOfWeek = isset($task['days_of_week']) && is_array($task['days_of_week'])
+                    ? array_values(array_map('intval', $task['days_of_week']))
+                    : [];
+                $taskIntervalDays = isset($task['interval_days']) ? (int) $task['interval_days'] : 1;
+                $taskScheduleTime = trim((string) ($task['schedule_time'] ?? ''));
+                $taskScheduleMode = in_array($task['schedule_mode'] ?? 'fixed', ['fixed', 'shift_relative'], true)
+                    ? (string) $task['schedule_mode']
+                    : 'fixed';
+                $taskTimeLimitMinutes = max(0, (int) ($task['time_limit_minutes'] ?? 30));
+                $taskShiftOffsetMinutes = max(0, (int) ($task['shift_offset_minutes'] ?? 0));
+                $taskDeadlineBeforeEndMinutes = max(0, (int) ($task['deadline_before_end_minutes'] ?? 60));
 
                 if ($title === '') {
                     continue;
                 }
 
-                $result = $this->firebase->createWaiterTasksFromAssignment([
-                    'title' => $title,
-                    'description' => $description,
-                    'priority' => 'normal',
-                    'assigned_by' => 'Supervisor',
-                    'task_type' => 'general',
-                    'category_id' => $categoryId ?: null,
-                    'category_name' => $categoryName ?: null,
-                    'requires_barcode_scan' => false,
-                    'requires_photo_proof' => $requiresPhotoProof,
-                    'requires_photo_before' => $requiresPhotoBefore,
-                    'repeat_count' => $repeatCount,
-                    'deadline_at' => $deadlineAt,
-                    'scheduled_for_date' => $deadlineAt !== null ? now()->format('Y-m-d') : null,
-                    'rack_target_scope' => null,
-                    'rack_id' => null,
-                    'rack_name' => null,
-                    'rack_location' => null,
-                    'rack_barcode_value' => null,
-                    'assignment_type' => 'single',
-                    'assignment_strategy' => null,
-                    'assigned_waiter_id' => $waiterId,
-                    'assigned_waiter_role' => null,
-                    'selected_waiter_ids' => [],
-                ]);
+                if ($taskIsRecurring) {
+                    // Create recurring template(s) per task
+                    $weeklyDays = ($taskRecurrenceType === 'weekly' && count($taskDaysOfWeek) > 0)
+                        ? $taskDaysOfWeek
+                        : [null]; // non-weekly: single iteration
 
-                $createdCount += $result['count'];
-                $allCreatedEntries = array_merge($allCreatedEntries, $result['entries']);
+                    foreach ($weeklyDays as $weeklyDay) {
+                        $this->firebase->createRecurringWaiterTaskTemplate([
+                            'title' => $title,
+                            'description' => $description,
+                            'priority' => 'normal',
+                            'assigned_by' => 'Supervisor',
+                            'task_type' => 'general',
+                            'category_id' => $categoryId ?: null,
+                            'category_name' => $categoryName ?: null,
+                            'requires_barcode_scan' => false,
+                            'requires_photo_proof' => $requiresPhotoProof,
+                            'requires_photo_before' => $requiresPhotoBefore,
+                            'rack_target_scope' => null,
+                            'rack_id' => null,
+                            'rack_name' => null,
+                            'rack_location' => null,
+                            'rack_barcode_value' => null,
+                            'assignment_type' => 'single',
+                            'assignment_strategy' => null,
+                            'assigned_waiter_id' => $waiterId,
+                            'assigned_waiter_role' => null,
+                            'selected_waiter_ids' => [],
+                            'rolling_slot_index' => null,
+                            'schedule_time' => $taskScheduleTime,
+                            'time_limit_minutes' => $taskTimeLimitMinutes,
+                            'schedule_mode' => $taskScheduleMode,
+                            'shift_offset_minutes' => $taskShiftOffsetMinutes,
+                            'deadline_mode' => $taskScheduleMode === 'shift_relative' ? 'before_shift_end' : 'fixed',
+                            'deadline_before_end_minutes' => $taskDeadlineBeforeEndMinutes,
+                            'recurrence_type' => $taskRecurrenceType,
+                            'weekly_day' => $weeklyDay,
+                            'interval_days' => $taskRecurrenceType === 'every_n_days' ? $taskIntervalDays : null,
+                            'recurrence_anchor_date' => date('Y-m-d'),
+                        ]);
+                        $createdCount++;
+                    }
+                    // Recurring tasks don't have immediate entries for WhatsApp notification
+                } else {
+                    // Calculate deadline_at timestamp from deadline_time (HH:MM format)
+                    $deadlineAt = null;
+                    if ($deadlineTime !== '' && preg_match('/^\d{2}:\d{2}$/', $deadlineTime)) {
+                        $todayDate = now()->format('Y-m-d');
+                        $deadlineAt = strtotime($todayDate . ' ' . $deadlineTime . ':00');
+                        if ($deadlineAt === false || $deadlineAt <= time()) {
+                            $deadlineAt = null; // Ignore past deadlines
+                        }
+                    }
+
+                    $result = $this->firebase->createWaiterTasksFromAssignment([
+                        'title' => $title,
+                        'description' => $description,
+                        'priority' => 'normal',
+                        'assigned_by' => 'Supervisor',
+                        'task_type' => 'general',
+                        'category_id' => $categoryId ?: null,
+                        'category_name' => $categoryName ?: null,
+                        'requires_barcode_scan' => false,
+                        'requires_photo_proof' => $requiresPhotoProof,
+                        'requires_photo_before' => $requiresPhotoBefore,
+                        'repeat_count' => $repeatCount,
+                        'deadline_at' => $deadlineAt,
+                        'scheduled_for_date' => $deadlineAt !== null ? now()->format('Y-m-d') : null,
+                        'rack_target_scope' => null,
+                        'rack_id' => null,
+                        'rack_name' => null,
+                        'rack_location' => null,
+                        'rack_barcode_value' => null,
+                        'assignment_type' => 'single',
+                        'assignment_strategy' => null,
+                        'assigned_waiter_id' => $waiterId,
+                        'assigned_waiter_role' => null,
+                        'selected_waiter_ids' => [],
+                    ]);
+
+                    $createdCount += $result['count'];
+                    $allCreatedEntries = array_merge($allCreatedEntries, $result['entries']);
+                }
             }
         }
 
@@ -1514,7 +1771,7 @@ class TaskController extends Controller
         $taskCount = count($tasks);
 
         return redirect()->route($redirectRouteName)
-            ->with('success', "Batch berhasil: {$taskCount} tugas didelegasikan ke waiter (total {$createdCount} task dibuat).");
+            ->with('success', "Batch berhasil: {$taskCount} tugas didelegasikan ke waiter (total {$createdCount} task/template dibuat).");
     }
 
     /**

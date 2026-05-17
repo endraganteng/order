@@ -1204,6 +1204,7 @@
                     $grpTim        = request()->routeIs(['admin.waiters.*','admin.racks.*','admin.products.*','admin.product_categories.*','admin.shifts.*','admin.schedules.*']);
                     $grpOps        = request()->routeIs(['admin.tasks.live','admin.tasks.index','admin.tasks.rack.*','admin.restock.*','admin.suppliers.*','admin.attendance.*','admin.cleanup','admin.reconciliation.*']);
                     $grpBonus      = request()->routeIs(['admin.bonus.config','admin.bonus.daily_scoring','admin.bonus.penalties','admin.bonus.sales_targets','admin.bonus.monthly_summary','admin.bonus.leaderboard']);
+                    $grpPayroll    = request()->routeIs(['admin.payroll.index','admin.payroll.show','admin.payroll.withdrawals']);
                     $grpSistem     = request()->routeIs(['admin.audit_log.*','admin.settings']);
                 @endphp
                 {{-- Ringkasan --}}
@@ -1260,6 +1261,15 @@
                         <a class="{{ request()->routeIs('admin.bonus.sales_targets') ? 'is-active' : '' }}" href="{{ route('admin.bonus.sales_targets') }}">💰 Target Penjualan</a>
                         <a class="{{ request()->routeIs('admin.bonus.monthly_summary') ? 'is-active' : '' }}" href="{{ route('admin.bonus.monthly_summary') }}">📋 Rekap Bulanan</a>
                         <a class="{{ request()->routeIs('admin.bonus.leaderboard') ? 'is-active' : '' }}" href="{{ route('admin.bonus.leaderboard') }}">🏆 Leaderboard</a>
+                    </div>
+                </li>
+
+                {{-- Payroll --}}
+                <li class="{{ $grpPayroll ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpPayroll ? 'is-active-group' : '' }}">Payroll <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.payroll.index') ? 'is-active' : '' }}" href="{{ route('admin.payroll.index') }}">💰 Daftar Karyawan</a>
+                        <a class="{{ request()->routeIs('admin.payroll.withdrawals') ? 'is-active' : '' }}" href="{{ route('admin.payroll.withdrawals') }}">📋 Penarikan Pending</a>
                     </div>
                 </li>
 

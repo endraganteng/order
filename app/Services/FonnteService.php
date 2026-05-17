@@ -21,9 +21,36 @@ class FonnteService
         return ! empty($settings['fonnte_enabled']) && ! empty($settings['fonnte_api_token']);
     }
 
+    /**
+     * Normalize Indonesian phone numbers to Fonnte-compatible format.
+     * - Strip non-digits (spaces, dashes, plus, parens).
+     * - Convert leading 0 to 62 (mis. 0812... -> 62812...).
+     * - Leave already-prefixed 62... as is.
+     * - Empty input returns empty string.
+     */
+    public function normalizePhone(string $phone): string
+    {
+        $phone = preg_replace('/\D+/', '', (string) $phone) ?? '';
+        if ($phone === '') return '';
+        if (str_starts_with($phone, '0')) {
+            return '62' . substr($phone, 1);
+        }
+        if (str_starts_with($phone, '62')) {
+            return $phone;
+        }
+        // Asumsikan number tanpa prefix country code adalah ID local (mis. 812...) → tambah 62.
+        return '62' . $phone;
+    }
+
     public function sendMessage(string $phone, string $message): ?array
     {
         if (! $this->isEnabled()) {
+            return null;
+        }
+
+        $phone = $this->normalizePhone($phone);
+        if ($phone === '') {
+            Log::warning('Fonnte send aborted: empty phone after normalization');
             return null;
         }
 

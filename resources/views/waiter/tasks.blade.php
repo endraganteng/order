@@ -435,28 +435,6 @@
             color: #64748b;
             margin-top: 8px;
         }
-        .stocktake-movement-list {
-            margin-top: 10px;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            overflow: hidden;
-            background: #fff;
-        }
-        .stocktake-movement-row {
-            display: grid;
-            grid-template-columns: auto 1fr auto auto;
-            gap: 8px;
-            align-items: center;
-            padding: 10px 12px;
-            border-bottom: 1px solid #f1f5f9;
-        }
-        .stocktake-movement-row:last-child { border-bottom: none; }
-        .stocktake-movement-row input[type="number"] {
-            width: 84px;
-            margin-bottom: 0;
-            text-align: center;
-            padding: 6px 8px;
-        }
         .mobile-nav {
             display: none;
         }
@@ -627,6 +605,67 @@
             color: #4338ca;
             border-top: 1px solid #e2e8f0;
         }
+        .product-checklist-empty {
+            padding: 14px 12px;
+            text-align: center;
+            color: #64748b;
+            font-size: 13px;
+            background: #f8fafc;
+        }
+        .product-checklist-assign {
+            padding: 10px 12px;
+            background: #f0f9ff;
+            border-top: 1px solid #e2e8f0;
+        }
+        .product-checklist-assign .btn {
+            background: #1d4ed8;
+            color: #fff;
+            width: 100%;
+            font-weight: 600;
+        }
+        .assign-product-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .assign-product-row:last-child { border-bottom: none; }
+        .assign-product-row:hover { background: #f8fafc; }
+        .assign-product-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .assign-product-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .assign-product-meta {
+            font-size: 11px;
+            color: #6b7280;
+        }
+        .assign-product-add {
+            flex-shrink: 0;
+            background: #10b981;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .assign-product-add:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .assign-product-add:hover:not(:disabled) {
+            background: #059669;
+        }
         .refill-step {
             margin-top: 10px;
             border: 2px solid #f59e0b;
@@ -714,6 +753,33 @@
         .refill-step-actions .btn-refill-skip {
             background: #e5e7eb;
             color: #374151;
+        }
+        .refill-step-storage {
+            margin-top: 4px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .refill-step-storage--available {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+        .refill-step-storage--empty {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+        .refill-step-item--empty,
+        .refill-step-item--missing {
+            background: #fff7ed;
+        }
+        .refill-step-item--empty .js-refill-qty,
+        .refill-step-item--missing .js-refill-qty {
+            background: #f3f4f6;
+            color: #9ca3af;
+            cursor: not-allowed;
         }
         .attendance-bar {
             background: #eef2ff;
@@ -1050,6 +1116,8 @@
             <div class="top-dropdown" id="topDropdown">
                 <div style="padding: 10px 14px; font-size: 12px; color: #9ca3af;">Login sebagai <strong style="color:#374151;">{{ $waiterName }}</strong></div>
                 <div class="top-dropdown-divider"></div>
+                <a href="{{ route('waiter.payroll', [], false) }}" class="top-dropdown-item">💰 Gaji Saya</a>
+                <div class="top-dropdown-divider"></div>
                 <a href="{{ route('waiter.logout', [], false) }}" class="top-dropdown-item danger" onclick="return confirm('Yakin mau logout?')">🚪 Logout</a>
             </div>
         </div>
@@ -1224,18 +1292,17 @@
         </div>
     </div>
 
-    <div id="stocktake-modal" class="photo-view-modal" aria-hidden="true">
+    {{-- Assign Product to Rack modal --}}
+    <div id="assign-product-modal" class="photo-view-modal" aria-hidden="true">
         <div class="photo-view-box">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
-                <strong id="stocktake-modal-title">🧾 Stock Take Rak Gudang</strong>
-                <button type="button" id="stocktake-modal-close-btn" class="btn" style="background:#ef4444;color:#fff;padding:6px 10px;">Tutup</button>
+                <strong id="assign-product-modal-title">➕ Tambahkan Produk ke Rak</strong>
+                <button type="button" id="assign-product-modal-close-btn" class="btn" style="background:#ef4444;color:#fff;padding:6px 10px;">Tutup</button>
             </div>
-            <div id="stocktake-modal-meta" class="muted"></div>
-            <div id="stocktake-modal-feedback" class="meta" style="margin-top:6px;color:#9a3412;">Pilih item yang akan dipindahkan lalu isi qty.</div>
-            <div id="stocktake-modal-list" class="stocktake-movement-list"></div>
-            <div style="margin-top: 10px; display:flex; gap:8px;">
-                <button type="button" id="stocktake-modal-save-btn" class="btn" style="background:#10b981;color:#fff;flex:1;">✅ Simpan Movement</button>
-            </div>
+            <div id="assign-product-modal-meta" class="muted" style="margin-bottom:8px;"></div>
+            <input type="text" id="assign-product-search" class="input" placeholder="Cari nama atau barcode produk..." autocomplete="off" style="margin-bottom:8px;">
+            <div id="assign-product-feedback" class="meta" style="font-size:12px;color:#6b7280;margin-bottom:8px;">Ketik minimal 2 huruf untuk mulai mencari.</div>
+            <div id="assign-product-results" style="max-height:50vh;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff;"></div>
         </div>
     </div>
 
@@ -1285,13 +1352,6 @@
         const photoPreviewImageEl = document.getElementById('photo-preview-image');
         const photoPreviewMetaEl = document.getElementById('photo-preview-meta');
         const photoPreviewCloseBtn = document.getElementById('photo-preview-close-btn');
-        const stockTakeModalEl = document.getElementById('stocktake-modal');
-        const stockTakeModalTitleEl = document.getElementById('stocktake-modal-title');
-        const stockTakeModalMetaEl = document.getElementById('stocktake-modal-meta');
-        const stockTakeModalFeedbackEl = document.getElementById('stocktake-modal-feedback');
-        const stockTakeModalListEl = document.getElementById('stocktake-modal-list');
-        const stockTakeModalSaveBtn = document.getElementById('stocktake-modal-save-btn');
-        const stockTakeModalCloseBtn = document.getElementById('stocktake-modal-close-btn');
         const csrfToken = '{{ csrf_token() }}';
         const completeUrlTemplate = "{{ route('waiter.task.complete', ['id' => '__TASK_ID__'], false) }}";
         const claimUrlTemplate = "{{ route('waiter.task.claim', ['id' => '__TASK_ID__'], false) }}";
@@ -1340,7 +1400,6 @@
         const photoBeforeByTask = new Map();
         const productChecklistByTask = new Map();
         const refillStepByTask = new Map(); // tracks display rack tasks in refill mode
-        const stockTakeDraftByTask = new Map();
         const taskCompleteFormInstanceByTask = new Map();
 
         // ─── Draft autosave helpers ───
@@ -1389,7 +1448,6 @@
             const product_checklist = productChecklistByTask.get(taskId) || {};
             return { note, scanned_barcode, product_checklist };
         }
-        let activeStockTakeTaskId = '';
         let activeScannerTaskId = '';
         let activeScannerTaskLabel = '';
         let activeScannerExpectedBarcode = '';
@@ -2114,19 +2172,56 @@
             if (!shortageItems || shortageItems.length === 0) return '';
 
             const itemsHtml = shortageItems.map(item => {
-                return `<div class="refill-step-item">
+                const status = String(item.storage_status || 'missing');
+                const storageQty = Number(item.storage_total_qty || 0);
+                const racks = Array.isArray(item.storage_racks) ? item.storage_racks : [];
+                const isAvailable = status === 'available';
+
+                let storageBadge = '';
+                if (isAvailable) {
+                    const topRack = racks[0];
+                    const rackHint = topRack ? ` di <strong>${escapeHtml(topRack.rack_name)}</strong>` : '';
+                    storageBadge = `<div class="refill-step-storage refill-step-storage--available">✅ Stok gudang: <strong>${storageQty}</strong> ${escapeHtml(item.product_unit)}${rackHint}</div>`;
+                } else if (status === 'empty') {
+                    storageBadge = `<div class="refill-step-storage refill-step-storage--empty">⚠️ Stok gudang habis. <strong>Otomatis dibuat permintaan restock</strong> saat task diselesaikan.</div>`;
+                } else {
+                    // missing: tidak ter-assign ke rak gudang manapun. Tetap auto-PO supaya
+                    // supervisor bisa beli dari supplier.
+                    storageBadge = `<div class="refill-step-storage refill-step-storage--empty">⚠️ Tidak ada di gudang. <strong>Otomatis dibuat permintaan restock</strong> saat task diselesaikan.</div>`;
+                }
+
+                const inputValue = isAvailable ? item.standard_qty : item.initial_qty;
+                const inputDisabled = isAvailable ? '' : 'disabled';
+                const inputHint = isAvailable
+                    ? `<span style="font-size:12px;color:#6b7280;">${escapeHtml(item.product_unit)}</span>`
+                    : `<span style="font-size:11px;color:#b91c1c;">tidak bisa diambil</span>`;
+
+                return `<div class="refill-step-item refill-step-item--${status}">
                     <div class="refill-step-name">${escapeHtml(item.product_name)}</div>
                     <div class="refill-step-info">Sebelum: ${item.initial_qty} / Standar: ${item.standard_qty}</div>
+                    ${storageBadge}
                     <div class="refill-step-qty">
-                        <input type="number" class="js-refill-qty" data-task-id="${escapeAttr(task.id)}" data-product-id="${escapeAttr(item.product_id)}" data-initial-qty="${item.initial_qty}" min="0" max="999" value="${item.standard_qty}" placeholder="Qty">
-                        <span style="font-size:12px;color:#6b7280;">${escapeHtml(item.product_unit)}</span>
+                        <input type="number" class="js-refill-qty" data-task-id="${escapeAttr(task.id)}" data-product-id="${escapeAttr(item.product_id)}" data-initial-qty="${item.initial_qty}" data-storage-status="${escapeAttr(status)}" min="0" max="999" value="${inputValue}" placeholder="Qty" ${inputDisabled}>
+                        ${inputHint}
                     </div>
                 </div>`;
             }).join('');
 
+            const availableCount = shortageItems.filter(i => i.storage_status === 'available').length;
+            const unavailableCount = shortageItems.length - availableCount;
+
+            const hintParts = [];
+            if (availableCount > 0) {
+                hintParts.push(`Ambil <strong>${availableCount}</strong> produk dari gudang lalu update qty`);
+            }
+            if (unavailableCount > 0) {
+                hintParts.push(`<strong>${unavailableCount}</strong> stok gudang tidak cukup, otomatis jadi permintaan restock`);
+            }
+            const hint = hintParts.join(' • ') || 'Klik selesai untuk menyimpan hasil cek rak.';
+
             return `<div class="refill-step" data-task-id="${escapeAttr(task.id)}">
                 <div class="refill-step-header">⚠️ ${shortageItems.length} Produk Perlu Diisi Ulang</div>
-                <div class="refill-step-hint">Ambil dari gudang, isi rak, lalu input qty setelah refill. Jika gudang habis, biarkan qty sama seperti sebelumnya.</div>
+                <div class="refill-step-hint">${hint}</div>
                 ${itemsHtml}
             </div>`;
         }
@@ -2172,6 +2267,19 @@
             const existingChecklist = productChecklistByTask.get(task.id) || {};
 
             let productChecklistBlock = '';
+            const showAssignBtn = requiresScan && existingScan && rackId;
+            const assignBtnBlock = showAssignBtn
+                ? `<div class="product-checklist-assign">
+                        <button type="button" class="btn btn-soft js-open-assign-product"
+                            data-task-id="${escapeAttr(task.id)}"
+                            data-rack-id="${escapeAttr(rackId)}"
+                            data-rack-name="${escapeAttr(task.rack_name || '')}">
+                            ➕ Tambahkan produk lain ke rak ini
+                        </button>
+                        <div class="meta" style="font-size:11px;color:#6b7280;margin-top:4px;">Tidak ketemu produk yang ingin diisi qty? Tambahkan dari master.</div>
+                    </div>`
+                : '';
+
             if (requiresScan && existingScan && hasRackProducts) {
                 const checklistItems = rackProducts.map((product) => {
                     const productData = existingChecklist[product.id] || {};
@@ -2233,6 +2341,13 @@
                     <div class="product-checklist-header">\ud83d\udccb Checklist Produk Rak (${rackProducts.length} produk)</div>
                     ${checklistItems}
                     <div class="product-checklist-summary">${summaryText}</div>
+                    ${assignBtnBlock}
+                </div>`;
+            } else if (showAssignBtn && !hasRackProducts) {
+                productChecklistBlock = `<div class="product-checklist" data-task-id="${escapeAttr(task.id)}">
+                    <div class="product-checklist-header">\ud83d\udccb Checklist Produk Rak (0 produk)</div>
+                    <div class="product-checklist-empty">Belum ada produk di rak ini. Tambahkan produk untuk mulai input qty.</div>
+                    ${assignBtnBlock}
                 </div>`;
             }
 
@@ -2306,10 +2421,6 @@
                             ${existingScan ? `✅ QR code ter-scan: <code>${escapeHtml(existingScan)}</code>` : '⚠️ Belum scan QR code rak.'}
                         </div>
                         ${hasRackProducts ? productChecklistBlock : stockReportBlock}
-                        ${(hasRackProducts && taskRackType === 'storage' && existingScan)
-                            ? `<button type="button" class="btn btn-soft js-open-stocktake-modal" data-task-id="${escapeAttr(task.id)}" style="width:100%; margin-top:8px;">🧾 Pilih Item Movement Gudang</button>
-                               <div class="meta" style="font-size:12px; color:#334155; margin-top:6px;">Gunakan modal stock take untuk pilih item dan qty movement.</div>`
-                            : ''}
                         ${renderRefillStep(task)}
                     </div>`
                 : '';
@@ -2575,8 +2686,8 @@
             }
             if (stockTakePendingContainer) {
                 stockTakePendingContainer.innerHTML = stockTakeTasks.length
-                    ? `<section class="task-group"><div class="task-group-head"><div><h3 class="task-group-title">🧾 Rak Gudang</h3><div class="task-group-subtitle">Scan rak, cek stok saat ini, pilih item+qty movement, lalu submit.</div></div><span class="task-group-badge">${stockTakeTasks.length} tugas</span></div><div class="grid">${stockTakeTasks.map(renderPendingTaskCard).join('')}</div></section>`
-                    : '<div class="empty">Tidak ada tugas stock take rak gudang aktif saat ini.</div>';
+                    ? `<section class="task-group"><div class="task-group-head"><div><h3 class="task-group-title">🧾 Rak Gudang</h3><div class="task-group-subtitle">Scan rak, cek stok produk, lalu submit. Item shortage akan otomatis dibuat permintaan restock.</div></div><span class="task-group-badge">${stockTakeTasks.length} tugas</span></div><div class="grid">${stockTakeTasks.map(renderPendingTaskCard).join('')}</div></section>`
+                    : '<div class="empty">Tidak ada tugas cek rak gudang aktif saat ini.</div>';
             }
 
             if (generalPendingContainer) {
@@ -3363,15 +3474,6 @@
                     return;
                 }
 
-                if (isRackScanTask(currentTask) && currentRackType === 'storage') {
-                    const movementDraft = stockTakeDraftByTask.get(taskId);
-                    const moves = Array.isArray(movementDraft?.items) ? movementDraft.items : [];
-                    if (!moves.length) {
-                        showFlash('error', 'Untuk stock take rak gudang, pilih minimal 1 item movement dari modal terlebih dahulu.');
-                        return;
-                    }
-                }
-
                 if (requiresPhotoProof && photoProofDataUrl === '') {
                     showFlash('error', 'Task ini wajib foto bukti sebelum verifikasi selesai.');
                     return;
@@ -3414,10 +3516,50 @@
                     }
 
                     if (shortageItems.length > 0) {
+                        // Fetch warehouse availability so the refill UI can show
+                        // which items are actually pickable vs. need a restock request.
+                        let storageInfo = {};
+                        try {
+                            const resp = await fetch(storageInfoUrl, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/json',
+                                    'X-CSRF-TOKEN': csrfToken,
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                },
+                                body: JSON.stringify({ product_ids: shortageItems.map(i => i.product_id) }),
+                            });
+                            const payload = await resp.json();
+                            if (resp.ok && payload?.success) {
+                                storageInfo = payload.storage_info || {};
+                            }
+                        } catch (err) {
+                            // Non-blocking: refill UI still works without storage info, just without badges.
+                            console.warn('Storage info fetch failed', err);
+                        }
+
+                        // Merge storage availability into each shortage entry.
+                        for (const item of shortageItems) {
+                            const info = storageInfo[item.product_id] || { total_qty: 0, racks: [], status: 'missing' };
+                            item.storage_status = String(info.status || 'missing');
+                            item.storage_total_qty = Number(info.total_qty || 0);
+                            item.storage_racks = Array.isArray(info.racks) ? info.racks : [];
+                        }
+
                         // Enter refill mode — show refill UI instead of submitting
                         refillStepByTask.set(taskId, shortageItems);
                         renderAllTasks();
-                        showFlash('info', `${shortageItems.length} produk perlu diisi ulang dari gudang.`);
+                        const availableCount = shortageItems.filter(i => i.storage_status === 'available').length;
+                        const unavailableCount = shortageItems.length - availableCount;
+                        if (unavailableCount > 0 && availableCount > 0) {
+                            showFlash('info', `${availableCount} bisa diambil dari gudang, ${unavailableCount} otomatis dibuat permintaan restock.`);
+                        } else if (unavailableCount > 0) {
+                            showFlash('info', `${unavailableCount} produk stok gudang tidak cukup. Otomatis dibuat permintaan restock saat selesai.`);
+                        } else {
+                            showFlash('info', `${shortageItems.length} produk siap diambil dari gudang.`);
+                        }
                         return;
                     }
                 }
@@ -3674,10 +3816,18 @@
                     }
                     return;
                 }
-                const stockTakeBtn = event.target.closest('.js-open-stocktake-modal');
-                if (stockTakeBtn) {
-                    const taskId = String(stockTakeBtn.getAttribute('data-task-id') || '');
-                    openStockTakeModal(taskId);
+                const assignProductBtn = event.target.closest('.js-open-assign-product');
+                if (assignProductBtn) {
+                    const taskId = String(assignProductBtn.getAttribute('data-task-id') || '');
+                    const rackId = String(assignProductBtn.getAttribute('data-rack-id') || '');
+                    const rackName = String(assignProductBtn.getAttribute('data-rack-name') || '');
+                    openAssignProductModal(taskId, rackId, rackName);
+                    return;
+                }
+
+                const assignAddBtn = event.target.closest('.js-assign-product-add');
+                if (assignAddBtn) {
+                    // Handled by modal click listener (modal lives outside the pending container).
                     return;
                 }
                 if (!btn) {
@@ -3696,110 +3846,197 @@
             });
         }
 
-        function closeStockTakeModal() {
-            if (!stockTakeModalEl) return;
-            stockTakeModalEl.style.display = 'none';
-            stockTakeModalEl.setAttribute('aria-hidden', 'true');
-            activeStockTakeTaskId = '';
+        // === Assign Product to Rack modal ===
+        const assignProductModalEl = document.getElementById('assign-product-modal');
+        const assignProductTitleEl = document.getElementById('assign-product-modal-title');
+        const assignProductMetaEl = document.getElementById('assign-product-modal-meta');
+        const assignProductSearchEl = document.getElementById('assign-product-search');
+        const assignProductFeedbackEl = document.getElementById('assign-product-feedback');
+        const assignProductResultsEl = document.getElementById('assign-product-results');
+        const assignProductCloseBtn = document.getElementById('assign-product-modal-close-btn');
+        const assignProductSearchUrl = "{{ route('waiter.rack_products.search', [], false) }}";
+        const assignProductAssignUrl = "{{ route('waiter.rack_products.assign', [], false) }}";
+        const storageInfoUrl = "{{ route('waiter.rack_products.storage_info', [], false) }}";
+        let assignActiveTaskId = '';
+        let assignActiveRackId = '';
+        let assignSearchTimer = null;
+
+        function closeAssignProductModal() {
+            if (!assignProductModalEl) return;
+            assignProductModalEl.style.display = 'none';
+            assignProductModalEl.setAttribute('aria-hidden', 'true');
+            assignActiveTaskId = '';
+            assignActiveRackId = '';
+            if (assignSearchTimer) { clearTimeout(assignSearchTimer); assignSearchTimer = null; }
+            if (assignProductSearchEl) assignProductSearchEl.value = '';
+            if (assignProductResultsEl) assignProductResultsEl.innerHTML = '';
+            if (assignProductFeedbackEl) {
+                assignProductFeedbackEl.textContent = 'Ketik minimal 2 huruf untuk mulai mencari.';
+                assignProductFeedbackEl.style.color = '#6b7280';
+            }
         }
 
-        function openStockTakeModal(taskId) {
-            const task = waiterTasks.find((item) => String(item?.id || '') === String(taskId || ''));
-            if (!task) {
-                showFlash('error', 'Task stock take tidak ditemukan.');
+        function openAssignProductModal(taskId, rackId, rackName) {
+            if (!assignProductModalEl) return;
+            if (!rackId) {
+                showFlash('error', 'Rak tidak ditemukan untuk task ini.');
                 return;
             }
-            const rackId = String(task.rack_id || '');
-            const products = rackProductsMap[rackId] || [];
+            assignActiveTaskId = String(taskId || '');
+            assignActiveRackId = String(rackId || '');
+            if (assignProductTitleEl) assignProductTitleEl.textContent = '➕ Tambahkan Produk ke Rak';
+            if (assignProductMetaEl) assignProductMetaEl.textContent = rackName ? `Rak: ${rackName}` : `Rak ID: ${rackId}`;
+            assignProductModalEl.style.display = 'flex';
+            assignProductModalEl.setAttribute('aria-hidden', 'false');
+            // Trigger empty search to show recent products
+            runAssignSearch('');
+            setTimeout(() => assignProductSearchEl?.focus(), 50);
+        }
+
+        async function runAssignSearch(query) {
+            if (!assignActiveRackId) return;
+            const q = String(query || '').trim();
+            if (q.length === 1) {
+                if (assignProductFeedbackEl) {
+                    assignProductFeedbackEl.textContent = 'Ketik minimal 2 huruf untuk mulai mencari.';
+                    assignProductFeedbackEl.style.color = '#6b7280';
+                }
+                if (assignProductResultsEl) assignProductResultsEl.innerHTML = '';
+                return;
+            }
+            if (assignProductFeedbackEl) {
+                assignProductFeedbackEl.textContent = 'Mencari...';
+                assignProductFeedbackEl.style.color = '#6b7280';
+            }
+            try {
+                const url = new URL(assignProductSearchUrl, window.location.origin);
+                url.searchParams.set('rack_id', assignActiveRackId);
+                if (q !== '') url.searchParams.set('q', q);
+                url.searchParams.set('limit', '30');
+                const res = await fetch(url.toString(), {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    throw new Error(data?.message || 'Gagal memuat daftar produk.');
+                }
+                renderAssignSearchResults(data.products || []);
+            } catch (err) {
+                if (assignProductFeedbackEl) {
+                    assignProductFeedbackEl.textContent = err.message || 'Gagal memuat produk.';
+                    assignProductFeedbackEl.style.color = '#b91c1c';
+                }
+                if (assignProductResultsEl) assignProductResultsEl.innerHTML = '';
+            }
+        }
+
+        function renderAssignSearchResults(products) {
+            if (!assignProductResultsEl) return;
             if (!products.length) {
-                showFlash('error', 'Produk rak belum tersedia untuk stock take.');
+                assignProductResultsEl.innerHTML = '<div class="assign-product-row" style="color:#6b7280;">Tidak ada produk yang cocok.</div>';
+                if (assignProductFeedbackEl) {
+                    assignProductFeedbackEl.textContent = 'Tidak ada hasil.';
+                    assignProductFeedbackEl.style.color = '#6b7280';
+                }
                 return;
             }
-
-            activeStockTakeTaskId = String(task.id || '');
-            const draft = stockTakeDraftByTask.get(activeStockTakeTaskId) || { items: [] };
-            const draftMap = new Map((draft.items || []).map((it) => [String(it.product_id || ''), it]));
-            const checklist = productChecklistByTask.get(activeStockTakeTaskId) || {};
-
-            if (stockTakeModalTitleEl) {
-                stockTakeModalTitleEl.textContent = '🧾 Stock Take Rak Gudang';
+            const html = products.map((p) => {
+                const meta = [
+                    p.unit ? escapeHtml(p.unit) : '',
+                    p.standard_qty ? `Std: ${p.standard_qty}` : '',
+                    p.barcode ? `Barcode: ${escapeHtml(p.barcode)}` : '',
+                    p.category_name ? escapeHtml(p.category_name) : '',
+                ].filter(Boolean).join(' • ');
+                return `<div class="assign-product-row" data-product-id="${escapeAttr(p.id)}">
+                    <div class="assign-product-info">
+                        <div class="assign-product-name">${escapeHtml(p.name || '-')}</div>
+                        <div class="assign-product-meta">${meta || '-'}</div>
+                    </div>
+                    <button type="button" class="assign-product-add js-assign-product-add"
+                        data-product-id="${escapeAttr(p.id)}"
+                        data-product-name="${escapeAttr(p.name || '')}"
+                        data-product-unit="${escapeAttr(p.unit || 'pcs')}"
+                        data-standard-qty="${Number(p.standard_qty || 0)}">
+                        Tambah
+                    </button>
+                </div>`;
+            }).join('');
+            assignProductResultsEl.innerHTML = html;
+            if (assignProductFeedbackEl) {
+                assignProductFeedbackEl.textContent = `${products.length} produk tersedia.`;
+                assignProductFeedbackEl.style.color = '#059669';
             }
-            if (stockTakeModalMetaEl) {
-                stockTakeModalMetaEl.textContent = `Task: ${task.title || '-'} • Rak: ${task.rack_name || '-'}`;
-            }
-
-            if (stockTakeModalListEl) {
-                stockTakeModalListEl.innerHTML = products.map((p) => {
-                    const pid = String(p.id || '');
-                    const currentQty = Number(checklist[pid]?.actual_qty ?? 0);
-                    const old = draftMap.get(pid) || null;
-                    const checked = Boolean(old);
-                    const moveQty = Number(old?.move_qty || 0);
-                    return `<label class="stocktake-movement-row">
-                        <input type="checkbox" class="js-stocktake-check" data-product-id="${escapeAttr(pid)}" ${checked ? 'checked' : ''}>
-                        <div>
-                            <div style="font-weight:700; font-size:13px; color:#0f172a;">${escapeHtml(p.name || '-')}</div>
-                            <div class="muted">Stok saat ini: <b>${currentQty}</b> / standar ${Number(p.standard_qty || 0)} ${escapeHtml(p.unit || 'pcs')}</div>
-                        </div>
-                        <input type="number" min="0" class="input js-stocktake-move-qty" data-product-id="${escapeAttr(pid)}" value="${moveQty > 0 ? String(moveQty) : ''}" placeholder="Qty">
-                        <span class="muted">${escapeHtml(p.unit || 'pcs')}</span>
-                    </label>`;
-                }).join('');
-            }
-
-            if (stockTakeModalFeedbackEl) {
-                stockTakeModalFeedbackEl.textContent = 'Pilih item movement dan isi qty > 0.';
-                stockTakeModalFeedbackEl.style.color = '#9a3412';
-            }
-
-            stockTakeModalEl.style.display = 'flex';
-            stockTakeModalEl.setAttribute('aria-hidden', 'false');
         }
 
-        function saveStockTakeModalDraft() {
-            if (!activeStockTakeTaskId || !stockTakeModalListEl) {
-                return;
+        async function submitAssignProduct(productId, btnEl) {
+            if (!productId || !assignActiveRackId) return;
+            const originalLabel = btnEl ? btnEl.textContent : '';
+            if (btnEl) {
+                btnEl.disabled = true;
+                btnEl.textContent = '...';
             }
-            const checkedEls = Array.from(stockTakeModalListEl.querySelectorAll('.js-stocktake-check:checked'));
-            const items = [];
-            for (const checkedEl of checkedEls) {
-                const pid = String(checkedEl.getAttribute('data-product-id') || '');
-                const qtyEl = stockTakeModalListEl.querySelector(`.js-stocktake-move-qty[data-product-id="${pid}"]`);
-                const qty = Math.max(0, parseInt(String(qtyEl?.value || '0'), 10) || 0);
-                if (qty <= 0) {
-                    if (stockTakeModalFeedbackEl) {
-                        stockTakeModalFeedbackEl.textContent = 'Qty movement harus diisi (>0) untuk item yang dipilih.';
-                        stockTakeModalFeedbackEl.style.color = '#b91c1c';
+            try {
+                const res = await fetch(assignProductAssignUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        rack_id: assignActiveRackId,
+                        product_id: productId,
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    throw new Error(data?.message || 'Gagal menambahkan produk.');
+                }
+                // Append to in-memory map and re-render
+                const newProduct = data.product;
+                if (newProduct) {
+                    const list = rackProductsMap[assignActiveRackId] || [];
+                    if (!list.some((p) => String(p.id) === String(newProduct.id))) {
+                        list.push(newProduct);
+                        list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+                        rackProductsMap[assignActiveRackId] = list;
                     }
+                }
+                showFlash('success', data.message || 'Produk berhasil ditambahkan.');
+                closeAssignProductModal();
+                renderAllTasks();
+            } catch (err) {
+                showFlash('error', err.message || 'Gagal menambahkan produk.');
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.textContent = originalLabel || 'Tambah';
+                }
+            }
+        }
+
+        if (assignProductCloseBtn) {
+            assignProductCloseBtn.addEventListener('click', closeAssignProductModal);
+        }
+        if (assignProductModalEl) {
+            assignProductModalEl.addEventListener('click', (e) => {
+                const addBtn = e.target.closest('.js-assign-product-add');
+                if (addBtn) {
+                    const productId = String(addBtn.getAttribute('data-product-id') || '');
+                    submitAssignProduct(productId, addBtn);
                     return;
                 }
-                const task = waiterTasks.find((t) => String(t?.id || '') === activeStockTakeTaskId);
-                const rackId = String(task?.rack_id || '');
-                const products = rackProductsMap[rackId] || [];
-                const p = products.find((x) => String(x.id || '') === pid);
-                if (!p) continue;
-                items.push({
-                    product_id: pid,
-                    product_name: String(p.name || ''),
-                    product_unit: String(p.unit || 'pcs'),
-                    move_qty: qty,
-                });
-            }
-
-            if (!items.length) {
-                if (stockTakeModalFeedbackEl) {
-                    stockTakeModalFeedbackEl.textContent = 'Pilih minimal satu item untuk movement.';
-                    stockTakeModalFeedbackEl.style.color = '#b91c1c';
-                }
-                return;
-            }
-
-            stockTakeDraftByTask.set(activeStockTakeTaskId, { items });
-            const reportText = items.map((it) => `${it.product_name}: movement ${it.move_qty} ${it.product_unit}`).join('\n');
-            stockReportItemsByTask.set(activeStockTakeTaskId, reportText);
-            closeStockTakeModal();
-            renderAllTasks();
-            showFlash('success', 'Draft movement stock take disimpan. Lanjutkan submit task.');
+                if (e.target === assignProductModalEl) closeAssignProductModal();
+            });
+        }
+        if (assignProductSearchEl) {
+            assignProductSearchEl.addEventListener('input', () => {
+                if (assignSearchTimer) clearTimeout(assignSearchTimer);
+                const v = assignProductSearchEl.value;
+                assignSearchTimer = setTimeout(() => runAssignSearch(v), 250);
+            });
         }
 
         attachPendingContainerListeners(rackPendingContainer);
@@ -3847,20 +4084,6 @@
         photoPreviewModalEl?.addEventListener('click', (event) => {
             if (event.target === photoPreviewModalEl) {
                 closePhotoPreviewModal();
-            }
-        });
-
-        stockTakeModalSaveBtn?.addEventListener('click', () => {
-            saveStockTakeModalDraft();
-        });
-
-        stockTakeModalCloseBtn?.addEventListener('click', () => {
-            closeStockTakeModal();
-        });
-
-        stockTakeModalEl?.addEventListener('click', (event) => {
-            if (event.target === stockTakeModalEl) {
-                closeStockTakeModal();
             }
         });
 

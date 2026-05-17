@@ -652,6 +652,74 @@
                                     <input type="time" id="gt_new_deadline" value="" style="width: 110px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                                     <span style="font-size: 11px; color: #94a3b8;">opsional</span>
                                 </div>
+
+                                {{-- Per-card recurring config --}}
+                                <div style="border-top: 1px solid #e2e8f0; margin-top: 8px; padding-top: 10px;">
+                                    <div class="gt-task-add-form-group" style="display: flex; align-items: center; gap: 8px;">
+                                        <label style="font-size: 12px; color: #475569; font-weight: 600; white-space: nowrap;">🔁 Frekuensi:</label>
+                                        <select id="gt_new_recurrence_type" onchange="gtToggleRecurrenceFields()" style="flex: 1; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;">
+                                            <option value="once">Sekali (tidak berulang)</option>
+                                            <option value="daily">Setiap Hari</option>
+                                            <option value="weekly">Mingguan (pilih hari)</option>
+                                            <option value="every_n_days">Setiap N Hari</option>
+                                        </select>
+                                    </div>
+
+                                    <div id="gt-weekly-days-wrapper" style="display: none; margin-top: 6px;">
+                                        <label style="font-size: 11px; color: #475569; font-weight: 600; display: block; margin-bottom: 4px;">Hari (boleh pilih beberapa):</label>
+                                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                            <label style="display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 6px;"><input type="checkbox" class="gt-day-cb" value="1"> Sen</label>
+                                            <label style="display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 6px;"><input type="checkbox" class="gt-day-cb" value="2"> Sel</label>
+                                            <label style="display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 6px;"><input type="checkbox" class="gt-day-cb" value="3"> Rab</label>
+                                            <label style="display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 6px;"><input type="checkbox" class="gt-day-cb" value="4"> Kam</label>
+                                            <label style="display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 6px;"><input type="checkbox" class="gt-day-cb" value="5"> Jum</label>
+                                            <label style="display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 6px;"><input type="checkbox" class="gt-day-cb" value="6"> Sab</label>
+                                            <label style="display: flex; align-items: center; gap: 3px; font-size: 11px; cursor: pointer; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 3px 6px;"><input type="checkbox" class="gt-day-cb" value="7"> Min</label>
+                                        </div>
+                                    </div>
+
+                                    <div id="gt-interval-days-wrapper" style="display: none; align-items: center; gap: 6px; margin-top: 6px;">
+                                        <label style="font-size: 11px; color: #475569; font-weight: 600; white-space: nowrap;">Setiap</label>
+                                        <input type="number" id="gt_new_interval_days" min="1" max="365" value="2" style="width: 60px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; text-align: center;">
+                                        <span style="font-size: 11px; color: #94a3b8;">hari sekali</span>
+                                    </div>
+
+                                    <div id="gt-schedule-time-wrapper" style="display: none; margin-top: 6px;">
+                                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                            <label style="font-size: 11px; color: #475569; font-weight: 600; white-space: nowrap;">Mode:</label>
+                                            <select id="gt_new_schedule_mode" onchange="gtToggleRecurrenceFields()" style="padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 11px;">
+                                                <option value="fixed">⏰ Jam Tetap</option>
+                                                <option value="shift_relative">🔄 Ikuti Shift</option>
+                                            </select>
+                                        </div>
+                                        {{-- Mode: fixed → Jam jadwal absolut + Batas selesai durasi --}}
+                                        <div id="gt-fixed-fields" style="margin-top: 6px;">
+                                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                <label style="font-size: 11px; color: #475569; font-weight: 600; white-space: nowrap;">🕐 Jam jadwal:</label>
+                                                <input type="time" id="gt_new_schedule_time" style="width: 110px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px;">
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                                                <label style="font-size: 11px; color: #475569; font-weight: 600; white-space: nowrap;">⏳ Batas selesai:</label>
+                                                <input type="number" id="gt_new_time_limit" min="0" max="1440" value="30" style="width: 60px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; text-align: center;">
+                                                <span style="font-size: 11px; color: #94a3b8;">menit dari muncul</span>
+                                            </div>
+                                        </div>
+                                        {{-- Mode: shift_relative → offset & deadline relatif shift --}}
+                                        <div id="gt-shift-fields" style="display: none; margin-top: 6px;">
+                                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                <label style="font-size: 11px; color: #475569; font-weight: 600; white-space: nowrap;">🔄 Muncul setelah shift mulai:</label>
+                                                <input type="number" id="gt_new_shift_offset_minutes" min="0" max="480" value="30" style="width: 60px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; text-align: center;">
+                                                <span style="font-size: 11px; color: #94a3b8;">menit</span>
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                                                <label style="font-size: 11px; color: #475569; font-weight: 600; white-space: nowrap;">⏰ Deadline sebelum shift selesai:</label>
+                                                <input type="number" id="gt_new_deadline_before_end_minutes" min="0" max="480" value="60" style="width: 60px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; text-align: center;">
+                                                <span style="font-size: 11px; color: #94a3b8;">menit</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <button type="button" class="gt-task-add-btn js-gt-btn-add">
                                     + Tambah Tugas
                                 </button>
@@ -701,8 +769,8 @@
                     </div>
                 </div>
 
-                {{-- General mode: recurring section --}}
-                <div style="margin-bottom: 20px;">
+                {{-- General mode: global recurring section (hidden — per-card recurring now handled in board form) --}}
+                <div id="gt-global-recurring-section" style="margin-bottom: 20px; display: none;">
                     <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; color: #333; cursor: pointer;">
                         <input
                             type="checkbox"
@@ -881,6 +949,10 @@
             var taskTypeInput = document.getElementById('task_type');
             if (!taskTypeInput || taskTypeInput.value !== 'general') return;
 
+            // Hide global recurring section — per-card recurring is in the pool form
+            var globalRecSection = document.getElementById('gt-global-recurring-section');
+            if (globalRecSection) globalRecSection.style.display = 'none';
+
             var taskPool = [];
             var assignments = {}; 
             var taskIdCounter = 0;
@@ -957,7 +1029,14 @@
                             requires_photo_proof: t.requires_photo_proof,
                             requires_photo_before: t.requires_photo_before || false,
                             repeat_count: t.repeat_count || 1,
-                            deadline_time: t.deadline_time || null
+                            deadline_time: t.deadline_time || null,
+                            is_recurring: t.is_recurring || false,
+                            recurrence_type: t.recurrence_type || null,
+                            days_of_week: t.days_of_week || null,
+                            interval_days: t.interval_days || null,
+                            schedule_time: t.schedule_time || null,
+                            schedule_mode: t.schedule_mode || 'fixed',
+                            time_limit_minutes: t.time_limit_minutes || 30
                         };
                     }),
                     assignments: {}
@@ -1003,6 +1082,21 @@
                     var proofHtml = task.requires_photo_before ? '<div class="gt-task-card-proof" title="Wajib Foto Sebelum & Sesudah">📷📷</div>' : (task.requires_photo_proof ? '<div class="gt-task-card-proof" title="Wajib Foto Bukti">📷</div>' : '');
                     var repeatHtml = task.repeat_count > 1 ? '<div class="gt-task-card-proof" title="Ulangi ' + task.repeat_count + 'x" style="color: #6366f1;">🔄 ' + task.repeat_count + 'x</div>' : '';
                     var deadlineHtml = task.deadline_time ? '<div class="gt-task-card-proof" title="Batas waktu ' + task.deadline_time + '" style="color: #d97706;">⏰ ' + task.deadline_time + '</div>' : '';
+                    var recurringBadgeHtml = '';
+                    if (task.is_recurring) {
+                        var recurringLabel = '';
+                        if (task.recurrence_type === 'daily') {
+                            recurringLabel = 'Setiap Hari';
+                        } else if (task.recurrence_type === 'weekly') {
+                            var dayNames = {1:'Sen',2:'Sel',3:'Rab',4:'Kam',5:'Jum',6:'Sab',7:'Min'};
+                            var dayLabels = (task.days_of_week || []).map(function(d) { return dayNames[d] || d; }).join(', ');
+                            recurringLabel = 'Setiap ' + (dayLabels || '?');
+                        } else if (task.recurrence_type === 'every_n_days') {
+                            recurringLabel = 'Setiap ' + (task.interval_days || '?') + ' Hari';
+                        }
+                        if (task.schedule_time) recurringLabel += ' ' + task.schedule_time;
+                        recurringBadgeHtml = '<div class="gt-task-card-proof" title="Jadwal: ' + recurringLabel + '" style="color: #059669; background: #d1fae5; border-radius: 4px; padding: 1px 5px;">🔁 ' + recurringLabel + '</div>';
+                    }
 
                     card.innerHTML = 
                         '<button type="button" class="gt-task-card-remove" title="Hapus tugas">×</button>' +
@@ -1010,7 +1104,7 @@
                             '<div class="gt-task-card-icon">📝</div>' +
                             '<div class="gt-task-card-title" title="' + task.title + '">' + task.title + '</div>' +
                         '</div>' +
-                        '<div class="gt-task-card-meta">' + catHtml + proofHtml + repeatHtml + deadlineHtml + '</div>';
+                        '<div class="gt-task-card-meta">' + catHtml + proofHtml + repeatHtml + deadlineHtml + recurringBadgeHtml + '</div>';
 
                     // Delete task
                     card.querySelector('.gt-task-card-remove').addEventListener('click', function(e) {
@@ -1072,8 +1166,18 @@
                             chip.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 600; color: #334155; cursor: grab;';
 
                             var chipRepeat = task.repeat_count > 1 ? ' <span style="color:#6366f1; font-size:10px;">🔄' + task.repeat_count + 'x</span>' : '';
+                            var chipRecurring = '';
+                            if (task.is_recurring) {
+                                var dayNames2 = {1:'Sen',2:'Sel',3:'Rab',4:'Kam',5:'Jum',6:'Sab',7:'Min'};
+                                var recLabel2 = '';
+                                if (task.recurrence_type === 'daily') recLabel2 = 'Setiap Hari';
+                                else if (task.recurrence_type === 'weekly') recLabel2 = 'Setiap ' + (task.days_of_week || []).map(function(d){return dayNames2[d]||d;}).join(',');
+                                else if (task.recurrence_type === 'every_n_days') recLabel2 = 'Setiap ' + (task.interval_days||'?') + ' Hari';
+                                if (task.schedule_time) recLabel2 += ' ' + task.schedule_time;
+                                chipRecurring = ' <span style="color:#059669; font-size:10px;">🔁' + recLabel2 + '</span>';
+                            }
                             chip.innerHTML = 
-                                '<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">' + task.title + chipRepeat + '</span>' +
+                                '<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">' + task.title + chipRepeat + chipRecurring + '</span>' +
                                 '<button type="button" class="gt-task-chip-remove" style="border: none; background: #e2e8f0; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #64748b; font-size: 10px;">×</button>';
 
                             // Remove from lane
@@ -1130,6 +1234,60 @@
                 var deadlineInput = document.getElementById('gt_new_deadline');
                 var deadlineTime = deadlineInput.value || '';
 
+                // Per-card recurring fields
+                var recTypeSelect = document.getElementById('gt_new_recurrence_type');
+                var recType = recTypeSelect ? recTypeSelect.value : 'once';
+                var isRecurring = recType !== 'once';
+                var daysOfWeek = null;
+                var intervalDays = null;
+                var scheduleTime = null;
+                var scheduleMode = 'fixed';
+                var timeLimitMinutes = 30;
+
+                if (isRecurring) {
+                    if (recType === 'weekly') {
+                        var checkedDays = Array.from(document.querySelectorAll('.gt-day-cb:checked')).map(function(cb) { return parseInt(cb.value); });
+                        if (checkedDays.length === 0) {
+                            alert('Pilih minimal satu hari untuk jadwal mingguan.');
+                            return;
+                        }
+                        daysOfWeek = checkedDays;
+                    }
+                    if (recType === 'every_n_days') {
+                        intervalDays = Math.max(1, parseInt(document.getElementById('gt_new_interval_days').value) || 2);
+                    }
+                    var schedModeEl = document.getElementById('gt_new_schedule_mode');
+                    scheduleMode = schedModeEl ? schedModeEl.value : 'fixed';
+
+                    if (scheduleMode === 'shift_relative') {
+                        // Shift-relative: schedule_time tidak relevan; pakai offset & deadline relatif shift.
+                        scheduleTime = null;
+                        var offsetEl = document.getElementById('gt_new_shift_offset_minutes');
+                        var dlEndEl = document.getElementById('gt_new_deadline_before_end_minutes');
+                        var shiftOffsetMinutes = offsetEl ? Math.max(0, parseInt(offsetEl.value) || 30) : 30;
+                        var deadlineBeforeEndMinutes = dlEndEl ? Math.max(0, parseInt(dlEndEl.value) || 60) : 60;
+                        timeLimitMinutes = 0; // unused di mode ini, biar konsisten payload
+                        var __shiftPayload = {
+                            shift_offset_minutes: shiftOffsetMinutes,
+                            deadline_before_end_minutes: deadlineBeforeEndMinutes
+                        };
+                        // Simpan untuk dipakai saat compose newTask di bawah
+                        window.__gtShiftPayload = __shiftPayload;
+                    } else {
+                        // Fixed: butuh schedule_time + time_limit_minutes
+                        var schedTimeEl = document.getElementById('gt_new_schedule_time');
+                        scheduleTime = schedTimeEl ? (schedTimeEl.value || null) : null;
+                        if (!scheduleTime) {
+                            alert('Jam jadwal wajib diisi untuk tugas berulang dengan Mode Jam Tetap.');
+                            schedTimeEl && schedTimeEl.focus();
+                            return;
+                        }
+                        var timeLimitEl = document.getElementById('gt_new_time_limit');
+                        timeLimitMinutes = timeLimitEl ? (Math.max(0, parseInt(timeLimitEl.value) || 30)) : 30;
+                        window.__gtShiftPayload = null;
+                    }
+                }
+
                 var newTask = {
                     id: 't_' + (++taskIdCounter) + '_' + Date.now(),
                     title: title,
@@ -1140,7 +1298,16 @@
                     requires_photo_proof: DOM.photo.value !== 'none',
                     requires_photo_before: DOM.photo.value === 'both',
                     repeat_count: repeatCount,
-                    deadline_time: deadlineTime
+                    deadline_time: deadlineTime,
+                    is_recurring: isRecurring,
+                    recurrence_type: isRecurring ? recType : null,
+                    days_of_week: daysOfWeek,
+                    interval_days: intervalDays,
+                    schedule_time: scheduleTime,
+                    schedule_mode: scheduleMode,
+                    time_limit_minutes: timeLimitMinutes,
+                    shift_offset_minutes: (window.__gtShiftPayload ? window.__gtShiftPayload.shift_offset_minutes : null),
+                    deadline_before_end_minutes: (window.__gtShiftPayload ? window.__gtShiftPayload.deadline_before_end_minutes : null)
                 };
 
                 taskPool.push(newTask);
@@ -1152,6 +1319,18 @@
                 DOM.photo.value = 'none';
                 repeatInput.value = '1';
                 deadlineInput.value = '';
+                if (recTypeSelect) recTypeSelect.value = 'once';
+                document.querySelectorAll('.gt-day-cb').forEach(function(cb) { cb.checked = false; });
+                var gtIntDays = document.getElementById('gt_new_interval_days');
+                if (gtIntDays) gtIntDays.value = '2';
+                var gtSchedTime = document.getElementById('gt_new_schedule_time');
+                if (gtSchedTime) gtSchedTime.value = '';
+                var gtShiftOffset = document.getElementById('gt_new_shift_offset_minutes');
+                if (gtShiftOffset) gtShiftOffset.value = '30';
+                var gtDeadlineBeforeEnd = document.getElementById('gt_new_deadline_before_end_minutes');
+                if (gtDeadlineBeforeEnd) gtDeadlineBeforeEnd.value = '60';
+                window.__gtShiftPayload = null;
+                gtToggleRecurrenceFields();
                 DOM.title.focus();
 
                 renderPool();
@@ -1363,6 +1542,24 @@
             });
 
         })();
+
+        // Global helper: toggle per-card recurring fields in pool form
+        function gtToggleRecurrenceFields() {
+            var recType = (document.getElementById('gt_new_recurrence_type') || {}).value || 'once';
+            var weeklyWrapper = document.getElementById('gt-weekly-days-wrapper');
+            var intervalWrapper = document.getElementById('gt-interval-days-wrapper');
+            var schedWrapper = document.getElementById('gt-schedule-time-wrapper');
+            var fixedFields = document.getElementById('gt-fixed-fields');
+            var shiftFields = document.getElementById('gt-shift-fields');
+            var modeEl = document.getElementById('gt_new_schedule_mode');
+            var mode = modeEl ? modeEl.value : 'fixed';
+
+            if (weeklyWrapper) weeklyWrapper.style.display = recType === 'weekly' ? 'block' : 'none';
+            if (intervalWrapper) intervalWrapper.style.display = recType === 'every_n_days' ? 'flex' : 'none';
+            if (schedWrapper) schedWrapper.style.display = (recType !== 'once') ? 'block' : 'none';
+            if (fixedFields) fixedFields.style.display = (recType !== 'once' && mode === 'fixed') ? 'block' : 'none';
+            if (shiftFields) shiftFields.style.display = (recType !== 'once' && mode === 'shift_relative') ? 'block' : 'none';
+        }
 
         function updateCategoryName(selectEl) {
             const selected = selectEl.options[selectEl.selectedIndex];

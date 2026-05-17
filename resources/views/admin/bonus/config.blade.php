@@ -10,7 +10,31 @@
 
     <form id="configForm" method="POST" action="{{ route('admin.bonus.config.update') }}">
         @csrf
-        <div class="card">
+        <div class="card" style="border-left: 4px solid var(--color-primary, #667eea);">
+            <h3>📅 Tanggal Mulai SOP</h3>
+            <p style="color: #64748b; font-size: 13px; margin-bottom: 12px;">
+                Sistem scoring & penalti hanya menghitung data <strong>pada atau setelah tanggal ini</strong>. Data sebelum tanggal ini tetap tersimpan tapi tidak masuk perhitungan bulanan, leaderboard, atau bonus. Kosongkan untuk menghitung semua data tanpa batas.
+            </p>
+            @php
+                $effectiveFromValue = trim((string) ($config['effective_from'] ?? ''));
+                $effectiveActive = $effectiveFromValue !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $effectiveFromValue);
+            @endphp
+            <div class="form-group">
+                <label for="effective_from">SOP berlaku mulai (kosongkan = nonaktif)</label>
+                <input type="date" id="effective_from" name="effective_from" value="{{ $effectiveActive ? $effectiveFromValue : '' }}" class="form-control" placeholder="YYYY-MM-DD">
+                @if($effectiveActive)
+                    <p style="color: #059669; font-size: 12px; margin-top: 6px; font-weight: 600;">
+                        ✓ Aktif — scoring hanya menghitung data sejak {{ \Carbon\Carbon::parse($effectiveFromValue)->translatedFormat('d M Y') }}
+                    </p>
+                @else
+                    <p style="color: #d97706; font-size: 12px; margin-top: 6px;">
+                        ⚠️ Belum diset — semua data historical akan masuk perhitungan
+                    </p>
+                @endif
+            </div>
+        </div>
+
+        <div class="card mt-4">
             <h3>Pengaturan Umum</h3>
             <div class="form-group">
                 <label for="working_days_per_month">Hari Kerja Per Bulan</label>
@@ -197,6 +221,105 @@
             </button>
         </div>
     </form>
+
+    {{-- Reset Bonus Data Section --}}
+    <div class="card mt-4" style="border-left: 4px solid #dc2626; background: #fef2f2;">
+        <h3 style="color: #b91c1c;">💣 Reset Data Bonus</h3>
+        <p style="color: #7f1d1d; font-size: 13px; margin-bottom: 12px;">
+            Hapus <strong>SEMUA</strong> data scoring historical: poin harian, penalti, ringkasan bulanan, leaderboard, target sales. Konfigurasi & tier bonus tetap aman. <strong>Tidak bisa di-undo.</strong>
+        </p>
+        <p style="color: #7f1d1d; font-size: 13px; margin-bottom: 16px;">
+            Pakai ini saat SOP launch perdana atau saat ingin start fresh setelah pause SOP. Bisa sekaligus update tanggal mulai SOP di langkah ini.
+        </p>
+        <button type="button" class="btn" id="open-reset-bonus-modal" style="background: #b91c1c; color: #fff; padding: 10px 16px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer;">
+            💣 Buka Form Reset Bonus
+        </button>
+    </div>
+
+    {{-- Reset Bonus Modal --}}
+    <div id="reset-bonus-modal" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 9999; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: #fff; border-radius: 12px; padding: 24px; max-width: 480px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 18px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0; color: #b91c1c;">💣 Konfirmasi Reset Bonus</h3>
+                <button type="button" id="close-reset-bonus-modal" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #64748b;">&times;</button>
+            </div>
+            <p style="color: #1f2937; font-size: 14px; margin-bottom: 12px;">
+                Aksi ini akan menghapus permanen:
+            </p>
+            <ul style="color: #475569; font-size: 13px; margin-bottom: 16px; padding-left: 20px;">
+                <li>Semua poin harian (waiter_daily_points)</li>
+                <li>Semua penalti (waiter_penalties)</li>
+                <li>Ringkasan bonus bulanan</li>
+                <li>Leaderboard</li>
+                <li>Target sales</li>
+            </ul>
+
+            <form id="reset-bonus-form" method="POST" action="{{ route('admin.bonus.reset_data') }}">
+                @csrf
+                <div class="form-group">
+                    <label for="reset_effective_from" style="font-weight: 600; color: #1f2937;">
+                        Tanggal mulai SOP setelah reset (opsional)
+                    </label>
+                    <input type="date" id="reset_effective_from" name="effective_from" class="form-control" placeholder="YYYY-MM-DD">
+                    <p style="color: #64748b; font-size: 12px; margin-top: 4px;">
+                        Kosongkan untuk tidak mengubah tanggal SOP. Isi untuk set sekaligus.
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label for="reset_confirmation" style="font-weight: 600; color: #b91c1c;">
+                        Ketik <code style="background: #fee2e2; padding: 2px 6px; border-radius: 4px; color: #b91c1c; font-weight: 700;">RESET BONUS DATA</code> untuk konfirmasi
+                    </label>
+                    <input type="text" id="reset_confirmation" name="confirmation" class="form-control" autocomplete="off" placeholder="RESET BONUS DATA">
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <button type="button" id="cancel-reset-bonus" class="btn" style="background: #e5e7eb; color: #1f2937; padding: 10px 16px; border-radius: 8px; border: none; flex: 1; font-weight: 600; cursor: pointer;">Batal</button>
+                    <button type="submit" id="submit-reset-bonus" class="btn" style="background: #9ca3af; color: #fff; padding: 10px 16px; border-radius: 8px; border: none; flex: 2; font-weight: 600; cursor: not-allowed;" disabled>💣 Reset Sekarang</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    @push('scripts')
+    <script>
+        (function() {
+            var openBtn = document.getElementById('open-reset-bonus-modal');
+            var closeBtn = document.getElementById('close-reset-bonus-modal');
+            var cancelBtn = document.getElementById('cancel-reset-bonus');
+            var modal = document.getElementById('reset-bonus-modal');
+            var confirmInput = document.getElementById('reset_confirmation');
+            var submitBtn = document.getElementById('submit-reset-bonus');
+            var REQUIRED_PHRASE = 'RESET BONUS DATA';
+
+            function openModal() {
+                modal.style.display = 'flex';
+                confirmInput.value = '';
+                toggleSubmit();
+                setTimeout(function() { confirmInput.focus(); }, 50);
+            }
+            function closeModal() {
+                modal.style.display = 'none';
+            }
+            function toggleSubmit() {
+                var match = confirmInput.value.trim() === REQUIRED_PHRASE;
+                submitBtn.disabled = !match;
+                submitBtn.style.background = match ? '#b91c1c' : '#9ca3af';
+                submitBtn.style.cursor = match ? 'pointer' : 'not-allowed';
+            }
+
+            if (openBtn) openBtn.addEventListener('click', openModal);
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+            if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) closeModal();
+                });
+            }
+            if (confirmInput) confirmInput.addEventListener('input', toggleSubmit);
+        })();
+    </script>
+    @endpush
 </div>
 @endsection
 

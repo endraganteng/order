@@ -628,6 +628,9 @@
             <a href="{{ route('admin.tasks.create', ['task_type' => $createTaskType, 'task_scope' => $createScope]) }}" class="btn btn-primary">
                 + Buat Tugas Baru
             </a>
+            <a href="{{ route('admin.tasks.templates.board', ['scope' => $createScope]) }}" class="btn" style="background:#ede9fe; color:#5b21b6; border:1px solid #c4b5fd;" title="Edit template tugas secara drag-drop per kolom jadwal">
+                📅 Board Edit Template
+            </a>
             <form method="POST" action="{{ route('admin.tasks.force_generate') }}" style="display:inline;">
                 @csrf
                 <button type="submit" class="btn" style="background:#fef3c7; color:#92400e; border:1px solid #f59e0b;" title="Generate semua recurring task SEKARANG (bypass jadwal & waktu)">
@@ -641,8 +644,54 @@
                     🚫 Cancel Pending Hari Ini
                 </button>
             </form>
+            <button type="button" class="btn" style="background:#7f1d1d; color:#fff; border:1px solid #7f1d1d;" title="Hapus SEMUA waiter_tasks, templates, idempotency, reminder state — operasi destruktif" onclick="document.getElementById('reset-all-tasks-modal').style.display='flex';">
+                💣 Reset Semua Tugas
+            </button>
         </div>
     </div>
+
+    {{-- Reset all tasks modal --}}
+    <div id="reset-all-tasks-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); z-index:9999; align-items:center; justify-content:center; padding:16px;">
+        <div style="width:min(560px,100%); background:#fff; border-radius:12px; padding:20px; box-shadow:var(--shadow-md);">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+                <span style="font-size:28px;">💣</span>
+                <strong style="font-size:18px; color:#7f1d1d;">Reset Semua Tugas</strong>
+            </div>
+            <p style="color:#374151; font-size:14px; margin-bottom:8px;">Operasi ini akan menghapus <strong>SEMUA</strong> data tugas waiter, termasuk:</p>
+            <ul style="color:#374151; font-size:14px; margin:0 0 14px 18px; padding-left:0;">
+                <li><code>waiter_tasks</code> — pending, in_progress, done, overdue, cancelled</li>
+                <li><code>waiter_task_templates</code> — semua template recurring</li>
+                <li><code>waiter_task_idempotency</code> — cache prevent double-submit</li>
+                <li><code>waiter_task_reminder_state</code> — tracking notifikasi WA</li>
+            </ul>
+            <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:13px; color:#991b1b;">
+                ⚠️ Tugas yang sedang dikerjakan waiter saat ini juga akan hilang. Audit log akan dicatat.
+            </div>
+            <form method="POST" action="{{ route('admin.tasks.reset_all') }}">
+                @csrf
+                <label style="display:block; font-size:13px; font-weight:600; color:#374151; margin-bottom:6px;">
+                    Ketik <code style="background:#fef2f2; color:#7f1d1d; padding:2px 6px; border-radius:4px;">RESET SEMUA TUGAS</code> untuk konfirmasi:
+                </label>
+                <input type="text" name="confirmation" id="reset-all-confirmation-input" autocomplete="off" required class="input" style="width:100%; margin-bottom:14px; font-family:monospace;" placeholder="RESET SEMUA TUGAS">
+                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                    <button type="button" class="btn" style="background:#e5e7eb; color:#374151;" onclick="document.getElementById('reset-all-tasks-modal').style.display='none'; document.getElementById('reset-all-confirmation-input').value='';">Batal</button>
+                    <button type="submit" id="reset-all-submit-btn" class="btn" style="background:#7f1d1d; color:#fff;" disabled>💣 Ya, Reset Semua</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            var input = document.getElementById('reset-all-confirmation-input');
+            var btn = document.getElementById('reset-all-submit-btn');
+            if (input && btn) {
+                input.addEventListener('input', function() {
+                    btn.disabled = (input.value.trim() !== 'RESET SEMUA TUGAS');
+                });
+            }
+        })();
+    </script>
 
     @if(session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>

@@ -1792,6 +1792,190 @@ class FirebaseService
     }
 
     /**
+     * Additively assign ONE product to a rack without overwriting other entries.
+     * Path-level set so we never replace the whole `products` node.
+     *
+     * @return array{success:bool,message:string,product?:array}
+     */
+    public function addSingleProductToRack(string $rackId, string $productId, ?int $standardQty = null, int $minQty = 0): array
+    {
+        $rackId = trim($rackId);
+        $productId = trim($productId);
+        if ($rackId === '' || $productId === '') {
+            return ['success' => false, 'message' => 'Rak atau produk tidak valid.'];
+        }
+
+        $masterProduct = $this->getProductById($productId);
+        if (! $masterProduct) {
+            return ['success' => false, 'message' => 'Produk tidak ditemukan di master.'];
+        }
+
+        $existingRef = $this->database->getReference('waiter_racks/' . $rackId . '/products/' . $productId);
+        $existingSnap = $existingRef->getSnapshot();
+        $existing = $existingSnap->exists() ? (array) $existingSnap->getValue() : [];
+
+        $now = time();
+        $resolvedStandard = $standardQty !== null
+            ? max(0, (int) $standardQty)
+            : max(0, (int) ($existing['standard_qty'] ?? $masterProduct['standard_qty'] ?? 0));
+        $resolvedMin = max(0, (int) ($minQty ?? $existing['min_qty'] ?? 0));
+
+        $payload = [
+            'product_id'   => $productId,
+            'standard_qty' => $resolvedStandard,
+            'min_qty'      => $resolvedMin,
+            'current_qty'  => array_key_exists('current_qty', $existing) && $existing['current_qty'] !== null
+                ? max(0, (int) $existing['current_qty'])
+                : null,
+            'assigned_at'  => $existing['assigned_at'] ?? $now,
+            'updated_at'   => $now,
+        ];
+
+        $existingRef->set($payload);
+
+        return [
+            'success' => true,
+            'message' => 'Produk berhasil ditambahkan ke rak.',
+            'product' => [
+                'id'           => $productId,
+                'name'         => (string) ($masterProduct['name'] ?? ('Produk #' . $productId)),
+                'unit'         => (string) ($masterProduct['unit'] ?? 'pcs'),
+                'standard_qty' => $resolvedStandard,
+                'min_qty'      => $resolvedMin,
+                'current_qty'  => $payload['current_qty'],
+                'is_active'    => ! isset($masterProduct['is_active']) || ($masterProduct['is_active'] !== false),
+                'assigned_at'  => $payload['assigned_at'],
+                'updated_at'   => $payload['updated_at'],
+            ],
+        ];
+    }
+
+    /**
+     * Search master products by name/barcode, with optional exclusion of already-assigned IDs.
+     *
+     * @param array<int,string> $excludeIds
+     * @return array<int,array>
+     */
+    public function searchMasterProducts(string $query, array $excludeIds = [], int $limit = 30): array
+    {
+        $query = trim($query);
+        $excludeMap = [];
+        foreach ($excludeIds as $id) {
+            $id = trim((string) $id);
+            if ($id !== '') {
+                $excludeMap[$id] = true;
+            }
+        }
+
+        $results = [];
+        foreach ($this->getProducts() as $p) {
+            if (! is_array($p)) {
+                continue;
+            }
+            $id = (string) ($p['id'] ?? '');
+            if ($id === '' || isset($excludeMap[$id])) {
+                continue;
+            }
+            if (isset($p['is_active']) && $p['is_active'] === false) {
+                continue;
+            }
+            if ($query !== '') {
+                $name = (string) ($p['name'] ?? '');
+                $barcode = (string) ($p['barcode'] ?? '');
+                if (stripos($name, $query) === false && stripos($barcode, $query) === false) {
+                    continue;
+                }
+            }
+            $results[] = [
+                'id'           => $id,
+                'name'         => (string) ($p['name'] ?? '-'),
+                'unit'         => (string) ($p['unit'] ?? 'pcs'),
+                'barcode'      => (string) ($p['barcode'] ?? ''),
+                'standard_qty' => (int) ($p['standard_qty'] ?? 0),
+                'category_name' => (string) ($p['category_name'] ?? ''),
+            ];
+            if (count($results) >= max(1, $limit)) {
+                break;
+            }
+        }
+
+        usort($results, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+        return $results;
+    }
+
+    /**
+     * Get warehouse stock availability for a list of product IDs.
+     * Returns map: { productId => { total_qty, racks: [{rack_id, rack_name, qty}], status } }
+     * Status values: 'available' (total>0), 'empty' (registered in storage but qty=0), 'missing' (not in any storage rack).
+     *
+     * @param array<int,string> $productIds
+     * @return array<string,array>
+     */
+    public function getStorageInfoForProducts(array $productIds): array
+    {
+        $cleanIds = [];
+        foreach ($productIds as $id) {
+            $id = trim((string) $id);
+            if ($id !== '') {
+                $cleanIds[$id] = true;
+            }
+        }
+        if (empty($cleanIds)) {
+            return [];
+        }
+
+        $info = [];
+        foreach (array_keys($cleanIds) as $pid) {
+            $info[$pid] = [
+                'total_qty' => 0,
+                'racks' => [],
+                'status' => 'missing',
+            ];
+        }
+
+        foreach ($this->getActiveRacks() as $rack) {
+            $rackType = (string) ($rack['rack_type'] ?? 'storage');
+            if ($rackType !== 'storage') {
+                continue;
+            }
+            $rackId = (string) ($rack['id'] ?? '');
+            $rackName = trim((string) ($rack['name'] ?? ($rack['rack_name'] ?? '')));
+            $rackProducts = $rack['products'] ?? [];
+            if (! is_array($rackProducts)) {
+                continue;
+            }
+
+            foreach (array_keys($cleanIds) as $pid) {
+                if (! array_key_exists($pid, $rackProducts)) {
+                    continue;
+                }
+                $rp = $rackProducts[$pid];
+                $qty = is_array($rp) ? max(0, (int) ($rp['current_qty'] ?? 0)) : 0;
+                $info[$pid]['racks'][] = [
+                    'rack_id' => $rackId,
+                    'rack_name' => $rackName !== '' ? $rackName : $rackId,
+                    'qty' => $qty,
+                ];
+                $info[$pid]['total_qty'] += $qty;
+                // If we found product in any storage rack, upgrade status from 'missing' to 'empty' or 'available'
+                if ($info[$pid]['status'] === 'missing') {
+                    $info[$pid]['status'] = 'empty';
+                }
+            }
+        }
+
+        foreach ($info as $pid => $data) {
+            if ($data['total_qty'] > 0) {
+                $info[$pid]['status'] = 'available';
+            }
+            // Sort racks by qty desc so the most-stocked rack appears first
+            usort($info[$pid]['racks'], fn($a, $b) => $b['qty'] <=> $a['qty']);
+        }
+
+        return $info;
+    }
+
+    /**
      * Get map of rack => assigned products for all active racks.
      */
     public function getAllRackProductsMap()
@@ -3238,6 +3422,55 @@ class FirebaseService
     }
 
     /**
+     * Partial schedule update untuk board drag-drop.
+     * Hanya mengubah recurrence_type, weekly_day, is_active — tidak menyentuh field lain.
+     *
+     * @param  string  $id
+     * @param  array   $patch  Keys: recurrence_type?, weekly_day?, is_active?
+     * @return array   ['success' => bool, 'template' => array|null, 'error' => string|null]
+     */
+    public function updateRecurringScheduleDays(string $id, array $patch): array
+    {
+        $existing = $this->getRecurringWaiterTaskTemplateById($id);
+        if (! $existing) {
+            return ['success' => false, 'template' => null, 'error' => 'Template tidak ditemukan'];
+        }
+
+        $allowed = ['daily', 'weekly', 'every_n_days'];
+        $updates = [];
+
+        if (array_key_exists('recurrence_type', $patch)) {
+            $rt = (string) $patch['recurrence_type'];
+            if (! in_array($rt, $allowed, true)) {
+                return ['success' => false, 'template' => null, 'error' => 'recurrence_type tidak valid'];
+            }
+            $updates['recurrence_type'] = $rt;
+        }
+
+        if (array_key_exists('weekly_day', $patch)) {
+            $day = (int) $patch['weekly_day'];
+            if ($day < 1 || $day > 7) {
+                return ['success' => false, 'template' => null, 'error' => 'weekly_day harus 1-7 (ISO: Senin=1, Minggu=7)'];
+            }
+            $updates['weekly_day'] = $day;
+        }
+
+        if (array_key_exists('is_active', $patch)) {
+            $updates['is_active'] = (bool) $patch['is_active'];
+        }
+
+        if (empty($updates)) {
+            return ['success' => false, 'template' => null, 'error' => 'Tidak ada field yang diupdate'];
+        }
+
+        $this->database->getReference('waiter_task_templates/'.$id)->update($updates);
+
+        $updated = array_merge($existing, $updates);
+
+        return ['success' => true, 'template' => $updated, 'error' => null];
+    }
+
+    /**
      * Generate due recurring waiter tasks.
      */
     public function generateDueRecurringWaiterTasks(bool $force = false)
@@ -3291,11 +3524,50 @@ class FirebaseService
     }
 
     /**
+     * Force-generate recurring task instances for a single template, scoped to today.
+     * Bypasses last_generated_date and schedule_time gating, but still respects
+     * recurrence_type / days_of_week / is_active. Used by supervisor "Trigger Now".
+     */
+    public function forceGenerateForTemplate(string $templateId): array
+    {
+        $templateId = trim($templateId);
+        if ($templateId === '') {
+            return ['success' => false, 'message' => 'Template ID kosong.', 'generated' => 0];
+        }
+
+        $template = $this->getRecurringWaiterTaskTemplateById($templateId);
+        if (! $template) {
+            return ['success' => false, 'message' => 'Template tidak ditemukan.', 'generated' => 0];
+        }
+        if (empty($template['is_active'])) {
+            return ['success' => false, 'message' => 'Template tidak aktif. Aktifkan dulu sebelum trigger.', 'generated' => 0];
+        }
+
+        $today = date('Y-m-d');
+        $generated = $this->generateRecurringTasksForDate($today, false, true, $templateId);
+
+        return [
+            'success' => true,
+            'message' => $generated > 0
+                ? "Berhasil generate {$generated} task untuk template ini."
+                : 'Tidak ada task baru di-generate (semua sudah ada atau tidak ada waiter yang eligible hari ini).',
+            'generated' => $generated,
+            'date' => $today,
+            'template_title' => (string) ($template['title'] ?? ''),
+        ];
+    }
+
+    /**
      * Generate recurring waiter tasks for specific date.
      */
-    private function generateRecurringTasksForDate(string $targetDate, bool $isCatchUp, bool $force = false): int
+    private function generateRecurringTasksForDate(string $targetDate, bool $isCatchUp, bool $force = false, ?string $templateIdFilter = null): int
     {
         $templates = $this->getRecurringWaiterTaskTemplates();
+        if ($templateIdFilter !== null) {
+            $templates = array_values(array_filter($templates, function ($tpl) use ($templateIdFilter) {
+                return (string) ($tpl['id'] ?? '') === $templateIdFilter;
+            }));
+        }
         $generatedCount = 0;
         $currentTime = date('H:i');
         $isToday = $targetDate === date('Y-m-d');
@@ -6679,7 +6951,10 @@ class FirebaseService
                             $restockSource = 'display_rack_post_refill_short';
                         } elseif ($combinedAvailable < $standardQty) {
                             // Belum refill, dan gudang juga tidak cukup → signal harus naik
-                            // sekarang (jangan tunggu waiter refill manual).
+                            // sekarang (jangan tunggu waiter refill manual). Ini termasuk
+                            // produk yang tidak ter-assign ke rak storage manapun
+                            // (totalStorageQty = 0): tetap auto-PO supaya tidak ada
+                            // shortage display yang silently di-skip.
                             $needsRestock = true;
                             $restockSource = 'display_rack_low_storage_low';
                         }
@@ -6819,6 +7094,10 @@ class FirebaseService
                     return;
                 }
 
+                // Display short + storage juga tidak cukup → langsung PO. Ini juga
+                // berlaku untuk produk yang belum ter-assign ke rak storage manapun
+                // (totalStorageQty = 0): supervisor tetap perlu PO supaya stok bisa
+                // dibeli dari supplier — tidak ada konsep pass-through.
                 $qtyNeeded = max(1, $standardQty - $combinedAvailable);
                 $source = 'auto_threshold_display_storage_low';
                 $note = sprintf(
@@ -7979,9 +8258,20 @@ class FirebaseService
                 $rackId = trim((string) ($mv['rack_id'] ?? ''));
                 $rackName = $rackMap[$rackId] ?? (string) ($mv['rack_name'] ?? $rackId ?: '-');
                 $actor = (string) ($mv['actor_name'] ?? $mv['waiter_name'] ?? 'Sistem');
-                $prev = (int) ($mv['prev'] ?? 0);
-                $result = (int) ($mv['result'] ?? 0);
                 $delta = (int) ($mv['delta'] ?? $mv['delta_qty'] ?? 0);
+                // Real schema: no 'prev'/'result' field. Derive from to_qty/current_qty/actual_qty.
+                if (array_key_exists('result', $mv)) {
+                    $result = (int) $mv['result'];
+                } elseif (array_key_exists('to_qty', $mv)) {
+                    $result = (int) $mv['to_qty'];
+                } elseif (array_key_exists('current_qty', $mv)) {
+                    $result = (int) $mv['current_qty'];
+                } elseif (array_key_exists('actual_qty', $mv)) {
+                    $result = (int) $mv['actual_qty'];
+                } else {
+                    $result = 0;
+                }
+                $prev = array_key_exists('prev', $mv) ? (int) $mv['prev'] : ($result - $delta);
                 $type = (string) ($mv['type'] ?? $mv['movement_type'] ?? 'stock_take');
                 $summary = 'Movement stok';
                 if ($type === 'stock_take') $summary = ucfirst("Cek rak: {$prev}→{$result} (" . sprintf('%+d', $delta) . ") oleh {$actor} di {$rackName}");
@@ -8557,6 +8847,42 @@ class FirebaseService
      * @param  string  $note          reason note
      * @return int     jumlah task yg ter-cancel
      */
+    /**
+     * Reset all tasks: hapus semua waiter_tasks + waiter_task_templates plus
+     * cache yang refer ke task ID. Operasi destruktif & atomic-best-effort:
+     * setiap path di-remove independen, hasilnya berisi count pre-state per path.
+     *
+     * @return array{counts: array<string,int>, total: int}
+     */
+    public function resetAllTasks(): array
+    {
+        $paths = [
+            'waiter_tasks',
+            'waiter_task_templates',
+            'waiter_task_idempotency',
+            'waiter_task_reminder_state',
+        ];
+
+        $counts = [];
+        $total = 0;
+
+        foreach ($paths as $path) {
+            $value = $this->database->getReference($path)->getValue();
+            $count = is_array($value) ? count($value) : 0;
+            $counts[$path] = $count;
+            $total += $count;
+
+            if ($count > 0) {
+                $this->database->getReference($path)->remove();
+            }
+        }
+
+        return [
+            'counts' => $counts,
+            'total' => $total,
+        ];
+    }
+
     public function bulkCancelPendingTasksForDate(string $date, ?string $taskType = null, string $note = 'Dibatalkan admin (bulk cancel)'): int
     {
         $tasks = $this->getWaiterTasksByDate($date);

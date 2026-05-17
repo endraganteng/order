@@ -21,10 +21,16 @@
     @php
         $totalWaiters = count($waiters);
         $scoredCount = count($existingScores);
-        
+
         $totalPoints = 0;
         foreach($existingScores as $score) {
-            $totalPoints += (($score['discipline'] ?? 0) + ($score['operational'] ?? 0) + ($score['attitude'] ?? 0));
+            // Saved record nests per-category values inside 'categories'. Fallback to flat keys for legacy records.
+            $cats = is_array($score['categories'] ?? null) ? $score['categories'] : [];
+            $totalPoints += (
+                (int) ($cats['discipline']  ?? $score['discipline']  ?? 0) +
+                (int) ($cats['operational'] ?? $score['operational'] ?? 0) +
+                (int) ($cats['attitude']    ?? $score['attitude']    ?? 0)
+            );
         }
         $avgPoints = $scoredCount > 0 ? round($totalPoints / $scoredCount, 1) : 0;
     @endphp
@@ -62,10 +68,16 @@
                 $auto = $autoScores[$wid] ?? ['discipline' => 0, 'operational' => 0, 'attitude' => 0, 'auto_details' => []];
                 $details = $auto['auto_details'] ?? [];
 
+                // Saved record stores per-category values inside 'categories' key. Fallback to flat keys for legacy records.
+                $savedCategories = is_array($score['categories'] ?? null) ? $score['categories'] : [];
+                $savedDiscipline  = (int) ($savedCategories['discipline']  ?? $score['discipline']  ?? 0);
+                $savedOperational = (int) ($savedCategories['operational'] ?? $score['operational'] ?? 0);
+                $savedAttitude    = (int) ($savedCategories['attitude']    ?? $score['attitude']    ?? 0);
+
                 // Use saved values if already scored, otherwise use auto values
-                $valDiscipline  = $isScored ? (int)($score['discipline'] ?? 0)  : (int)($auto['discipline'] ?? 0);
-                $valOperational = $isScored ? (int)($score['operational'] ?? 0) : (int)($auto['operational'] ?? 0);
-                $valAttitude    = $isScored ? (int)($score['attitude'] ?? 0)    : (int)($auto['attitude'] ?? 0);
+                $valDiscipline  = $isScored ? $savedDiscipline  : (int)($auto['discipline']  ?? 0);
+                $valOperational = $isScored ? $savedOperational : (int)($auto['operational'] ?? 0);
+                $valAttitude    = $isScored ? $savedAttitude    : (int)($auto['attitude']    ?? 0);
 
                 $total = $valDiscipline + $valOperational + $valAttitude;
                 $maxTotal = 20;

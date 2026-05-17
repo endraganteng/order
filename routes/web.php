@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OrderController;
+use App\Http\Controllers\Admin\PayrollController;
 use App\Http\Controllers\Admin\RackController;
 use App\Http\Controllers\Admin\ReconciliationController;
 use App\Http\Controllers\Admin\ProductCategoryController;
@@ -100,6 +101,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         Route::get('tasks/rack-check', [TaskController::class, 'rackIndex'])->name('tasks.rack.index');
         Route::post('tasks/rack-check/reset', [TaskController::class, 'rackReset'])->name('tasks.rack.reset');
+        Route::post('tasks/reset-all', [TaskController::class, 'resetAll'])->name('tasks.reset_all');
         Route::post('tasks/force-generate', [TaskController::class, 'forceGenerate'])->name('tasks.force_generate');
         Route::post('tasks/bulk-cancel-today', [TaskController::class, 'bulkCancelToday'])->name('tasks.bulk_cancel_today');
         Route::get('tasks/create', [TaskController::class, 'create'])->name('tasks.create');
@@ -108,6 +110,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::delete('tasks/cashiers/{id}', [TaskController::class, 'cashierDestroy'])->name('tasks.cashiers.destroy');
         Route::get('tasks/recurring/{id}/edit', [TaskController::class, 'recurringEdit'])->name('tasks.recurring.edit');
         Route::put('tasks/recurring/{id}', [TaskController::class, 'recurringUpdate'])->name('tasks.recurring.update');
+        Route::patch('tasks/recurring/{id}/schedule', [TaskController::class, 'recurringScheduleUpdate'])->name('tasks.recurring.schedule_update');
+        Route::post('tasks/recurring/{id}/force-generate', [TaskController::class, 'recurringForceGenerate'])->name('tasks.recurring.force_generate');
+        Route::get('tasks/templates/board', [TaskController::class, 'templatesBoard'])->name('tasks.templates.board');
         Route::delete('tasks/{id}', [TaskController::class, 'destroy'])->name('tasks.destroy');
         Route::delete('tasks/recurring/{id}', [TaskController::class, 'recurringDestroy'])->name('tasks.recurring.destroy');
         Route::post('tasks/recurring/batch-destroy', [TaskController::class, 'recurringBatchDestroy'])->name('tasks.recurring.batch_destroy');
@@ -170,6 +175,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Bonus Management
         Route::get('bonus/config', [BonusController::class, 'config'])->name('bonus.config');
         Route::post('bonus/config', [BonusController::class, 'updateConfig'])->name('bonus.config.update');
+        Route::post('bonus/reset-data', [BonusController::class, 'resetBonusData'])->name('bonus.reset_data');
         Route::get('bonus/daily-scoring', [BonusController::class, 'dailyScoring'])->name('bonus.daily_scoring');
         Route::post('bonus/daily-scoring', [BonusController::class, 'storeDailyScore'])->name('bonus.daily_scoring.store');
         Route::get('bonus/penalties', [BonusController::class, 'penalties'])->name('bonus.penalties');
@@ -184,6 +190,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('bonus/monthly-summary/override', [BonusController::class, 'overrideBonus'])->name('bonus.monthly_summary.override');
         Route::get('bonus/leaderboard', [BonusController::class, 'leaderboard'])->name('bonus.leaderboard');
         Route::post('bonus/leaderboard/generate', [BonusController::class, 'generateLeaderboard'])->name('bonus.leaderboard.generate');
+
+        // Payroll Management
+        Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');
+        Route::post('payroll/config', [PayrollController::class, 'updateConfig'])->name('payroll.config_update');
+        Route::post('payroll/run-salary-credit', [PayrollController::class, 'runSalaryCreditNow'])->name('payroll.run_salary_credit');
+        Route::get('payroll/withdrawals', [PayrollController::class, 'withdrawalsIndex'])->name('payroll.withdrawals');
+        Route::post('payroll/withdrawals/{txId}/approve', [PayrollController::class, 'approveWithdrawal'])->name('payroll.withdrawals.approve');
+        Route::post('payroll/withdrawals/{txId}/reject', [PayrollController::class, 'rejectWithdrawal'])->name('payroll.withdrawals.reject');
+        Route::get('payroll/{waiterId}', [PayrollController::class, 'show'])->name('payroll.show');
+        Route::post('payroll/{waiterId}/settings', [PayrollController::class, 'updateSettings'])->name('payroll.settings_update');
+        Route::post('payroll/{waiterId}/credit', [PayrollController::class, 'manualCredit'])->name('payroll.manual_credit');
 
         // Audit Log
         Route::get('audit-log', [AuditLogController::class, 'index'])->name('audit_log.index');
@@ -231,6 +248,9 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
             ->middleware('throttle:waiter-activity-store')
             ->name('activity.store');
         Route::get('rack-products', [WaiterController::class, 'getRackProducts'])->name('rack_products');
+        Route::get('rack-products/search', [WaiterController::class, 'searchMasterProducts'])->name('rack_products.search');
+        Route::post('rack-products/assign', [WaiterController::class, 'assignProductToRack'])->name('rack_products.assign');
+        Route::post('rack-products/storage-info', [WaiterController::class, 'storageInfoForProducts'])->name('rack_products.storage_info');
 
         // Attendance
         Route::post('attendance/clock-in', [WaiterController::class, 'clockIn'])->name('attendance.clock_in');
@@ -240,6 +260,11 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         // Bonus Dashboard
         Route::get('bonus', [\App\Http\Controllers\WaiterBonusController::class, 'index'])->name('bonus');
         Route::get('bonus/api', [\App\Http\Controllers\WaiterBonusController::class, 'apiData'])->name('bonus.api');
+
+        // Payroll Portal
+        Route::get('payroll', [\App\Http\Controllers\WaiterPayrollController::class, 'index'])->name('payroll');
+        Route::post('payroll/withdraw', [\App\Http\Controllers\WaiterPayrollController::class, 'requestWithdrawal'])->name('payroll.withdraw');
+        Route::post('payroll/bank', [\App\Http\Controllers\WaiterPayrollController::class, 'updateBankAccount'])->name('payroll.bank_update');
 
         // Restock / Penerimaan Barang
         Route::get('restock', [WaiterController::class, 'restockList'])->name('restock');

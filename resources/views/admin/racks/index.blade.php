@@ -319,6 +319,111 @@
                 padding-top: 10px;
                 border-top: 1px solid var(--color-border);
             }
+            .rack-mobile-qr-row {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+                padding: 10px 0;
+                border-top: 1px dashed var(--color-border);
+                margin-bottom: 6px;
+            }
+            .rack-mobile-qr-row .rack-qrcode-mobile {
+                width: 80px;
+                height: 80px;
+                background: #fff;
+                flex-shrink: 0;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+                padding: 4px;
+            }
+            .rack-mobile-qr-meta {
+                font-size: 12px;
+                color: var(--color-text-muted);
+                line-height: 1.4;
+            }
+            .rack-mobile-qr-meta code {
+                display: inline-block;
+                background: #f1f5f9;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 11px;
+                margin-top: 4px;
+                word-break: break-all;
+            }
+            .rack-mobile-actions-wrap {
+                position: relative;
+                display: flex;
+                justify-content: flex-end;
+                padding-top: 10px;
+                border-top: 1px solid var(--color-border);
+            }
+            .rack-mobile-kebab {
+                background: transparent;
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius-md);
+                width: 36px;
+                height: 36px;
+                cursor: pointer;
+                font-size: 18px;
+                line-height: 1;
+                color: var(--color-text);
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.15s;
+            }
+            .rack-mobile-kebab:hover,
+            .rack-mobile-kebab:active {
+                background: #f1f5f9;
+            }
+            .rack-mobile-kebab-menu {
+                position: absolute;
+                top: calc(100% + 4px);
+                right: 0;
+                min-width: 180px;
+                background: #fff;
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius-md);
+                box-shadow: var(--shadow-md);
+                padding: 6px;
+                display: none;
+                flex-direction: column;
+                gap: 2px;
+                z-index: 50;
+            }
+            .rack-mobile-kebab-menu.open {
+                display: flex;
+            }
+            .rack-mobile-kebab-menu .btn,
+            .rack-mobile-kebab-menu form {
+                width: 100%;
+                margin: 0;
+            }
+            .rack-mobile-kebab-menu form {
+                display: block;
+            }
+            .rack-mobile-kebab-menu .btn,
+            .rack-mobile-kebab-menu form > button {
+                display: block;
+                width: 100%;
+                text-align: left;
+                padding: 8px 10px;
+                border-radius: 6px;
+                font-size: 13px;
+                background: transparent !important;
+                color: var(--color-text) !important;
+                border: none !important;
+                cursor: pointer;
+            }
+            .rack-mobile-kebab-menu .btn:hover,
+            .rack-mobile-kebab-menu form > button:hover {
+                background: #f1f5f9 !important;
+            }
+            .rack-mobile-kebab-menu .menu-danger,
+            .rack-mobile-kebab-menu .menu-danger button {
+                color: var(--color-danger, #b91c1c) !important;
+            }
         }
     </style>
     @endpush
@@ -508,28 +613,43 @@
                             <div>{{ $rack['location'] ?? '-' }}</div>
                         </div>
                         <div>
-                            <div class="rack-mobile-field-label">QR Value</div>
-                            <code style="font-size: 12px;">{{ $barcodeValue !== '' ? $barcodeValue : '-' }}</code>
-                        </div>
-                        <div>
                             <div class="rack-mobile-field-label">Tipe</div>
                             <div><span class="rack-type-chip {{ $rackType }}">{{ $rackTypeLabel }}</span></div>
                         </div>
                     </div>
-                    <div class="rack-mobile-actions">
-                        <a href="{{ route('admin.racks.history', $rackId) }}" class="btn btn-success btn-sm">Riwayat</a>
-                        <a href="{{ route('admin.racks.products', $rackId) }}" class="btn btn-info btn-sm">Produk</a>
-                        <a href="{{ route('admin.racks.print_labels', ['rack_ids' => [$rackId]]) }}" target="_blank" class="btn btn-info btn-sm">Print</a>
-                        <a href="{{ route('admin.racks.edit', $rackId) }}" class="btn btn-warning btn-sm">Edit</a>
-                        <form method="POST" action="{{ route('admin.racks.regenerate_barcode', $rackId) }}" data-confirm="Generate ulang QR code rak ini? QR code lama tidak bisa dipakai lagi.">
-                            @csrf
-                            <button type="submit" class="btn btn-primary btn-sm">Regenerate</button>
-                        </form>
-                        <form method="POST" action="{{ route('admin.racks.destroy', $rackId) }}" data-confirm="Yakin hapus rak ini?">
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
-                        </form>
+                    @if($barcodeValue !== '')
+                        <div class="rack-mobile-qr-row">
+                            <div class="rack-qrcode-mobile rack-qrcode" data-code="{{ $barcodeValue }}"></div>
+                            <div class="rack-mobile-qr-meta">
+                                <div class="rack-mobile-field-label">QR Code Rak</div>
+                                <code>{{ $barcodeValue }}</code>
+                            </div>
+                        </div>
+                    @else
+                        <div class="rack-mobile-grid" style="margin-top:8px;">
+                            <div>
+                                <div class="rack-mobile-field-label">QR Code</div>
+                                <div style="color: var(--color-text-muted);">Belum ada QR code</div>
+                            </div>
+                        </div>
+                    @endif
+                    <div class="rack-mobile-actions-wrap">
+                        <button type="button" class="rack-mobile-kebab js-rack-kebab-toggle" aria-label="Aksi" aria-haspopup="true" aria-expanded="false">⋮</button>
+                        <div class="rack-mobile-kebab-menu" role="menu">
+                            <a href="{{ route('admin.racks.history', $rackId) }}" class="btn">📜 Riwayat</a>
+                            <a href="{{ route('admin.racks.products', $rackId) }}" class="btn">📦 Produk</a>
+                            <a href="{{ route('admin.racks.print_labels', ['rack_ids' => [$rackId]]) }}" target="_blank" class="btn">🖨️ Print Label</a>
+                            <a href="{{ route('admin.racks.edit', $rackId) }}" class="btn">✏️ Edit</a>
+                            <form method="POST" action="{{ route('admin.racks.regenerate_barcode', $rackId) }}" data-confirm="Generate ulang QR code rak ini? QR code lama tidak bisa dipakai lagi.">
+                                @csrf
+                                <button type="submit">🔄 Regenerate QR</button>
+                            </form>
+                            <form method="POST" action="{{ route('admin.racks.destroy', $rackId) }}" data-confirm="Yakin hapus rak ini?" class="menu-danger">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit">🗑️ Hapus</button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             @empty
@@ -782,6 +902,36 @@
                 });
             }
             applyFilter();
+        })();
+
+        // Mobile kebab menu toggle
+        (function() {
+            document.addEventListener('click', function(e) {
+                var toggle = e.target.closest('.js-rack-kebab-toggle');
+                if (toggle) {
+                    e.stopPropagation();
+                    var menu = toggle.parentElement.querySelector('.rack-mobile-kebab-menu');
+                    var wasOpen = menu && menu.classList.contains('open');
+                    document.querySelectorAll('.rack-mobile-kebab-menu.open').forEach(function(m) {
+                        m.classList.remove('open');
+                        var t = m.parentElement.querySelector('.js-rack-kebab-toggle');
+                        if (t) t.setAttribute('aria-expanded', 'false');
+                    });
+                    if (menu && !wasOpen) {
+                        menu.classList.add('open');
+                        toggle.setAttribute('aria-expanded', 'true');
+                    }
+                    return;
+                }
+                // Click outside any kebab → close all
+                if (!e.target.closest('.rack-mobile-kebab-menu')) {
+                    document.querySelectorAll('.rack-mobile-kebab-menu.open').forEach(function(m) {
+                        m.classList.remove('open');
+                        var t = m.parentElement.querySelector('.js-rack-kebab-toggle');
+                        if (t) t.setAttribute('aria-expanded', 'false');
+                    });
+                }
+            });
         })();
     </script>
 @endsection

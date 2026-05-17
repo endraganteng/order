@@ -317,6 +317,15 @@ class BonusService
         $startDate = $month . '-01';
         $endDate = $month . '-31'; // Safe upper bound (Firebase string comparison)
 
+        // Respect SOP launch date: skip records before effective_from.
+        $effectiveFrom = $this->getEffectiveFromDate();
+        if ($effectiveFrom !== null && $effectiveFrom > $startDate) {
+            $startDate = $effectiveFrom;
+            if ($startDate > $endDate) {
+                return [];
+            }
+        }
+
         $snapshot = $this->database->getReference('waiter_daily_points/' . $waiterId)
             ->orderByKey()
             ->startAt($startDate)
@@ -335,6 +344,40 @@ class BonusService
         ksort($filtered);
 
         return $filtered;
+    }
+
+    /**
+     * Resolve the effective SOP launch date.
+     * Returns null when scoring is "always live" (no launch threshold).
+     */
+    public function getEffectiveFromDate(): ?string
+    {
+        $config = $this->getBonusConfig();
+        $value = $config['effective_from'] ?? null;
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $value = trim($value);
+        // Validate strict YYYY-MM-DD shape; reject anything else as "no threshold".
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    /**
+     * Returns true when SOP scoring is in effect for the given date.
+     */
+    public function isDateOnOrAfterEffective(string $date): bool
+    {
+        $effective = $this->getEffectiveFromDate();
+        if ($effective === null) {
+            return true;
+        }
+
+        return $date >= $effective;
     }
 
     // =========================================================================
@@ -470,14 +513,17 @@ class BonusService
         $claimed = false;
         $indexRecord = null;
         try {
-            $txResult = $indexRef->runTransaction(function ($current) use (&$claimed, $waiterId, $penaltyType, $date, $pointsDeducted, $relatedTaskId) {
+            $this->database->runTransaction(function ($transaction) use (&$claimed, &$indexRecord, $indexRef, $waiterId, $penaltyType, $date, $pointsDeducted, $relatedTaskId) {
+                $snapshot = $transaction->snapshot($indexRef);
+                $current = $snapshot->exists() ? (array) $snapshot->getValue() : null;
+
                 if ($current !== null) {
-                    return $current;
+                    $indexRecord = $current;
+
+                    return;
                 }
 
-                $claimed = true;
-
-                return [
+                $newRecord = [
                     'waiter_id' => $waiterId,
                     'penalty_type' => $penaltyType,
                     'date' => $date,
@@ -486,14 +532,13 @@ class BonusService
                     'created_at' => time(),
                     'penalty_id' => null,
                 ];
-            });
 
-            if (is_object($txResult) && method_exists($txResult, 'snapshot')) {
-                $indexRecord = $txResult->snapshot()->getValue();
-            } else {
-                $indexRecord = $indexRef->getValue();
-            }
+                $transaction->set($indexRef, $newRecord);
+                $claimed = true;
+                $indexRecord = $newRecord;
+            });
         } catch (TransactionFailed $e) {
+            // Lost the race — re-read so the deduplication branch below can use it.
             $indexRecord = $indexRef->getValue();
         }
 
@@ -556,6 +601,7 @@ class BonusService
             return [];
         }
 
+        $effectiveFrom = $this->getEffectiveFromDate();
         $penalties = [];
 
         foreach ((array) $snapshot->getValue() as $id => $penalty) {
@@ -563,6 +609,14 @@ class BonusService
 
             if ($waiterId !== null && (string) ($penalty['waiter_id'] ?? '') !== $waiterId) {
                 continue;
+            }
+
+            // Respect SOP launch date: skip penalties created before effective_from.
+            if ($effectiveFrom !== null) {
+                $penaltyDate = (string) ($penalty['date'] ?? '');
+                if ($penaltyDate !== '' && $penaltyDate < $effectiveFrom) {
+                    continue;
+                }
             }
 
             $penalties[] = array_merge(['id' => $id], $penalty);
@@ -581,6 +635,46 @@ class BonusService
     public function deletePenalty(string $penaltyId): void
     {
         $this->database->getReference('waiter_penalties/' . $penaltyId)->remove();
+    }
+
+    /**
+     * Wipe ALL bonus-related historical data: daily points, penalties, monthly summaries,
+     * leaderboards, sales targets. Used when supervisor wants to mark a fresh SOP launch.
+     *
+     * Returns counts of removed entries per node, plus the totals removed.
+     * Bonus_config is preserved (only data is wiped, not the config).
+     */
+    public function resetBonusData(): array
+    {
+        $paths = [
+            'waiter_daily_points',
+            'waiter_penalties',
+            'waiter_penalties_index',
+            'waiter_monthly_bonus',
+            'waiter_bonus_summary',
+            'bonus_leaderboards',
+            'waiter_sales_targets',
+        ];
+
+        $counts = [];
+        $total = 0;
+
+        foreach ($paths as $path) {
+            $snap = $this->database->getReference($path)->getSnapshot();
+            $value = $snap->exists() ? $snap->getValue() : null;
+            $count = is_array($value) ? count($value) : 0;
+            $counts[$path] = $count;
+            $total += $count;
+
+            if ($count > 0) {
+                $this->database->getReference($path)->remove();
+            }
+        }
+
+        return [
+            'counts' => $counts,
+            'total' => $total,
+        ];
     }
 
     /**
@@ -990,6 +1084,17 @@ class BonusService
                 'already_finalized' => true,
                 'message' => 'Bonus bulan ini sudah difinalisasi.',
             ]);
+        }
+
+        // Auto-credit ke saldo payroll kalau karyawan eligible.
+        $totalBonus = (int) ($finalizedSummary['total_bonus'] ?? 0);
+        if ($totalBonus > 0) {
+            try {
+                $payroll = app(\App\Services\PayrollService::class);
+                $payroll->creditMonthlyBonusIfEligible($waiterId, $month, $totalBonus);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         return array_merge($finalizedSummary ?? [], ['success' => true]);

@@ -988,7 +988,15 @@
             $dayCount = max(count($monthlyPoints), 1);
             foreach ($monthlyPoints as $record) {
                 foreach ($categories as $key => $label) {
-                    $categoryTotals[$key] += (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
+                    // BonusService menyimpan categories sebagai {key: int}, bukan {key: {points: int}}.
+                    // Fallback ke struktur lama (object dengan .points) untuk legacy record.
+                    $catVal = $record['categories'][$key] ?? null;
+                    if (is_array($catVal)) {
+                        $catVal = (int)($catVal['points'] ?? 0);
+                    } else {
+                        $catVal = (int)($catVal ?? $record[$key] ?? 0);
+                    }
+                    $categoryTotals[$key] += $catVal;
                 }
             }
             $categoryColors = [
@@ -1031,7 +1039,12 @@
                             <div class="daily-categories">
                                 @foreach($categories as $key => $label)
                                     @php
-                                        $catPts = (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
+                                        $catVal = $record['categories'][$key] ?? null;
+                                        if (is_array($catVal)) {
+                                            $catPts = (int)($catVal['points'] ?? 0);
+                                        } else {
+                                            $catPts = (int)($catVal ?? $record[$key] ?? 0);
+                                        }
                                         $catMax = $categoryMaxes[$key];
                                         $opacity = $catMax > 0 ? max(0.2, $catPts / $catMax) : 0.2;
                                     @endphp
@@ -1044,9 +1057,16 @@
                         <div class="daily-detail" id="det-{{ $date }}" style="display:none;">
                             @foreach($categories as $key => $label)
                                 @php
-                                    $catPts = (int)($record['categories'][$key]['points'] ?? $record[$key] ?? 0);
+                                    $catVal = $record['categories'][$key] ?? null;
+                                    if (is_array($catVal)) {
+                                        $catPts = (int)($catVal['points'] ?? 0);
+                                        $reasonNested = (string)($catVal['reason'] ?? '');
+                                    } else {
+                                        $catPts = (int)($catVal ?? $record[$key] ?? 0);
+                                        $reasonNested = '';
+                                    }
                                     $catMax = $categoryMaxes[$key];
-                                    $reason = $record['auto_details'][$key.'_reason'] ?? $record['categories'][$key]['reason'] ?? '';
+                                    $reason = $record['auto_details'][$key.'_reason'] ?? $reasonNested;
                                 @endphp
                                 <div class="daily-detail-row">
                                     <span class="ddr-label">{{ $label }}</span>

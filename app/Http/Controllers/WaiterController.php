@@ -405,6 +405,91 @@ class WaiterController extends Controller
     }
 
     /**
+     * Search master products for inline assign-to-rack from waiter task screen.
+     */
+    public function searchMasterProducts(Request $request)
+    {
+        $request->validate([
+            'q' => 'nullable|string|max:120',
+            'rack_id' => 'nullable|string|max:64',
+            'limit' => 'nullable|integer|min:1|max:50',
+        ]);
+
+        $rackId = trim((string) $request->input('rack_id', ''));
+        $excludeIds = [];
+        if ($rackId !== '') {
+            foreach ($this->firebase->getRackProducts($rackId) as $rp) {
+                $id = (string) ($rp['id'] ?? '');
+                if ($id !== '') {
+                    $excludeIds[] = $id;
+                }
+            }
+        }
+
+        $results = $this->firebase->searchMasterProducts(
+            (string) $request->input('q', ''),
+            $excludeIds,
+            (int) $request->input('limit', 30)
+        );
+
+        return response()->json([
+            'success' => true,
+            'products' => $results,
+        ]);
+    }
+
+    /**
+     * Assign a single master product to a rack from the waiter task screen.
+     * Additive: never replaces other rack assignments.
+     */
+    public function assignProductToRack(Request $request)
+    {
+        $request->validate([
+            'rack_id' => 'required|string|max:64',
+            'product_id' => 'required|string|max:64',
+            'standard_qty' => 'nullable|integer|min:0|max:99999',
+            'min_qty' => 'nullable|integer|min:0|max:99999',
+        ]);
+
+        $result = $this->firebase->addSingleProductToRack(
+            (string) $request->input('rack_id'),
+            (string) $request->input('product_id'),
+            $request->filled('standard_qty') ? (int) $request->input('standard_qty') : null,
+            (int) $request->input('min_qty', 0)
+        );
+
+        $ok = (bool) ($result['success'] ?? false);
+
+        return response()->json([
+            'success' => $ok,
+            'message' => (string) ($result['message'] ?? ($ok ? 'Berhasil.' : 'Gagal menambahkan produk.')),
+            'product' => $result['product'] ?? null,
+        ], $ok ? 200 : 422);
+    }
+
+    /**
+     * Returns warehouse stock availability for a list of product IDs.
+     * Used by the rack-check refill step so the waiter knows which items
+     * are actually fetchable from a storage rack vs. need a restock request.
+     */
+    public function storageInfoForProducts(Request $request)
+    {
+        $request->validate([
+            'product_ids' => 'required|array|min:1|max:100',
+            'product_ids.*' => 'string|max:64',
+        ]);
+
+        $info = $this->firebase->getStorageInfoForProducts(
+            (array) $request->input('product_ids', [])
+        );
+
+        return response()->json([
+            'success' => true,
+            'storage_info' => $info,
+        ]);
+    }
+
+    /**
      * Standalone stock-take page for waiter.
      */
     public function stockTakeIndex()

@@ -111,10 +111,44 @@
                                 </td>
                                 <td style="padding: 0.75rem 1rem;">
                                     @if($details)
+                                        @php
+                                            if (!function_exists('auditRenderDetails')) {
+                                                function auditRenderDetails(array $data, int $depth = 0): string {
+                                                    $html = '';
+                                                    foreach ($data as $key => $val) {
+                                                        $label = \Illuminate\Support\Str::title(str_replace('_', ' ', (string)$key));
+                                                        $indent = str_repeat('&nbsp;&nbsp;&nbsp;', $depth);
+                                                        if (is_null($val)) {
+                                                            $rendered = '<em style="color:var(--color-text-muted)">null</em>';
+                                                        } elseif (is_bool($val)) {
+                                                            $rendered = $val ? '✓' : '✗';
+                                                        } elseif (is_array($val) && empty($val)) {
+                                                            $rendered = '<em style="color:var(--color-text-muted)">(kosong)</em>';
+                                                        } elseif (is_array($val)) {
+                                                            $rendered = '<div style="margin-top:2px;">' . auditRenderDetails($val, $depth + 1) . '</div>';
+                                                            $html .= '<div style="display:flex;gap:6px;padding:2px 0;flex-direction:column;">'
+                                                                   . '<div><strong style="color:var(--color-text-secondary);font-size:0.78rem;">' . $indent . e($label) . '</strong></div>'
+                                                                   . $rendered
+                                                                   . '</div>';
+                                                            continue;
+                                                        } elseif (is_numeric($val) && strlen((string)(int)$val) >= 9 && (int)$val > 1000000000) {
+                                                            $rendered = e(\Carbon\Carbon::createFromTimestamp((int)$val)->format('d M Y, H:i'));
+                                                        } else {
+                                                            $rendered = e((string)$val);
+                                                        }
+                                                        $html .= '<div style="display:flex;gap:6px;padding:2px 0;align-items:baseline;">'
+                                                               . '<strong style="color:var(--color-text-secondary);font-size:0.78rem;min-width:120px;flex-shrink:0;">' . $indent . e($label) . '</strong>'
+                                                               . '<span style="color:var(--color-text);font-size:0.82rem;word-break:break-word;">' . $rendered . '</span>'
+                                                               . '</div>';
+                                                    }
+                                                    return $html;
+                                                }
+                                            }
+                                        @endphp
                                         <details style="cursor: pointer; position: relative;">
                                             <summary style="color: var(--color-primary); font-size: 0.85rem; user-select: none; outline: none; list-style: none;">Lihat Data</summary>
                                             <div style="position: absolute; z-index: 10; left: 0; top: 100%; margin-top: 0.5rem; background: var(--color-bg); border: 1px solid var(--color-border); box-shadow: var(--shadow-sm); padding: 0.75rem; border-radius: var(--radius-md); min-width: 250px; max-width: 400px; max-height: 200px; overflow-y: auto;">
-                                                <pre style="margin: 0; font-size: 0.75rem; color: var(--color-text-secondary); white-space: pre-wrap; word-break: break-all;">{{ json_encode($details, JSON_PRETTY_PRINT) }}</pre>
+                                                {!! auditRenderDetails(is_array($details) ? $details : (array)$details) !!}
                                             </div>
                                         </details>
                                     @else

@@ -33,6 +33,8 @@ class BonusController extends Controller
             'total_bonus_pool' => 'required|integer|min:0',
             'perfect_day_bonus' => 'required|integer|min:0|max:20',
             'daily_max_points' => 'required|integer|min:1',
+            // SOP launch date — kosong = tidak ada threshold (semua data masuk hitungan).
+            'effective_from' => 'nullable|date_format:Y-m-d',
             // Category max points
             'cat_discipline_max' => 'required|integer|min:0',
             'cat_operational_max' => 'required|integer|min:0',
@@ -62,6 +64,7 @@ class BonusController extends Controller
             'total_bonus_pool' => (int)$data['total_bonus_pool'],
             'perfect_day_bonus' => (int)$data['perfect_day_bonus'],
             'daily_max_points' => (int)$data['daily_max_points'],
+            'effective_from' => trim((string) ($data['effective_from'] ?? '')),
             'point_categories' => [
                 'discipline' => ['name' => 'Disiplin', 'max_daily_points' => (int)$data['cat_discipline_max'], 'sort_order' => 1],
                 'operational' => ['name' => 'Operasional', 'max_daily_points' => (int)$data['cat_operational_max'], 'sort_order' => 2],
@@ -97,6 +100,46 @@ class BonusController extends Controller
             return response()->json(['success' => true, 'message' => 'Konfigurasi bonus berhasil disimpan']);
         }
         return redirect()->route('admin.bonus.config')->with('success', 'Konfigurasi bonus berhasil disimpan');
+    }
+
+    /**
+     * Reset all bonus historical data: daily points, penalties, monthly summaries, leaderboards, sales targets.
+     * Requires explicit confirmation phrase to prevent accidental deletion.
+     */
+    public function resetBonusData(Request $request)
+    {
+        $data = $request->validate([
+            'confirmation' => 'required|string',
+            'effective_from' => 'nullable|date_format:Y-m-d',
+        ]);
+
+        if (trim((string) $data['confirmation']) !== 'RESET BONUS DATA') {
+            return back()->withErrors(['confirmation' => 'Konfirmasi tidak cocok. Ketik tepat: RESET BONUS DATA'])->withInput();
+        }
+
+        $result = $this->bonus->resetBonusData();
+
+        // Optionally update effective_from in the same step.
+        $newEffectiveFrom = trim((string) ($data['effective_from'] ?? ''));
+        if ($newEffectiveFrom !== '') {
+            $existingConfig = $this->bonus->getBonusConfig();
+            $existingConfig['effective_from'] = $newEffectiveFrom;
+            $this->bonus->updateBonusConfig($existingConfig);
+        }
+
+        $this->firebase->logAuditAction('reset_bonus', 'bonus_data', null, [
+            'pre_counts' => $result['counts'],
+            'total_removed' => $result['total'],
+            'effective_from' => $newEffectiveFrom !== '' ? $newEffectiveFrom : null,
+        ]);
+
+        $msg = sprintf(
+            'Reset bonus berhasil. %d entri terhapus%s.',
+            $result['total'],
+            $newEffectiveFrom !== '' ? ' • SOP launch: ' . $newEffectiveFrom : ''
+        );
+
+        return redirect()->route('admin.bonus.config')->with('success', $msg);
     }
 
     // ===== DAILY SCORING =====
