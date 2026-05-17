@@ -275,6 +275,7 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
 
         // Payroll Portal
         Route::get('payroll', [\App\Http\Controllers\WaiterPayrollController::class, 'index'])->name('payroll');
+        Route::get('payroll/api', [\App\Http\Controllers\WaiterPayrollController::class, 'apiSnapshot'])->name('payroll.api');
         Route::post('payroll/withdraw', [\App\Http\Controllers\WaiterPayrollController::class, 'requestWithdrawal'])->name('payroll.withdraw');
         Route::post('payroll/bank', [\App\Http\Controllers\WaiterPayrollController::class, 'updateBankAccount'])->name('payroll.bank_update');
 

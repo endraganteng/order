@@ -85,6 +85,9 @@ class WaiterPayrollController extends Controller
     {
         $waiterId = (string) session('waiter_id');
         if ($waiterId === '') {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'Sesi habis. Login ulang.'], 401);
+            }
             return redirect()->route('waiter.login');
         }
 
@@ -107,6 +110,39 @@ class WaiterPayrollController extends Controller
             'self' => true,
         ]);
 
+        if ($request->expectsJson() || $request->ajax()) {
+            $settings = $this->payroll->getWaiterSettings($waiterId);
+            return response()->json([
+                'success' => true,
+                'message' => 'Data rekening berhasil diperbarui.',
+                'settings' => $settings,
+            ]);
+        }
+
         return back()->with('success', 'Data rekening berhasil diperbarui.');
+    }
+
+    /**
+     * JSON snapshot untuk polling realtime di portal karyawan.
+     * Return: balance, transactions (50 terakhir), settings.
+     */
+    public function apiSnapshot(Request $request)
+    {
+        $waiterId = (string) session('waiter_id');
+        if ($waiterId === '') {
+            return response()->json(['success' => false, 'message' => 'Sesi habis.'], 401);
+        }
+
+        $settings = $this->payroll->getWaiterSettings($waiterId);
+        $balance = $this->payroll->getBalance($waiterId);
+        $transactions = $this->payroll->listTransactionsByWaiter($waiterId, 50);
+
+        return response()->json([
+            'success'      => true,
+            'balance'      => $balance,
+            'settings'     => $settings,
+            'transactions' => $transactions,
+            'server_time'  => time(),
+        ]);
     }
 }
