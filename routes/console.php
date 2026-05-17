@@ -3,6 +3,7 @@
 use App\Services\BonusService;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
+use App\Services\PayrollService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -504,3 +505,19 @@ Schedule::command('bonus:reconcile-pending')->everyFiveMinutes()->withoutOverlap
 Schedule::command('waiter:send-monthly-report')->monthlyOn(1, '07:00')->withoutOverlapping();
 Schedule::command('waiter:check-stale-po')->dailyAt('08:00')->withoutOverlapping();
 Schedule::command('firebase:cleanup-idempotency')->dailyAt('03:00')->withoutOverlapping();
+
+Artisan::command('payroll:auto-credit-salary {--catchup=7 : Catchup window dalam hari}', function () {
+    $payroll = app(PayrollService::class);
+    $catchup = max(0, (int) $this->option('catchup'));
+    $result = $payroll->runDailySalaryCredit($catchup);
+    $this->info('Salary credits applied: ' . (int) ($result['credited'] ?? 0));
+    $this->info('Skipped (not eligible / no payday match): ' . (int) ($result['skipped'] ?? 0));
+    if (! empty($result['errors'])) {
+        $this->warn('Errors: ' . count($result['errors']));
+        foreach ($result['errors'] as $err) {
+            $this->warn(' - ' . json_encode($err));
+        }
+    }
+})->purpose('Auto-credit gaji pokok bulanan ke saldo payroll karyawan eligible');
+
+Schedule::command('payroll:auto-credit-salary')->dailyAt('05:00')->withoutOverlapping();
