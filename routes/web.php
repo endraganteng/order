@@ -26,6 +26,17 @@ Route::get('/', function () {
     return redirect()->route('admin.login');
 });
 
+// Public payroll approval (token-based, no login). Used in WA magic-link.
+Route::get('payroll/proses/{txId}/{token}', [\App\Http\Controllers\PublicPayrollApprovalController::class, 'review'])
+    ->where('token', '[a-f0-9]{16,128}')
+    ->name('public.payroll.review');
+Route::post('payroll/proses/{txId}/{token}/approve', [\App\Http\Controllers\PublicPayrollApprovalController::class, 'approve'])
+    ->where('token', '[a-f0-9]{16,128}')
+    ->name('public.payroll.approve');
+Route::post('payroll/proses/{txId}/{token}/reject', [\App\Http\Controllers\PublicPayrollApprovalController::class, 'reject'])
+    ->where('token', '[a-f0-9]{16,128}')
+    ->name('public.payroll.reject');
+
 // Admin routes
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('login', [AuthController::class, 'showLogin'])->name('login');
@@ -196,6 +207,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('payroll/config', [PayrollController::class, 'updateConfig'])->name('payroll.config_update');
         Route::post('payroll/run-salary-credit', [PayrollController::class, 'runSalaryCreditNow'])->name('payroll.run_salary_credit');
         Route::get('payroll/withdrawals', [PayrollController::class, 'withdrawalsIndex'])->name('payroll.withdrawals');
+        Route::get('payroll/penarikan', [PayrollController::class, 'withdrawalsIndex'])->name('payroll.penarikan');
         Route::post('payroll/withdrawals/{txId}/approve', [PayrollController::class, 'approveWithdrawal'])->name('payroll.withdrawals.approve');
         Route::post('payroll/withdrawals/{txId}/reject', [PayrollController::class, 'rejectWithdrawal'])->name('payroll.withdrawals.reject');
         Route::get('payroll/{waiterId}', [PayrollController::class, 'show'])->name('payroll.show');

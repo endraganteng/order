@@ -309,6 +309,9 @@ class PayrollService
             return ['success' => false, 'message' => 'Data rekening belum lengkap. Hubungi supervisor untuk melengkapi.'];
         }
 
+        // Generate one-shot magic-link token (cryptographically random, hex 64 chars).
+        $approvalToken = bin2hex(random_bytes(32));
+
         $txId = $this->writeTransaction([
             'waiter_id'             => $waiterId,
             'waiter_name'           => (string) ($waiter['name'] ?? ''),
@@ -321,10 +324,11 @@ class PayrollService
             'bank_name'             => $bankName,
             'bank_account_number'   => $bankAcc,
             'bank_account_holder'   => $bankHolder,
+            'approval_token'        => $approvalToken,
         ]);
 
-        // Notify supervisor via WA.
-        $this->notifySupervisorWithdrawalRequest($waiter, $amount, $note, $txId);
+        // Notify supervisor via WA — link includes token.
+        $this->notifySupervisorWithdrawalRequest($waiter, $amount, $note, $txId, $approvalToken);
 
         return ['success' => true, 'tx_id' => $txId, 'message' => 'Permintaan penarikan dikirim. Menunggu approval supervisor.'];
     }
@@ -353,6 +357,7 @@ class PayrollService
             'balance_after' => $newBalance,
             'processed_at'  => time(),
             'processed_by'  => $approvedBy,
+            'approval_token' => null, // invalidate token on use
         ]);
 
         $this->notifyWaiterWithdrawalApproved($waiterId, $amount, $newBalance);
@@ -372,11 +377,55 @@ class PayrollService
             'reject_reason' => $reason,
             'processed_at'  => time(),
             'processed_by'  => $rejectedBy,
+            'approval_token' => null, // invalidate token on use
         ]);
 
         $this->notifyWaiterWithdrawalRejected((string) ($tx['waiter_id'] ?? ''), (int) ($tx['amount'] ?? 0), $reason);
 
         return ['success' => true];
+    }
+
+    /**
+     * Verify token + approve. Token is consumed (one-shot).
+     */
+    public function approveByToken(string $txId, string $token, string $approvedBy = 'Supervisor (via WA link)'): array
+    {
+        $verify = $this->verifyApprovalToken($txId, $token);
+        if (! $verify['ok']) return ['success' => false, 'message' => $verify['message']];
+        return $this->approveWithdrawal($txId, $approvedBy);
+    }
+
+    /**
+     * Verify token + reject. Token is consumed.
+     */
+    public function rejectByToken(string $txId, string $token, string $reason = '', string $rejectedBy = 'Supervisor (via WA link)'): array
+    {
+        $verify = $this->verifyApprovalToken($txId, $token);
+        if (! $verify['ok']) return ['success' => false, 'message' => $verify['message']];
+        return $this->rejectWithdrawal($txId, $reason, $rejectedBy);
+    }
+
+    /**
+     * Verify token matches AND tx still in pending status.
+     * Returns ['ok' => bool, 'message' => string, 'tx' => array|null].
+     */
+    public function verifyApprovalToken(string $txId, string $token): array
+    {
+        $token = trim($token);
+        if ($token === '' || strlen($token) < 16) {
+            return ['ok' => false, 'message' => 'Token tidak valid.', 'tx' => null];
+        }
+        $tx = $this->getTransaction($txId);
+        if (! $tx) return ['ok' => false, 'message' => 'Transaksi tidak ditemukan.', 'tx' => null];
+        if (($tx['type'] ?? '') !== 'withdrawal') return ['ok' => false, 'message' => 'Bukan transaksi penarikan.', 'tx' => $tx];
+        if (($tx['status'] ?? '') !== 'pending') {
+            return ['ok' => false, 'message' => 'Transaksi sudah diproses (status: '.($tx['status'] ?? '?').').', 'tx' => $tx];
+        }
+        $stored = (string) ($tx['approval_token'] ?? '');
+        if ($stored === '' || ! hash_equals($stored, $token)) {
+            return ['ok' => false, 'message' => 'Token tidak cocok atau sudah dipakai.', 'tx' => $tx];
+        }
+        return ['ok' => true, 'message' => 'OK', 'tx' => $tx];
     }
 
     /**
@@ -513,7 +562,7 @@ class PayrollService
     //  WA NOTIFICATIONS
     // =========================================================================
 
-    protected function notifySupervisorWithdrawalRequest(array $waiter, int $amount, string $note, string $txId): void
+    protected function notifySupervisorWithdrawalRequest(array $waiter, int $amount, string $note, string $txId, string $approvalToken = ''): void
     {
         $config = $this->getConfig();
         $phone = trim((string) ($config['supervisor_phone'] ?? ''));
@@ -534,8 +583,11 @@ class PayrollService
             $msg .= "\nCatatan: {$note}\n";
         }
         $publicUrl = $this->getPublicBaseUrl();
-        if ($publicUrl !== '') {
-            $msg .= "\nApprove atau Reject di:\n" . $publicUrl . "/admin/payroll/withdrawals";
+        if ($publicUrl !== '' && $approvalToken !== '') {
+            $msg .= "\nProses penarikan via link berikut (tanpa login):\n";
+            $msg .= $publicUrl . '/payroll/proses/' . $txId . '/' . $approvalToken;
+        } elseif ($publicUrl !== '') {
+            $msg .= "\nApprove atau Reject di:\n" . $publicUrl . "/admin/payroll/penarikan";
         } else {
             $msg .= "\nApprove atau Reject di halaman admin payroll.";
         }
