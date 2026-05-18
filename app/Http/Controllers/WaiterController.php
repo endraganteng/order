@@ -302,9 +302,17 @@ class WaiterController extends Controller
         }
 
         // After successful task completion, auto-update daily points
+        $reward = null;
         try {
             $bonusService = app(\App\Services\BonusService::class);
             $today = date('Y-m-d');
+
+            // Snapshot poin SEBELUM auto-score untuk hitung delta reward.
+            $previousDaily = $bonusService->getDailyPoints($waiterId, $today);
+            $previousTotal = (int) ($previousDaily['daily_total'] ?? 0);
+            $previousCategories = is_array($previousDaily['categories'] ?? null)
+                ? $previousDaily['categories']
+                : [];
 
             $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
             $todayTasks = $this->firebase->getWaiterTasksForDate($waiterId, $today);
@@ -318,7 +326,64 @@ class WaiterController extends Controller
                 'attitude' => $autoScores['attitude'],
             ];
 
-            $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on task completion', $autoScores['auto_details'] ?? []);
+            $saveResult = $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on task completion', $autoScores['auto_details'] ?? []);
+
+            // Hitung breakdown reward untuk overlay frontend.
+            $newCategories = is_array($saveResult['categories'] ?? null)
+                ? $saveResult['categories']
+                : $categoryScores;
+            $newTotal = (int) ($saveResult['daily_total'] ?? 0);
+            $perfectDay = (bool) ($saveResult['perfect_day'] ?? false);
+            $perfectDayBonus = (int) ($saveResult['perfect_day_bonus'] ?? 0);
+
+            $categoryDelta = [];
+            foreach (['discipline', 'operational', 'attitude'] as $catKey) {
+                $oldRaw = $previousCategories[$catKey] ?? 0;
+                if (is_array($oldRaw)) {
+                    $oldRaw = (int) ($oldRaw['points'] ?? 0);
+                } else {
+                    $oldRaw = (int) $oldRaw;
+                }
+                $newCat = (int) ($newCategories[$catKey] ?? 0);
+                $diff = $newCat - $oldRaw;
+                $categoryDelta[] = [
+                    'key'   => $catKey,
+                    'label' => match ($catKey) {
+                        'discipline'  => 'Disiplin',
+                        'operational' => 'Operasional',
+                        'attitude'    => 'Attitude',
+                        default       => ucfirst($catKey),
+                    },
+                    'icon'  => match ($catKey) {
+                        'discipline'  => '⏰',
+                        'operational' => '✅',
+                        'attitude'    => '💪',
+                        default       => '⭐',
+                    },
+                    'before' => $oldRaw,
+                    'after'  => $newCat,
+                    'delta'  => $diff,
+                ];
+            }
+
+            $totalDelta = $newTotal - $previousTotal;
+
+            // Hitung progress task harian.
+            $totalTasksToday = is_array($todayTasks) ? count($todayTasks) : 0;
+            $doneTasksToday = is_array($todayTasks)
+                ? count(array_filter($todayTasks, fn($t) => ($t['status'] ?? 'pending') === 'done'))
+                : 0;
+
+            $reward = [
+                'points_earned'      => max(0, $totalDelta),
+                'daily_total'        => $newTotal,
+                'previous_total'     => $previousTotal,
+                'perfect_day'        => $perfectDay,
+                'perfect_day_bonus'  => $perfectDayBonus,
+                'category_breakdown' => $categoryDelta,
+                'tasks_done'         => $doneTasksToday,
+                'tasks_total'        => $totalTasksToday,
+            ];
         } catch (\Throwable $e) {
             report($e);
             // Flag task untuk worker retry; jangan biarkan poin hilang silent.
@@ -349,6 +414,7 @@ class WaiterController extends Controller
                 'completed_count' => $result['completed_count'] ?? 1,
                 'repeat_count' => $result['repeat_count'] ?? 1,
                 'message' => $responseMessage,
+                'reward' => $reward,
             ]);
         }
 

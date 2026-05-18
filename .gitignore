@@ -30,3 +30,5 @@ Thumbs.db
 *.xlsx
 *.png
 *.bak
+resources/views/webhooks/dana_inspect.blade.php
+resources/views/webhooks/partials/dana_entry.blade.php

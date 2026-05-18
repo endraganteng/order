@@ -1102,9 +1102,311 @@
                 font-size: 10.5px;
             }
         }
+
+        /* ===== REWARD OVERLAY ===== */
+        .reward-overlay {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.85) 100%);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        .reward-overlay.is-open {
+            display: flex;
+            opacity: 1;
+        }
+        .reward-card {
+            position: relative;
+            width: 100%;
+            max-width: 380px;
+            background: linear-gradient(160deg, #ffffff 0%, #fef9f3 50%, #fff7ed 100%);
+            border-radius: 24px;
+            padding: 28px 22px 22px;
+            box-shadow: 0 30px 80px -10px rgba(251, 191, 36, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+            text-align: center;
+            transform: scale(0.7) translateY(40px);
+            opacity: 0;
+            transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+            overflow: hidden;
+        }
+        .reward-overlay.is-open .reward-card {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+        }
+        .reward-card::before {
+            content: '';
+            position: absolute;
+            inset: -50% -50% auto -50%;
+            height: 200%;
+            background: radial-gradient(circle at 50% 30%, rgba(251, 191, 36, 0.25) 0%, transparent 60%);
+            pointer-events: none;
+            animation: reward-shine 3s ease-in-out infinite;
+        }
+        @keyframes reward-shine {
+            0%, 100% { transform: rotate(0deg); opacity: 0.7; }
+            50% { transform: rotate(180deg); opacity: 1; }
+        }
+        .reward-trophy {
+            font-size: 64px;
+            line-height: 1;
+            margin-bottom: 8px;
+            display: inline-block;
+            animation: reward-bounce 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+            filter: drop-shadow(0 8px 16px rgba(251, 191, 36, 0.5));
+            position: relative;
+            z-index: 2;
+        }
+        @keyframes reward-bounce {
+            0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+            60% { transform: scale(1.2) rotate(15deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        .reward-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: #78350f;
+            margin: 0 0 4px;
+            letter-spacing: 0.3px;
+            position: relative;
+            z-index: 2;
+        }
+        .reward-subtitle {
+            font-size: 13px;
+            color: #92400e;
+            margin: 0 0 16px;
+            opacity: 0.85;
+            position: relative;
+            z-index: 2;
+        }
+        .reward-points-block {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            color: #fff;
+            border-radius: 18px;
+            padding: 16px 12px;
+            margin: 0 0 14px;
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.35);
+            position: relative;
+            z-index: 2;
+        }
+        .reward-points-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            opacity: 0.9;
+            font-weight: 700;
+        }
+        .reward-points-value {
+            font-size: 56px;
+            font-weight: 900;
+            line-height: 1;
+            margin-top: 6px;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            font-variant-numeric: tabular-nums;
+        }
+        .reward-points-suffix {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 24px;
+            font-weight: 700;
+            opacity: 0.9;
+            vertical-align: top;
+            margin-top: 14px;
+        }
+        .reward-perfect {
+            display: none;
+            margin: 10px auto 0;
+            padding: 6px 14px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #fff;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);
+            animation: reward-pulse 1.5s ease-in-out infinite;
+        }
+        .reward-perfect.is-shown {
+            display: inline-block;
+        }
+        @keyframes reward-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .reward-breakdown {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin: 0 0 14px;
+            position: relative;
+            z-index: 2;
+        }
+        .reward-cat {
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid #fde68a;
+            border-radius: 12px;
+            padding: 8px 4px;
+            font-size: 11px;
+            color: #78350f;
+            font-weight: 600;
+        }
+        .reward-cat-icon {
+            font-size: 18px;
+            display: block;
+            margin-bottom: 2px;
+        }
+        .reward-cat-label {
+            display: block;
+            font-size: 10px;
+            opacity: 0.7;
+            margin-bottom: 2px;
+        }
+        .reward-cat-value {
+            display: block;
+            font-size: 14px;
+            font-weight: 800;
+            color: #92400e;
+        }
+        .reward-cat.is-gain {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border-color: #fbbf24;
+        }
+        .reward-cat-delta {
+            display: block;
+            font-size: 10px;
+            color: #059669;
+            font-weight: 700;
+            margin-top: 1px;
+        }
+        .reward-progress-block {
+            margin: 0 0 14px;
+            position: relative;
+            z-index: 2;
+        }
+        .reward-progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #78350f;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .reward-progress-bar {
+            height: 10px;
+            background: #fde68a;
+            border-radius: 999px;
+            overflow: hidden;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) inset;
+        }
+        .reward-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #f59e0b, #fbbf24, #fde047);
+            border-radius: 999px;
+            width: 0%;
+            transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
+        }
+        .reward-message {
+            font-size: 13px;
+            color: #92400e;
+            margin: 0 0 16px;
+            font-style: italic;
+            position: relative;
+            z-index: 2;
+        }
+        .reward-actions {
+            display: flex;
+            gap: 8px;
+            position: relative;
+            z-index: 2;
+        }
+        .reward-btn {
+            flex: 1;
+            border: none;
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .reward-btn-primary {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #fff;
+            box-shadow: 0 6px 16px rgba(217, 119, 6, 0.35);
+        }
+        .reward-btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px rgba(217, 119, 6, 0.45);
+        }
+        .reward-btn-secondary {
+            background: #fff;
+            color: #78350f;
+            border: 1px solid #fde68a;
+        }
+        .reward-btn-secondary:hover {
+            background: #fef3c7;
+        }
+
+        /* CONFETTI */
+        .reward-confetti {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 1;
+        }
+        .reward-confetti span {
+            position: absolute;
+            top: -20px;
+            width: 10px;
+            height: 14px;
+            opacity: 0;
+            animation: reward-fall 2.6s linear forwards;
+        }
+        @keyframes reward-fall {
+            0% {
+                transform: translateY(-20px) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(540px) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        /* Floating points pop near button (small variant) */
+        .reward-float {
+            position: fixed;
+            z-index: 9998;
+            pointer-events: none;
+            font-size: 18px;
+            font-weight: 800;
+            color: #f59e0b;
+            text-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+            animation: reward-float-up 1.4s ease-out forwards;
+        }
+        @keyframes reward-float-up {
+            0% { transform: translateY(0) scale(0.6); opacity: 0; }
+            20% { transform: translateY(-10px) scale(1.2); opacity: 1; }
+            100% { transform: translateY(-80px) scale(1); opacity: 0; }
+        }
+
+        @media (max-width: 420px) {
+            .reward-card { padding: 24px 18px 18px; max-width: calc(100vw - 24px); }
+            .reward-trophy { font-size: 56px; }
+            .reward-points-value { font-size: 48px; }
+            .reward-title { font-size: 20px; }
+        }
     </style>
 </head>
-
 <body>
     <div class="wrap">
         <div class="top">
@@ -3118,6 +3420,209 @@
             }, 8000);
         }
 
+        // ===== REWARD OVERLAY =====
+        const rewardOverlayEl = document.getElementById('reward-overlay');
+        const rewardConfettiEl = document.getElementById('reward-confetti');
+        const rewardPointsValueEl = document.getElementById('reward-points-value');
+        const rewardPerfectEl = document.getElementById('reward-perfect');
+        const rewardBreakdownEl = document.getElementById('reward-breakdown');
+        const rewardProgressFillEl = document.getElementById('reward-progress-fill');
+        const rewardProgressTextEl = document.getElementById('reward-progress-text');
+        const rewardSubtitleEl = document.getElementById('reward-subtitle');
+        const rewardTitleEl = document.getElementById('reward-title');
+        const rewardMessageEl = document.getElementById('reward-message');
+        const rewardTrophyEl = document.getElementById('reward-trophy');
+        const rewardCloseBtn = document.getElementById('reward-btn-close');
+
+        const REWARD_MESSAGES = [
+            '"Setiap tugas yang selesai membawa kamu lebih dekat ke bonus bulan ini."',
+            '"Kerja keras hari ini, hadiah besok. Lanjutkan!"',
+            '"Konsistensi adalah kunci. Tetap semangat!"',
+            '"Setiap poin berarti. Kamu hebat!"',
+            '"Tugas selesai = poin bertambah = bonus mendekat."',
+            '"Pertahankan ritme ini, kamu sedang on fire 🔥"',
+        ];
+
+        const REWARD_CONFETTI_COLORS = ['#fbbf24', '#f59e0b', '#ef4444', '#10b981', '#3b82f6', '#a855f7', '#fde047'];
+
+        let rewardAutoCloseTimer = null;
+
+        function spawnRewardConfetti(count = 36) {
+            if (!rewardConfettiEl) return;
+            rewardConfettiEl.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const piece = document.createElement('span');
+                const left = Math.random() * 100;
+                const delay = Math.random() * 0.6;
+                const duration = 1.8 + Math.random() * 1.2;
+                const color = REWARD_CONFETTI_COLORS[Math.floor(Math.random() * REWARD_CONFETTI_COLORS.length)];
+                const rotate = Math.random() * 360;
+                const isCircle = Math.random() > 0.65;
+                piece.style.left = left + '%';
+                piece.style.background = color;
+                piece.style.animationDelay = delay + 's';
+                piece.style.animationDuration = duration + 's';
+                piece.style.transform = `rotate(${rotate}deg)`;
+                if (isCircle) {
+                    piece.style.borderRadius = '50%';
+                    piece.style.width = '8px';
+                    piece.style.height = '8px';
+                }
+                rewardConfettiEl.appendChild(piece);
+            }
+        }
+
+        function animateCountUp(el, from, to, durationMs) {
+            if (!el) return;
+            const start = performance.now();
+            const delta = to - from;
+            function tick(now) {
+                const elapsed = now - start;
+                const progress = Math.min(1, elapsed / durationMs);
+                // easeOutCubic
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const value = Math.round(from + delta * eased);
+                el.textContent = String(value);
+                if (progress < 1) {
+                    requestAnimationFrame(tick);
+                } else {
+                    el.textContent = String(to);
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        function spawnFloatingPoints(originEl, points) {
+            if (!originEl || !points || points <= 0) return;
+            const rect = originEl.getBoundingClientRect();
+            const float = document.createElement('div');
+            float.className = 'reward-float';
+            float.textContent = `+${points} pts`;
+            float.style.left = (rect.left + rect.width / 2 - 24) + 'px';
+            float.style.top = (rect.top + 8) + 'px';
+            document.body.appendChild(float);
+            setTimeout(() => float.remove(), 1500);
+        }
+
+        function pickRewardMessage(reward) {
+            if (reward?.perfect_day) {
+                return '"PERFECT DAY! Semua kategori penuh — kamu bintangnya hari ini! ⭐"';
+            }
+            return REWARD_MESSAGES[Math.floor(Math.random() * REWARD_MESSAGES.length)];
+        }
+
+        function pickRewardTrophy(reward) {
+            const earned = Number(reward?.points_earned || 0);
+            if (reward?.perfect_day) return '🏆';
+            if (earned >= 8) return '🌟';
+            if (earned >= 4) return '⭐';
+            if (earned >= 1) return '✨';
+            return '🎉';
+        }
+
+        function showRewardOverlay(reward, payload) {
+            if (!rewardOverlayEl) return;
+
+            const pointsEarned = Math.max(0, Number(reward?.points_earned || 0));
+            const dailyTotal = Number(reward?.daily_total || 0);
+            const perfectDay = Boolean(reward?.perfect_day);
+            const tasksDone = Number(reward?.tasks_done || 0);
+            const tasksTotal = Number(reward?.tasks_total || 0);
+            const breakdown = Array.isArray(reward?.category_breakdown) ? reward.category_breakdown : [];
+
+            // Title varies by partial vs full completion
+            if (payload?.partial) {
+                const cc = Number(payload.completed_count || 0);
+                const rc = Number(payload.repeat_count || 0);
+                rewardTitleEl.textContent = 'Pengulangan Selesai!';
+                rewardSubtitleEl.textContent = `${cc} dari ${rc} pengulangan rampung. Lanjut!`;
+            } else {
+                rewardTitleEl.textContent = 'Tugas Selesai!';
+                rewardSubtitleEl.textContent = pointsEarned > 0
+                    ? `+${pointsEarned} poin dikreditkan ke bonus bulanan kamu.`
+                    : 'Tugas tercatat. Poin akan diperbarui setelah evaluasi.';
+            }
+
+            rewardTrophyEl.textContent = pickRewardTrophy(reward);
+            rewardMessageEl.textContent = pickRewardMessage(reward);
+
+            // Perfect day badge
+            if (perfectDay) {
+                rewardPerfectEl.classList.add('is-shown');
+            } else {
+                rewardPerfectEl.classList.remove('is-shown');
+            }
+
+            // Progress bar
+            const progressPct = tasksTotal > 0 ? Math.min(100, Math.round((tasksDone / tasksTotal) * 100)) : 0;
+            rewardProgressTextEl.textContent = tasksTotal > 0 ? `${tasksDone}/${tasksTotal} tugas` : 'Tidak ada target hari ini';
+            // Reset to 0 first so the transition animates
+            rewardProgressFillEl.style.width = '0%';
+
+            // Breakdown
+            rewardBreakdownEl.innerHTML = '';
+            if (breakdown.length > 0) {
+                breakdown.forEach((cat) => {
+                    const delta = Number(cat?.delta || 0);
+                    const after = Number(cat?.after || 0);
+                    const isGain = delta > 0;
+                    const card = document.createElement('div');
+                    card.className = 'reward-cat' + (isGain ? ' is-gain' : '');
+                    card.innerHTML = `
+                        <span class="reward-cat-icon">${cat.icon || '⭐'}</span>
+                        <span class="reward-cat-label">${cat.label || ''}</span>
+                        <span class="reward-cat-value">${after}</span>
+                        ${isGain ? `<span class="reward-cat-delta">+${delta}</span>` : ''}
+                    `;
+                    rewardBreakdownEl.appendChild(card);
+                });
+                rewardBreakdownEl.style.display = 'grid';
+            } else {
+                rewardBreakdownEl.style.display = 'none';
+            }
+
+            // Open
+            rewardOverlayEl.setAttribute('aria-hidden', 'false');
+            rewardOverlayEl.classList.add('is-open');
+            document.body.style.overflow = 'hidden';
+
+            // Animations: count-up + confetti + progress fill
+            rewardPointsValueEl.textContent = '0';
+            spawnRewardConfetti(perfectDay ? 60 : 36);
+
+            // Slight delay so the modal scale-in finishes before count-up starts
+            setTimeout(() => {
+                animateCountUp(rewardPointsValueEl, 0, pointsEarned > 0 ? pointsEarned : dailyTotal, 1100);
+                rewardProgressFillEl.style.width = progressPct + '%';
+            }, 280);
+
+            // Auto-close after 6s for partial, 8s for full
+            clearTimeout(rewardAutoCloseTimer);
+            rewardAutoCloseTimer = setTimeout(closeRewardOverlay, payload?.partial ? 6000 : 8000);
+        }
+
+        function closeRewardOverlay() {
+            if (!rewardOverlayEl) return;
+            rewardOverlayEl.classList.remove('is-open');
+            rewardOverlayEl.setAttribute('aria-hidden', 'true');
+            document.body.style.overflow = '';
+            clearTimeout(rewardAutoCloseTimer);
+        }
+
+        if (rewardCloseBtn) {
+            rewardCloseBtn.addEventListener('click', closeRewardOverlay);
+        }
+        if (rewardOverlayEl) {
+            rewardOverlayEl.addEventListener('click', (e) => {
+                if (e.target === rewardOverlayEl) closeRewardOverlay();
+            });
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && rewardOverlayEl?.classList.contains('is-open')) {
+                closeRewardOverlay();
+            }
+        });
+
         async function completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl, photoBeforeDataUrl) {
             submitButton.disabled = true;
 
@@ -3179,7 +3684,17 @@
                     photoProofByTask.delete(taskId);
                     photoBeforeByTask.delete(taskId);
                     clearDraftLocal(taskDraftKey(taskId));
-                    showFlash('success', payload?.message || `Pengulangan ${payload.completed_count}/${payload.repeat_count} selesai.`);
+                    const reward = payload?.reward || {
+                        points_earned: 0,
+                        daily_total: 0,
+                        perfect_day: false,
+                        category_breakdown: [],
+                        tasks_done: Number(payload.completed_count || 0),
+                        tasks_total: Number(payload.repeat_count || 0),
+                    };
+                    const earned = Math.max(0, Number(reward.points_earned || 0));
+                    if (earned > 0) spawnFloatingPoints(submitButton, earned);
+                    showRewardOverlay(reward, payload);
                 } else {
                     scannedBarcodeByTask.delete(taskId);
                     stockReportItemsByTask.delete(taskId);
@@ -3190,7 +3705,17 @@
                     refillStepByTask.delete(taskId);
                     taskCompleteFormInstanceByTask.delete(taskId);
                     clearDraftLocal(taskDraftKey(taskId));
-                    showFlash('success', payload?.message || 'Tugas berhasil diverifikasi sebagai selesai.');
+                    const reward = payload?.reward || {
+                        points_earned: 0,
+                        daily_total: 0,
+                        perfect_day: false,
+                        category_breakdown: [],
+                        tasks_done: 0,
+                        tasks_total: 0,
+                    };
+                    const earned = Math.max(0, Number(reward.points_earned || 0));
+                    if (earned > 0) spawnFloatingPoints(submitButton, earned);
+                    showRewardOverlay(reward, payload);
                 }
             } catch (error) {
                 showFlash('error', error?.message || 'Gagal memverifikasi tugas.');
@@ -4395,6 +4920,43 @@
             }
         });
     </script>
+
+    <!-- ===== REWARD OVERLAY ===== -->
+    <div id="reward-overlay" class="reward-overlay" role="dialog" aria-labelledby="reward-title" aria-hidden="true">
+        <div class="reward-confetti" id="reward-confetti" aria-hidden="true"></div>
+        <div class="reward-card">
+            <div class="reward-trophy" id="reward-trophy">🏆</div>
+            <h2 class="reward-title" id="reward-title">Tugas Selesai!</h2>
+            <p class="reward-subtitle" id="reward-subtitle">Kerja bagus, lanjutkan!</p>
+
+            <div class="reward-points-block">
+                <div class="reward-points-label">Poin Diraih</div>
+                <div>
+                    <span class="reward-points-value" id="reward-points-value">0</span><span class="reward-points-suffix">pts</span>
+                </div>
+                <div class="reward-perfect" id="reward-perfect">✨ Perfect Day Bonus!</div>
+            </div>
+
+            <div class="reward-breakdown" id="reward-breakdown"></div>
+
+            <div class="reward-progress-block">
+                <div class="reward-progress-label">
+                    <span>Progress Hari Ini</span>
+                    <span id="reward-progress-text">0/0</span>
+                </div>
+                <div class="reward-progress-bar">
+                    <div class="reward-progress-fill" id="reward-progress-fill"></div>
+                </div>
+            </div>
+
+            <p class="reward-message" id="reward-message">"Setiap tugas yang selesai membawa kamu lebih dekat ke bonus bulan ini."</p>
+
+            <div class="reward-actions">
+                <button type="button" class="reward-btn reward-btn-secondary" id="reward-btn-close">Tutup</button>
+                <a href="{{ route('waiter.bonus', [], false) }}" class="reward-btn reward-btn-primary" style="text-decoration:none; display:flex; align-items:center; justify-content:center;">Lihat Bonus</a>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

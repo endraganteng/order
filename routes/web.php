@@ -228,6 +228,16 @@ Route::get('cashier/workers', [CashierController::class, 'getCashierWorkers'])->
 Route::get('cashier/attendance-qr', [CashierController::class, 'getAttendanceQr'])->name('cashier.attendance_qr');
 Route::get('cashier/attendance-qr/global', [CashierController::class, 'getGlobalAttendanceQr'])->name('cashier.attendance_qr_global');
 
+// === DANA Listener Webhook (TESTING ONLY, NO AUTH) ===
+// Endpoint testing untuk menerima POST dari app notification listener.
+// CSRF dikecualikan via bootstrap/app.php → middleware->validateCsrfTokens(except: ['webhooks/*']).
+Route::prefix('webhooks/dana-listener')->name('webhooks.dana_listener.')->group(function () {
+    Route::post('/', [\App\Http\Controllers\DanaWebhookController::class, 'receive'])->name('receive');
+    Route::get('/inspect', [\App\Http\Controllers\DanaWebhookController::class, 'inspect'])->name('inspect');
+    Route::get('/feed', [\App\Http\Controllers\DanaWebhookController::class, 'feed'])->name('feed');
+    Route::post('/reset', [\App\Http\Controllers\DanaWebhookController::class, 'reset'])->name('reset');
+});
+
 // Cashier task actions (no auth, accessible from cashier page)
 Route::post('cashier/tasks/sync-due', [CashierController::class, 'syncDueTasks'])
     ->middleware('throttle:20,1')

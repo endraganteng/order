@@ -15,6 +15,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.auth' => \App\Http\Middleware\AdminAuthMiddleware::class,
             'waiter.auth' => \App\Http\Middleware\WaiterAuthMiddleware::class,
         ]);
+
+        // Webhook endpoints menerima POST dari pihak luar tanpa CSRF token.
+        // Pastikan endpoint webhook punya validasi sendiri (signature/secret).
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
