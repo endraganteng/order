@@ -590,6 +590,186 @@
             gap: 6px;
         }
     }
+
+    /* ════════════════════════════════════════════════════
+       TRACKING SECTION — REDESIGN
+       Bersih, simple, mobile-first card-list
+    ════════════════════════════════════════════════════ */
+    .trk-wrap { background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+    .trk-head { padding: 16px 18px; border-bottom: 1px solid var(--color-border); background: linear-gradient(180deg, #fafbfc 0%, #fff 100%); }
+    .trk-head-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .trk-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--color-text); display: flex; align-items: center; gap: 8px; }
+    .trk-title-icon { font-size: 22px; }
+    .trk-date-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .trk-date-pill {
+        padding: 6px 12px; border-radius: 999px; border: 1px solid var(--color-border);
+        background: #fff; color: var(--color-text-secondary); font-size: 12px; font-weight: 600;
+        cursor: pointer; transition: all 0.15s; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .trk-date-pill:hover { background: var(--color-bg); border-color: #cbd5e1; }
+    .trk-date-pill.is-active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+    .trk-date-pill.is-active:hover { background: var(--color-primary); }
+    .trk-date-input { padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 12px; color: var(--color-text); background: #fff; }
+    .trk-date-input:focus { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
+    .trk-progress { display: flex; flex-direction: column; gap: 8px; }
+    .trk-progress-stats { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .trk-progress-text { font-size: 13px; color: var(--color-text-secondary); }
+    .trk-progress-text strong { color: var(--color-text); font-weight: 700; }
+    .trk-progress-pct { font-size: 22px; font-weight: 800; color: var(--color-text); font-variant-numeric: tabular-nums; }
+    .trk-progress-pct.is-perfect { color: #059669; }
+    .trk-progress-pct.is-low { color: #dc2626; }
+    .trk-progress-bar { height: 8px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
+    .trk-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #10b981, #34d399); transition: width 0.6s ease; }
+    .trk-progress-fill.is-low { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+    .trk-progress-fill.is-mid { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+    .trk-toolbar {
+        display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+        padding: 10px 18px; background: #fafbfc; border-bottom: 1px solid var(--color-border);
+    }
+    .trk-status-tabs { display: inline-flex; background: #fff; border: 1px solid var(--color-border); border-radius: 10px; padding: 3px; gap: 2px; }
+    .trk-status-tab {
+        padding: 6px 14px; font-size: 12px; font-weight: 600; color: var(--color-text-secondary);
+        background: none; border: 0; border-radius: 7px; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s;
+    }
+    .trk-status-tab:hover { background: var(--color-bg); }
+    .trk-status-tab.is-active { background: var(--color-text); color: #fff; }
+    .trk-status-tab.is-active:hover { background: var(--color-text); }
+    .trk-status-tab-count {
+        font-size: 10px; padding: 1px 6px; border-radius: 999px; background: rgba(0,0,0,0.08);
+        font-weight: 700; min-width: 18px; text-align: center;
+    }
+    .trk-status-tab.is-active .trk-status-tab-count { background: rgba(255,255,255,0.25); }
+
+    .trk-search-wrap { flex: 1; min-width: 180px; max-width: 320px; position: relative; }
+    .trk-search { width: 100%; padding: 8px 12px 8px 32px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 13px; background: #fff; }
+    .trk-search:focus { outline: 2px solid var(--color-primary); outline-offset: -1px; border-color: var(--color-primary); }
+    .trk-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); font-size: 14px; pointer-events: none; }
+
+    .trk-cat-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .trk-cat-chip {
+        padding: 5px 11px; border-radius: 999px; border: 1px solid var(--color-border);
+        background: #fff; color: var(--color-text-secondary); font-size: 11px; font-weight: 600;
+        cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 5px;
+    }
+    .trk-cat-chip:hover { border-color: #94a3b8; }
+    .trk-cat-chip.is-active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+    .trk-cat-chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: currentColor; opacity: 0.7; }
+    .trk-cat-chip.is-active .trk-cat-chip-dot { opacity: 1; }
+
+    .trk-view-toggle { display: inline-flex; gap: 4px; margin-left: auto; }
+    .trk-view-btn {
+        padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 8px;
+        background: #fff; font-size: 12px; font-weight: 600; color: var(--color-text-secondary);
+        cursor: pointer; transition: all 0.15s;
+    }
+    .trk-view-btn.is-active { background: var(--color-text); color: #fff; border-color: var(--color-text); }
+
+    .trk-list { padding: 8px; max-height: 640px; overflow-y: auto; }
+    .trk-list-empty {
+        text-align: center; padding: 40px 20px; color: var(--color-text-muted);
+        background: var(--color-bg); border-radius: var(--radius-md); border: 1px dashed var(--color-border);
+        font-size: 13px;
+    }
+    .trk-list-empty-icon { font-size: 32px; margin-bottom: 8px; opacity: 0.6; }
+
+    .trk-row {
+        display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+        border-radius: 10px; transition: background 0.15s;
+        border-left: 3px solid transparent;
+        cursor: pointer;
+    }
+    .trk-row:hover { background: #f8fafc; }
+    .trk-row + .trk-row { margin-top: 2px; }
+    .trk-row.is-done { border-left-color: #10b981; }
+    .trk-row.is-overdue { border-left-color: #ef4444; }
+    .trk-row.is-pending { border-left-color: #f59e0b; }
+    .trk-row.is-progress { border-left-color: #3b82f6; }
+
+    .trk-row-status {
+        flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700;
+    }
+    .trk-row-status.is-done { background: #d1fae5; color: #059669; }
+    .trk-row-status.is-overdue { background: #fee2e2; color: #dc2626; }
+    .trk-row-status.is-pending { background: #fef3c7; color: #d97706; }
+    .trk-row-status.is-progress { background: #dbeafe; color: #2563eb; }
+
+    .trk-row-main { flex: 1; min-width: 0; }
+    .trk-row-title {
+        font-size: 14px; font-weight: 600; color: var(--color-text);
+        margin: 0 0 3px; line-height: 1.3;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .trk-row-meta {
+        font-size: 12px; color: var(--color-text-secondary);
+        display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    }
+    .trk-row-meta-item { display: inline-flex; align-items: center; gap: 4px; }
+    .trk-row-meta-icon { font-size: 11px; opacity: 0.7; }
+    .trk-row-cat-pill {
+        font-size: 10px; padding: 1px 7px; border-radius: 999px;
+        background: var(--color-bg); color: var(--color-text-secondary); font-weight: 600;
+    }
+
+    .trk-row-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .trk-row-time { font-size: 11px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+    .trk-row-time.is-overdue { color: #dc2626; font-weight: 700; }
+    .trk-row-photo-btn {
+        width: 30px; height: 30px; border: 1px solid var(--color-border); border-radius: 8px;
+        background: #fff; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center;
+        transition: all 0.15s; padding: 0;
+    }
+    .trk-row-photo-btn:hover { background: var(--color-primary-bg); border-color: var(--color-primary); }
+
+    .trk-row-detail {
+        display: none; padding: 10px 14px 12px 56px;
+        font-size: 12px; color: var(--color-text-secondary);
+        background: #f8fafc; border-radius: 0 0 10px 10px; margin-top: -2px;
+    }
+    .trk-row.is-expanded + .trk-row-detail { display: block; }
+    .trk-row-detail-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }
+    .trk-row-detail-label { font-weight: 600; color: var(--color-text); }
+
+    /* Per-Waiter view (rack scope) */
+    .trk-waiter-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 10px; padding: 12px;
+    }
+    .trk-waiter-card {
+        background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-md);
+        padding: 12px; transition: box-shadow 0.15s;
+    }
+    .trk-waiter-card:hover { box-shadow: var(--shadow-sm); }
+    .trk-waiter-card-head {
+        display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 10px;
+    }
+    .trk-waiter-name { font-size: 14px; font-weight: 700; color: var(--color-text); margin: 0; }
+    .trk-waiter-bar {
+        display: flex; height: 6px; border-radius: 999px; overflow: hidden; background: #e5e7eb;
+        margin-bottom: 8px;
+    }
+    .trk-waiter-bar-done { background: #10b981; }
+    .trk-waiter-bar-miss { background: #ef4444; }
+    .trk-waiter-stats { display: flex; gap: 12px; font-size: 11px; color: var(--color-text-secondary); }
+    .trk-waiter-stat-done { color: #059669; font-weight: 700; }
+    .trk-waiter-stat-miss { color: #dc2626; font-weight: 700; }
+
+    @media (max-width: 640px) {
+        .trk-row { padding: 10px 12px; gap: 9px; }
+        .trk-row-status { width: 24px; height: 24px; font-size: 12px; }
+        .trk-row-title { font-size: 13px; }
+        .trk-row-meta { font-size: 11px; gap: 8px; }
+        .trk-toolbar { padding: 10px; gap: 8px; }
+        .trk-search-wrap { max-width: none; flex: 1 1 100%; order: -1; }
+        .trk-status-tabs { flex: 1; justify-content: stretch; }
+        .trk-status-tab { flex: 1; justify-content: center; }
+        .trk-view-toggle { margin-left: 0; }
+        .trk-progress-pct { font-size: 18px; }
+        .trk-row-detail { padding-left: 12px; }
+    }
 </style>
 @endpush
 
@@ -906,132 +1086,303 @@
     @endif
 
     {{-- ═══════════════════════════════════════════════════════════════
-         SECTION 2: Tracking Tugas per Tanggal
+         SECTION 2: Tracking Tugas per Tanggal (REDESIGNED)
+         Layout: sticky header (date pills + progress) → toolbar (status tabs + search + cat chips + view) → unified card list
     ═══════════════════════════════════════════════════════════════ --}}
-    <details class="task-section" {{ !$isRackScope ? 'open' : '' }}>
-        <summary class="task-section-summary">Tracking Tugas per Tanggal <span class="badge" style="background:var(--color-danger-bg);color:#991b1b;">{{ $dateNotDoneCount }} belum dikerjakan</span></summary>
-        <div class="task-section-body">
+    @php
+        // Hitung statistik per tanggal terpilih
+        $trkDoneCount = count($dateDoneTasks);
+        $trkNotDoneCount = count($dateNotDoneTasks);
+        $trkTotalCount = $trkDoneCount + $trkNotDoneCount;
+        $trkPercent = $trkTotalCount > 0 ? (int) round(($trkDoneCount / $trkTotalCount) * 100) : 0;
 
-        <form method="GET" action="{{ route($taskScopeRouteName ?? 'admin.tasks.index') }}" style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
-            <input type="date" name="track_date" value="{{ $selectedDate }}" class="form-input" style="width:auto;">
-            <button type="submit" class="btn btn-primary">Tampilkan</button>
-            
-            @if(!$isRackScope && !empty($categories))
-            <select id="tracking-category-filter" class="form-input" style="width:auto; margin-left: auto;" onchange="filterTrackingByCategory()">
-                <option value="">Semua Kategori</option>
-                <option value="uncategorized">Tanpa Kategori</option>
-                @foreach($categories as $cat)
-                    <option value="{{ $cat['id'] }}">{{ $cat['name'] }}</option>
-                @endforeach
-            </select>
-            @endif
-        </form>
+        // Tier color
+        $trkPctClass = $trkPercent >= 90 ? 'is-perfect' : ($trkPercent < 60 ? 'is-low' : '');
+        $trkFillClass = $trkPercent >= 80 ? '' : ($trkPercent >= 50 ? 'is-mid' : 'is-low');
 
-        @if($isRackScope)
-            @if(empty($dateWaiterTrackingBoard))
-                <div class="empty">Belum ada data cek rak pada tanggal ini.</div>
-            @else
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px;">
-                    @foreach($dateWaiterTrackingBoard as $waiterTracking)
-                        <details style="border: 1px solid var(--color-border); border-radius: 10px; background: #fff; overflow: hidden;">
-                            <summary style="cursor: pointer; list-style: none; display:flex; justify-content:space-between; align-items:center; gap:10px; padding: 12px 14px; background:var(--color-bg); border-bottom: 1px solid var(--color-border);">
-                                <span style="font-weight: 700; color: var(--color-text);">{{ $waiterTracking['waiter_name'] ?? '-' }}</span>
-                                <span style="display:flex; gap:6px; flex-wrap:wrap;">
-                                    <span class="badge" style="background:var(--color-success-bg);color:#166534;">{{ $waiterTracking['done_count'] ?? 0 }} done</span>
-                                    <span class="badge" style="background:var(--color-danger-bg);color:#991b1b;">{{ $waiterTracking['not_done_count'] ?? 0 }} miss</span>
-                                </span>
-                            </summary>
-                            <div style="padding: 12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
-                                <div style="border: 1px solid var(--color-success-border); border-radius: var(--radius-md); padding: 10px; background:var(--color-success-bg);">
-                                    <div style="font-weight: 600; color: #166534; margin-bottom: 8px;">Dikerjakan ({{ $waiterTracking['done_count'] ?? 0 }})</div>
-                                    @if(empty($waiterTracking['done_tasks']))
-                                        <div style="font-size: 12px; color: var(--color-text-muted);">Tidak ada task selesai.</div>
-                                    @else
-                                        <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: var(--color-text-secondary);">
-                                            @foreach($waiterTracking['done_tasks'] as $task)
-                                                <li style="margin-bottom: 6px;">
-                                                    <strong>{{ $task['rack_name'] ?? ($task['title'] ?? '-') }}</strong>
-                                                    <div>Scan QR: {{ $task['completed_scanned_barcode'] ?? '-' }}</div>
-                                                </li>
-                                            @endforeach
-                                        </ul>
-                                    @endif
-                                </div>
+        // Pisah pending vs overdue vs in_progress dari notDoneTasks
+        $trkOverdueCount = 0;
+        $trkPendingCount = 0;
+        $trkProgressCount = 0;
+        foreach ($dateNotDoneTasks as $t) {
+            $st = (string) ($t['status'] ?? 'pending');
+            if ($st === 'overdue') $trkOverdueCount++;
+            elseif ($st === 'in_progress') $trkProgressCount++;
+            else $trkPendingCount++;
+        }
 
-                                <div style="border: 1px solid var(--color-danger-border); border-radius: var(--radius-md); padding: 10px; background:var(--color-danger-bg);">
-                                    <div style="font-weight: 600; color: #b91c1c; margin-bottom: 8px;">Tidak Dikerjakan ({{ $waiterTracking['not_done_count'] ?? 0 }})</div>
-                                    @if(empty($waiterTracking['not_done_tasks']))
-                                        <div style="font-size: 12px; color: var(--color-text-muted);">Semua task selesai.</div>
-                                    @else
-                                        <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: var(--color-text-secondary);">
-                                            @foreach($waiterTracking['not_done_tasks'] as $task)
-                                                <li style="margin-bottom: 6px;">
-                                                    <strong>{{ $task['rack_name'] ?? ($task['title'] ?? '-') }}</strong>
-                                                    <div>Status: {{ strtoupper($task['status'] ?? '-') }}</div>
-                                                </li>
-                                            @endforeach
-                                        </ul>
-                                    @endif
-                                </div>
-                            </div>
-                        </details>
-                    @endforeach
-                </div>
-            @endif
-        @else
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
-                <div style="border: 1px solid var(--color-success-border); border-radius: var(--radius-md); padding: 12px; background: var(--color-success-bg);">
-                    <div style="font-weight: 600; color: #155724; margin-bottom: 8px;">Dikerjakan ({{ count($dateDoneTasks) }})</div>
-                    @if(empty($dateDoneTasks))
-                        <div style="font-size: 13px; color: var(--color-text-muted);">Tidak ada tugas selesai pada tanggal ini.</div>
-                    @else
-                                    <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--color-text-secondary);">
-                            @foreach($dateDoneTasks as $task)
-                                <li class="js-history-task-row" data-category-id="{{ $task['category_id'] ?? 'uncategorized' }}" style="margin-bottom: 5px;">
-                                    <strong>{{ $task['title'] ?? '-' }}</strong>
-                                    <div>Waiter: {{ $task['completed_by_waiter_name'] ?? '-' }}</div>
-                                    @if(($task['task_type'] ?? 'general') === 'rack_check')
-                                        <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }} (QR: {{ $task['completed_scanned_barcode'] ?? '-' }})</div>
-                                        <div style="font-size: 12px; color: var(--color-text-secondary);">
-                                            Stok:
-                                            @if(!empty($task['completed_no_out_of_stock']))
-                                                Tidak ada barang habis
-                                            @elseif(!empty($task['completed_stock_report']))
-                                                {{ $task['completed_stock_report'] }}
-                                            @else
-                                                -
-                                            @endif
-                                        </div>
-                                    @endif
-                                </li>
-                            @endforeach
-                        </ul>
-                    @endif
-                </div>
+        // Format tanggal Indonesia
+        $trkDateLabel = '';
+        try {
+            $trkDateLabel = \Carbon\Carbon::parse($selectedDate)->locale('id')->isoFormat('dddd, D MMMM YYYY');
+        } catch (\Throwable $e) {
+            $trkDateLabel = $selectedDate;
+        }
 
-                <div style="border: 1px solid var(--color-danger-border); border-radius: var(--radius-md); padding: 12px; background: var(--color-danger-bg);">
-                    <div style="font-weight: 600; color: #721c24; margin-bottom: 8px;">Tidak Dikerjakan ({{ count($dateNotDoneTasks) }})</div>
-                    @if(empty($dateNotDoneTasks))
-                        <div style="font-size: 13px; color: var(--color-text-muted);">Semua tugas pada tanggal ini selesai.</div>
-                    @else
-                        <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--color-text-secondary);">
-                            @foreach($dateNotDoneTasks as $task)
-                                <li class="js-history-task-row" data-category-id="{{ $task['category_id'] ?? 'uncategorized' }}" style="margin-bottom: 5px;">
-                                    <strong>{{ $task['title'] ?? '-' }}</strong>
-                                    <div>Status: {{ strtoupper($task['status'] ?? '-') }}</div>
-                                    <div>Target: {{ $task['assigned_waiter_name'] ?? '-' }}</div>
-                                    @if(($task['task_type'] ?? 'general') === 'rack_check')
-                                        <div style="font-size: 12px; color: #9a3412;">Rak: {{ $task['rack_name'] ?? '-' }}</div>
-                                    @endif
-                                </li>
-                            @endforeach
-                        </ul>
-                    @endif
+        $todayStr = date('Y-m-d');
+        $yesterdayStr = date('Y-m-d', strtotime('-1 day'));
+        $tomorrowStr = date('Y-m-d', strtotime('+1 day'));
+
+        $trkRouteName = $taskScopeRouteName ?? 'admin.tasks.index';
+    @endphp
+
+    <section class="trk-wrap">
+        <div class="trk-head">
+            <div class="trk-head-top">
+                <h3 class="trk-title">
+                    <span class="trk-title-icon">📅</span>
+                    <span>Tracking Tugas per Tanggal</span>
+                </h3>
+                <div class="trk-date-pills">
+                    <a href="{{ route($trkRouteName, ['track_date' => $yesterdayStr]) }}" class="trk-date-pill {{ $selectedDate === $yesterdayStr ? 'is-active' : '' }}">Kemarin</a>
+                    <a href="{{ route($trkRouteName, ['track_date' => $todayStr]) }}" class="trk-date-pill {{ $selectedDate === $todayStr ? 'is-active' : '' }}">Hari Ini</a>
+                    <a href="{{ route($trkRouteName, ['track_date' => $tomorrowStr]) }}" class="trk-date-pill {{ $selectedDate === $tomorrowStr ? 'is-active' : '' }}">Besok</a>
+                    <form method="GET" action="{{ route($trkRouteName) }}" style="display:inline-flex; gap:6px; align-items:center;">
+                        <input type="date" name="track_date" value="{{ $selectedDate }}" class="trk-date-input" onchange="this.form.submit()">
+                    </form>
                 </div>
             </div>
-        @endif
+
+            <div class="trk-progress">
+                <div class="trk-progress-stats">
+                    <div class="trk-progress-text">
+                        <strong>{{ $trkDateLabel }}</strong> &middot;
+                        @if($trkTotalCount === 0)
+                            Tidak ada tugas dijadwalkan
+                        @else
+                            <strong>{{ $trkDoneCount }}</strong> selesai · <strong>{{ $trkNotDoneCount }}</strong> belum
+                            @if($trkOverdueCount > 0)
+                                · <span style="color:#dc2626; font-weight:700;">{{ $trkOverdueCount }} overdue</span>
+                            @endif
+                        @endif
+                    </div>
+                    <div class="trk-progress-pct {{ $trkPctClass }}">{{ $trkPercent }}%</div>
+                </div>
+                <div class="trk-progress-bar">
+                    <div class="trk-progress-fill {{ $trkFillClass }}" style="width: {{ $trkPercent }}%;"></div>
+                </div>
+            </div>
         </div>
-    </details>
+
+        @if($trkTotalCount > 0)
+        <div class="trk-toolbar">
+            <div class="trk-status-tabs" role="tablist" aria-label="Filter status tugas">
+                <button type="button" class="trk-status-tab is-active" data-trk-status="all" role="tab" aria-selected="true">
+                    Semua <span class="trk-status-tab-count">{{ $trkTotalCount }}</span>
+                </button>
+                <button type="button" class="trk-status-tab" data-trk-status="done" role="tab" aria-selected="false">
+                    ✅ Selesai <span class="trk-status-tab-count">{{ $trkDoneCount }}</span>
+                </button>
+                <button type="button" class="trk-status-tab" data-trk-status="pending" role="tab" aria-selected="false">
+                    ⏳ Belum <span class="trk-status-tab-count">{{ $trkNotDoneCount }}</span>
+                </button>
+            </div>
+
+            <div class="trk-search-wrap">
+                <span class="trk-search-icon">🔍</span>
+                <input type="text" id="trkSearch" class="trk-search" placeholder="Cari tugas, waiter, atau rak..." autocomplete="off">
+            </div>
+
+            @if($isRackScope)
+                <div class="trk-view-toggle" role="tablist" aria-label="Mode tampilan">
+                    <button type="button" class="trk-view-btn is-active" data-trk-view="task">📋 Per Tugas</button>
+                    <button type="button" class="trk-view-btn" data-trk-view="waiter">👥 Per Waiter</button>
+                </div>
+            @endif
+        </div>
+
+        @if(!$isRackScope && !empty($categories))
+        <div class="trk-toolbar" style="border-top: 0; padding-top: 4px;">
+            <div class="trk-cat-chips">
+                <button type="button" class="trk-cat-chip is-active" data-trk-cat="">Semua kategori</button>
+                <button type="button" class="trk-cat-chip" data-trk-cat="uncategorized">
+                    <span class="trk-cat-chip-dot" style="color:#94a3b8;"></span>
+                    Tanpa kategori
+                </button>
+                @foreach($categories as $cat)
+                    <button type="button" class="trk-cat-chip" data-trk-cat="{{ $cat['id'] }}">
+                        <span class="trk-cat-chip-dot" style="color: {{ $cat['color'] ?? '#3b82f6' }};"></span>
+                        {{ $cat['name'] }}
+                    </button>
+                @endforeach
+            </div>
+        </div>
+        @endif
+        @endif
+
+        {{-- ── Mode 1: Per Tugas (default, untuk semua scope) ── --}}
+        <div class="trk-list" data-trk-view-pane="task">
+            @if($trkTotalCount === 0)
+                <div class="trk-list-empty">
+                    <div class="trk-list-empty-icon">📭</div>
+                    <div>Belum ada tugas pada tanggal ini.</div>
+                    <div style="margin-top:6px; font-size:12px;">Coba pilih tanggal lain atau klik <strong>Force Generate</strong> untuk membuat task dari template.</div>
+                </div>
+            @else
+                @php
+                    // Merge done + not done jadi 1 list dengan info status untuk render
+                    $trkAllRows = [];
+                    foreach ($dateDoneTasks as $t) {
+                        $trkAllRows[] = ['__status_group' => 'done', 'task' => $t];
+                    }
+                    foreach ($dateNotDoneTasks as $t) {
+                        $st = (string) ($t['status'] ?? 'pending');
+                        $group = $st === 'overdue' ? 'overdue' : ($st === 'in_progress' ? 'progress' : 'pending');
+                        $trkAllRows[] = ['__status_group' => $group, 'task' => $t];
+                    }
+                    // Sort: overdue first, then pending/progress, then done by completed_at desc
+                    usort($trkAllRows, function ($a, $b) {
+                        $rank = ['overdue' => 0, 'pending' => 1, 'progress' => 1, 'done' => 2];
+                        $ra = $rank[$a['__status_group']] ?? 9;
+                        $rb = $rank[$b['__status_group']] ?? 9;
+                        if ($ra !== $rb) return $ra <=> $rb;
+                        if ($a['__status_group'] === 'done') {
+                            return ((int) ($b['task']['completed_at'] ?? 0)) <=> ((int) ($a['task']['completed_at'] ?? 0));
+                        }
+                        return strcmp((string) ($a['task']['title'] ?? ''), (string) ($b['task']['title'] ?? ''));
+                    });
+                @endphp
+
+                @foreach($trkAllRows as $rowIdx => $row)
+                    @php
+                        $task = $row['task'];
+                        $sg = $row['__status_group'];
+                        $statusIcon = match($sg) {
+                            'done' => '✓',
+                            'overdue' => '!',
+                            'progress' => '⏵',
+                            default => '·',
+                        };
+                        $statusLabel = match($sg) {
+                            'done' => 'Selesai',
+                            'overdue' => 'Overdue',
+                            'progress' => 'Sedang dikerjakan',
+                            default => 'Belum',
+                        };
+                        $waiterName = $sg === 'done'
+                            ? ($task['completed_by_waiter_name'] ?? '-')
+                            : ($task['assigned_waiter_name'] ?? 'Belum di-assign');
+                        $catName = $task['category_name'] ?? '';
+                        $catId = $task['category_id'] ?? 'uncategorized';
+                        $rackName = $task['rack_name'] ?? '';
+                        $isRackTask = ($task['task_type'] ?? 'general') === 'rack_check';
+                        $title = $task['title'] ?? ($rackName ?: 'Tugas');
+                        $completedAt = (int) ($task['completed_at'] ?? 0);
+                        $timeLabel = '';
+                        if ($sg === 'done' && $completedAt > 0) {
+                            $timeLabel = date('H:i', $completedAt);
+                        } elseif ($sg === 'overdue') {
+                            $timeLabel = 'overdue';
+                        }
+                        $hasPhoto = !empty($task['completed_photo_proof_url']);
+                        $rowId = 'trk-row-' . md5(($task['id'] ?? '') . '-' . $rowIdx);
+                    @endphp
+
+                    <div class="trk-row is-{{ $sg }} js-trk-row"
+                         data-trk-status="{{ $sg === 'done' ? 'done' : 'pending' }}"
+                         data-trk-cat="{{ $catId }}"
+                         data-trk-search="{{ strtolower(($title) . ' ' . $waiterName . ' ' . $rackName . ' ' . $catName) }}"
+                         data-trk-row="{{ $rowId }}"
+                         onclick="trkToggleDetail(this)">
+                        <div class="trk-row-status is-{{ $sg }}" aria-label="{{ $statusLabel }}">{{ $statusIcon }}</div>
+                        <div class="trk-row-main">
+                            <div class="trk-row-title">{{ $title }}</div>
+                            <div class="trk-row-meta">
+                                <span class="trk-row-meta-item"><span class="trk-row-meta-icon">👤</span>{{ $waiterName }}</span>
+                                @if($isRackTask && $rackName)
+                                    <span class="trk-row-meta-item"><span class="trk-row-meta-icon">📦</span>{{ $rackName }}</span>
+                                @endif
+                                @if($catName)
+                                    <span class="trk-row-cat-pill" style="@if(!empty($task['category_color'])) background: {{ $task['category_color'] }}22; color: {{ $task['category_color'] }}; @endif">{{ $catName }}</span>
+                                @endif
+                            </div>
+                        </div>
+                        <div class="trk-row-actions">
+                            @if($timeLabel)
+                                <span class="trk-row-time {{ $sg === 'overdue' ? 'is-overdue' : '' }}">{{ $timeLabel }}</span>
+                            @endif
+                            @if($hasPhoto)
+                                <button type="button" class="trk-row-photo-btn" onclick="event.stopPropagation(); trkOpenPhoto('{{ $task['completed_photo_proof_url'] }}', '{{ addslashes($title) }}')" title="Lihat foto bukti">📷</button>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Detail expandable --}}
+                    <div class="trk-row-detail" data-trk-detail-for="{{ $rowId }}">
+                        <div class="trk-row-detail-grid">
+                            @if(!empty($task['description']))
+                                <div class="trk-row-detail-label">Deskripsi:</div>
+                                <div>{{ $task['description'] }}</div>
+                            @endif
+                            <div class="trk-row-detail-label">Status:</div>
+                            <div>{{ $statusLabel }}</div>
+                            @if($sg === 'done' && !empty($task['completed_scanned_barcode']))
+                                <div class="trk-row-detail-label">Scan QR:</div>
+                                <div style="font-family: monospace;">{{ $task['completed_scanned_barcode'] }}</div>
+                            @endif
+                            @if($sg === 'done' && $isRackTask)
+                                <div class="trk-row-detail-label">Stok:</div>
+                                <div>
+                                    @if(!empty($task['completed_no_out_of_stock']))
+                                        ✅ Tidak ada barang habis
+                                    @elseif(!empty($task['completed_stock_report']))
+                                        ⚠️ {{ $task['completed_stock_report'] }}
+                                    @else
+                                        -
+                                    @endif
+                                </div>
+                            @endif
+                            @if(!empty($task['completed_note']))
+                                <div class="trk-row-detail-label">Catatan:</div>
+                                <div>{{ $task['completed_note'] }}</div>
+                            @endif
+                        </div>
+                    </div>
+                @endforeach
+
+                <div class="trk-list-empty js-trk-empty-filter" style="display:none; margin-top:8px;">
+                    <div class="trk-list-empty-icon">🔎</div>
+                    <div>Tidak ada tugas yang cocok dengan filter.</div>
+                </div>
+            @endif
+        </div>
+
+        {{-- ── Mode 2: Per Waiter (rack scope only) ── --}}
+        @if($isRackScope && !empty($dateWaiterTrackingBoard))
+        <div class="trk-list" data-trk-view-pane="waiter" style="display:none; padding:0;">
+            <div class="trk-waiter-grid">
+                @foreach($dateWaiterTrackingBoard as $waiterTracking)
+                    @php
+                        $wDone = (int) ($waiterTracking['done_count'] ?? 0);
+                        $wMiss = (int) ($waiterTracking['not_done_count'] ?? 0);
+                        $wTotal = $wDone + $wMiss;
+                        $wDonePct = $wTotal > 0 ? round(($wDone / $wTotal) * 100) : 0;
+                        $wMissPct = $wTotal > 0 ? (100 - $wDonePct) : 0;
+                    @endphp
+                    <div class="trk-waiter-card">
+                        <div class="trk-waiter-card-head">
+                            <h4 class="trk-waiter-name">{{ $waiterTracking['waiter_name'] ?? '-' }}</h4>
+                            <span style="font-size:11px; color:var(--color-text-muted); font-weight:700;">{{ $wDonePct }}%</span>
+                        </div>
+                        @if($wTotal > 0)
+                            <div class="trk-waiter-bar">
+                                <div class="trk-waiter-bar-done" style="width:{{ $wDonePct }}%;"></div>
+                                <div class="trk-waiter-bar-miss" style="width:{{ $wMissPct }}%;"></div>
+                            </div>
+                            <div class="trk-waiter-stats">
+                                <span><span class="trk-waiter-stat-done">{{ $wDone }}</span> selesai</span>
+                                <span><span class="trk-waiter-stat-miss">{{ $wMiss }}</span> belum</span>
+                                <span style="margin-left:auto; color:var(--color-text-muted);">{{ $wTotal }} total</span>
+                            </div>
+                        @else
+                            <div style="font-size:11px; color:var(--color-text-muted);">Tidak ada tugas.</div>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+        </div>
+        @endif
+    </section>
 
     {{-- ═══════════════════════════════════════════════════════════════
          SECTION 3: Laporan Barang Menipis/Habis (rack_check only)
@@ -2213,8 +2564,146 @@
     };
 
     window.filterTrackingByCategory = function() {
-        const val = document.getElementById('tracking-category-filter').value;
-        filterTasksByCategory(val);
+        const val = document.getElementById('tracking-category-filter')?.value || '';
+        if (typeof filterTasksByCategory === 'function') {
+            filterTasksByCategory(val);
+        }
+    };
+
+    // ════════════════════════════════════════════════════
+    //  TRACKING SECTION (REDESIGNED) — interactivity
+    // ════════════════════════════════════════════════════
+    (function () {
+        const wrap = document.querySelector('.trk-wrap');
+        if (!wrap) return;
+
+        const list = wrap.querySelector('[data-trk-view-pane="task"]');
+        const rows = list ? Array.from(list.querySelectorAll('.js-trk-row')) : [];
+        const emptyFilter = list ? list.querySelector('.js-trk-empty-filter') : null;
+        const searchInput = wrap.querySelector('#trkSearch');
+        const statusTabs = Array.from(wrap.querySelectorAll('.trk-status-tab'));
+        const catChips = Array.from(wrap.querySelectorAll('.trk-cat-chip'));
+        const viewBtns = Array.from(wrap.querySelectorAll('.trk-view-btn'));
+        const taskPane = wrap.querySelector('[data-trk-view-pane="task"]');
+        const waiterPane = wrap.querySelector('[data-trk-view-pane="waiter"]');
+
+        let currentStatus = 'all';
+        let currentCat = '';
+        let currentSearch = '';
+
+        function applyFilter() {
+            if (!list) return;
+            let visible = 0;
+            const search = currentSearch.toLowerCase().trim();
+            rows.forEach((row) => {
+                const status = row.getAttribute('data-trk-status') || 'pending';
+                const cat = row.getAttribute('data-trk-cat') || 'uncategorized';
+                const haystack = row.getAttribute('data-trk-search') || '';
+                let show = true;
+                if (currentStatus !== 'all' && status !== currentStatus) show = false;
+                if (currentCat && cat !== currentCat) show = false;
+                if (search && !haystack.includes(search)) show = false;
+                row.style.display = show ? '' : 'none';
+                // Hide its sibling detail pane too
+                const rowId = row.getAttribute('data-trk-row');
+                const detail = list.querySelector(`[data-trk-detail-for="${rowId}"]`);
+                if (detail) {
+                    if (!show) {
+                        detail.style.display = 'none';
+                        row.classList.remove('is-expanded');
+                    }
+                }
+                if (show) visible++;
+            });
+            if (emptyFilter) {
+                emptyFilter.style.display = visible === 0 && rows.length > 0 ? 'block' : 'none';
+            }
+        }
+
+        // Status tabs
+        statusTabs.forEach((tab) => {
+            tab.addEventListener('click', () => {
+                statusTabs.forEach((t) => {
+                    t.classList.remove('is-active');
+                    t.setAttribute('aria-selected', 'false');
+                });
+                tab.classList.add('is-active');
+                tab.setAttribute('aria-selected', 'true');
+                currentStatus = tab.getAttribute('data-trk-status') || 'all';
+                applyFilter();
+            });
+        });
+
+        // Category chips
+        catChips.forEach((chip) => {
+            chip.addEventListener('click', () => {
+                catChips.forEach((c) => c.classList.remove('is-active'));
+                chip.classList.add('is-active');
+                currentCat = chip.getAttribute('data-trk-cat') || '';
+                applyFilter();
+            });
+        });
+
+        // Search debounced
+        let searchTimer = null;
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(() => {
+                    currentSearch = e.target.value || '';
+                    applyFilter();
+                }, 150);
+            });
+        }
+
+        // View toggle (rack scope only)
+        viewBtns.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                viewBtns.forEach((b) => b.classList.remove('is-active'));
+                btn.classList.add('is-active');
+                const view = btn.getAttribute('data-trk-view') || 'task';
+                if (taskPane) taskPane.style.display = view === 'task' ? '' : 'none';
+                if (waiterPane) waiterPane.style.display = view === 'waiter' ? '' : 'none';
+            });
+        });
+    })();
+
+    // Toggle detail expand
+    window.trkToggleDetail = function (rowEl) {
+        if (!rowEl) return;
+        const rowId = rowEl.getAttribute('data-trk-row');
+        if (!rowId) return;
+        const detail = document.querySelector(`[data-trk-detail-for="${rowId}"]`);
+        if (!detail) return;
+        const isOpen = rowEl.classList.toggle('is-expanded');
+        detail.style.display = isOpen ? 'block' : 'none';
+    };
+
+    // Photo lightbox (reuses existing task-photo-modal if present, else simple overlay)
+    window.trkOpenPhoto = function (url, label) {
+        if (!url) return;
+        // Try existing modal first
+        const existingModal = document.getElementById('task-photo-modal');
+        const existingImg = document.getElementById('task-photo-modal-img');
+        const existingTitle = document.getElementById('task-photo-modal-title');
+        if (existingModal && existingImg) {
+            existingImg.src = url;
+            if (existingTitle) existingTitle.textContent = label || 'Foto Bukti';
+            existingModal.style.display = 'flex';
+            return;
+        }
+        // Fallback: build simple overlay
+        let overlay = document.getElementById('trk-photo-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'trk-photo-overlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out;';
+            overlay.innerHTML = '<img id="trk-photo-overlay-img" style="max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">';
+            overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+            document.body.appendChild(overlay);
+        }
+        document.getElementById('trk-photo-overlay-img').src = url;
+        overlay.style.display = 'flex';
     };
 
     // ── Export Stock Modal ──
