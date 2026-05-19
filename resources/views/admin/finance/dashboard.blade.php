@@ -50,7 +50,8 @@
             </div>
             <div class="fm-card-value fm-money {{ $acc['balance'] >= 0 ? 'income' : 'expense' }}">Rp {{ number_format($acc['balance'], 0, ',', '.') }}</div>
             <div class="fm-card-label">{{ $acc['name'] }}</div>
-            <div style="display:flex;gap:4px;margin-top:8px;">
+            <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;">
+                <button class="fm-btn fm-btn-sm fm-btn-success" style="font-size:11px;flex:1;" onclick="openDeposit({{ $acc['id'] }}, '{{ $acc['name'] }}')">+ Tambah</button>
                 <button class="fm-btn fm-btn-sm fm-btn-outline" style="font-size:11px;flex:1;" onclick="openTransfer({{ $acc['id'] }}, '{{ $acc['name'] }}', {{ $acc['balance'] }})">↔️ Transfer</button>
                 <button class="fm-btn fm-btn-sm fm-btn-danger" style="font-size:11px;flex:1;" onclick="openExpense({{ $acc['id'] }}, '{{ $acc['name'] }}')">💸 Bayar</button>
             </div>
@@ -182,6 +183,35 @@
             <div class="fm-modal-footer">
                 <button class="fm-btn fm-btn-outline" onclick="closeExpense()">Batal</button>
                 <button class="fm-btn fm-btn-danger" onclick="submitExpense()">💸 Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- Modal Deposit / Tambah Saldo --}}
+    <div class="fm-modal-backdrop" id="depositModal">
+        <div class="fm-modal">
+            <div class="fm-modal-header">
+                <span class="fm-modal-title">+ Tambah Saldo</span>
+                <button class="fm-modal-close" onclick="closeDeposit()">&times;</button>
+            </div>
+            <div class="fm-modal-body">
+                <form id="depositForm">
+                    <input type="hidden" name="cash_account_id" id="depAccId">
+                    <div class="fm-alert fm-alert-info" id="depAccLabel" style="margin-bottom:12px;"></div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Jumlah (Rp)</label>
+                        <input type="number" class="fm-input fm-rupiah" name="amount" required>
+                    </div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Keterangan</label>
+                        <input type="text" class="fm-input" name="description" placeholder="Setor modal, terima pembayaran, koreksi saldo, dll" required>
+                    </div>
+                    <input type="hidden" name="transaction_date" value="{{ date('Y-m-d') }}">
+                </form>
+            </div>
+            <div class="fm-modal-footer">
+                <button class="fm-btn fm-btn-outline" onclick="closeDeposit()">Batal</button>
+                <button class="fm-btn fm-btn-success" onclick="submitDeposit()">+ Tambah Saldo</button>
             </div>
         </div>
     </div>
@@ -356,6 +386,38 @@ async function rejectTransfer(id) {
         });
         const data = await res.json();
         if (data.success) { showToast('Transfer rejected.'); document.querySelector(`tr[data-id="${id}"]`).remove(); }
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+// Deposit
+function openDeposit(accId, accName) {
+    document.getElementById('depAccId').value = accId;
+    document.getElementById('depAccLabel').innerHTML = '💰 Ke: <strong>' + accName + '</strong>';
+    document.getElementById('depositModal').classList.add('active');
+}
+
+function closeDeposit() {
+    document.getElementById('depositModal').classList.remove('active');
+    document.getElementById('depositForm').reset();
+}
+
+async function submitDeposit() {
+    const fd = new FormData(document.getElementById('depositForm'));
+    const body = {};
+    fd.forEach((v, k) => body[k] = v);
+    body.amount = parseInt((body.amount+'').replace(/\./g,'')) || 0;
+
+    if (body.amount < 1) { showToast('Jumlah harus diisi', 'error'); return; }
+
+    try {
+        const res = await fetch('{{ route("admin.finance.deposit") }}', {
+            method: 'POST',
+            headers: {'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) { showToast('Saldo ditambahkan!'); closeDeposit(); setTimeout(() => location.reload(), 600); }
+        else showToast(data.message || 'Gagal', 'error');
     } catch (e) { showToast(e.message, 'error'); }
 }
 

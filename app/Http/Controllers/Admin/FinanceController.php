@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Services\FinanceService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class FinanceController extends Controller
 {
@@ -353,6 +354,33 @@ class FinanceController extends Controller
     }
 
     // ─── Pengeluaran Manual ────────────────────────────────────
+
+    public function deposit(Request $request)
+    {
+        $request->validate(['cash_account_id' => 'required|integer', 'amount' => 'required|numeric|min:1', 'description' => 'required|string|max:255']);
+
+        $accountId = $request->integer('cash_account_id');
+        $amount = (int) $request->amount;
+
+        DB::table('cash_accounts')->where('id', $accountId)->increment('balance', $amount);
+        $newBalance = (int) DB::table('cash_accounts')->where('id', $accountId)->value('balance');
+
+        DB::table('cash_mutations')->insert([
+            'cash_account_id' => $accountId,
+            'type' => 'income',
+            'amount' => $amount,
+            'balance_after' => $newBalance,
+            'description' => $request->description,
+            'reference_type' => 'manual_deposit',
+            'transaction_date' => $request->transaction_date ?? date('Y-m-d'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->finance->logAudit('deposit', 'cash_account', $accountId, null, ['amount' => $amount, 'description' => $request->description]);
+
+        return response()->json(['success' => true]);
+    }
 
     public function expenses(Request $request)
     {

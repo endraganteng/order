@@ -24,13 +24,11 @@ class FinanceSeeder extends Seeder
 
         // Default Cash Accounts
         $accounts = [
-            ['name' => 'Kas Toko', 'code' => 'kas_toko', 'sort_order' => 1],
+            ['name' => 'Kas Laci', 'code' => 'kas_toko', 'sort_order' => 1],
             ['name' => 'Kas Kecil', 'code' => 'kas_kecil', 'sort_order' => 2],
-            ['name' => 'Rekening Bank', 'code' => 'rekening_bank', 'sort_order' => 3],
-            ['name' => 'QRIS', 'code' => 'qris', 'sort_order' => 4],
-            ['name' => 'Kas Operasional', 'code' => 'kas_operasional', 'sort_order' => 5],
-            ['name' => 'Kas Restok', 'code' => 'kas_restok', 'sort_order' => 6],
-            ['name' => 'Dana Pemilik', 'code' => 'dana_pemilik', 'sort_order' => 7],
+            ['name' => 'Brankas', 'code' => 'brankas', 'sort_order' => 3],
+            ['name' => 'Bank Jago (QRIS)', 'code' => 'qris', 'sort_order' => 4],
+            ['name' => 'Rekening Bank', 'code' => 'rekening_bank', 'sort_order' => 5],
         ];
 
         foreach ($accounts as $acc) {

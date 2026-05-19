@@ -271,6 +271,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
             // Pengeluaran Manual
             Route::get('expenses', [\App\Http\Controllers\Admin\FinanceController::class, 'expenses'])->name('expenses');
             Route::post('expenses', [\App\Http\Controllers\Admin\FinanceController::class, 'storeExpense'])->name('expenses.store');
+            Route::post('deposit', [\App\Http\Controllers\Admin\FinanceController::class, 'deposit'])->name('deposit');
 
             // Budget vs Realisasi
             Route::get('budget', [\App\Http\Controllers\Admin\FinanceController::class, 'budgetRealization'])->name('budget');

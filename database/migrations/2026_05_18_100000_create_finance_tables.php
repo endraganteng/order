@@ -104,9 +104,9 @@ return new class extends Migration
         Schema::create('finance_api_mappings', function (Blueprint $table) {
             $table->id();
             $table->enum('mapping_type', ['category', 'cash_account']);
-            $table->string('api_key'); // e.g. line_type:product, source:penjualan_tunai
-            $table->string('api_value');
-            $table->unsignedBigInteger('target_id'); // finance_category_id or cash_account_id
+            $table->string('api_key', 50);
+            $table->string('api_value', 100);
+            $table->unsignedBigInteger('target_id');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 

@@ -47,6 +47,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \Illuminate\Support\Facades\Schema::defaultStringLength(191);
+
         RateLimiter::for('waiter-poll', function (Request $request) {
             $waiterId = (string) $request->session()->get('waiter_id', '');
             $waiterIdentity = $waiterId !== '' ? 'waiter:'.$waiterId : 'ip:'.$request->ip();
