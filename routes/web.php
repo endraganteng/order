@@ -306,6 +306,22 @@ Route::get('cashier/workers', [CashierController::class, 'getCashierWorkers'])->
 Route::get('cashier/attendance-qr', [CashierController::class, 'getAttendanceQr'])->name('cashier.attendance_qr');
 Route::get('cashier/attendance-qr/global', [CashierController::class, 'getGlobalAttendanceQr'])->name('cashier.attendance_qr_global');
 
+// === Finance Sync Webhook (dipanggil shift kasir setelah closing) ===
+// CSRF dikecualikan via bootstrap/app.php (webhooks/*).
+Route::post('webhooks/finance-sync', function (\Illuminate\Http\Request $request) {
+    $token = $request->header('X-Finance-Token');
+    $expectedToken = app(\App\Services\FinanceService::class)->getSetting('api_token');
+
+    if (!$token || $token !== $expectedToken) {
+        return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+    }
+
+    $tanggal = $request->input('tanggal', date('Y-m-d'));
+    $result = app(\App\Services\FinanceService::class)->syncDaily($tanggal, $tanggal, 'webhook');
+
+    return response()->json(['success' => true, 'status' => $result['status'], 'synced' => $result['synced']]);
+})->name('webhooks.finance_sync');
+
 // === DANA Listener Webhook (TESTING ONLY, NO AUTH) ===
 // Endpoint testing untuk menerima POST dari app notification listener.
 // CSRF dikecualikan via bootstrap/app.php → middleware->validateCsrfTokens(except: ['webhooks/*']).
