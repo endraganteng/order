@@ -66,10 +66,10 @@ class AuthController extends Controller
         }
 
         $role = $waiter['waiter_role'] ?? 'pelayan';
-        if ($role !== 'supervisor') {
+        if (! in_array($role, ['supervisor', 'finance'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Akun ini bukan supervisor. Hanya akun dengan role supervisor yang bisa login ke panel admin.',
+                'message' => 'Hanya akun dengan role supervisor atau finance yang bisa login ke panel admin.',
             ], 403);
         }
 
@@ -78,11 +78,12 @@ class AuthController extends Controller
         session()->put('admin_id', $waiter['id']);
         session()->put('admin_name', $waiter['name'] ?? 'Supervisor');
         session()->put('admin_email', $waiter['email'] ?? '');
+        session()->put('admin_role', $role);
         session()->put('admin_firebase_token', $request->id_token);
 
         return response()->json([
             'success' => true,
-            'redirect' => route('admin.dashboard'),
+            'redirect' => $role === 'finance' ? route('admin.finance.dashboard') : route('admin.dashboard'),
         ]);
     }
 

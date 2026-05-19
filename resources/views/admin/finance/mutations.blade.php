@@ -161,12 +161,9 @@ function loadMutations(offset = 0) {
             rows = rows.filter(m => (m.description || '').toLowerCase().includes(q) || (m.category_name || '').toLowerCase().includes(q) || (m.account_name || '').toLowerCase().includes(q));
         }
 
-        // Summary
-        let sumIn = 0, sumOut = 0;
-        rows.forEach(m => {
-            if (m.type === 'income' || m.type === 'transfer_in') sumIn += m.amount;
-            else sumOut += m.amount;
-        });
+        // Summary — dari server (seluruh periode, bukan hanya halaman ini)
+        const sumIn = parseInt(result.sum_income) || 0;
+        const sumOut = parseInt(result.sum_expense) || 0;
         document.getElementById('sumIncome').textContent = '+' + formatRp(sumIn);
         document.getElementById('sumExpense').textContent = '-' + formatRp(sumOut);
         const net = sumIn - sumOut;

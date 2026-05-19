@@ -893,4 +893,176 @@ class FinanceService
 
         return $accounts;
     }
+
+    // ─── Tutup Buku Bulanan ────────────────────────────────────
+
+    public function isMonthClosed(string $month): bool
+    {
+        return DB::table('finance_monthly_closings')->where('month', $month)->where('status', 'closed')->exists();
+    }
+
+    public function getClosing(string $month): ?array
+    {
+        $row = DB::table('finance_monthly_closings')->where('month', $month)->first();
+        return $row ? (array) $row : null;
+    }
+
+    public function getClosings(): array
+    {
+        return DB::table('finance_monthly_closings')->orderByDesc('month')->get()->map(fn($r) => (array) $r)->toArray();
+    }
+
+    public function closeMonth(string $month, string $closedBy, ?string $notes = null): array
+    {
+        if ($this->isMonthClosed($month)) {
+            return ['success' => false, 'message' => 'Bulan ini sudah ditutup.'];
+        }
+
+        $snapshot = $this->generateSnapshot($month);
+
+        DB::table('finance_monthly_closings')->updateOrInsert(
+            ['month' => $month],
+            [
+                'status' => 'closed',
+                'snapshot' => json_encode($snapshot),
+                'closed_by' => $closedBy,
+                'closed_at' => now(),
+                'notes' => $notes,
+                'updated_at' => now(),
+            ]
+        );
+
+        $this->logAudit('close_month', 'monthly_closing', null, null, ['month' => $month]);
+
+        return ['success' => true, 'snapshot' => $snapshot];
+    }
+
+    public function reopenMonth(string $month, string $reopenedBy): array
+    {
+        $closing = $this->getClosing($month);
+        if (! $closing || $closing['status'] !== 'closed') {
+            return ['success' => false, 'message' => 'Bulan ini tidak dalam status closed.'];
+        }
+
+        DB::table('finance_monthly_closings')->where('month', $month)->update([
+            'status' => 'reopened',
+            'reopened_by' => $reopenedBy,
+            'reopened_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->logAudit('reopen_month', 'monthly_closing', null, null, ['month' => $month]);
+
+        return ['success' => true];
+    }
+
+    protected function generateSnapshot(string $month): array
+    {
+        $from = $month . '-01';
+        $to = date('Y-m-t', strtotime($from));
+
+        $income = (int) DB::table('cash_mutations')->whereIn('type', ['income'])->whereBetween('transaction_date', [$from, $to])->sum('amount');
+        $expense = (int) DB::table('cash_mutations')->whereIn('type', ['expense'])->whereBetween('transaction_date', [$from, $to])->sum('amount');
+
+        // Breakdown expense by category
+        $expenseByCategory = DB::table('cash_mutations')
+            ->leftJoin('finance_categories', 'cash_mutations.finance_category_id', '=', 'finance_categories.id')
+            ->where('cash_mutations.type', 'expense')
+            ->whereBetween('cash_mutations.transaction_date', [$from, $to])
+            ->selectRaw('COALESCE(finance_categories.name, "Tanpa Kategori") as category, SUM(cash_mutations.amount) as total')
+            ->groupBy('category')
+            ->pluck('total', 'category')
+            ->toArray();
+
+        // Payroll expense (from payroll_transactions)
+        $payrollExpense = (int) DB::table('payroll_transactions')
+            ->where('type', 'withdrawal')->where('status', 'approved')
+            ->whereBetween('processed_at', [$from . ' 00:00:00', $to . ' 23:59:59'])
+            ->sum('amount');
+
+        // Account balances at end of month
+        $accountBalances = DB::table('cash_accounts')->where('is_active', true)
+            ->select('name', 'balance')->get()->map(fn($r) => (array) $r)->toArray();
+
+        // Debt summary
+        $debtPaid = (int) DB::table('finance_debt_payments')->whereBetween('payment_date', [$from, $to])->sum('amount');
+        $debtNew = (int) DB::table('finance_debts')->whereBetween('debt_date', [$from, $to])->sum('amount');
+
+        $monthSummary = $this->getMonthSummary($month);
+
+        return [
+            'month' => $month,
+            'pendapatan' => [
+                'penjualan_tunai' => $monthSummary['penjualan_tunai'],
+                'penjualan_qris' => $monthSummary['penjualan_qris'],
+                'total' => $monthSummary['total_pendapatan'],
+            ],
+            'pengeluaran' => [
+                'total' => $expense,
+                'by_category' => $expenseByCategory,
+                'payroll' => $payrollExpense,
+            ],
+            'laba_bersih' => $income - $expense,
+            'saldo_akun' => $accountBalances,
+            'hutang' => [
+                'baru' => $debtNew,
+                'dibayar' => $debtPaid,
+            ],
+            'days_synced' => $monthSummary['days_synced'],
+            'generated_at' => now()->toIso8601String(),
+        ];
+    }
+
+    // ─── Laporan Laba Rugi ─────────────────────────────────────
+
+    public function getLabaRugi(string $month): array
+    {
+        $from = $month . '-01';
+        $to = date('Y-m-t', strtotime($from));
+
+        // Pendapatan
+        $penjualanTunai = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('penjualan_tunai');
+        $penjualanQris = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('penjualan_qris');
+        $pendapatanLain = (int) DB::table('cash_mutations')
+            ->where('type', 'income')
+            ->where('reference_type', '!=', 'sync')
+            ->whereBetween('transaction_date', [$from, $to])
+            ->sum('amount');
+        $totalPendapatan = $penjualanTunai + $penjualanQris + $pendapatanLain;
+
+        // Retur
+        $totalRetur = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('total_retur');
+        $pendapatanBersih = $totalPendapatan - $totalRetur;
+
+        // Pengeluaran by category
+        $expenses = DB::table('cash_mutations')
+            ->leftJoin('finance_categories', 'cash_mutations.finance_category_id', '=', 'finance_categories.id')
+            ->where('cash_mutations.type', 'expense')
+            ->whereBetween('cash_mutations.transaction_date', [$from, $to])
+            ->selectRaw('COALESCE(finance_categories.name, "Lain-lain") as category, SUM(cash_mutations.amount) as total')
+            ->groupBy('category')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn($r) => (array) $r)
+            ->toArray();
+
+        $totalExpense = array_sum(array_column($expenses, 'total'));
+        $labaBersih = $pendapatanBersih - $totalExpense;
+
+        return [
+            'month' => $month,
+            'pendapatan' => [
+                ['label' => 'Penjualan Tunai', 'amount' => $penjualanTunai],
+                ['label' => 'Penjualan QRIS', 'amount' => $penjualanQris],
+                ['label' => 'Pendapatan Lain', 'amount' => $pendapatanLain],
+            ],
+            'total_pendapatan' => $totalPendapatan,
+            'retur' => $totalRetur,
+            'pendapatan_bersih' => $pendapatanBersih,
+            'pengeluaran' => $expenses,
+            'total_pengeluaran' => $totalExpense,
+            'laba_bersih' => $labaBersih,
+            'margin' => $totalPendapatan > 0 ? round(($labaBersih / $totalPendapatan) * 100, 1) : 0,
+        ];
+    }
 }

@@ -17,6 +17,10 @@ class DashboardController extends Controller
 
     public function __invoke(Request $request)
     {
+        if (session('admin_role') === 'finance') {
+            return redirect()->route('admin.finance.dashboard');
+        }
+
         $waiters = $this->firebase->getAllowedEmails();
         $settings = $this->firebase->getSettings();
         [$periodStartTs, $periodEndTs, $orderPeriodLabel, $startDate, $endDate, $dateRangeInput] = $this->resolveDateRange($request);
@@ -487,7 +491,7 @@ class DashboardController extends Controller
             $canonicalEmail = strtolower(trim((string) ($resolvedWaiter['waiter_email'] ?? '')));
 
             $normalizedRole = strtolower(trim((string) $waiterRole));
-            if (! in_array($normalizedRole, ['kasir', 'pelayan', 'backup'], true)) {
+            if (! in_array($normalizedRole, ['kasir', 'pelayan', 'backup', 'finance'], true)) {
                 $normalizedRole = 'pelayan';
             }
 
@@ -523,8 +527,8 @@ class DashboardController extends Controller
                 $board[$identityKey]['waiter_id'] = $canonicalId;
             }
 
-            if (! in_array((string) ($board[$identityKey]['waiter_role'] ?? ''), ['kasir', 'pelayan', 'backup'], true)
-                && in_array($normalizedRole, ['kasir', 'pelayan', 'backup'], true)) {
+            if (! in_array((string) ($board[$identityKey]['waiter_role'] ?? ''), ['kasir', 'pelayan', 'backup', 'finance'], true)
+                && in_array($normalizedRole, ['kasir', 'pelayan', 'backup', 'finance'], true)) {
                 $board[$identityKey]['waiter_role'] = $normalizedRole;
             }
 

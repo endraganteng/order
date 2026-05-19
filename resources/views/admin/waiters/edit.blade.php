@@ -63,6 +63,7 @@
                     <option value="pelayan" {{ $waiterRoleValue === 'pelayan' ? 'selected' : '' }}>Pelayan</option>
                     <option value="kasir" {{ $waiterRoleValue === 'kasir' ? 'selected' : '' }}>Kasir</option>
                     <option value="backup" {{ $waiterRoleValue === 'backup' ? 'selected' : '' }}>Backup / Flexible</option>
+                    <option value="finance" {{ $waiterRoleValue === 'finance' ? 'selected' : '' }}>Finance</option>
                     <option value="supervisor" {{ $waiterRoleValue === 'supervisor' ? 'selected' : '' }}>Supervisor</option>
                 </select>
                 @error('waiter_role')

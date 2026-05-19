@@ -19,7 +19,7 @@ class PublicPayrollApprovalController extends Controller
      */
     public function review(string $txId, string $token)
     {
-        $verify = $this->payroll->verifyApprovalToken($txId, $token);
+        $verify = $this->payroll->verifyApprovalToken((int) $txId, $token);
         $tx = $verify['tx'] ?? null;
 
         return view('public.payroll_approve', [
@@ -33,7 +33,7 @@ class PublicPayrollApprovalController extends Controller
 
     public function approve(string $txId, string $token, Request $request)
     {
-        $result = $this->payroll->approveByToken($txId, $token);
+        $result = $this->payroll->approveByToken((int) $txId, $token);
         if (! ($result['success'] ?? false)) {
             return redirect()->route('public.payroll.review', ['txId' => $txId, 'token' => $token])
                 ->withErrors(['action' => $result['message'] ?? 'Gagal approve']);
@@ -47,7 +47,7 @@ class PublicPayrollApprovalController extends Controller
         $data = $request->validate([
             'reason' => 'nullable|string|max:200',
         ]);
-        $result = $this->payroll->rejectByToken($txId, $token, trim((string) ($data['reason'] ?? '')));
+        $result = $this->payroll->rejectByToken((int) $txId, $token, trim((string) ($data['reason'] ?? '')));
         if (! ($result['success'] ?? false)) {
             return redirect()->route('public.payroll.review', ['txId' => $txId, 'token' => $token])
                 ->withErrors(['action' => $result['message'] ?? 'Gagal reject']);

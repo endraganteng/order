@@ -53,14 +53,15 @@
                             </div>
                         </div>
                         <div style="display: flex; gap: 8px; flex-direction: column; min-width: 180px;">
-                            <form method="POST" action="{{ route('admin.payroll.withdrawals.approve', $tx['id']) }}" onsubmit="return confirm('Yakin approve penarikan ini? Saldo karyawan akan langsung dipotong.');">
+                            <form method="POST" action="{{ route('admin.payroll.withdrawals.approve', $tx['id']) }}" onsubmit="return validateApprovePin(this);">
                                 @csrf
+                                <input type="password" name="supervisor_pin" maxlength="6" placeholder="PIN Supervisor" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; margin-bottom: 6px; text-align: center; letter-spacing: 4px;">
                                 <button type="submit" style="background: #10b981; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;">✓ Approve</button>
                             </form>
                             <form method="POST" action="{{ route('admin.payroll.withdrawals.reject', $tx['id']) }}">
                                 @csrf
                                 <input type="text" name="reason" maxlength="200" placeholder="Alasan reject (opsional)" style="width: 100%; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; margin-bottom: 6px;">
-                                <button type="submit" onclick="return confirm('Yakin reject?');" style="background: #ef4444; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;">✗ Reject</button>
+                                <button type="submit" style="background: #ef4444; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;">✗ Reject</button>
                             </form>
                         </div>
                     </div>
@@ -71,3 +72,17 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+function validateApprovePin(form) {
+    const pin = form.querySelector('input[name="supervisor_pin"]').value.trim();
+    if (pin.length < 4) {
+        form.querySelector('input[name="supervisor_pin"]').style.borderColor = '#ef4444';
+        form.querySelector('input[name="supervisor_pin"]').placeholder = 'PIN minimal 4 digit!';
+        return false;
+    }
+    return true;
+}
+</script>
+@endpush

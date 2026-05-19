@@ -228,6 +228,7 @@
                     $bbPelayanCount = collect($bbWaiters)->filter(fn($w) => strtolower($w['waiter_role'] ?? 'pelayan') === 'pelayan')->count();
                     $bbKasirCount = collect($bbWaiters)->filter(fn($w) => strtolower($w['waiter_role'] ?? 'pelayan') === 'kasir')->count();
                     $bbBackupCount = collect($bbWaiters)->filter(fn($w) => strtolower($w['waiter_role'] ?? 'pelayan') === 'backup')->count();
+                    $bbFinanceCount = collect($bbWaiters)->filter(fn($w) => strtolower($w['waiter_role'] ?? 'pelayan') === 'finance')->count();
                 @endphp
 
                 @php
@@ -267,6 +268,7 @@
                             <option value="pelayan">Pelayan ({{ $bbPelayanCount }})</option>
                             <option value="kasir">Kasir ({{ $bbKasirCount }})</option>
                             <option value="backup">Backup / Flexible ({{ $bbBackupCount }})</option>
+                            <option value="finance">Finance ({{ $bbFinanceCount }})</option>
                         </select>
                         <button type="button" id="bbQuickReset" class="bb-toolbar-btn bb-toolbar-btn--reset">🗑️ Reset</button>
                     </div>
@@ -597,6 +599,7 @@
                             <option value="pelayan">Pelayan Saja</option>
                             <option value="kasir">Kasir Saja</option>
                             <option value="backup">Backup / Flexible Saja</option>
+                            <option value="finance">Finance Saja</option>
                         </select>
                         <div style="margin-left: auto;">
                             <button type="button" class="gt-toolbar-btn gt-toolbar-btn--reset js-gt-btn-reset">

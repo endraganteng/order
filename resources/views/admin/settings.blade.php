@@ -120,6 +120,26 @@
                 </select>
             </div>
 
+            <hr style="margin: 30px 0; border: none; border-top: 2px solid #e0e0e0;">
+
+            <h3 style="margin-bottom: 15px; color: #333;">🔐 PIN Supervisor (Approval Keuangan)</h3>
+            <p style="color: #666; font-size: 14px; margin-bottom: 20px;">
+                PIN 4-6 digit untuk approve aksi sensitif keuangan: koreksi saldo, reset saldo, nonaktifkan akun, approve penarikan gaji.
+            </p>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 600;">Set PIN Supervisor</label>
+                <input type="password" name="supervisor_pin"
+                    value=""
+                    placeholder="{{ !empty($settings['supervisor_pin']) ? '••••••  (sudah diset, kosongkan jika tidak ingin ubah)' : 'Belum diset — masukkan PIN 4-6 digit' }}"
+                    minlength="4" maxlength="6"
+                    style="width: 300px; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px; letter-spacing: 4px;">
+                <p style="color: #666; font-size: 12px; margin-top: 6px;">Kosongkan jika tidak ingin mengubah PIN. PIN ini akan diminta saat finance melakukan aksi sensitif.</p>
+                @error('supervisor_pin')
+                    <span style="color: #dc3545; font-size: 12px; display: block; margin-top: 5px;">{{ $message }}</span>
+                @enderror
+            </div>
+
             <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
         </form>
     </div>

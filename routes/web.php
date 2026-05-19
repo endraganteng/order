@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\ShiftController;
 use App\Http\Controllers\Admin\BonusController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\FinanceDashboardController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PayrollController;
 use App\Http\Controllers\Admin\RackController;
@@ -48,6 +49,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::middleware('admin.auth')->group(function () {
         Route::get('logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('dashboard', DashboardController::class)->name('dashboard');
+        Route::get('finance-dashboard', FinanceDashboardController::class)->name('finance_dashboard');
 
         // Waiters management
         Route::get('waiters', [AdminWaiterController::class, 'index'])->name('waiters.index');
@@ -206,6 +208,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');
         Route::post('payroll/config', [PayrollController::class, 'updateConfig'])->name('payroll.config_update');
         Route::post('payroll/run-salary-credit', [PayrollController::class, 'runSalaryCreditNow'])->name('payroll.run_salary_credit');
+        Route::post('payroll/run-salary-credit-selected', [PayrollController::class, 'runSalaryCreditSelected'])->name('payroll.run_salary_credit_selected');
         Route::get('payroll/withdrawals', [PayrollController::class, 'withdrawalsIndex'])->name('payroll.withdrawals');
         Route::get('payroll/penarikan', [PayrollController::class, 'withdrawalsIndex'])->name('payroll.penarikan');
         Route::post('payroll/withdrawals/{txId}/approve', [PayrollController::class, 'approveWithdrawal'])->name('payroll.withdrawals.approve');
@@ -271,7 +274,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
             // Pengeluaran Manual
             Route::get('expenses', [\App\Http\Controllers\Admin\FinanceController::class, 'expenses'])->name('expenses');
             Route::post('expenses', [\App\Http\Controllers\Admin\FinanceController::class, 'storeExpense'])->name('expenses.store');
+            Route::get('check-budget', [\App\Http\Controllers\Admin\FinanceController::class, 'checkBudget'])->name('check_budget');
             Route::post('deposit', [\App\Http\Controllers\Admin\FinanceController::class, 'deposit'])->name('deposit');
+            Route::post('correct-balance', [\App\Http\Controllers\Admin\FinanceController::class, 'correctBalance'])->name('correct_balance');
 
             // Budget vs Realisasi
             Route::get('budget', [\App\Http\Controllers\Admin\FinanceController::class, 'budgetRealization'])->name('budget');
@@ -297,6 +302,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('report/monthly', [\App\Http\Controllers\Admin\FinanceController::class, 'reportMonthly'])->name('report.monthly');
             Route::get('report/balance', [\App\Http\Controllers\Admin\FinanceController::class, 'reportBalance'])->name('report.balance');
             Route::get('report/export', [\App\Http\Controllers\Admin\FinanceController::class, 'exportReport'])->name('report.export');
+            Route::get('tutup-buku', [\App\Http\Controllers\Admin\FinanceController::class, 'tutupBuku'])->name('tutup_buku');
+            Route::post('tutup-buku/close', [\App\Http\Controllers\Admin\FinanceController::class, 'closeMonth'])->name('tutup_buku.close');
+            Route::post('tutup-buku/reopen', [\App\Http\Controllers\Admin\FinanceController::class, 'reopenMonth'])->name('tutup_buku.reopen');
+            Route::get('laba-rugi', [\App\Http\Controllers\Admin\FinanceController::class, 'labaRugi'])->name('laba_rugi');
         });
     });
 });

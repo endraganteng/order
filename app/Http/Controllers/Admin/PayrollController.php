@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\VerifiesSupervisorPin;
 use App\Services\FirebaseService;
 use App\Services\PayrollService;
 use Illuminate\Http\Request;
 
 class PayrollController extends Controller
 {
+    use VerifiesSupervisorPin;
     protected PayrollService $payroll;
     protected FirebaseService $firebase;
 
@@ -141,10 +143,14 @@ class PayrollController extends Controller
         return view('admin.payroll.withdrawals', compact('pending'));
     }
 
-    public function approveWithdrawal(string $txId)
+    public function approveWithdrawal(string $txId, Request $request)
     {
+        if (! $this->verifySupervisorPin($request->input('supervisor_pin'))) {
+            return back()->withErrors(['withdrawal' => 'PIN supervisor salah.']);
+        }
+
         $admin = (string) (session('admin_name') ?? 'Supervisor');
-        $result = $this->payroll->approveWithdrawal($txId, $admin);
+        $result = $this->payroll->approveWithdrawal((int) $txId, $admin);
 
         if (! ($result['success'] ?? false)) {
             return back()->withErrors(['withdrawal' => $result['message'] ?? 'Gagal approve']);
@@ -164,7 +170,7 @@ class PayrollController extends Controller
         ]);
 
         $admin = (string) (session('admin_name') ?? 'Supervisor');
-        $result = $this->payroll->rejectWithdrawal($txId, trim((string) ($data['reason'] ?? '')), $admin);
+        $result = $this->payroll->rejectWithdrawal((int) $txId, trim((string) ($data['reason'] ?? '')), $admin);
 
         if (! ($result['success'] ?? false)) {
             return back()->withErrors(['withdrawal' => $result['message'] ?? 'Gagal reject']);
@@ -202,6 +208,42 @@ class PayrollController extends Controller
             (int) ($result['skipped'] ?? 0),
             ! empty($result['errors']) ? ', ' . count($result['errors']) . ' error' : ''
         );
+
+        return back()->with('success', $msg);
+    }
+
+    /**
+     * Trigger gajian untuk user tertentu yang dipilih.
+     */
+    public function runSalaryCreditSelected(Request $request)
+    {
+        $data = $request->validate([
+            'waiter_ids'   => 'required|array|min:1',
+            'waiter_ids.*' => 'required|string',
+            'catchup'      => 'nullable|integer|min:0|max:30',
+        ]);
+
+        $catchup = (int) ($data['catchup'] ?? 7);
+        $result = $this->payroll->creditSalaryForWaiters($data['waiter_ids'], $catchup);
+
+        $this->firebase->logAuditAction('payroll_manual_run_salary_selected', 'system', null, [
+            'waiter_ids'   => $data['waiter_ids'],
+            'catchup_days' => $catchup,
+            'credited'     => (int) ($result['credited'] ?? 0),
+            'skipped'      => (int) ($result['skipped'] ?? 0),
+            'errors_count' => count($result['errors'] ?? []),
+        ]);
+
+        $msg = sprintf(
+            'Trigger gajian selesai. %d karyawan di-credit, %d skip%s.',
+            (int) ($result['credited'] ?? 0),
+            (int) ($result['skipped'] ?? 0),
+            ! empty($result['errors']) ? ', ' . count($result['errors']) . ' error' : ''
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => $msg] + $result);
+        }
 
         return back()->with('success', $msg);
     }

@@ -13,6 +13,7 @@
             <h1 class="fm-page-title">💳 Laporan Saldo Kas</h1>
             <p class="fm-page-subtitle">Posisi saldo semua akun kas aktif</p>
         </div>
+        <a href="{{ route('admin.finance.report.export', ['month' => request('month', date('Y-m'))]) }}" class="fm-btn fm-btn-success">📥 Export CSV</a>
     </div>
 
     <div class="fm-filter">

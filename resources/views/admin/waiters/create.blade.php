@@ -49,6 +49,7 @@
                     <option value="pelayan" {{ old('waiter_role', 'pelayan') === 'pelayan' ? 'selected' : '' }}>Pelayan</option>
                     <option value="kasir" {{ old('waiter_role') === 'kasir' ? 'selected' : '' }}>Kasir</option>
                     <option value="backup" {{ old('waiter_role') === 'backup' ? 'selected' : '' }}>Backup / Flexible</option>
+                    <option value="finance" {{ old('waiter_role') === 'finance' ? 'selected' : '' }}>Finance</option>
                     <option value="supervisor" {{ old('waiter_role') === 'supervisor' ? 'selected' : '' }}>Supervisor</option>
                 </select>
                 <div style="font-size:12px; color:#666; margin-top:6px;">

@@ -40,6 +40,8 @@
                                 <span class="badge" style="background:#f3e8ff; color:#6b21a8;">Backup / Flexible</span>
                             @elseif($waiterRole === 'supervisor')
                                 <span class="badge" style="background:#dbeafe; color:#1e40af;">Supervisor</span>
+                            @elseif($waiterRole === 'finance')
+                                <span class="badge" style="background:#fef3c7; color:#92400e;">Finance</span>
                             @else
                                 <span class="badge" style="background:#ecfeff; color:#0f766e;">Pelayan</span>
                             @endif

@@ -22,6 +22,7 @@ class SettingsController extends Controller
     public function show()
     {
         $settings = $this->firebase->getSettings();
+        $settings['supervisor_pin'] = app(\App\Services\FinanceService::class)->getSetting('supervisor_pin');
 
         return view('admin.settings', compact('settings'));
     }
@@ -37,6 +38,14 @@ class SettingsController extends Controller
             'clock_out_enabled' => (bool) $request->clock_out_enabled,
             'attendance_use_global_qr' => (bool) $request->attendance_use_global_qr,
         ]);
+
+        // Save supervisor PIN to finance_settings (MySQL) if provided
+        if ($request->filled('supervisor_pin')) {
+            $pin = $request->supervisor_pin;
+            if (strlen($pin) >= 4 && strlen($pin) <= 6 && ctype_digit($pin)) {
+                app(\App\Services\FinanceService::class)->setSetting('supervisor_pin', bcrypt($pin));
+            }
+        }
 
         $this->firebase->logAuditAction('update', 'settings', null, ['timeout' => (int) $request->order_timeout_minutes]);
 

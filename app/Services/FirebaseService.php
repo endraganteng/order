@@ -4363,7 +4363,7 @@ class FirebaseService
     {
         $role = strtolower(trim((string) $waiterRole));
 
-        return in_array($role, ['kasir', 'pelayan', 'backup', 'supervisor'], true) ? $role : 'pelayan';
+        return in_array($role, ['kasir', 'pelayan', 'backup', 'supervisor', 'finance'], true) ? $role : 'pelayan';
     }
 
     /**

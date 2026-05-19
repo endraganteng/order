@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\VerifiesSupervisorPin;
 use App\Services\FinanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class FinanceController extends Controller
 {
+    use VerifiesSupervisorPin;
+
     public function __construct(protected FinanceService $finance) {}
 
     // ─── Dashboard ──────────────────────────────────────────────
@@ -21,8 +24,9 @@ class FinanceController extends Controller
         $lastSync = $this->finance->getLastSync();
         $pendingTransfers = $this->finance->getTransfers('pending');
         $categories = $this->finance->getCategories('expense', true);
+        $debtSummary = $this->finance->getDebtSummary();
 
-        return view('admin.finance.dashboard', compact('today', 'month', 'accounts', 'lastSync', 'pendingTransfers', 'categories'));
+        return view('admin.finance.dashboard', compact('today', 'month', 'accounts', 'lastSync', 'pendingTransfers', 'categories', 'debtSummary'));
     }
 
     // ─── Settings / Sync Config ─────────────────────────────────
@@ -185,15 +189,21 @@ class FinanceController extends Controller
         return response()->json(['success' => true]);
     }
 
-    public function toggleCashAccount(int $id)
+    public function toggleCashAccount(int $id, Request $request)
     {
+        if (! $this->verifySupervisorPin($request->supervisor_pin)) {
+            return response()->json(['success' => false, 'message' => 'PIN supervisor salah.', 'pin_required' => true], 403);
+        }
         $this->finance->toggleCashAccount($id);
         $this->finance->logAudit('toggle', 'cash_account', $id);
         return response()->json(['success' => true]);
     }
 
-    public function resetCashAccount(int $id)
+    public function resetCashAccount(int $id, Request $request)
     {
+        if (! $this->verifySupervisorPin($request->supervisor_pin)) {
+            return response()->json(['success' => false, 'message' => 'PIN supervisor salah.', 'pin_required' => true], 403);
+        }
         $old = $this->finance->getCashAccount($id);
         $this->finance->resetAccountBalance($id);
         $this->finance->logAudit('reset', 'cash_account', $id, $old, ['balance' => 0]);
@@ -237,9 +247,25 @@ class FinanceController extends Controller
 
     public function mutations(Request $request)
     {
-        $mutations = $this->finance->getMutations($request->integer('account_id') ?: null, $request->from, $request->to, $request->integer('limit', 50), $request->integer('offset', 0));
+        $accountId = $request->integer('account_id') ?: null;
+        $from = $request->from;
+        $to = $request->to;
+        $mutations = $this->finance->getMutations($accountId, $from, $to, $request->integer('limit', 50), $request->integer('offset', 0));
         $accounts = $this->finance->getCashAccounts();
-        if ($request->wantsJson()) return response()->json($mutations);
+
+        if ($request->wantsJson()) {
+            // Add server-side summary for the full period (not just current page)
+            $q = \Illuminate\Support\Facades\DB::table('cash_mutations');
+            if ($accountId) $q->where('cash_account_id', $accountId);
+            if ($from) $q->where('transaction_date', '>=', $from);
+            if ($to) $q->where('transaction_date', '<=', $to);
+
+            $mutations['sum_income'] = (int) (clone $q)->whereIn('type', ['income', 'transfer_in'])->sum('amount');
+            $mutations['sum_expense'] = (int) (clone $q)->whereIn('type', ['expense', 'transfer_out'])->sum('amount');
+
+            return response()->json($mutations);
+        }
+
         return view('admin.finance.mutations', compact('mutations', 'accounts'));
     }
 
@@ -359,6 +385,11 @@ class FinanceController extends Controller
     {
         $request->validate(['cash_account_id' => 'required|integer', 'amount' => 'required|numeric|min:1', 'description' => 'required|string|max:255']);
 
+        $txDate = $request->transaction_date ?? date('Y-m-d');
+        if ($this->finance->isMonthClosed(substr($txDate, 0, 7))) {
+            return response()->json(['success' => false, 'message' => 'Bulan ini sudah ditutup. Buka kembali untuk melakukan perubahan.'], 422);
+        }
+
         $accountId = $request->integer('cash_account_id');
         $amount = (int) $request->amount;
 
@@ -382,6 +413,54 @@ class FinanceController extends Controller
         return response()->json(['success' => true]);
     }
 
+    public function correctBalance(Request $request)
+    {
+        $request->validate([
+            'cash_account_id' => 'required|integer',
+            'actual_balance' => 'required|numeric|min:0',
+            'description' => 'nullable|string|max:255',
+            'supervisor_pin' => 'nullable|string',
+        ]);
+
+        if ($this->finance->isMonthClosed(date('Y-m'))) {
+            return response()->json(['success' => false, 'message' => 'Bulan ini sudah ditutup. Buka kembali untuk melakukan perubahan.'], 422);
+        }
+
+        if (! $this->verifySupervisorPin($request->supervisor_pin)) {
+            return response()->json(['success' => false, 'message' => 'PIN supervisor salah.', 'pin_required' => true], 403);
+        }
+
+        $accountId = $request->integer('cash_account_id');
+        $actualBalance = (int) $request->actual_balance;
+        $currentBalance = (int) DB::table('cash_accounts')->where('id', $accountId)->value('balance');
+        $diff = $actualBalance - $currentBalance;
+
+        if ($diff === 0) {
+            return response()->json(['success' => true, 'message' => 'Saldo sudah sesuai, tidak ada koreksi.']);
+        }
+
+        DB::table('cash_accounts')->where('id', $accountId)->update(['balance' => $actualBalance, 'updated_at' => now()]);
+
+        $type = $diff > 0 ? 'income' : 'expense';
+        $desc = $request->description ?: ('Koreksi saldo: ' . ($diff > 0 ? '+' : '') . 'Rp ' . number_format($diff, 0, ',', '.'));
+
+        DB::table('cash_mutations')->insert([
+            'cash_account_id' => $accountId,
+            'type' => $type,
+            'amount' => abs($diff),
+            'balance_after' => $actualBalance,
+            'description' => $desc,
+            'reference_type' => 'correction',
+            'transaction_date' => date('Y-m-d'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->finance->logAudit('correction', 'cash_account', $accountId, ['balance' => $currentBalance], ['balance' => $actualBalance, 'diff' => $diff]);
+
+        return response()->json(['success' => true, 'old_balance' => $currentBalance, 'new_balance' => $actualBalance, 'diff' => $diff]);
+    }
+
     public function expenses(Request $request)
     {
         $accounts = $this->finance->getCashAccounts(true);
@@ -400,6 +479,10 @@ class FinanceController extends Controller
             'description' => 'required|string|max:255',
             'transaction_date' => 'required|date',
         ]);
+
+        if ($this->finance->isMonthClosed(substr($request->transaction_date, 0, 7))) {
+            return response()->json(['success' => false, 'message' => 'Bulan ini sudah ditutup. Buka kembali untuk melakukan perubahan.'], 422);
+        }
 
         $totalAmount = (int) $request->total_amount;
         $cashAmount = (int) ($request->cash_amount ?? $totalAmount);
@@ -438,6 +521,30 @@ class FinanceController extends Controller
         ]);
 
         return response()->json(['success' => true, 'id' => $id]);
+    }
+
+    /**
+     * Check budget status for a category in current month.
+     */
+    public function checkBudget(Request $request)
+    {
+        $categoryId = $request->integer('finance_category_id');
+        $month = date('Y-m');
+        $budget = $this->finance->getBudgetRealization($month);
+
+        $match = collect($budget['allocations'] ?? [])->firstWhere('category_id', $categoryId);
+        if (! $match) {
+            return response()->json(['has_budget' => false]);
+        }
+
+        return response()->json([
+            'has_budget' => true,
+            'category_name' => $match['category_name'],
+            'budget' => $match['budget'],
+            'realisasi' => $match['realisasi'],
+            'sisa' => $match['sisa'],
+            'pct_used' => $match['pct_used'],
+        ]);
     }
 
     public function budgetRealization(Request $request)
@@ -483,5 +590,48 @@ class FinanceController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    // ─── Tutup Buku ────────────────────────────────────────────
+
+    public function tutupBuku(Request $request)
+    {
+        $closings = $this->finance->getClosings();
+        if ($request->wantsJson()) return response()->json($closings);
+        return view('admin.finance.tutup_buku', compact('closings'));
+    }
+
+    public function closeMonth(Request $request)
+    {
+        $request->validate(['month' => 'required|string|size:7', 'notes' => 'nullable|string|max:255']);
+
+        if (! $this->verifySupervisorPin($request->supervisor_pin)) {
+            return response()->json(['success' => false, 'message' => 'PIN supervisor salah.', 'pin_required' => true], 403);
+        }
+
+        $result = $this->finance->closeMonth($request->month, session('admin_name', 'Admin'), $request->notes);
+        return response()->json($result);
+    }
+
+    public function reopenMonth(Request $request)
+    {
+        $request->validate(['month' => 'required|string|size:7']);
+
+        if (! $this->verifySupervisorPin($request->supervisor_pin)) {
+            return response()->json(['success' => false, 'message' => 'PIN supervisor salah.', 'pin_required' => true], 403);
+        }
+
+        $result = $this->finance->reopenMonth($request->month, session('admin_name', 'Admin'));
+        return response()->json($result);
+    }
+
+    // ─── Laporan Laba Rugi ─────────────────────────────────────
+
+    public function labaRugi(Request $request)
+    {
+        $month = $request->month ?? date('Y-m');
+        $report = $this->finance->getLabaRugi($month);
+        if ($request->wantsJson()) return response()->json($report);
+        return view('admin.finance.laba_rugi', compact('report', 'month'));
     }
 }

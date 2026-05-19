@@ -28,6 +28,15 @@
         @endif
     </div>
 
+    {{-- Alert Hutang Jatuh Tempo --}}
+    @if(($debtSummary['jatuh_tempo_minggu_ini'] ?? 0) > 0)
+    <div class="fm-alert fm-alert-warning" style="margin-top:8px;">
+        ⚠️ <strong>{{ $debtSummary['jatuh_tempo_minggu_ini'] }} hutang jatuh tempo minggu ini</strong>
+        — Total hutang aktif: Rp {{ number_format($debtSummary['total_hutang'] ?? 0, 0, ',', '.') }}
+        <a href="{{ route('admin.finance.debts') }}" style="margin-left:8px; font-weight:600;">Lihat →</a>
+    </div>
+    @endif
+
     {{-- Saldo Kas per Akun (Cards - paling atas) --}}
     @if(count($accounts) > 0)
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -54,6 +63,7 @@
                 <button class="fm-btn fm-btn-sm fm-btn-success" style="font-size:11px;flex:1;" onclick="openDeposit({{ $acc['id'] }}, '{{ $acc['name'] }}')">+ Tambah</button>
                 <button class="fm-btn fm-btn-sm fm-btn-outline" style="font-size:11px;flex:1;" onclick="openTransfer({{ $acc['id'] }}, '{{ $acc['name'] }}', {{ $acc['balance'] }})">↔️ Transfer</button>
                 <button class="fm-btn fm-btn-sm fm-btn-danger" style="font-size:11px;flex:1;" onclick="openExpense({{ $acc['id'] }}, '{{ $acc['name'] }}')">💸 Bayar</button>
+                <button class="fm-btn fm-btn-sm fm-btn-outline" style="font-size:11px;flex:1;" onclick="openCorrection({{ $acc['id'] }}, '{{ $acc['name'] }}', {{ $acc['balance'] }})">🔧 Koreksi</button>
             </div>
         </div>
         @endforeach
@@ -148,30 +158,38 @@
                     <div class="fm-alert fm-alert-info" id="expAccLabel" style="margin-bottom:12px;"></div>
                     <div class="fm-form-group">
                         <label class="fm-label">Kategori Pengeluaran</label>
-                        <select class="fm-select" name="finance_category_id" id="expModalCat" required onchange="toggleExpSupplier(this)">
+                        <select class="fm-select" name="finance_category_id" id="expModalCat" required onchange="toggleExpSupplier(this);checkExpBudget(this.value)">
                             @foreach($categories as $c)
                             <option value="{{ $c['id'] }}" data-name="{{ strtolower($c['name']) }}">{{ $c['name'] }}</option>
                             @endforeach
                         </select>
                     </div>
+                    <div id="expBudgetWarn" style="display:none;border-radius:6px;padding:10px;margin-bottom:12px;font-size:13px;"></div>
                     <div class="fm-form-group">
-                        <label class="fm-label">Total Belanja (Rp)</label>
-                        <input type="number" class="fm-input fm-rupiah" name="total_amount" id="expTotal" required oninput="calcExpDebt()">
+                        <label class="fm-label">Jumlah (Rp)</label>
+                        <input type="number" class="fm-input fm-rupiah" name="total_amount" id="expTotal" required oninput="calcDebtDisplay()">
                     </div>
                     <div class="fm-form-group">
-                        <label class="fm-label">Bayar Cash (Rp)</label>
-                        <input type="number" class="fm-input fm-rupiah" name="cash_amount" id="expCash" oninput="calcExpDebt()">
+                        <label style="cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;">
+                            <input type="checkbox" id="expHasDebt" onchange="toggleDebtFields()"> Ada hutang tempo (belum bayar penuh)
+                        </label>
                     </div>
-                    <div id="expDebtInfo" style="display:none;background:#fef9c3;border:1px solid #fde68a;border-radius:6px;padding:10px;margin-bottom:12px;font-size:13px;">
-                        ⏳ Hutang tempo: <strong id="expDebtAmount">Rp 0</strong>
-                    </div>
-                    <div class="fm-form-group" id="expDueDateGroup" style="display:none;">
-                        <label class="fm-label">Jatuh Tempo Hutang</label>
-                        <input type="date" class="fm-input" name="due_date">
-                    </div>
-                    <div class="fm-form-group" id="expSupplierGroup" style="display:none;">
-                        <label class="fm-label">Nama Supplier</label>
-                        <input type="text" class="fm-input" name="supplier_name" placeholder="Nama supplier">
+                    <div id="expDebtFields" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-bottom:12px;">
+                        <div class="fm-form-group" style="margin-bottom:10px;">
+                            <label class="fm-label">Bayar Cash Sekarang (Rp)</label>
+                            <input type="number" class="fm-input fm-rupiah" name="cash_amount" id="expCash" placeholder="Kosongkan jika belum bayar sama sekali" oninput="calcDebtDisplay()">
+                        </div>
+                        <div id="expDebtDisplay" style="display:none;background:#fff;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600;color:#92400e;">
+                            ⏳ Hutang: <span id="expDebtAmount">Rp 0</span>
+                        </div>
+                        <div class="fm-form-group" style="margin-bottom:10px;">
+                            <label class="fm-label">Nama Supplier</label>
+                            <input type="text" class="fm-input" name="supplier_name" placeholder="Nama supplier">
+                        </div>
+                        <div class="fm-form-group" style="margin-bottom:0;">
+                            <label class="fm-label">Jatuh Tempo</label>
+                            <input type="date" class="fm-input" name="due_date">
+                        </div>
                     </div>
                     <div class="fm-form-group">
                         <label class="fm-label">Keterangan</label>
@@ -216,6 +234,75 @@
         </div>
     </div>
 
+    {{-- Modal Konfirmasi (pengganti confirm()) --}}
+    <div class="fm-modal-backdrop" id="confirmModal">
+        <div class="fm-modal" style="max-width:380px;">
+            <div class="fm-modal-header">
+                <span class="fm-modal-title" id="confirmTitle">Konfirmasi</span>
+                <button class="fm-modal-close" onclick="closeConfirmModal()">&times;</button>
+            </div>
+            <div class="fm-modal-body">
+                <p id="confirmMessage" style="font-size:14px;color:#334155;white-space:pre-line;"></p>
+            </div>
+            <div class="fm-modal-footer">
+                <button class="fm-btn fm-btn-outline" onclick="closeConfirmModal()">Batal</button>
+                <button class="fm-btn fm-btn-primary" id="confirmOkBtn" onclick="doConfirmOk()">Ya, Lanjutkan</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- Modal PIN Supervisor --}}
+    <div class="fm-modal-backdrop" id="pinModal" style="z-index:2100;">
+        <div class="fm-modal" style="max-width:320px;">
+            <div class="fm-modal-header">
+                <span class="fm-modal-title">🔐 PIN Supervisor</span>
+                <button class="fm-modal-close" onclick="closePinModal()">&times;</button>
+            </div>
+            <div class="fm-modal-body" style="text-align:center;">
+                <p style="font-size:13px;color:#64748b;margin-bottom:16px;">Masukkan PIN supervisor untuk melanjutkan aksi ini.</p>
+                <input type="password" id="pinInput" maxlength="6" placeholder="••••••"
+                    style="width:160px;text-align:center;font-size:24px;letter-spacing:8px;padding:12px;border:2px solid #e2e8f0;border-radius:8px;"
+                    onkeydown="if(event.key==='Enter')submitPin()">
+                <p id="pinError" style="display:none;color:#dc2626;font-size:12px;margin-top:8px;">PIN salah</p>
+            </div>
+            <div class="fm-modal-footer" style="justify-content:center;">
+                <button class="fm-btn fm-btn-outline" onclick="closePinModal()">Batal</button>
+                <button class="fm-btn fm-btn-primary" onclick="submitPin()">Konfirmasi</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- Modal Koreksi Saldo --}}
+    <div class="fm-modal-backdrop" id="correctionModal">
+        <div class="fm-modal">
+            <div class="fm-modal-header">
+                <span class="fm-modal-title">🔧 Koreksi Saldo</span>
+                <button class="fm-modal-close" onclick="closeCorrection()">&times;</button>
+            </div>
+            <div class="fm-modal-body">
+                <form id="correctionForm">
+                    <input type="hidden" name="cash_account_id" id="corAccId">
+                    <div class="fm-alert fm-alert-info" id="corAccLabel" style="margin-bottom:12px;"></div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Saldo Riil Saat Ini (hitung fisik)</label>
+                        <input type="number" class="fm-input fm-rupiah" name="actual_balance" id="corActual" min="0" required oninput="calcCorrectionDiff()">
+                    </div>
+                    <div id="corDiffInfo" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:12px;font-size:13px;">
+                        Selisih: <strong id="corDiffAmount">Rp 0</strong> <span id="corDiffLabel"></span>
+                    </div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Keterangan (opsional)</label>
+                        <input type="text" class="fm-input" name="description" placeholder="Koreksi pengeluaran tidak tercatat Mei 2026">
+                    </div>
+                </form>
+            </div>
+            <div class="fm-modal-footer">
+                <button class="fm-btn fm-btn-outline" onclick="closeCorrection()">Batal</button>
+                <button class="fm-btn fm-btn-primary" onclick="submitCorrection()">🔧 Koreksi Saldo</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="fm-toast"></div>
 
     {{-- Pending Transfers - Approval --}}
@@ -244,73 +331,72 @@
     </div>
     @endif
 
-    {{-- Summary Cards - Hari Ini --}}
-    <h3 style="font-size:15px;font-weight:700;margin:20px 0 10px;">Hari Ini ({{ date('d M Y') }})</h3>
-    <div class="fm-cards">
-        <div class="fm-card green">
-            <div class="fm-card-icon">💵</div>
-            <div class="fm-card-value fm-money income" id="todayTunai">Rp {{ number_format($today['penjualan_tunai'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Penjualan Tunai</div>
+    {{-- Summary Hari Ini & Bulan Ini - Compact --}}
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px;">
+        {{-- Hari Ini --}}
+        <div class="fm-card" style="padding:0; overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#059669,#10b981); color:white; padding:12px 16px; font-weight:700; font-size:14px;">
+                📅 Hari Ini — {{ date('d M Y') }}
+            </div>
+            <table style="width:100%; font-size:13px; border-collapse:collapse;">
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Tunai</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600;" class="fm-money income" id="todayTunai">Rp {{ number_format($today['penjualan_tunai'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">QRIS</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600;" class="fm-money income" id="todayQris">Rp {{ number_format($today['penjualan_qris'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Total Pendapatan</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:700; color:#059669;" id="todayPendapatan">Rp {{ number_format($today['total_pendapatan'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Pengeluaran</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600; color:#dc2626;" id="todayPengeluaran">Rp {{ number_format($today['total_pengeluaran'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Bersih</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:700; color:#059669;" id="todayBersih">Rp {{ number_format($today['pendapatan_bersih'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <td style="padding:10px 16px; color:#64748b;">Shift</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600;" id="todayShift">{{ $today['jumlah_shift'] ?? 0 }}</td>
+                </tr>
+            </table>
         </div>
-        <div class="fm-card purple">
-            <div class="fm-card-icon">📱</div>
-            <div class="fm-card-value fm-money income" id="todayQris">Rp {{ number_format($today['penjualan_qris'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Penjualan QRIS</div>
-        </div>
-        <div class="fm-card">
-            <div class="fm-card-icon">📈</div>
-            <div class="fm-card-value fm-money income" id="todayPendapatan">Rp {{ number_format($today['total_pendapatan'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Total Pendapatan</div>
-        </div>
-        <div class="fm-card red">
-            <div class="fm-card-icon">📉</div>
-            <div class="fm-card-value fm-money expense" id="todayPengeluaran">Rp {{ number_format($today['total_pengeluaran'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Total Pengeluaran</div>
-        </div>
-        <div class="fm-card green">
-            <div class="fm-card-icon">✅</div>
-            <div class="fm-card-value fm-money income" id="todayBersih">Rp {{ number_format($today['pendapatan_bersih'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Pendapatan Bersih</div>
-        </div>
-        <div class="fm-card amber">
-            <div class="fm-card-icon">🕐</div>
-            <div class="fm-card-value" id="todayShift">{{ $today['jumlah_shift'] ?? 0 }}</div>
-            <div class="fm-card-label">Jumlah Shift</div>
-        </div>
-    </div>
 
-    {{-- Summary Cards - Bulan Ini --}}
-    <h3 style="font-size:15px;font-weight:700;margin:20px 0 10px;">Bulan Ini ({{ date('F Y') }})</h3>
-    <div class="fm-cards">
-        <div class="fm-card">
-            <div class="fm-card-icon">📈</div>
-            <div class="fm-card-value fm-money income">Rp {{ number_format($month['total_pendapatan'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Total Pendapatan</div>
-        </div>
-        <div class="fm-card red">
-            <div class="fm-card-icon">📉</div>
-            <div class="fm-card-value fm-money expense">Rp {{ number_format($month['total_pengeluaran'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Total Pengeluaran</div>
-        </div>
-        <div class="fm-card green">
-            <div class="fm-card-icon">✅</div>
-            <div class="fm-card-value fm-money income">Rp {{ number_format($month['pendapatan_bersih'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Pendapatan Bersih</div>
-        </div>
-        <div class="fm-card amber">
-            <div class="fm-card-icon">⚠️</div>
-            <div class="fm-card-value fm-money {{ ($month['total_selisih'] ?? 0) < 0 ? 'expense' : 'income' }}">Rp {{ number_format($month['total_selisih'] ?? 0, 0, ',', '.') }}</div>
-            <div class="fm-card-label">Selisih Kas</div>
-        </div>
-        <div class="fm-card teal">
-            <div class="fm-card-icon">📅</div>
-            <div class="fm-card-value">{{ $month['days_synced'] ?? 0 }}</div>
-            <div class="fm-card-label">Hari Tersync</div>
-        </div>
-        <div class="fm-card">
-            <div class="fm-card-icon">🕐</div>
-            <div class="fm-card-value">{{ $month['jumlah_shift'] ?? 0 }}</div>
-            <div class="fm-card-label">Total Shift</div>
+        {{-- Bulan Ini --}}
+        <div class="fm-card" style="padding:0; overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#1e40af,#3b82f6); color:white; padding:12px 16px; font-weight:700; font-size:14px;">
+                📊 Bulan Ini — {{ date('F Y') }}
+            </div>
+            <table style="width:100%; font-size:13px; border-collapse:collapse;">
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Total Pendapatan</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:700; color:#059669;">Rp {{ number_format($month['total_pendapatan'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Total Pengeluaran</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600; color:#dc2626;">Rp {{ number_format($month['total_pengeluaran'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Pendapatan Bersih</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:700; color:#059669;">Rp {{ number_format($month['pendapatan_bersih'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Selisih Kas</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600; color:{{ ($month['total_selisih'] ?? 0) < 0 ? '#dc2626' : '#059669' }};">Rp {{ number_format($month['total_selisih'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 16px; color:#64748b;">Hari Tersync</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600;">{{ $month['days_synced'] ?? 0 }} hari</td>
+                </tr>
+                <tr>
+                    <td style="padding:10px 16px; color:#64748b;">Total Shift</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600;">{{ $month['jumlah_shift'] ?? 0 }}</td>
+                </tr>
+            </table>
         </div>
     </div>
 </div>
@@ -325,6 +411,58 @@ function showToast(msg, type='success') {
     t.textContent = msg;
     t.className = 'fm-toast ' + type + ' show';
     setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Confirm modal (pengganti confirm())
+let confirmCallback = null;
+
+function showConfirm(message, callback, title = 'Konfirmasi', btnText = 'Ya, Lanjutkan') {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmOkBtn').textContent = btnText;
+    confirmCallback = callback;
+    document.getElementById('confirmModal').classList.add('active');
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').classList.remove('active');
+    confirmCallback = null;
+}
+
+function doConfirmOk() {
+    const cb = confirmCallback;
+    closeConfirmModal();
+    if (cb) cb();
+}
+
+// PIN prompt helper — custom modal
+let pinCallback = null;
+
+function promptPin() { return null; } // unused, replaced by async version
+
+function requestPin(callback) {
+    pinCallback = callback;
+    document.getElementById('pinInput').value = '';
+    document.getElementById('pinError').style.display = 'none';
+    document.getElementById('pinModal').classList.add('active');
+    setTimeout(() => document.getElementById('pinInput').focus(), 100);
+}
+
+function closePinModal() {
+    document.getElementById('pinModal').classList.remove('active');
+    pinCallback = null;
+}
+
+function submitPin() {
+    const pin = document.getElementById('pinInput').value.trim();
+    if (pin.length < 4) {
+        document.getElementById('pinError').style.display = '';
+        document.getElementById('pinError').textContent = 'PIN minimal 4 digit';
+        return;
+    }
+    const cb = pinCallback;
+    closePinModal();
+    if (cb) cb(pin);
 }
 
 // Transfer
@@ -367,26 +505,28 @@ async function submitTransfer() {
 }
 
 async function approveTransfer(id) {
-    if (!confirm('Approve transfer ini? Saldo akan langsung berubah.')) return;
-    try {
-        const res = await fetch('{{ url("admin/finance/transfers") }}/' + id + '/approve', {
-            method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json'}
-        });
-        const data = await res.json();
-        if (data.success) { showToast('Transfer approved!'); setTimeout(() => location.reload(), 800); }
-        else showToast(data.message || 'Gagal (saldo tidak cukup?)', 'error');
-    } catch (e) { showToast(e.message, 'error'); }
+    showConfirm('Approve transfer ini? Saldo akan langsung berubah.', async function() {
+        try {
+            const res = await fetch('{{ url("admin/finance/transfers") }}/' + id + '/approve', {
+                method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json'}
+            });
+            const data = await res.json();
+            if (data.success) { showToast('Transfer approved!'); setTimeout(() => location.reload(), 800); }
+            else showToast(data.message || 'Gagal (saldo tidak cukup?)', 'error');
+        } catch (e) { showToast(e.message, 'error'); }
+    }, '↔️ Approve Transfer', 'Approve');
 }
 
 async function rejectTransfer(id) {
-    if (!confirm('Reject transfer ini?')) return;
-    try {
-        const res = await fetch('{{ url("admin/finance/transfers") }}/' + id + '/reject', {
-            method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json'}
-        });
-        const data = await res.json();
-        if (data.success) { showToast('Transfer rejected.'); document.querySelector(`tr[data-id="${id}"]`).remove(); }
-    } catch (e) { showToast(e.message, 'error'); }
+    showConfirm('Reject transfer ini?', async function() {
+        try {
+            const res = await fetch('{{ url("admin/finance/transfers") }}/' + id + '/reject', {
+                method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json'}
+            });
+            const data = await res.json();
+            if (data.success) { showToast('Transfer rejected.'); document.querySelector(`tr[data-id="${id}"]`).remove(); }
+        } catch (e) { showToast(e.message, 'error'); }
+    }, '❌ Reject Transfer', 'Reject');
 }
 
 // Deposit
@@ -437,24 +577,34 @@ document.addEventListener('click', function(e) {
 });
 
 async function resetAccount(id, name) {
-    if (!confirm('Reset saldo "' + name + '" ke Rp 0 dan hapus semua mutasi?\n\nAksi ini tidak bisa dibatalkan!')) return;
-    try {
-        const res = await fetch('{{ url("admin/finance/cash-accounts") }}/' + id + '/reset', {
-            method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json'}
+    showConfirm('Reset saldo "' + name + '" ke Rp 0 dan hapus semua mutasi?\n\nAksi ini tidak bisa dibatalkan!', function() {
+        requestPin(async function(pin) {
+            try {
+                const res = await fetch('{{ url("admin/finance/cash-accounts") }}/' + id + '/reset', {
+                    method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json', 'Content-Type': 'application/json'},
+                    body: JSON.stringify({supervisor_pin: pin})
+                });
+                const data = await res.json();
+                if (data.pin_required) { showToast('PIN supervisor salah', 'error'); return; }
+                if (data.success) { showToast('Saldo direset!'); setTimeout(() => location.reload(), 600); }
+                else showToast(data.message || 'Gagal', 'error');
+            } catch (e) { showToast(e.message, 'error'); }
         });
-        const data = await res.json();
-        if (data.success) { showToast('Saldo direset!'); setTimeout(() => location.reload(), 600); }
-    } catch (e) { showToast(e.message, 'error'); }
+    }, '🔄 Reset Saldo', 'Ya, Reset');
 }
 
 async function toggleAccount(id) {
-    try {
-        const res = await fetch('{{ url("admin/finance/cash-accounts") }}/' + id + '/toggle', {
-            method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json'}
-        });
-        const data = await res.json();
-        if (data.success) { showToast('Status diubah!'); setTimeout(() => location.reload(), 600); }
-    } catch (e) { showToast(e.message, 'error'); }
+    requestPin(async function(pin) {
+        try {
+            const res = await fetch('{{ url("admin/finance/cash-accounts") }}/' + id + '/toggle', {
+                method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Accept': 'application/json', 'Content-Type': 'application/json'},
+                body: JSON.stringify({supervisor_pin: pin})
+            });
+            const data = await res.json();
+            if (data.pin_required) { showToast('PIN supervisor salah', 'error'); return; }
+            if (data.success) { showToast('Status diubah!'); setTimeout(() => location.reload(), 600); }
+        } catch (e) { showToast(e.message, 'error'); }
+    });
 }
 
 // Account CRUD
@@ -500,27 +650,66 @@ async function saveAccount() {
 }
 
 // Expense
-function toggleExpSupplier(select) {
-    const opt = select.options[select.selectedIndex];
-    const name = (opt.dataset.name || '').toLowerCase();
-    const show = name.includes('restok') || name.includes('modal barang') || name.includes('supplier') || name.includes('belanja');
-    document.getElementById('expSupplierGroup').style.display = show ? '' : 'none';
+function toggleExpSupplier(select) {}
+
+function toggleDebtFields() {
+    const show = document.getElementById('expHasDebt').checked;
+    document.getElementById('expDebtFields').style.display = show ? '' : 'none';
+    if (!show) {
+        document.getElementById('expCash').value = '';
+        document.getElementById('expDebtDisplay').style.display = 'none';
+    }
 }
 
-function calcExpDebt() {
+function calcDebtDisplay() {
     const total = parseInt((document.getElementById('expTotal').value+'').replace(/\./g,'')) || 0;
     const cash = parseInt((document.getElementById('expCash').value+'').replace(/\./g,'')) || 0;
     const debt = Math.max(0, total - cash);
-    const show = debt > 0 && total > 0;
-    document.getElementById('expDebtInfo').style.display = show ? '' : 'none';
-    document.getElementById('expDueDateGroup').style.display = show ? '' : 'none';
-    document.getElementById('expDebtAmount').textContent = 'Rp ' + debt.toLocaleString('id');
+    const el = document.getElementById('expDebtDisplay');
+    if (debt > 0 && total > 0) {
+        el.style.display = '';
+        document.getElementById('expDebtAmount').textContent = 'Rp ' + debt.toLocaleString('id');
+    } else {
+        el.style.display = 'none';
+    }
 }
+
+function calcExpDebt() {}
 
 function openExpense(accId, accName) {
     document.getElementById('expAccId').value = accId;
     document.getElementById('expAccLabel').innerHTML = '💰 Dari: <strong>' + accName + '</strong>';
+    document.getElementById('expBudgetWarn').style.display = 'none';
     document.getElementById('expenseModal').classList.add('active');
+    checkExpBudget(document.getElementById('expModalCat').value);
+}
+
+async function checkExpBudget(categoryId) {
+    const el = document.getElementById('expBudgetWarn');
+    if (!categoryId) { el.style.display = 'none'; return; }
+    try {
+        const res = await fetch('{{ route("admin.finance.check_budget") }}?finance_category_id=' + categoryId, {
+            headers: {'Accept': 'application/json'}
+        });
+        const data = await res.json();
+        if (!data.has_budget) { el.style.display = 'none'; return; }
+
+        const pct = parseFloat(data.pct_used);
+        el.style.display = '';
+        if (pct >= 100) {
+            el.style.background = '#fef2f2';
+            el.style.border = '1px solid #fca5a5';
+            el.innerHTML = '🚫 <strong>OVER BUDGET!</strong> ' + data.category_name + ' sudah terpakai ' + pct + '% (Rp ' + data.realisasi.toLocaleString('id') + ' / Rp ' + data.budget.toLocaleString('id') + '). Perlu PIN supervisor untuk lanjut.';
+        } else if (pct >= 80) {
+            el.style.background = '#fef9c3';
+            el.style.border = '1px solid #fde68a';
+            el.innerHTML = '⚠️ <strong>Hampir penuh!</strong> ' + data.category_name + ': ' + pct + '% terpakai. Sisa Rp ' + data.sisa.toLocaleString('id');
+        } else {
+            el.style.background = '#d1fae5';
+            el.style.border = '1px solid #6ee7b7';
+            el.innerHTML = '✅ ' + data.category_name + ': ' + pct + '% terpakai. Sisa Rp ' + data.sisa.toLocaleString('id');
+        }
+    } catch (e) { el.style.display = 'none'; }
 }
 
 function closeExpense() {
@@ -533,27 +722,112 @@ async function submitExpense() {
     const body = {};
     fd.forEach((v, k) => body[k] = v);
     body.total_amount = parseInt((body.total_amount+'').replace(/\./g,'')) || 0;
-    body.cash_amount = parseInt((body.cash_amount+'').replace(/\./g,'')) || body.total_amount;
-    if (!body.cash_amount) body.cash_amount = body.total_amount;
 
-    if (body.total_amount < 1) { showToast('Total belanja harus diisi', 'error'); return; }
+    const hasDebt = document.getElementById('expHasDebt').checked;
+    if (hasDebt) {
+        body.cash_amount = parseInt((body.cash_amount+'').replace(/\./g,'')) || 0;
+    } else {
+        body.cash_amount = body.total_amount;
+    }
 
-    try {
-        const res = await fetch('{{ route("admin.finance.expenses.store") }}', {
-            method: 'POST',
-            headers: {'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: JSON.stringify(body)
+    if (body.total_amount < 1) { showToast('Jumlah harus diisi', 'error'); return; }
+
+    // Check if over budget — require PIN
+    const warnEl = document.getElementById('expBudgetWarn');
+    const isOverBudget = warnEl.style.display !== 'none' && warnEl.innerHTML.includes('OVER BUDGET');
+
+    async function doSubmitExpense(pinOverride) {
+        if (pinOverride) body.supervisor_pin = pinOverride;
+        try {
+            const res = await fetch('{{ route("admin.finance.expenses.store") }}', {
+                method: 'POST',
+                headers: {'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.success) {
+                const debt = body.total_amount - body.cash_amount;
+                showToast('Pengeluaran dicatat!' + (debt > 0 ? ' Hutang Rp ' + debt.toLocaleString('id') : ''));
+                closeExpense();
+                setTimeout(() => location.reload(), 800);
+            } else {
+                showToast(data.message || 'Gagal', 'error');
+            }
+        } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    if (isOverBudget) {
+        showConfirm('Kategori ini sudah OVER BUDGET. Tetap lanjutkan pengeluaran?\n\nDiperlukan PIN supervisor.', function() {
+            requestPin(function(pin) { doSubmitExpense(pin); });
+        }, '🚫 Over Budget', 'Ya, Lanjutkan');
+    } else {
+        doSubmitExpense();
+    }
+}
+
+// Correction
+let corCurrentBalance = 0;
+
+function openCorrection(accId, accName, balance) {
+    corCurrentBalance = balance;
+    document.getElementById('corAccId').value = accId;
+    document.getElementById('corAccLabel').innerHTML = '🏦 <strong>' + accName + '</strong> — Saldo sistem: Rp ' + balance.toLocaleString('id');
+    document.getElementById('corActual').value = '';
+    document.getElementById('corDiffInfo').style.display = 'none';
+    document.getElementById('correctionModal').classList.add('active');
+}
+
+function closeCorrection() {
+    document.getElementById('correctionModal').classList.remove('active');
+    document.getElementById('correctionForm').reset();
+}
+
+function calcCorrectionDiff() {
+    const actual = parseInt((document.getElementById('corActual').value+'').replace(/\./g,'')) || 0;
+    const diff = actual - corCurrentBalance;
+    if (diff === 0) {
+        document.getElementById('corDiffInfo').style.display = 'none';
+        return;
+    }
+    document.getElementById('corDiffInfo').style.display = '';
+    document.getElementById('corDiffAmount').textContent = (diff > 0 ? '+' : '') + 'Rp ' + diff.toLocaleString('id');
+    document.getElementById('corDiffLabel').textContent = diff > 0 ? '(uang lebih dari sistem)' : '(uang kurang dari sistem — ada pengeluaran tidak tercatat)';
+    document.getElementById('corDiffInfo').style.background = diff > 0 ? '#d1fae5' : '#fef2f2';
+    document.getElementById('corDiffInfo').style.borderColor = diff > 0 ? '#6ee7b7' : '#fca5a5';
+}
+
+async function submitCorrection() {
+    const fd = new FormData(document.getElementById('correctionForm'));
+    const body = {};
+    fd.forEach((v, k) => body[k] = v);
+    body.actual_balance = parseInt((body.actual_balance+'').replace(/\./g,'')) || 0;
+
+    const diff = body.actual_balance - corCurrentBalance;
+    if (diff === 0) { showToast('Saldo sudah sesuai'); closeCorrection(); return; }
+
+    closeCorrection();
+    const msg = 'Koreksi saldo?\n\nSaldo sistem: Rp ' + corCurrentBalance.toLocaleString('id') + '\nSaldo riil: Rp ' + body.actual_balance.toLocaleString('id') + '\nSelisih: ' + (diff > 0 ? '+' : '') + 'Rp ' + diff.toLocaleString('id');
+    showConfirm(msg, function() {
+        requestPin(async function(pin) {
+            body.supervisor_pin = pin;
+            try {
+                const res = await fetch('{{ route("admin.finance.correct_balance") }}', {
+                    method: 'POST',
+                    headers: {'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.pin_required) { showToast('PIN supervisor salah', 'error'); return; }
+                if (data.success) {
+                    showToast('Saldo dikoreksi! Selisih ' + (diff > 0 ? '+' : '') + 'Rp ' + diff.toLocaleString('id') + ' tercatat.');
+                    closeCorrection();
+                    setTimeout(() => location.reload(), 800);
+                } else {
+                    showToast(data.message || 'Gagal', 'error');
+                }
+            } catch (e) { showToast(e.message, 'error'); }
         });
-        const data = await res.json();
-        if (data.success) {
-            const debt = body.total_amount - body.cash_amount;
-            showToast('Pengeluaran dicatat!' + (debt > 0 ? ' Hutang Rp ' + debt.toLocaleString('id') : ''));
-            closeExpense();
-            setTimeout(() => location.reload(), 800);
-        } else {
-            showToast(data.message || 'Gagal', 'error');
-        }
-    } catch (e) { showToast(e.message, 'error'); }
+    }, '🔧 Koreksi Saldo', 'Ya, Koreksi');
 }
 
 // Sync Today
