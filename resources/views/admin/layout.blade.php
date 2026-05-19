@@ -1205,6 +1205,7 @@
                     $grpOps        = request()->routeIs(['admin.tasks.live','admin.tasks.index','admin.tasks.rack.*','admin.restock.*','admin.suppliers.*','admin.attendance.*','admin.cleanup','admin.reconciliation.*']);
                     $grpBonus      = request()->routeIs(['admin.bonus.config','admin.bonus.daily_scoring','admin.bonus.penalties','admin.bonus.sales_targets','admin.bonus.monthly_summary','admin.bonus.leaderboard']);
                     $grpPayroll    = request()->routeIs(['admin.payroll.index','admin.payroll.show','admin.payroll.withdrawals']);
+                    $grpFinance    = request()->routeIs('admin.finance.*');
                     $grpSistem     = request()->routeIs(['admin.audit_log.*','admin.settings']);
                 @endphp
                 {{-- Ringkasan --}}
@@ -1270,6 +1271,33 @@
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.payroll.index') ? 'is-active' : '' }}" href="{{ route('admin.payroll.index') }}">💰 Daftar Karyawan</a>
                         <a class="{{ request()->routeIs('admin.payroll.withdrawals') ? 'is-active' : '' }}" href="{{ route('admin.payroll.withdrawals') }}">📋 Penarikan Pending</a>
+                    </div>
+                </li>
+
+                {{-- Akuntansi --}}
+                <li class="{{ $grpFinance ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpFinance ? 'is-active-group' : '' }}">Akuntansi <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.finance.dashboard') ? 'is-active' : '' }}" href="{{ route('admin.finance.dashboard') }}">📊 Dashboard Keuangan</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.finance.sync') ? 'is-active' : '' }}" href="{{ route('admin.finance.sync') }}">🔄 Sinkronisasi Data</a>
+                        <a class="{{ request()->routeIs('admin.finance.settings') ? 'is-active' : '' }}" href="{{ route('admin.finance.settings') }}">⚙️ Pengaturan Sync</a>
+                        <a class="{{ request()->routeIs('admin.finance.sync_logs') ? 'is-active' : '' }}" href="{{ route('admin.finance.sync_logs') }}">📋 Riwayat Sync</a>
+                        <a class="{{ request()->routeIs('admin.finance.mappings.category') ? 'is-active' : '' }}" href="{{ route('admin.finance.mappings.category') }}">🏷️ Mapping Kategori</a>
+                        <a class="{{ request()->routeIs('admin.finance.mappings.account') ? 'is-active' : '' }}" href="{{ route('admin.finance.mappings.account') }}">🏦 Mapping Akun Kas</a>
+                        <a class="{{ request()->routeIs('admin.finance.shifts') ? 'is-active' : '' }}" href="{{ route('admin.finance.shifts') }}">🕐 Detail Shift</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.finance.debts') ? 'is-active' : '' }}" href="{{ route('admin.finance.debts') }}">📋 Hutang Supplier</a>
+                        <a class="{{ request()->routeIs('admin.finance.mutations') ? 'is-active' : '' }}" href="{{ route('admin.finance.mutations') }}">📒 Mutasi Kas</a>
+                        <a class="{{ request()->routeIs('admin.finance.expenses') ? 'is-active' : '' }}" href="{{ route('admin.finance.expenses') }}">💸 Pengeluaran</a>
+                        <a class="{{ request()->routeIs('admin.finance.budget') ? 'is-active' : '' }}" href="{{ route('admin.finance.budget') }}">📊 Budget vs Realisasi</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.finance.categories') ? 'is-active' : '' }}" href="{{ route('admin.finance.categories') }}">📂 Kategori Keuangan</a>
+                        <a class="{{ request()->routeIs('admin.finance.allocations') ? 'is-active' : '' }}" href="{{ route('admin.finance.allocations') }}">📊 Alokasi Dana</a>
+                        <a class="{{ request()->routeIs('admin.finance.audit_log') ? 'is-active' : '' }}" href="{{ route('admin.finance.audit_log') }}">📜 Audit Log</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.finance.report.monthly') ? 'is-active' : '' }}" href="{{ route('admin.finance.report.monthly') }}">📈 Laporan Bulanan</a>
+                        <a class="{{ request()->routeIs('admin.finance.report.balance') ? 'is-active' : '' }}" href="{{ route('admin.finance.report.balance') }}">💳 Saldo Kas</a>
                     </div>
                 </li>
 

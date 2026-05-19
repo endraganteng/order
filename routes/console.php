@@ -521,3 +521,52 @@ Artisan::command('payroll:auto-credit-salary {--catchup=7 : Catchup window dalam
 })->purpose('Auto-credit gaji pokok bulanan ke saldo payroll karyawan eligible');
 
 Schedule::command('payroll:auto-credit-salary')->dailyAt('05:00')->withoutOverlapping();
+
+// ─── Finance Auto Sync ──────────────────────────────────────────
+Artisan::command('finance:auto-sync', function () {
+    $finance = app(\App\Services\FinanceService::class);
+    $enabled = $finance->getSetting('auto_sync_enabled', '0');
+
+    if ($enabled !== '1') {
+        $this->info('Finance auto sync is disabled.');
+        return 0;
+    }
+
+    $syncMode = $finance->getSetting('sync_mode', 'daily');
+    $syncTime = $finance->getSetting('auto_sync_time', '00:00');
+    $syncTarget = $finance->getSetting('sync_data_target', 'yesterday');
+    $currentHour = date('H:i');
+
+    // Untuk mode daily, hanya jalan di jam yang diset
+    if ($syncMode === 'daily' && substr($currentHour, 0, 2) !== substr($syncTime, 0, 2)) {
+        return 0;
+    }
+
+    // Tentukan tanggal berdasarkan sync_data_target
+    if ($syncTarget === 'today') {
+        $from = $to = date('Y-m-d');
+    } else {
+        $from = $to = date('Y-m-d', strtotime('-1 day'));
+    }
+
+    $result = $finance->syncDaily($from, $to, 'auto_sync');
+
+    $this->info("Finance auto sync: status={$result['status']}, synced={$result['synced']}, failed={$result['failed']}");
+
+    // Retry failed dari 3 hari terakhir
+    $failedLogs = \Illuminate\Support\Facades\DB::table('finance_sync_logs')
+        ->where('status', 'failed')
+        ->where('created_at', '>=', now()->subDays(3))
+        ->limit(3)
+        ->get();
+
+    foreach ($failedLogs as $log) {
+        $retryResult = $finance->syncDaily($log->sync_date_from, $log->sync_date_to, 'auto_retry');
+        $this->info("Retry {$log->sync_date_from}: {$retryResult['status']}");
+    }
+
+    return $result['status'] === 'failed' ? 1 : 0;
+})->purpose('Auto sync finance data dari API shift kasir');
+
+// Schedule finance auto sync setiap jam (command sendiri yang cek apakah enabled + jam yang tepat)
+Schedule::command('finance:auto-sync')->hourly()->withoutOverlapping();

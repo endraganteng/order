@@ -219,6 +219,84 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Waiter Performance
         Route::get('waiters/{id}/performance', [WaiterPerformanceController::class, 'show'])->name('waiters.performance');
+
+        // Finance Module
+        Route::prefix('finance')->name('finance.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\FinanceController::class, 'dashboard'])->name('dashboard');
+            Route::get('settings', [\App\Http\Controllers\Admin\FinanceController::class, 'settings'])->name('settings');
+            Route::post('settings', [\App\Http\Controllers\Admin\FinanceController::class, 'saveSettings'])->name('settings.save');
+            Route::post('test-connection', [\App\Http\Controllers\Admin\FinanceController::class, 'testConnection'])->name('test_connection');
+
+            // Sync
+            Route::get('sync', [\App\Http\Controllers\Admin\FinanceController::class, 'sync'])->name('sync');
+            Route::post('sync', [\App\Http\Controllers\Admin\FinanceController::class, 'doSync'])->name('sync.run');
+            Route::post('sync-today', [\App\Http\Controllers\Admin\FinanceController::class, 'syncToday'])->name('sync.today');
+            Route::get('sync-logs', [\App\Http\Controllers\Admin\FinanceController::class, 'syncLogs'])->name('sync_logs');
+
+            // Categories
+            Route::get('categories', [\App\Http\Controllers\Admin\FinanceController::class, 'categories'])->name('categories');
+            Route::post('categories', [\App\Http\Controllers\Admin\FinanceController::class, 'storeCategory'])->name('categories.store');
+            Route::put('categories/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'updateCategory'])->name('categories.update');
+            Route::post('categories/{id}/toggle', [\App\Http\Controllers\Admin\FinanceController::class, 'toggleCategory'])->name('categories.toggle');
+
+            // Allocations
+            Route::get('allocations', [\App\Http\Controllers\Admin\FinanceController::class, 'allocations'])->name('allocations');
+            Route::post('allocations', [\App\Http\Controllers\Admin\FinanceController::class, 'storeAllocation'])->name('allocations.store');
+            Route::put('allocations/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'updateAllocation'])->name('allocations.update');
+            Route::delete('allocations/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'deleteAllocation'])->name('allocations.delete');
+            Route::post('allocations/simulate', [\App\Http\Controllers\Admin\FinanceController::class, 'simulateAllocation'])->name('allocations.simulate');
+
+            // Cash Accounts
+            Route::get('cash-accounts', [\App\Http\Controllers\Admin\FinanceController::class, 'cashAccounts'])->name('cash_accounts');
+            Route::post('cash-accounts', [\App\Http\Controllers\Admin\FinanceController::class, 'storeCashAccount'])->name('cash_accounts.store');
+            Route::put('cash-accounts/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'updateCashAccount'])->name('cash_accounts.update');
+            Route::post('cash-accounts/{id}/toggle', [\App\Http\Controllers\Admin\FinanceController::class, 'toggleCashAccount'])->name('cash_accounts.toggle');
+            Route::post('cash-accounts/{id}/reset', [\App\Http\Controllers\Admin\FinanceController::class, 'resetCashAccount'])->name('cash_accounts.reset');
+
+            // Transfers
+            Route::get('transfers', [\App\Http\Controllers\Admin\FinanceController::class, 'transfers'])->name('transfers');
+            Route::post('transfers', [\App\Http\Controllers\Admin\FinanceController::class, 'storeTransfer'])->name('transfers.store');
+            Route::post('transfers/{id}/approve', [\App\Http\Controllers\Admin\FinanceController::class, 'approveTransfer'])->name('transfers.approve');
+            Route::post('transfers/{id}/reject', [\App\Http\Controllers\Admin\FinanceController::class, 'rejectTransfer'])->name('transfers.reject');
+
+            // Hutang Supplier
+            Route::get('debts', [\App\Http\Controllers\Admin\FinanceController::class, 'debts'])->name('debts');
+            Route::post('debts', [\App\Http\Controllers\Admin\FinanceController::class, 'storeDebt'])->name('debts.store');
+            Route::post('debts/{id}/pay', [\App\Http\Controllers\Admin\FinanceController::class, 'payDebt'])->name('debts.pay');
+            Route::get('debts/{id}/payments', [\App\Http\Controllers\Admin\FinanceController::class, 'debtPayments'])->name('debts.payments');
+
+            // Mutations
+            Route::get('mutations', [\App\Http\Controllers\Admin\FinanceController::class, 'mutations'])->name('mutations');
+
+            // Pengeluaran Manual
+            Route::get('expenses', [\App\Http\Controllers\Admin\FinanceController::class, 'expenses'])->name('expenses');
+            Route::post('expenses', [\App\Http\Controllers\Admin\FinanceController::class, 'storeExpense'])->name('expenses.store');
+
+            // Budget vs Realisasi
+            Route::get('budget', [\App\Http\Controllers\Admin\FinanceController::class, 'budgetRealization'])->name('budget');
+
+            // API Mappings
+            Route::get('mappings/category', [\App\Http\Controllers\Admin\FinanceController::class, 'categoryMappings'])->name('mappings.category');
+            Route::get('mappings/account', [\App\Http\Controllers\Admin\FinanceController::class, 'accountMappings'])->name('mappings.account');
+            Route::post('mappings', [\App\Http\Controllers\Admin\FinanceController::class, 'storeMapping'])->name('mappings.store');
+            Route::put('mappings/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'updateMapping'])->name('mappings.update');
+            Route::delete('mappings/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'deleteMapping'])->name('mappings.delete');
+
+            // Shifts
+            Route::get('shifts', [\App\Http\Controllers\Admin\FinanceController::class, 'shifts'])->name('shifts');
+
+            // Need Review
+            Route::get('need-review', [\App\Http\Controllers\Admin\FinanceController::class, 'needReview'])->name('need_review');
+            Route::post('need-review/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'resolveReview'])->name('need_review.resolve');
+
+            // Audit Log
+            Route::get('audit-log', [\App\Http\Controllers\Admin\FinanceController::class, 'auditLog'])->name('audit_log');
+
+            // Reports
+            Route::get('report/monthly', [\App\Http\Controllers\Admin\FinanceController::class, 'reportMonthly'])->name('report.monthly');
+            Route::get('report/balance', [\App\Http\Controllers\Admin\FinanceController::class, 'reportBalance'])->name('report.balance');
+            Route::get('report/export', [\App\Http\Controllers\Admin\FinanceController::class, 'exportReport'])->name('report.export');
+        });
     });
 });
 
