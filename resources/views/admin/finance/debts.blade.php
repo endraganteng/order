@@ -66,9 +66,13 @@
                     <td style="text-align:right" class="fm-money expense">Rp {{ number_format($sisa, 0, ',', '.') }}</td>
                     <td>{{ $d['due_date'] ? \Carbon\Carbon::parse($d['due_date'])->format('d/m/Y') : '—' }}</td>
                     <td><span class="fm-badge fm-badge-{{ $d['status'] === 'paid' ? 'approved' : ($d['status'] === 'partial' ? 'pending' : 'failed') }}">{{ $d['status'] }}</span></td>
-                    <td>
+                    <td style="white-space:nowrap;">
                         @if($d['status'] !== 'paid')
                         <button class="fm-btn fm-btn-sm fm-btn-success" onclick="openPay({{ $d['id'] }}, '{{ $d['supplier_name'] }}', {{ $sisa }})">💰 Bayar</button>
+                        @endif
+                        <button class="fm-btn fm-btn-sm fm-btn-outline" onclick="openEditDebt({{ json_encode($d) }})">✏️</button>
+                        @if((int)($d['paid'] ?? 0) === 0)
+                        <button class="fm-btn fm-btn-sm fm-btn-danger" onclick="deleteDebt({{ $d['id'] }}, '{{ $d['supplier_name'] }}')">🗑️</button>
                         @endif
                     </td>
                 </tr>
@@ -157,6 +161,41 @@
             </div>
         </div>
     </div>
+
+    {{-- Modal Edit Hutang --}}
+    <div class="fm-modal-backdrop" id="editDebtModal">
+        <div class="fm-modal">
+            <div class="fm-modal-header">
+                <span class="fm-modal-title">✏️ Edit Hutang</span>
+                <button class="fm-modal-close" onclick="closeEditDebt()">&times;</button>
+            </div>
+            <div class="fm-modal-body">
+                <form id="editDebtForm">
+                    <input type="hidden" name="id" id="edId">
+                    <div class="fm-form-group">
+                        <label class="fm-label">Supplier</label>
+                        <input type="text" class="fm-input" name="supplier_name" id="edSupplier" required>
+                    </div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Jumlah (Rp)</label>
+                        <input type="number" class="fm-input" name="amount" id="edAmount" required>
+                    </div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Keterangan</label>
+                        <input type="text" class="fm-input" name="description" id="edDesc">
+                    </div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Jatuh Tempo</label>
+                        <input type="date" class="fm-input" name="due_date" id="edDue">
+                    </div>
+                </form>
+            </div>
+            <div class="fm-modal-footer">
+                <button class="fm-btn fm-btn-outline" onclick="closeEditDebt()">Batal</button>
+                <button class="fm-btn fm-btn-primary" onclick="submitEditDebt()">Simpan</button>
+            </div>
+        </div>
+    </div>
 </div>
 @endsection
 
@@ -199,6 +238,39 @@ async function submitPay(){
         if(data.success){showToast('Pembayaran dicatat!');closePayModal();setTimeout(()=>location.reload(),800);}
         else showToast(data.message||'Gagal','error');
     }catch(e){showToast(e.message,'error');}
+}
+
+function openEditDebt(d) {
+    document.getElementById('edId').value = d.id;
+    document.getElementById('edSupplier').value = d.supplier_name;
+    document.getElementById('edAmount').value = d.amount;
+    document.getElementById('edDesc').value = d.description || '';
+    document.getElementById('edDue').value = (d.due_date || '').split('T')[0] || '';
+    document.getElementById('editDebtModal').classList.add('active');
+}
+function closeEditDebt() { document.getElementById('editDebtModal').classList.remove('active'); }
+
+async function submitEditDebt() {
+    const fd = new FormData(document.getElementById('editDebtForm'));
+    const body = Object.fromEntries(fd);
+    const id = body.id; delete body.id;
+    body.amount = parseInt((body.amount+'').replace(/\./g,'')) || 0;
+    try {
+        const res = await fetch('{{ url("admin/finance/debts") }}/' + id, {method:'PUT', headers:{'X-CSRF-TOKEN':csrf,'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify(body)});
+        const data = await res.json();
+        if (data.success) { showToast('Hutang diupdate!'); closeEditDebt(); setTimeout(()=>location.reload(),800); }
+        else showToast(data.message||'Gagal','error');
+    } catch(e) { showToast(e.message,'error'); }
+}
+
+async function deleteDebt(id, name) {
+    if (!confirm('Hapus hutang "' + name + '"?')) return;
+    try {
+        const res = await fetch('{{ url("admin/finance/debts") }}/' + id, {method:'DELETE', headers:{'X-CSRF-TOKEN':csrf,'Accept':'application/json'}});
+        const data = await res.json();
+        if (data.success) { showToast('Hutang dihapus!'); setTimeout(()=>location.reload(),600); }
+        else showToast(data.message||'Gagal','error');
+    } catch(e) { showToast(e.message,'error'); }
 }
 </script>
 @endpush

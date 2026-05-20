@@ -265,6 +265,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
             // Hutang Supplier
             Route::get('debts', [\App\Http\Controllers\Admin\FinanceController::class, 'debts'])->name('debts');
             Route::post('debts', [\App\Http\Controllers\Admin\FinanceController::class, 'storeDebt'])->name('debts.store');
+            Route::put('debts/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'updateDebt'])->name('debts.update');
+            Route::delete('debts/{id}', [\App\Http\Controllers\Admin\FinanceController::class, 'deleteDebt'])->name('debts.delete');
             Route::post('debts/{id}/pay', [\App\Http\Controllers\Admin\FinanceController::class, 'payDebt'])->name('debts.pay');
             Route::get('debts/{id}/payments', [\App\Http\Controllers\Admin\FinanceController::class, 'debtPayments'])->name('debts.payments');
 

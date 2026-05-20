@@ -379,6 +379,39 @@ class FinanceController extends Controller
         return response()->json($this->finance->getDebtPayments($id));
     }
 
+    public function updateDebt(Request $request, int $id)
+    {
+        $request->validate([
+            'supplier_name' => 'required|string|max:255',
+            'amount' => 'required|numeric|min:1',
+            'description' => 'nullable|string|max:255',
+            'due_date' => 'nullable|date',
+        ]);
+
+        DB::table('finance_debts')->where('id', $id)->update([
+            'supplier_name' => $request->supplier_name,
+            'amount' => (int) $request->amount,
+            'description' => $request->description,
+            'due_date' => $request->due_date,
+            'updated_at' => now(),
+        ]);
+
+        $this->finance->logAudit('update', 'debt', $id);
+        return response()->json(['success' => true]);
+    }
+
+    public function deleteDebt(int $id)
+    {
+        $debt = $this->finance->getDebt($id);
+        if ($debt && (int) $debt['paid'] > 0) {
+            return response()->json(['success' => false, 'message' => 'Hutang yang sudah ada pembayaran tidak bisa dihapus.'], 422);
+        }
+
+        DB::table('finance_debts')->where('id', $id)->delete();
+        $this->finance->logAudit('delete', 'debt', $id);
+        return response()->json(['success' => true]);
+    }
+
     // ─── Pengeluaran Manual ────────────────────────────────────
 
     public function deposit(Request $request)
