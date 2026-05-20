@@ -182,8 +182,48 @@ class FinanceService
             $dailyRows = DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->get();
 
             foreach ($dailyRows as $row) {
-                // Penjualan Tunai → income ke akun yang di-mapping
                 $tunaiAccountId = $this->resolveAccountMapping('penjualan_tunai');
+
+                // Modal awal shift pertama hari itu → catat sebagai saldo bawaan
+                // Ini mewakili uang yang sudah ada di laci sebelum penjualan dimulai
+                if ($tunaiAccountId) {
+                    $modalAwal = (int) DB::table('finance_shifts')
+                        ->where('tanggal', $row->tanggal)
+                        ->orderBy('shift_number')
+                        ->value('modal_awal');
+
+                    if ($modalAwal > 0) {
+                        // Cek apakah sudah pernah dicatat untuk hari ini
+                        $exists = DB::table('cash_mutations')
+                            ->where('cash_account_id', $tunaiAccountId)
+                            ->where('reference_type', 'sync_modal')
+                            ->where('transaction_date', $row->tanggal)
+                            ->exists();
+
+                        if (! $exists) {
+                            // Cek apakah modal ini sudah tercermin di saldo (dari hari sebelumnya)
+                            // Jika saldo sebelum sync hari ini < modal, berarti perlu dicatat
+                            $saldoSebelum = (int) DB::table('cash_accounts')->where('id', $tunaiAccountId)->value('balance');
+                            $mutasiHariIni = (int) DB::table('cash_mutations')
+                                ->where('cash_account_id', $tunaiAccountId)
+                                ->where('transaction_date', $row->tanggal)
+                                ->where('type', 'income')
+                                ->sum('amount');
+                            $saldoSebelumSync = $saldoSebelum - $mutasiHariIni + (int) DB::table('cash_mutations')
+                                ->where('cash_account_id', $tunaiAccountId)
+                                ->where('transaction_date', $row->tanggal)
+                                ->where('type', 'expense')
+                                ->sum('amount');
+
+                            if ($saldoSebelumSync < $modalAwal) {
+                                $selisihModal = $modalAwal - max(0, $saldoSebelumSync);
+                                $this->upsertMutation($tunaiAccountId, 'income', $selisihModal, 'Modal awal laci ' . $row->tanggal, $row->tanggal, 'sync_modal', $row->id);
+                            }
+                        }
+                    }
+                }
+
+                // Penjualan Tunai → income ke akun yang di-mapping
                 if ($tunaiAccountId && $row->penjualan_tunai > 0) {
                     $this->upsertMutation($tunaiAccountId, 'income', $row->penjualan_tunai, 'Penjualan tunai ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
                 }
@@ -717,6 +757,7 @@ class FinanceService
             'amount' => $data['amount'],
             'paid' => 0,
             'description' => $data['description'] ?? null,
+            'finance_category_id' => $data['finance_category_id'] ?? null,
             'debt_date' => $data['debt_date'],
             'due_date' => $data['due_date'] ?? null,
             'status' => 'unpaid',
@@ -753,6 +794,7 @@ class FinanceService
 
             DB::table('cash_mutations')->insert([
                 'cash_account_id' => $accountId,
+                'finance_category_id' => $debt->finance_category_id ?? null,
                 'type' => 'expense',
                 'amount' => $amount,
                 'balance_after' => $newBalance,

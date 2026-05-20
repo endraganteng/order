@@ -70,6 +70,9 @@
                         @if($d['status'] !== 'paid')
                         <button class="fm-btn fm-btn-sm fm-btn-success" onclick="openPay({{ $d['id'] }}, '{{ $d['supplier_name'] }}', {{ $sisa }})">💰 Bayar</button>
                         @endif
+                        @if((int)($d['paid'] ?? 0) > 0)
+                        <button class="fm-btn fm-btn-sm fm-btn-outline" onclick="viewPayments({{ $d['id'] }}, '{{ $d['supplier_name'] }}')">📋 Riwayat</button>
+                        @endif
                         <button class="fm-btn fm-btn-sm fm-btn-outline" onclick="openEditDebt({{ json_encode($d) }})">✏️</button>
                         @if((int)($d['paid'] ?? 0) === 0)
                         <button class="fm-btn fm-btn-sm fm-btn-danger" onclick="deleteDebt({{ $d['id'] }}, '{{ $d['supplier_name'] }}')">🗑️</button>
@@ -144,6 +147,7 @@
                     <div class="fm-form-group">
                         <label class="fm-label">Jumlah Bayar (Rp)</label>
                         <input type="number" class="fm-input fm-rupiah" name="amount" id="payAmount" required>
+                        <p id="payRemaining" style="font-size:12px;color:#64748b;margin-top:4px;"></p>
                     </div>
                     <div class="fm-form-group">
                         <label class="fm-label">Tanggal Bayar</label>
@@ -196,6 +200,16 @@
             </div>
         </div>
     </div>
+    {{-- Modal Riwayat Pembayaran --}}
+    <div class="fm-modal-backdrop" id="historyModal">
+        <div class="fm-modal" style="max-width:500px;">
+            <div class="fm-modal-header">
+                <span class="fm-modal-title" id="historyTitle">📋 Riwayat Pembayaran</span>
+                <button class="fm-modal-close" onclick="document.getElementById('historyModal').classList.remove('active')">&times;</button>
+            </div>
+            <div class="fm-modal-body" id="historyBody" style="font-size:13px;">Memuat...</div>
+        </div>
+    </div>
 </div>
 @endsection
 
@@ -210,7 +224,10 @@ function closeModal(){document.getElementById('modal').classList.remove('active'
 function openPay(id, name, sisa){
     document.getElementById('payDebtId').value = id;
     document.getElementById('payTitle').textContent = 'Bayar Hutang: ' + name;
-    document.getElementById('payAmount').value = sisa.toLocaleString('id');
+    const input = document.getElementById('payAmount');
+    input.value = sisa.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    input.dataset.max = sisa;
+    document.getElementById('payRemaining').textContent = 'Sisa hutang: Rp ' + sisa.toLocaleString('id') + ' — bisa bayar sebagian.';
     document.getElementById('payModal').classList.add('active');
 }
 function closePayModal(){document.getElementById('payModal').classList.remove('active');document.getElementById('payForm').reset();}
@@ -271,6 +288,32 @@ async function deleteDebt(id, name) {
         if (data.success) { showToast('Hutang dihapus!'); setTimeout(()=>location.reload(),600); }
         else showToast(data.message||'Gagal','error');
     } catch(e) { showToast(e.message,'error'); }
+}
+
+async function viewPayments(id, name) {
+    document.getElementById('historyTitle').textContent = '📋 Riwayat: ' + name;
+    document.getElementById('historyBody').innerHTML = 'Memuat...';
+    document.getElementById('historyModal').classList.add('active');
+    try {
+        const res = await fetch('{{ url("admin/finance/debts") }}/' + id + '/payments', {headers:{'Accept':'application/json'}});
+        const data = await res.json();
+        if (!data.length) {
+            document.getElementById('historyBody').innerHTML = '<p style="color:#94a3b8;text-align:center;">Belum ada pembayaran.</p>';
+            return;
+        }
+        let html = '<table style="width:100%;border-collapse:collapse;">';
+        html += '<tr style="border-bottom:2px solid #e2e8f0;"><th style="padding:8px 0;text-align:left;">Tanggal</th><th style="text-align:left;">Akun</th><th style="text-align:right;">Jumlah</th><th style="text-align:left;">Catatan</th></tr>';
+        data.forEach(p => {
+            html += '<tr style="border-bottom:1px solid #f1f5f9;">';
+            html += '<td style="padding:8px 0;">' + p.payment_date + '</td>';
+            html += '<td>' + (p.account_name||'-') + '</td>';
+            html += '<td style="text-align:right;font-weight:600;">Rp ' + parseInt(p.amount).toLocaleString('id') + '</td>';
+            html += '<td style="color:#64748b;">' + (p.notes||'-') + '</td>';
+            html += '</tr>';
+        });
+        html += '</table>';
+        document.getElementById('historyBody').innerHTML = html;
+    } catch(e) { document.getElementById('historyBody').innerHTML = 'Error: ' + e.message; }
 }
 </script>
 @endpush

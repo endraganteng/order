@@ -546,6 +546,7 @@ class FinanceController extends Controller
                 'description' => $request->description,
                 'debt_date' => $request->transaction_date,
                 'due_date' => $request->due_date,
+                'finance_category_id' => $request->finance_category_id,
             ]);
         }
 
