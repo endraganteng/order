@@ -126,8 +126,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::patch('tasks/recurring/{id}/schedule', [TaskController::class, 'recurringScheduleUpdate'])->name('tasks.recurring.schedule_update');
         Route::post('tasks/recurring/{id}/force-generate', [TaskController::class, 'recurringForceGenerate'])->name('tasks.recurring.force_generate');
         Route::get('tasks/templates/board', [TaskController::class, 'templatesBoard'])->name('tasks.templates.board');
-        Route::delete('tasks/{id}', [TaskController::class, 'destroy'])->name('tasks.destroy');
+        Route::get('tasks/today-generated', [TaskController::class, 'todayGeneratedTasks'])->name('tasks.today_generated');
         Route::delete('tasks/recurring/{id}', [TaskController::class, 'recurringDestroy'])->name('tasks.recurring.destroy');
+        Route::delete('tasks/{id}', [TaskController::class, 'destroy'])->name('tasks.destroy');
         Route::post('tasks/recurring/batch-destroy', [TaskController::class, 'recurringBatchDestroy'])->name('tasks.recurring.batch_destroy');
 
         // Live Dashboard

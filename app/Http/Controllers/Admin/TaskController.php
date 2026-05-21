@@ -685,33 +685,38 @@ class TaskController extends Controller
     /**
      * Delete task.
      */
-    public function destroy($id)
+    public function destroy($id, Request $request)
     {
         $task = collect($this->firebase->getWaiterTasks())->first(function ($candidate) use ($id) {
             return (string) ($candidate['id'] ?? '') === (string) $id;
         });
 
-        $redirectRouteName = $this->resolveRouteNameByTaskType((string) ($task['task_type'] ?? 'general'));
-
         $this->firebase->deleteWaiterTask($id);
-
         $this->firebase->logAuditAction('delete', 'task', $id, ['title' => $task['title'] ?? '']);
 
-        return redirect()->route($redirectRouteName)
-            ->with('success', 'Tugas berhasil dihapus');
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json(['success' => true]);
+        }
+
+        $redirectRouteName = $this->resolveRouteNameByTaskType((string) ($task['task_type'] ?? 'general'));
+        return redirect()->route($redirectRouteName)->with('success', 'Tugas berhasil dihapus');
     }
 
     /**
      * Delete recurring task template.
      */
-    public function recurringDestroy($id)
+    public function recurringDestroy($id, Request $request)
     {
         $template = $this->firebase->getRecurringWaiterTaskTemplateById($id);
-        $redirectRouteName = $this->resolveRouteNameByTaskType((string) ($template['task_type'] ?? 'general'));
 
         $result = $this->firebase->deleteRecurringWaiterTaskTemplate($id);
         $cancelledTasks = is_array($result) ? (int) ($result['cancelled_tasks'] ?? 0) : 0;
 
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json(['success' => true, 'cancelled_tasks' => $cancelledTasks]);
+        }
+
+        $redirectRouteName = $this->resolveRouteNameByTaskType((string) ($template['task_type'] ?? 'general'));
         $message = 'Template task berulang berhasil dihapus.';
         if ($cancelledTasks > 0) {
             $message .= ' '.$cancelledTasks.' task pending/in-progress dibatalkan otomatis.';
@@ -822,6 +827,28 @@ class TaskController extends Controller
      * Board view: semua template recurring dikelompokkan per kolom jadwal.
      * ?scope=general (default) atau ?scope=rack_check
      */
+    public function todayGeneratedTasks(Request $request)
+    {
+        $scope = $request->query('scope', 'general');
+        $today = date('Y-m-d');
+        $tasks = $this->firebase->getWaiterTasksByDate($today);
+        $waiters = $this->firebase->getActiveWaiters();
+        $waiterMap = [];
+        foreach ($waiters as $w) {
+            $waiterMap[$w['id'] ?? ''] = $w['name'] ?? '-';
+        }
+
+        $tasks = array_values(array_filter($tasks, fn($t) => ($t['task_type'] ?? 'general') === $scope));
+        $tasks = array_map(function ($t) use ($waiterMap) {
+            $t['assigned_waiter_name'] = $waiterMap[$t['assigned_waiter_id'] ?? ''] ?? '';
+            return $t;
+        }, $tasks);
+
+        usort($tasks, fn($a, $b) => ($a['title'] ?? '') <=> ($b['title'] ?? ''));
+
+        return response()->json($tasks);
+    }
+
     public function templatesBoard(Request $request)
     {
         $scope = $request->query('scope', 'general');
@@ -829,6 +856,7 @@ class TaskController extends Controller
             $scope = 'general';
         }
 
+        $viewMode = $request->query('view', 'role');
         $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
         $waiters = $this->firebase->getActiveWaiters();
 
@@ -843,7 +871,34 @@ class TaskController extends Controller
             $waiterMap[$w['id'] ?? ''] = $w['name'] ?? '-';
         }
 
-        // Kolom definitions — urutan tampil
+        if ($viewMode === 'role') {
+            // Group by role
+            $categories = $this->firebase->getTaskCategories();
+            $racks = $scope === 'rack_check' ? $this->firebase->getActiveRacks() : [];
+            $columns = [
+                'pelayan'  => ['label' => '👤 Pelayan'],
+                'kasir'    => ['label' => '💰 Kasir'],
+                'finance'  => ['label' => '📊 Finance'],
+                'backup'   => ['label' => '🔄 Backup'],
+                'inactive' => ['label' => '🚫 Tidak Aktif'],
+            ];
+            $grouped = array_fill_keys(array_keys($columns), []);
+            foreach ($templates as $t) {
+                if (! ($t['is_active'] ?? true)) {
+                    $grouped['inactive'][] = $t;
+                    continue;
+                }
+                $role = $t['assigned_waiter_role'] ?? 'pelayan';
+                if (isset($grouped[$role])) {
+                    $grouped[$role][] = $t;
+                } else {
+                    $grouped['pelayan'][] = $t;
+                }
+            }
+            return view('admin.tasks.templates_board_role', compact('scope', 'columns', 'grouped', 'waiterMap', 'waiters', 'categories', 'racks', 'viewMode'));
+        }
+
+        // Legacy: group by schedule
         $columns = [
             'inactive'  => ['label' => 'Tidak Aktif',  'key' => 'inactive'],
             'daily'     => ['label' => 'Setiap Hari',   'key' => 'daily'],
@@ -857,7 +912,6 @@ class TaskController extends Controller
             'every_n'   => ['label' => 'Setiap N Hari', 'key' => 'every_n'],
         ];
 
-        // Group templates ke kolom
         $grouped = array_fill_keys(array_keys($columns), []);
         foreach ($templates as $t) {
             if (! ($t['is_active'] ?? true)) {
@@ -898,6 +952,14 @@ class TaskController extends Controller
 
         $patch = [];
 
+        if ($request->has('title')) {
+            $patch['title'] = trim((string) $request->input('title'));
+        }
+
+        if ($request->has('assigned_waiter_role')) {
+            $patch['assigned_waiter_role'] = (string) $request->input('assigned_waiter_role');
+        }
+
         if ($request->has('recurrence_type')) {
             $rt = (string) $request->input('recurrence_type');
             if (! in_array($rt, $allowed, true)) {
@@ -912,6 +974,22 @@ class TaskController extends Controller
                 return response()->json(['success' => false, 'message' => 'weekly_day harus 1-7'], 422);
             }
             $patch['weekly_day'] = $day;
+        }
+
+        if ($request->has('interval_days')) {
+            $patch['interval_days'] = max(1, (int) $request->input('interval_days'));
+        }
+
+        if ($request->has('schedule_time')) {
+            $patch['schedule_time'] = (string) $request->input('schedule_time');
+        }
+
+        if ($request->has('assignment_type')) {
+            $patch['assignment_type'] = (string) $request->input('assignment_type');
+        }
+
+        if ($request->has('assigned_waiter_id')) {
+            $patch['assigned_waiter_id'] = (string) $request->input('assigned_waiter_id');
         }
 
         if ($request->has('is_active')) {
