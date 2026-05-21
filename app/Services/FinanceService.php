@@ -868,6 +868,16 @@ class FinanceService
         $from = $month . '-01';
         $to = date('Y-m-t', strtotime($from));
 
+        return $this->getBudgetRealizationRange($from, $to);
+    }
+
+    /**
+     * Budget vs Realisasi untuk range tanggal custom.
+     * Berguna saat onboarding mid-period (mis. mulai 21 Mei sampai 31 Mei) supaya
+     * pendapatan & realisasi dihitung hanya untuk hari yang relevan, bukan full bulan.
+     */
+    public function getBudgetRealizationRange(string $from, string $to): array
+    {
         $totalPendapatan = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('total_pendapatan');
 
         $allocations = DB::table('finance_allocations')
@@ -901,7 +911,12 @@ class FinanceService
             ];
         }
 
-        return ['total_pendapatan' => $totalPendapatan, 'allocations' => $result];
+        return [
+            'total_pendapatan' => $totalPendapatan,
+            'allocations' => $result,
+            'period_from' => $from,
+            'period_to' => $to,
+        ];
     }
 
     // ─── Reports ────────────────────────────────────────────────

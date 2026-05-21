@@ -583,10 +583,26 @@ class FinanceController extends Controller
 
     public function budgetRealization(Request $request)
     {
+        // Mode: 'month' (default) atau 'range' untuk onboarding mid-period.
+        $mode = $request->mode === 'range' ? 'range' : 'month';
         $month = $request->month ?? date('Y-m');
-        $budget = $this->finance->getBudgetRealization($month);
+
+        if ($mode === 'range') {
+            $request->validate([
+                'from' => 'required|date',
+                'to' => 'required|date|after_or_equal:from',
+            ]);
+            $from = $request->from;
+            $to = $request->to;
+            $budget = $this->finance->getBudgetRealizationRange($from, $to);
+        } else {
+            $from = $month . '-01';
+            $to = date('Y-m-t', strtotime($from));
+            $budget = $this->finance->getBudgetRealization($month);
+        }
+
         if ($request->wantsJson()) return response()->json($budget);
-        return view('admin.finance.budget', compact('budget', 'month'));
+        return view('admin.finance.budget', compact('budget', 'month', 'mode', 'from', 'to'));
     }
 
     // ─── Reports ────────────────────────────────────────────────

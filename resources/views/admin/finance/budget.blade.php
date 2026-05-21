@@ -15,20 +15,51 @@
         </div>
     </div>
 
-    <div class="fm-filter">
+    {{-- Toggle mode --}}
+    <div class="fm-filter" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+        <div class="fm-form-group" style="margin:0;">
+            <label class="fm-label">Mode</label>
+            <div style="display:flex;gap:6px;">
+                <button type="button" class="fm-btn fm-btn-sm {{ $mode === 'month' ? 'fm-btn-primary' : 'fm-btn-outline' }}" onclick="switchMode('month')">📅 Per Bulan</button>
+                <button type="button" class="fm-btn fm-btn-sm {{ $mode === 'range' ? 'fm-btn-primary' : 'fm-btn-outline' }}" onclick="switchMode('range')">📆 Range Tanggal</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- Filter mode bulan --}}
+    <div class="fm-filter" id="filterMonthBox" style="{{ $mode === 'month' ? '' : 'display:none;' }}">
         <div class="fm-form-group">
             <label class="fm-label">Bulan</label>
             <input type="month" class="fm-input" id="filterMonth" value="{{ $month }}" style="width:180px;">
         </div>
-        <button class="fm-btn fm-btn-primary" onclick="window.location.href='{{ route('admin.finance.budget') }}?month='+document.getElementById('filterMonth').value">🔍 Tampilkan</button>
+        <button class="fm-btn fm-btn-primary" onclick="applyMonth()">🔍 Tampilkan</button>
     </div>
+
+    {{-- Filter mode range --}}
+    <div class="fm-filter" id="filterRangeBox" style="{{ $mode === 'range' ? '' : 'display:none;' }}">
+        <div class="fm-form-group">
+            <label class="fm-label">Dari Tanggal</label>
+            <input type="date" class="fm-input" id="filterFrom" value="{{ $from }}" style="width:180px;">
+        </div>
+        <div class="fm-form-group">
+            <label class="fm-label">Sampai Tanggal</label>
+            <input type="date" class="fm-input" id="filterTo" value="{{ $to }}" style="width:180px;">
+        </div>
+        <button class="fm-btn fm-btn-primary" onclick="applyRange()">🔍 Tampilkan</button>
+    </div>
+
+    @if($mode === 'range')
+    <div class="fm-alert fm-alert-info" style="margin-bottom:14px;">
+        ℹ️ Mode <strong>Range Tanggal</strong>: pendapatan & realisasi dihitung hanya untuk periode <strong>{{ \Carbon\Carbon::parse($from)->translatedFormat('d M Y') }} – {{ \Carbon\Carbon::parse($to)->translatedFormat('d M Y') }}</strong> ({{ \Carbon\Carbon::parse($from)->diffInDays(\Carbon\Carbon::parse($to)) + 1 }} hari). Cocok untuk onboarding mid-bulan atau evaluasi periode pendek.
+    </div>
+    @endif
 
     @if($budget['total_pendapatan'] > 0)
     <div class="fm-cards" style="margin-bottom:20px;">
         <div class="fm-card green">
             <div class="fm-card-icon">📈</div>
             <div class="fm-card-value fm-money income">Rp {{ number_format($budget['total_pendapatan'], 0, ',', '.') }}</div>
-            <div class="fm-card-label">Total Pendapatan Bulan Ini</div>
+            <div class="fm-card-label">Total Pendapatan {{ $mode === 'range' ? 'Periode Ini' : 'Bulan Ini' }}</div>
         </div>
     </div>
 
@@ -56,7 +87,39 @@
         @endforeach
     </div>
     @else
-    <div class="fm-empty"><div class="fm-empty-icon">📭</div><div class="fm-empty-text">Belum ada data pendapatan untuk bulan ini. Lakukan sync terlebih dahulu.</div></div>
+    <div class="fm-empty"><div class="fm-empty-icon">📭</div><div class="fm-empty-text">Belum ada data pendapatan untuk periode ini. Lakukan sync terlebih dahulu.</div></div>
     @endif
 </div>
 @endsection
+
+@push('scripts')
+<script>
+const baseUrl = '{{ route('admin.finance.budget') }}';
+
+function switchMode(mode) {
+    const monthBox = document.getElementById('filterMonthBox');
+    const rangeBox = document.getElementById('filterRangeBox');
+    if (mode === 'range') {
+        monthBox.style.display = 'none';
+        rangeBox.style.display = '';
+    } else {
+        monthBox.style.display = '';
+        rangeBox.style.display = 'none';
+    }
+}
+
+function applyMonth() {
+    const m = document.getElementById('filterMonth').value;
+    if (!m) return;
+    window.location.href = baseUrl + '?mode=month&month=' + encodeURIComponent(m);
+}
+
+function applyRange() {
+    const f = document.getElementById('filterFrom').value;
+    const t = document.getElementById('filterTo').value;
+    if (!f || !t) { alert('Isi tanggal dari dan sampai.'); return; }
+    if (f > t) { alert('Tanggal dari harus lebih kecil atau sama dengan tanggal sampai.'); return; }
+    window.location.href = baseUrl + '?mode=range&from=' + encodeURIComponent(f) + '&to=' + encodeURIComponent(t);
+}
+</script>
+@endpush
