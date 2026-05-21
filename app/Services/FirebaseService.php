@@ -3484,6 +3484,9 @@ class FirebaseService
             $datesToProcess = [$todayDate];
         } elseif (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $lastRunAt)) {
             $datesToProcess = [$todayDate];
+        } elseif ($lastRunAt === $todayDate) {
+            // Already ran today — still process today (templates may have been added/changed)
+            $datesToProcess = [$todayDate];
         } else {
             $startDate = new \DateTimeImmutable($lastRunAt);
             $startDate = $startDate->modify('+1 day');
@@ -3583,11 +3586,6 @@ class FirebaseService
             $scheduleTime = $template['schedule_time'] ?? null;
             $templateScheduleModeCheck = (string) ($template['schedule_mode'] ?? 'fixed');
 
-            // For shift_relative mode, schedule_time is optional (used as fallback only)
-            if (! $force && $templateScheduleModeCheck === 'fixed' && ! $scheduleTime) {
-                continue;
-            }
-
             $lastGeneratedDate = $template['last_generated_date'] ?? null;
             // For shift_relative mode, don't skip based on last_generated_date because
             // different waiters may have different shift start times throughout the day.
@@ -3600,7 +3598,7 @@ class FirebaseService
             // Saat $force=true, bypass juga schedule_time check.
             $isDueToday = $force
                 ? true
-                : ($templateScheduleModeCheck === 'shift_relative' ? true : (! $isToday || $currentTime >= $scheduleTime));
+                : ($templateScheduleModeCheck === 'shift_relative' ? true : (! $isToday || ! $scheduleTime || $currentTime >= $scheduleTime));
             $recurrenceMatchedToday = $force ? true : $this->isTemplateDueForDate($template, $effectiveTargetDate);
 
             if ($alreadyGeneratedToday || ! $isDueToday || ! $recurrenceMatchedToday) {
