@@ -1270,16 +1270,8 @@
         }
         
         function playNotificationSound() {
-            try {
-                if (notificationSound) {
-                    notificationSound.currentTime = 0;
-                    notificationSound.play().catch(err => {
-                        console.warn('Could not play notification sound:', err);
-                    });
-                }
-            } catch (error) {
-                console.warn('Notification sound error:', error);
-            }
+            // Pakai queue supaya tidak overlap dengan TTS DANA
+            enqueueNotificationAudio({ type: 'chime' });
         }
         
         function updateWaitersNotClockedList(stats, waitersNotYetClocked) {
@@ -1778,6 +1770,98 @@
         let initialLoadComplete = false;
         let initialTaskLoadComplete = false;
 
+        // ========================================
+        // AUDIO NOTIFICATION QUEUE
+        // ========================================
+        // Serialize semua audio (chime order + TTS DANA) supaya tidak tumpang tindih
+        // ketika notifikasi datang bersamaan. FIFO, drop kalau queue > 5 (anti spam).
+        const notificationQueue = [];
+        let isPlayingNotification = false;
+        const MAX_QUEUE_SIZE = 5;
+
+        /**
+         * Enqueue audio job. Job format:
+         *   { type: 'chime' }  → main ordermasuk.mp3
+         *   { type: 'tts', text: string, voice: string }  → main TTS (Google → fallback Web Speech)
+         */
+        function enqueueNotificationAudio(job) {
+            if (notificationQueue.length >= MAX_QUEUE_SIZE) {
+                console.warn('Notification audio queue full, dropping job:', job.type);
+                return;
+            }
+            notificationQueue.push(job);
+            processNotificationQueue();
+        }
+
+        async function processNotificationQueue() {
+            if (isPlayingNotification) return;
+            const job = notificationQueue.shift();
+            if (!job) return;
+
+            isPlayingNotification = true;
+            try {
+                if (job.type === 'chime') {
+                    await playChimeBlocking();
+                } else if (job.type === 'tts') {
+                    await playTtsBlocking(job.text, job.voice);
+                }
+            } catch (e) {
+                console.warn('Notification audio error:', e);
+            } finally {
+                isPlayingNotification = false;
+                // Continue dengan job berikutnya kalau ada
+                if (notificationQueue.length > 0) {
+                    setTimeout(processNotificationQueue, 100); // jeda 100ms antar audio
+                }
+            }
+        }
+
+        function playChimeBlocking() {
+            return new Promise((resolve) => {
+                try {
+                    notificationSound.currentTime = 0;
+                    const onEnd = () => {
+                        notificationSound.removeEventListener('ended', onEnd);
+                        notificationSound.removeEventListener('error', onEnd);
+                        resolve();
+                    };
+                    notificationSound.addEventListener('ended', onEnd, { once: true });
+                    notificationSound.addEventListener('error', onEnd, { once: true });
+                    notificationSound.play().catch(() => {
+                        notificationSound.removeEventListener('ended', onEnd);
+                        notificationSound.removeEventListener('error', onEnd);
+                        resolve();
+                    });
+                    // Hard timeout 5 detik (chime sebenarnya ~1-2 detik)
+                    setTimeout(() => resolve(), 5000);
+                } catch (e) {
+                    resolve();
+                }
+            });
+        }
+
+        function playTtsBlocking(teks, voiceName) {
+            return new Promise((resolve) => {
+                // Hard timeout 10 detik (TTS biasa 2-4 detik untuk kalimat pendek)
+                const timeout = setTimeout(() => resolve(), 10000);
+
+                const finish = () => {
+                    clearTimeout(timeout);
+                    resolve();
+                };
+
+                // Detect provider dari voiceName format: "google:..." atau "browser:..."
+                const [provider, name] = (voiceName || 'google:id-ID-Wavenet-A').split(':');
+
+                if (provider === 'google') {
+                    speakViaGoogle(teks, name, finish);
+                } else {
+                    speakViaBrowser(teks, name, finish);
+                }
+            });
+        }
+
+
         function sortCashierWorkers() {
             cashierWorkers.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'id-ID'));
         }
@@ -1972,9 +2056,7 @@
             }
 
             if (hasNewOrders) {
-                notificationSound.play().catch(error => {
-                    console.log('Audio playback blocked:', error);
-                });
+                enqueueNotificationAudio({ type: 'chime' });
                 showToast('🔔 Ada Order Baru!', 'order');
             }
 
@@ -2051,7 +2133,7 @@
                 });
 
                 if (hasNewOrders) {
-                    notificationSound.play().catch(e => console.log('Audio blocked:', e));
+                    enqueueNotificationAudio({ type: 'chime' });
                     showToast('🔔 Ada Order Baru!', 'order');
                 }
 
@@ -2402,8 +2484,8 @@
         danaVoiceSelectEl.addEventListener('change', () => {
             selectedVoiceName = danaVoiceSelectEl.value;
             localStorage.setItem(DANA_VOICE_NAME_STORAGE_KEY, selectedVoiceName);
-            // Auto-preview saat ganti
-            speakNominal(50000, 'Endra Putra');
+            // Auto-preview saat ganti — bypass queue untuk feedback instan
+            speakNominalTest(50000, 'Endra Putra');
         });
 
         /**
@@ -2486,8 +2568,26 @@
                 teks += ' dari ' + senderName;
             }
 
-            const [provider, voiceName] = (selectedVoiceName || 'google:id-ID-Wavenet-A').split(':');
+            // Masukkan ke audio queue supaya tidak overlap dengan chime order
+            enqueueNotificationAudio({
+                type: 'tts',
+                text: teks,
+                voice: selectedVoiceName || 'google:id-ID-Wavenet-A',
+            });
+        }
 
+        /**
+         * Test voice dari tombol "Test" — bypass queue, instant playback
+         * supaya user dapat feedback langsung saat preview voice.
+         */
+        function speakNominalTest(amount, senderName) {
+            const kata = angkaKeKata(amount);
+            let teks = 'Diterima ' + kata + ' rupiah';
+            if (senderName) {
+                teks += ' dari ' + senderName;
+            }
+
+            const [provider, voiceName] = (selectedVoiceName || 'google:id-ID-Wavenet-A').split(':');
             if (provider === 'google') {
                 speakViaGoogle(teks, voiceName);
             } else {
@@ -2499,7 +2599,9 @@
          * Google Cloud TTS via server proxy.
          * Fallback ke Web Speech API kalau gagal (offline / quota habis).
          */
-        async function speakViaGoogle(teks, voiceName) {
+        async function speakViaGoogle(teks, voiceName, onComplete) {
+            const done = (typeof onComplete === 'function') ? onComplete : () => {};
+
             // Cancel audio sebelumnya kalau masih jalan
             if (currentTtsAudio) {
                 try { currentTtsAudio.pause(); } catch (e) { /* ignore */ }
@@ -2523,14 +2625,14 @@
 
                 if (!res.ok) {
                     console.warn('Google TTS failed:', res.status, '— fallback ke Web Speech API');
-                    speakViaBrowser(teks, '');
+                    speakViaBrowser(teks, '', done);
                     return;
                 }
 
                 const blob = await res.blob();
                 if (blob.size === 0) {
                     console.warn('Google TTS returned empty audio — fallback');
-                    speakViaBrowser(teks, '');
+                    speakViaBrowser(teks, '', done);
                     return;
                 }
 
@@ -2540,26 +2642,30 @@
                 currentTtsAudio.onended = () => {
                     URL.revokeObjectURL(audioUrl);
                     currentTtsAudio = null;
+                    done();
                 };
                 currentTtsAudio.onerror = () => {
                     URL.revokeObjectURL(audioUrl);
                     currentTtsAudio = null;
                     console.warn('Audio playback error — fallback');
-                    speakViaBrowser(teks, '');
+                    speakViaBrowser(teks, '', done);
                 };
                 await currentTtsAudio.play();
             } catch (e) {
                 console.warn('Google TTS exception:', e.message, '— fallback ke Web Speech API');
-                speakViaBrowser(teks, '');
+                speakViaBrowser(teks, '', done);
             }
         }
 
         /**
          * Web Speech API (browser-native).
          */
-        function speakViaBrowser(teks, voiceName) {
+        function speakViaBrowser(teks, voiceName, onComplete) {
+            const done = (typeof onComplete === 'function') ? onComplete : () => {};
+
             if (!danaVoiceSupported) {
                 console.warn('Web Speech API tidak support, audio tidak diputar');
+                done();
                 return;
             }
 
@@ -2583,15 +2689,19 @@
                 }
                 if (voiceToUse) utterance.voice = voiceToUse;
 
+                utterance.onend = () => done();
+                utterance.onerror = () => done();
+
                 window.speechSynthesis.speak(utterance);
             } catch (e) {
                 console.warn('Voice synthesis error:', e);
+                done();
             }
         }
 
-        // Test button — preview suara dengan amount sample
+        // Test button — preview suara dengan amount sample (bypass queue, instant)
         danaVoiceTestBtn.addEventListener('click', () => {
-            speakNominal(50000, 'Endra Putra');
+            speakNominalTest(50000, 'Endra Putra');
         });
 
         // State: id -> payment object (Map untuk maintain insertion order kalau perlu)
