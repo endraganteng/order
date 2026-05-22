@@ -117,6 +117,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('tasks/reset-all', [TaskController::class, 'resetAll'])->name('tasks.reset_all');
         Route::post('tasks/force-generate', [TaskController::class, 'forceGenerate'])->name('tasks.force_generate');
         Route::post('tasks/bulk-cancel-today', [TaskController::class, 'bulkCancelToday'])->name('tasks.bulk_cancel_today');
+        Route::get('tasks/studio', [TaskController::class, 'studio'])->name('tasks.studio');
         Route::get('tasks/create', [TaskController::class, 'create'])->name('tasks.create');
         Route::post('tasks', [TaskController::class, 'store'])->name('tasks.store');
         Route::post('tasks/cashiers', [TaskController::class, 'cashierStore'])->name('tasks.cashiers.store');

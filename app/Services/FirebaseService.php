@@ -3331,6 +3331,18 @@ class FirebaseService
             'weekly_day' => $recurrenceType === 'weekly' ? (int) ($data['weekly_day'] ?? date('N')) : null,
             'interval_days' => $recurrenceType === 'every_n_days' ? (int) ($data['interval_days'] ?? 1) : null,
             'recurrence_anchor_date' => $data['recurrence_anchor_date'] ?? date('Y-m-d'),
+            'rolling_enabled' => (bool) ($data['rolling_enabled'] ?? false),
+            'rolling_period' => in_array(strtolower((string) ($data['rolling_period'] ?? 'weekly')), ['daily', 'weekly', 'monthly'], true)
+                ? strtolower((string) ($data['rolling_period'] ?? 'weekly'))
+                : 'weekly',
+            'rolling_waiter_ids' => array_values(array_filter(
+                array_map('strval', is_array($data['rolling_waiter_ids'] ?? null) ? $data['rolling_waiter_ids'] : []),
+                function ($v) {
+                    return $v !== '';
+                }
+            )),
+            'rolling_anchor_date' => (string) ($data['rolling_anchor_date'] ?? ''),
+            'target_shift_id' => (string) ($data['target_shift_id'] ?? ''),
             'is_active' => true,
             'created_at' => time(),
             'last_generated_date' => null,
@@ -3418,6 +3430,32 @@ class FirebaseService
             'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
         ];
 
+        if (array_key_exists('rolling_enabled', $data)) {
+            $updates['rolling_enabled'] = (bool) $data['rolling_enabled'];
+        }
+        if (array_key_exists('rolling_period', $data)) {
+            $rp = strtolower((string) $data['rolling_period']);
+            $updates['rolling_period'] = in_array($rp, ['daily', 'weekly', 'monthly'], true) ? $rp : 'weekly';
+        }
+        if (array_key_exists('rolling_waiter_ids', $data)) {
+            $ids = $data['rolling_waiter_ids'];
+            if (! is_array($ids)) {
+                $ids = [];
+            }
+            $updates['rolling_waiter_ids'] = array_values(array_filter(
+                array_map('strval', $ids),
+                function ($v) {
+                    return $v !== '';
+                }
+            ));
+        }
+        if (array_key_exists('rolling_anchor_date', $data)) {
+            $updates['rolling_anchor_date'] = (string) $data['rolling_anchor_date'];
+        }
+        if (array_key_exists('target_shift_id', $data)) {
+            $updates['target_shift_id'] = (string) $data['target_shift_id'];
+        }
+
         $this->database->getReference('waiter_task_templates/'.$id)->update($updates);
     }
 
@@ -3437,6 +3475,8 @@ class FirebaseService
         }
 
         $allowed = ['daily', 'weekly', 'every_n_days'];
+        $allowedAssignment = ['single', 'all', 'role'];
+        $allowedRoles = ['kasir', 'pelayan', 'backup', 'finance', 'supervisor'];
         $updates = [];
 
         if (array_key_exists('recurrence_type', $patch)) {
@@ -3455,8 +3495,78 @@ class FirebaseService
             $updates['weekly_day'] = $day;
         }
 
+        if (array_key_exists('interval_days', $patch)) {
+            $updates['interval_days'] = max(1, (int) $patch['interval_days']);
+        }
+
+        if (array_key_exists('schedule_time', $patch)) {
+            $updates['schedule_time'] = (string) $patch['schedule_time'];
+        }
+
+        if (array_key_exists('title', $patch)) {
+            $title = trim((string) $patch['title']);
+            if ($title === '') {
+                return ['success' => false, 'template' => null, 'error' => 'title tidak boleh kosong'];
+            }
+            $updates['title'] = $title;
+        }
+
+        if (array_key_exists('assignment_type', $patch)) {
+            $at = (string) $patch['assignment_type'];
+            if (! in_array($at, $allowedAssignment, true)) {
+                return ['success' => false, 'template' => null, 'error' => 'assignment_type tidak valid'];
+            }
+            $updates['assignment_type'] = $at;
+        }
+
+        if (array_key_exists('assigned_waiter_role', $patch)) {
+            $role = strtolower(trim((string) $patch['assigned_waiter_role']));
+            if ($role !== '' && ! in_array($role, $allowedRoles, true)) {
+                return ['success' => false, 'template' => null, 'error' => 'assigned_waiter_role tidak valid'];
+            }
+            $updates['assigned_waiter_role'] = $role;
+        }
+
+        if (array_key_exists('assigned_waiter_id', $patch)) {
+            $updates['assigned_waiter_id'] = (string) $patch['assigned_waiter_id'];
+        }
+
         if (array_key_exists('is_active', $patch)) {
             $updates['is_active'] = (bool) $patch['is_active'];
+        }
+
+        if (array_key_exists('rolling_enabled', $patch)) {
+            $updates['rolling_enabled'] = (bool) $patch['rolling_enabled'];
+        }
+
+        if (array_key_exists('rolling_period', $patch)) {
+            $rp = strtolower(trim((string) $patch['rolling_period']));
+            if (! in_array($rp, ['daily', 'weekly', 'monthly'], true)) {
+                return ['success' => false, 'template' => null, 'error' => 'rolling_period tidak valid'];
+            }
+            $updates['rolling_period'] = $rp;
+        }
+
+        if (array_key_exists('rolling_waiter_ids', $patch)) {
+            $ids = $patch['rolling_waiter_ids'];
+            if (is_string($ids)) {
+                $decoded = json_decode($ids, true);
+                $ids = is_array($decoded) ? $decoded : [];
+            }
+            if (! is_array($ids)) {
+                $ids = [];
+            }
+            $updates['rolling_waiter_ids'] = array_values(array_filter(array_map('strval', $ids), function ($v) {
+                return $v !== '';
+            }));
+        }
+
+        if (array_key_exists('rolling_anchor_date', $patch)) {
+            $updates['rolling_anchor_date'] = (string) $patch['rolling_anchor_date'];
+        }
+
+        if (array_key_exists('target_shift_id', $patch)) {
+            $updates['target_shift_id'] = (string) $patch['target_shift_id'];
         }
 
         if (empty($updates)) {
@@ -3628,17 +3738,93 @@ class FirebaseService
                 continue;
             }
 
-            // Filter out waiters who are off today (not scheduled to work)
-            $originalTargetWaiters = $targetWaiters;
-            $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($effectiveTargetDate) {
-                $wId = $waiter['id'] ?? '';
-                if ($wId === '') {
-                    return true;
-                }
-                return $this->isWorkingDay($wId, $effectiveTargetDate);
-            }));
+            // === GENERAL ROLLING (waiter rotation across N candidates) ===
+            // Pick exactly 1 waiter from rolling_waiter_ids based on period offset.
+            // If picked waiter is off today, still assign and flag (per user spec).
+            $isGeneralRolling = ! $isRackRollingTemplate
+                && ! empty($template['rolling_enabled'])
+                && (string) ($template['task_type'] ?? 'general') !== 'rack_check'
+                && is_array($template['rolling_waiter_ids'] ?? null)
+                && count((array) $template['rolling_waiter_ids']) > 0;
 
-            if (empty($targetWaiters)) {
+            if ($isGeneralRolling) {
+                $rollingIds = array_values(array_filter(
+                    array_map('strval', (array) $template['rolling_waiter_ids']),
+                    function ($v) {
+                        return $v !== '';
+                    }
+                ));
+                if (! empty($rollingIds)) {
+                    $period = (string) ($template['rolling_period'] ?? 'weekly');
+                    $anchor = trim((string) ($template['rolling_anchor_date'] ?? ''));
+                    $offset = $this->resolveRotationOffsetForPeriod(
+                        $effectiveTargetDate,
+                        $period,
+                        $anchor !== '' ? $anchor : null
+                    );
+                    $pickedId = $rollingIds[$offset % count($rollingIds)];
+                    $pickedWaiter = null;
+                    foreach ($targetWaiters as $w) {
+                        if ((string) ($w['id'] ?? '') === $pickedId) {
+                            $pickedWaiter = $w;
+                            break;
+                        }
+                    }
+                    if (! $pickedWaiter) {
+                        try {
+                            $maybeWaiter = $this->getWaiterById($pickedId);
+                            if ($maybeWaiter && ($maybeWaiter['is_active'] ?? true)) {
+                                $pickedWaiter = $maybeWaiter;
+                            }
+                        } catch (\Throwable $e) {
+                            $pickedWaiter = null;
+                        }
+                    }
+                    if ($pickedWaiter) {
+                        $targetWaiters = [$pickedWaiter];
+                    } else {
+                        // Invalid rolling waiter ID, skip this template for today
+                        continue;
+                    }
+                } else {
+                    $isGeneralRolling = false;
+                }
+            }
+
+            // === SHIFT TARGET FILTER (narrow to waiters whose shift today matches) ===
+            // Only narrow when assignment is role/all and not in rolling mode.
+            // For single + rolling, target_shift_id is informational only (flag).
+            $targetShiftId = trim((string) ($template['target_shift_id'] ?? ''));
+            if ($targetShiftId !== '' && ! $isGeneralRolling && $templateAssignmentType !== 'single') {
+                $shiftFiltered = array_values(array_filter($targetWaiters, function ($w) use ($targetShiftId, $effectiveTargetDate) {
+                    $wid = (string) ($w['id'] ?? '');
+                    if ($wid === '') {
+                        return false;
+                    }
+                    $shift = $this->getWaiterShiftForDate($wid, $effectiveTargetDate);
+
+                    return $shift && (string) ($shift['id'] ?? '') === $targetShiftId;
+                }));
+                if (! empty($shiftFiltered)) {
+                    $targetWaiters = $shiftFiltered;
+                }
+                // If filter empties: keep targetWaiters as-is, downstream loop will flag mismatch
+            }
+
+            // Filter out waiters who are off today (not scheduled to work)
+            // SKIPPED for general rolling (per user: still assign, flag instead)
+            $originalTargetWaiters = $targetWaiters;
+            if (! $isGeneralRolling) {
+                $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($effectiveTargetDate) {
+                    $wId = $waiter['id'] ?? '';
+                    if ($wId === '') {
+                        return true;
+                    }
+                    return $this->isWorkingDay($wId, $effectiveTargetDate);
+                }));
+            }
+
+            if (! $isGeneralRolling && empty($targetWaiters)) {
                 // PRIORITY 1: Peer fallback (Opsi E)
                 // Kalau template assignment_type=single dan single-assignee libur,
                 // coba cari peer dgn role sama yang masuk hari cycle asli.
@@ -3837,6 +4023,30 @@ class FirebaseService
                     'rescheduled_from_date' => $rescheduledFromDate,
                     'original_due_date' => $rescheduledFromDate,
                 ]);
+
+                // === ROLLING / SHIFT FLAGS ===
+                if ($isGeneralRolling) {
+                    $taskData['is_rolling_assignment'] = true;
+                    $taskData['rolling_period'] = (string) ($template['rolling_period'] ?? 'weekly');
+                    if (! empty($template['rolling_anchor_date'])) {
+                        $taskData['rolling_anchor_date'] = (string) $template['rolling_anchor_date'];
+                    }
+                    // Off-day flag: assigned but not scheduled to work today
+                    if (($waiter['id'] ?? '') !== '' && ! $this->isWorkingDay($waiter['id'], $effectiveTargetDate)) {
+                        $taskData['is_off_day_assignment'] = true;
+                    }
+                }
+                if ($targetShiftId !== '') {
+                    $waiterShiftToday = ($waiter['id'] ?? '') !== ''
+                        ? $this->getWaiterShiftForDate($waiter['id'], $effectiveTargetDate)
+                        : null;
+                    $waiterShiftId = $waiterShiftToday ? (string) ($waiterShiftToday['id'] ?? '') : '';
+                    $taskData['target_shift_id'] = $targetShiftId;
+                    if ($waiterShiftId !== $targetShiftId) {
+                        $taskData['is_shift_mismatch'] = true;
+                        $taskData['actual_shift_id'] = $waiterShiftId;
+                    }
+                }
 
                 if ($isCatchUp) {
                     $taskData['is_overdue'] = true;
@@ -4465,6 +4675,50 @@ class FirebaseService
         }
 
         return (int) floor($dateTimestamp / 86400);
+    }
+
+    /**
+     * Resolve rotation offset (slot index) for waiter rolling on a given period.
+     *
+     * @param string $date         Target date YYYY-MM-DD
+     * @param string $period       'daily' | 'weekly' | 'monthly'
+     * @param string|null $anchor  Anchor date YYYY-MM-DD (start of rotation cycle)
+     * @return int                 Number of completed periods since anchor (>=0)
+     */
+    protected function resolveRotationOffsetForPeriod(string $date, string $period, ?string $anchor = null): int
+    {
+        $targetTs = strtotime($date.' 00:00:00');
+        if ($targetTs === false) {
+            return 0;
+        }
+
+        $anchorTs = $anchor ? strtotime($anchor.' 00:00:00') : false;
+        if ($anchorTs === false || $anchorTs > $targetTs) {
+            // No anchor / anchor in future → fall back to absolute period bucket
+            $period = strtolower($period);
+            if ($period === 'monthly') {
+                return ((int) date('Y', $targetTs)) * 12 + ((int) date('n', $targetTs)) - 1;
+            }
+            $diffDays = (int) floor($targetTs / 86400);
+
+            return $period === 'weekly' ? (int) floor($diffDays / 7) : $diffDays;
+        }
+
+        $period = strtolower($period);
+        if ($period === 'monthly') {
+            $monthsTarget = ((int) date('Y', $targetTs)) * 12 + ((int) date('n', $targetTs));
+            $monthsAnchor = ((int) date('Y', $anchorTs)) * 12 + ((int) date('n', $anchorTs));
+
+            return max(0, $monthsTarget - $monthsAnchor);
+        }
+
+        $diffDays = (int) floor(($targetTs - $anchorTs) / 86400);
+        if ($period === 'weekly') {
+            return (int) floor($diffDays / 7);
+        }
+
+        // daily (default)
+        return $diffDays;
     }
 
     /**

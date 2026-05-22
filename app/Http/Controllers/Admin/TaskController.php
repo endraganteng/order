@@ -120,11 +120,18 @@ class TaskController extends Controller
      */
     public function create(Request $request)
     {
+        $requestedScope = (string) $request->input('task_scope', 'general');
+        $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
+
+        // v1: tugas umum dialihkan ke Studio (1 page lengkap).
+        // Cek rak masih pakai builder lama sampai studio scope rack_check rilis.
+        if ($taskScope === 'general') {
+            return redirect()->route('admin.tasks.studio');
+        }
+
         $waiters = $this->firebase->getActiveWaiters();
         $racks = $this->firebase->getActiveRacks();
         $categories = $this->firebase->getTaskCategories();
-        $requestedScope = (string) $request->input('task_scope', 'general');
-        $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
         $requestedTaskType = $taskScope === 'rack_check' ? 'rack_check' : 'general';
         $backRouteName = $taskScope === 'rack_check'
             ? 'admin.tasks.rack.index'
@@ -303,6 +310,22 @@ class TaskController extends Controller
         $batchTasksJson = trim((string) $request->input('batch_tasks_json', ''));
         if ($batchTasksJson !== '' && $taskType === 'general') {
             return $this->storeBatch($batchTasksJson, $request);
+        }
+
+        // ── CONFLICT GUARD: validate rolling + shift + assignment combinations ──
+        if ($taskType === 'general') {
+            $conflictErrors = $this->validateConflictingConfig($request, null);
+            if (! empty($conflictErrors)) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => $conflictErrors,
+                        'message' => 'Konfigurasi bentrok: '.implode(' / ', array_values($conflictErrors)),
+                    ], 422);
+                }
+
+                return back()->withErrors($conflictErrors)->withInput();
+            }
         }
 
         if ($assignmentType === 'role' && $taskType !== 'rack_check' && $roleAssignmentMode === 'rolling') {
@@ -795,6 +818,23 @@ class TaskController extends Controller
                 ->withInput();
         }
 
+        // CONFLICT GUARD
+        $taskType = (string) ($template['task_type'] ?? 'general');
+        if ($taskType === 'general') {
+            $conflictErrors = $this->validateConflictingConfig($request, $id);
+            if (! empty($conflictErrors)) {
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => false,
+                        'errors' => $conflictErrors,
+                        'message' => 'Konfigurasi bentrok: '.implode(' / ', array_values($conflictErrors)),
+                    ], 422);
+                }
+
+                return back()->withErrors($conflictErrors)->withInput();
+            }
+        }
+
         $scheduleMode = (string) $request->input('schedule_mode', 'fixed');
         $shiftOffsetMinutes = (int) $request->input('shift_offset_minutes', 0);
         $deadlineMode = (string) $request->input('deadline_mode', 'fixed');
@@ -815,6 +855,11 @@ class TaskController extends Controller
             'interval_days' => $recurrenceType === 'every_n_days' ? (int) $request->interval_days : null,
             'reset_anchor_date' => $request->has('reset_anchor_date'),
             'is_active' => $request->has('is_active'),
+            'rolling_enabled' => (bool) $request->input('rolling_enabled', false),
+            'rolling_period' => (string) $request->input('rolling_period', 'weekly'),
+            'rolling_waiter_ids' => $this->normalizeRollingWaiterIds($request->input('rolling_waiter_ids', [])),
+            'rolling_anchor_date' => (string) $request->input('rolling_anchor_date', ''),
+            'target_shift_id' => (string) $request->input('target_shift_id', ''),
         ]);
 
         $redirectRouteName = $this->resolveRouteNameByTaskType((string) ($template['task_type'] ?? 'general'));
@@ -854,6 +899,12 @@ class TaskController extends Controller
         $scope = $request->query('scope', 'general');
         if (! in_array($scope, ['general', 'rack_check'], true)) {
             $scope = 'general';
+        }
+
+        // v1: scope general dialihkan ke Studio (1 page).
+        // Cek rak masih pakai board lama sampai studio scope rack_check rilis.
+        if ($scope === 'general') {
+            return redirect()->route('admin.tasks.studio');
         }
 
         $viewMode = $request->query('view', 'role');
@@ -939,6 +990,371 @@ class TaskController extends Controller
     }
 
     /**
+     * Normalize rolling waiter IDs from input (string JSON or array).
+     * Returns clean array of unique non-empty waiter IDs preserving order.
+     */
+    protected function normalizeRollingWaiterIds($input): array
+    {
+        if (is_string($input)) {
+            $decoded = json_decode($input, true);
+            $input = is_array($decoded) ? $decoded : [];
+        }
+        if (! is_array($input)) {
+            return [];
+        }
+
+        $clean = [];
+        foreach ($input as $value) {
+            $id = trim((string) $value);
+            if ($id === '' || in_array($id, $clean, true)) {
+                continue;
+            }
+            $clean[] = $id;
+        }
+
+        return $clean;
+    }
+
+    /**
+     * Validate conflicting configuration for general task templates.
+     * Returns associative array of [field => message] errors. Empty = no conflict.
+     *
+     * Rules enforced (HARD ERRORS):
+     *  - rolling_enabled requires assignment_type IN [role, single]; reject 'all'
+     *  - rolling_enabled requires >=2 distinct waiters in rolling_waiter_ids
+     *  - rolling_enabled requires valid rolling_period (daily|weekly|monthly)
+     *  - rolling_enabled requires rolling_anchor_date in YYYY-MM-DD format
+     *  - rolling_waiter_ids must reference active waiters
+     *  - target_shift_id must reference an existing active shift if provided
+     *  - schedule_mode=fixed requires schedule_time
+     *  - assignment_type=single requires assigned_waiter_id
+     *  - deadline_mode=fixed requires time_limit_minutes >= 1 (else infinite deadline)
+     *  - assigned_waiter_role inside rolling_waiter_ids must match if assignment_type=role
+     */
+    protected function validateConflictingConfig(\Illuminate\Http\Request $request, ?string $excludeTemplateId = null): array
+    {
+        $errors = [];
+        $assignmentType = (string) $request->input('assignment_type', 'all');
+        $assignedWaiterId = trim((string) $request->input('assigned_waiter_id', ''));
+        $assignedWaiterRole = strtolower(trim((string) $request->input('assigned_waiter_role', '')));
+        $rollingEnabled = $request->boolean('rolling_enabled');
+        $rollingPeriod = strtolower(trim((string) $request->input('rolling_period', 'weekly')));
+        $rollingAnchor = trim((string) $request->input('rolling_anchor_date', ''));
+        $rollingIds = $this->normalizeRollingWaiterIds($request->input('rolling_waiter_ids', []));
+        $targetShiftId = trim((string) $request->input('target_shift_id', ''));
+        $scheduleMode = (string) $request->input('schedule_mode', 'fixed');
+        $scheduleTime = trim((string) $request->input('schedule_time', ''));
+        $deadlineMode = (string) $request->input('deadline_mode', 'fixed');
+        $timeLimitMinutes = (int) $request->input('time_limit_minutes', 0);
+
+        // assignment_type=single requires assigned_waiter_id
+        if ($assignmentType === 'single' && $assignedWaiterId === '' && ! $rollingEnabled) {
+            $errors['assigned_waiter_id'] = 'Mode "Waiter Spesifik" wajib pilih satu waiter.';
+        }
+
+        // schedule_mode=fixed requires schedule_time
+        if ($scheduleMode === 'fixed' && $scheduleTime === '') {
+            $errors['schedule_time'] = 'Jam mulai wajib diisi pada mode jadwal tetap.';
+        }
+
+        // deadline_mode=fixed + time_limit_minutes <=0 = infinite deadline
+        if ($deadlineMode === 'fixed' && $timeLimitMinutes < 1) {
+            $errors['time_limit_minutes'] = 'Batas waktu pengerjaan minimal 1 menit pada mode deadline tetap. Untuk deadline mengikuti shift, ubah ke mode "before_shift_end".';
+        }
+
+        if ($rollingEnabled) {
+            // rolling requires assignment_type=role only
+            // (single makes assigned_waiter_id meaningless; all is over-broad)
+            if ($assignmentType !== 'role') {
+                $errors['rolling_enabled'] = 'Rotasi hanya bisa dipakai dengan mode "Per role". Mode "Waiter spesifik" akan diabaikan oleh rotasi, dan mode "Semua waiter aktif" tidak kompatibel.';
+            }
+
+            // rolling needs >=2 waiters
+            if (count($rollingIds) < 2) {
+                $errors['rolling_waiter_ids'] = 'Rotasi butuh minimal 2 waiter pada urutan giliran.';
+            }
+
+            // rolling_period must be valid
+            if (! in_array($rollingPeriod, ['daily', 'weekly', 'monthly'], true)) {
+                $errors['rolling_period'] = 'Periode rotasi harus salah satu: harian, mingguan, atau bulanan.';
+            }
+
+            // rolling_anchor_date required + valid format
+            if ($rollingAnchor === '') {
+                $errors['rolling_anchor_date'] = 'Tanggal mulai rotasi wajib diisi.';
+            } elseif (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $rollingAnchor) || strtotime($rollingAnchor) === false) {
+                $errors['rolling_anchor_date'] = 'Format tanggal mulai rotasi tidak valid (YYYY-MM-DD).';
+            }
+
+            // rolling_waiter_ids must reference active waiters
+            if (! empty($rollingIds)) {
+                $invalid = [];
+                $crossRole = [];
+                foreach ($rollingIds as $wid) {
+                    $waiter = $this->firebase->getWaiterById($wid);
+                    if (! $waiter || ! ($waiter['is_active'] ?? true)) {
+                        $invalid[] = $wid;
+                        continue;
+                    }
+                    if ($assignmentType === 'role' && $assignedWaiterRole !== '') {
+                        $waiterRole = strtolower((string) ($waiter['waiter_role'] ?? ''));
+                        if ($waiterRole !== '' && $waiterRole !== $assignedWaiterRole) {
+                            $crossRole[] = $waiter['name'] ?? $wid;
+                        }
+                    }
+                }
+                if (! empty($invalid)) {
+                    $errors['rolling_waiter_ids'] = 'Waiter rotasi tidak valid atau sudah tidak aktif: '.implode(', ', $invalid).'.';
+                } elseif (! empty($crossRole)) {
+                    $errors['rolling_waiter_ids'] = 'Beberapa waiter rotasi role-nya tidak cocok dengan role tugas ('.$assignedWaiterRole.'): '.implode(', ', $crossRole).'. Sesuaikan role atau pilih waiter yang sama role.';
+                }
+            }
+
+            // Period coherence: rolling must not be finer than recurrence
+            $recurrenceType = (string) $request->input('recurrence_type', 'daily');
+            if ($recurrenceType === 'weekly' && $rollingPeriod === 'daily') {
+                $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas mingguan. Pilih "mingguan" atau "bulanan".';
+            } elseif ($recurrenceType === 'every_n_days' && $rollingPeriod === 'daily') {
+                $intervalDays = max(1, (int) $request->input('interval_days', 1));
+                if ($intervalDays > 1) {
+                    $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas tiap '.$intervalDays.' hari. Pilih periode mingguan/bulanan.';
+                }
+            }
+
+            // Weekly recurrence + weekly rolling: anchor MUST fall on weekly_day
+            if ($recurrenceType === 'weekly' && $rollingPeriod === 'weekly' && $rollingAnchor !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $rollingAnchor)) {
+                $weeklyDay = (int) $request->input('weekly_day', 1);
+                $anchorTs = strtotime($rollingAnchor);
+                if ($anchorTs !== false) {
+                    $anchorDow = (int) date('N', $anchorTs);
+                    if ($anchorDow !== $weeklyDay) {
+                        $dayNames = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+                        $errors['rolling_anchor_date'] = 'Tanggal mulai rotasi ('.$dayNames[$anchorDow].') harus jatuh pada hari yang dipilih ('.$dayNames[$weeklyDay].'). Tugas mingguan hanya generate di hari itu.';
+                    }
+                }
+            }
+        }
+
+        // target_shift_id must reference active shift
+        if ($targetShiftId !== '') {
+            $shift = $this->firebase->getShiftById($targetShiftId);
+            if (! $shift || ! ($shift['is_active'] ?? true)) {
+                $errors['target_shift_id'] = 'Shift target tidak ditemukan atau tidak aktif.';
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validate conflicts on a merged template snapshot (existing + patch).
+     * Lighter than validateConflictingConfig — only re-checks rolling/shift coherence,
+     * because PATCH may be partial (e.g., drag-drop only changes role).
+     */
+    protected function validatePatchConflict(array $merged): array
+    {
+        $errors = [];
+        $rollingEnabled = (bool) ($merged['rolling_enabled'] ?? false);
+        $assignmentType = (string) ($merged['assignment_type'] ?? 'all');
+        $assignedRole = strtolower(trim((string) ($merged['assigned_waiter_role'] ?? '')));
+        $rollingIds = $merged['rolling_waiter_ids'] ?? [];
+        if (! is_array($rollingIds)) {
+            $rollingIds = [];
+        }
+        $rollingIds = array_values(array_filter(array_map('strval', $rollingIds), function ($v) {
+            return $v !== '';
+        }));
+        $rollingPeriod = strtolower((string) ($merged['rolling_period'] ?? 'weekly'));
+        $rollingAnchor = trim((string) ($merged['rolling_anchor_date'] ?? ''));
+        $targetShiftId = trim((string) ($merged['target_shift_id'] ?? ''));
+
+        if ($rollingEnabled) {
+            if ($assignmentType === 'all') {
+                $errors['rolling_enabled'] = 'Rotasi tidak bisa digabung dengan "Semua waiter aktif". Ubah assignment_type ke role atau single dulu.';
+            }
+            if (count($rollingIds) < 2) {
+                $errors['rolling_waiter_ids'] = 'Rotasi butuh minimal 2 waiter pada urutan giliran.';
+            }
+            if (! in_array($rollingPeriod, ['daily', 'weekly', 'monthly'], true)) {
+                $errors['rolling_period'] = 'Periode rotasi harus harian/mingguan/bulanan.';
+            }
+            if ($rollingAnchor === '' || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $rollingAnchor) || strtotime($rollingAnchor) === false) {
+                $errors['rolling_anchor_date'] = 'Tanggal mulai rotasi wajib diisi dengan format YYYY-MM-DD.';
+            }
+            // Cross-role validation
+            if ($assignmentType === 'role' && $assignedRole !== '' && ! empty($rollingIds)) {
+                $crossRole = [];
+                foreach ($rollingIds as $wid) {
+                    $waiter = $this->firebase->getWaiterById($wid);
+                    if (! $waiter) {
+                        continue;
+                    }
+                    $waiterRole = strtolower((string) ($waiter['waiter_role'] ?? ''));
+                    if ($waiterRole !== '' && $waiterRole !== $assignedRole) {
+                        $crossRole[] = $waiter['name'] ?? $wid;
+                    }
+                }
+                if (! empty($crossRole)) {
+                    $errors['rolling_waiter_ids'] = 'Beberapa waiter rotasi role-nya tidak cocok dengan role tugas ('.$assignedRole.'): '.implode(', ', $crossRole).'.';
+                }
+            }
+
+            // Period coherence: rolling must not be finer than recurrence
+            $recurrenceType = (string) ($merged['recurrence_type'] ?? 'daily');
+            if ($recurrenceType === 'weekly' && $rollingPeriod === 'daily') {
+                $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas mingguan. Pilih "mingguan" atau "bulanan".';
+            } elseif ($recurrenceType === 'every_n_days' && $rollingPeriod === 'daily') {
+                $intervalDays = max(1, (int) ($merged['interval_days'] ?? 1));
+                if ($intervalDays > 1) {
+                    $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas tiap '.$intervalDays.' hari.';
+                }
+            }
+
+            // Anchor day-of-week must match weekly_day for weekly recurrence
+            if ($recurrenceType === 'weekly' && $rollingPeriod === 'weekly' && $rollingAnchor !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $rollingAnchor)) {
+                $weeklyDay = (int) ($merged['weekly_day'] ?? 1);
+                $anchorTs = strtotime($rollingAnchor);
+                if ($anchorTs !== false) {
+                    $anchorDow = (int) date('N', $anchorTs);
+                    if ($anchorDow !== $weeklyDay) {
+                        $dayNames = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+                        $errors['rolling_anchor_date'] = 'Tanggal mulai rotasi ('.$dayNames[$anchorDow].') harus jatuh pada hari yang dipilih ('.$dayNames[$weeklyDay].').';
+                    }
+                }
+            }
+        }
+
+        if ($targetShiftId !== '') {
+            $shift = $this->firebase->getShiftById($targetShiftId);
+            if (! $shift || ! ($shift['is_active'] ?? true)) {
+                $errors['target_shift_id'] = 'Shift target tidak ditemukan atau tidak aktif.';
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Studio: unified one-page task management (general scope only — v1).
+     *
+     * Replaces /admin/tasks/create and /admin/tasks/templates/board for general tasks.
+     * Three-panel layout (palette / board / drawer) with inline AJAX actions:
+     *   - Create / edit / delete recurring templates without page reload.
+     *   - Toggle active, force-generate, change role / schedule via existing endpoints.
+     *   - Monitor today's generated tasks + bulk cancel.
+     *
+     * Reuses these existing endpoints (no backend churn):
+     *   POST   admin.tasks.store                            — create new template
+     *   PATCH  admin.tasks.recurring.schedule_update        — schedule / role / activity
+     *   PUT    admin.tasks.recurring.update                 — full edit
+     *   POST   admin.tasks.recurring.force_generate         — trigger generate now
+     *   DELETE admin.tasks.recurring.destroy                — remove template
+     *   GET    admin.tasks.today_generated                  — today's task feed
+     *   DELETE admin.tasks.destroy                          — cancel today task
+     */
+    public function studio()
+    {
+        $scope = 'general';
+        $waiters = $this->firebase->getActiveWaiters();
+        $categories = $this->firebase->getTaskCategories();
+        $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+
+        $templates = array_values(array_filter($allTemplates, function ($template) {
+            return ($template['task_type'] ?? 'general') === 'general';
+        }));
+
+        $roles = [
+            'pelayan' => '👤 Pelayan',
+            'kasir' => '💰 Kasir',
+            'finance' => '📊 Finance',
+            'backup' => '🔄 Backup',
+            'inactive' => '🚫 Tidak Aktif',
+        ];
+
+        // JS-friendly waiter list (sanitised, only active, role normalised).
+        $jsWaiters = collect($waiters)
+            ->filter(fn ($waiter) => ! empty($waiter['is_active']))
+            ->map(function ($waiter) {
+                return [
+                    'id' => (string) ($waiter['id'] ?? ''),
+                    'name' => (string) ($waiter['name'] ?? '-'),
+                    'role' => strtolower((string) ($waiter['waiter_role'] ?? 'pelayan')),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $jsCategories = collect($categories)
+            ->map(function ($cat) {
+                return [
+                    'id' => (string) ($cat['id'] ?? ''),
+                    'name' => (string) ($cat['name'] ?? ''),
+                    'color' => (string) ($cat['color'] ?? '#6366f1'),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $jsTemplates = array_values(array_map(function ($template) {
+            $rollingIds = $template['rolling_waiter_ids'] ?? [];
+            if (! is_array($rollingIds)) {
+                $rollingIds = [];
+            }
+            $rollingIds = array_values(array_filter(array_map('strval', $rollingIds), function ($v) {
+                return $v !== '';
+            }));
+
+            return [
+                'id' => (string) ($template['id'] ?? ''),
+                'title' => (string) ($template['title'] ?? '-'),
+                'description' => (string) ($template['description'] ?? ''),
+                'priority' => (string) ($template['priority'] ?? 'normal'),
+                'task_type' => (string) ($template['task_type'] ?? 'general'),
+                'category_id' => (string) ($template['category_id'] ?? ''),
+                'category_name' => (string) ($template['category_name'] ?? ''),
+                'recurrence_type' => (string) ($template['recurrence_type'] ?? 'daily'),
+                'weekly_day' => $template['weekly_day'] ?? null,
+                'interval_days' => $template['interval_days'] ?? null,
+                'schedule_mode' => (string) ($template['schedule_mode'] ?? 'fixed'),
+                'schedule_time' => (string) ($template['schedule_time'] ?? ''),
+                'shift_offset_minutes' => (int) ($template['shift_offset_minutes'] ?? 0),
+                'time_limit_minutes' => (int) ($template['time_limit_minutes'] ?? 30),
+                'deadline_mode' => (string) ($template['deadline_mode'] ?? 'fixed'),
+                'deadline_before_end_minutes' => (int) ($template['deadline_before_end_minutes'] ?? 60),
+                'assignment_type' => (string) ($template['assignment_type'] ?? 'role'),
+                'assigned_waiter_id' => (string) ($template['assigned_waiter_id'] ?? ''),
+                'assigned_waiter_role' => strtolower((string) ($template['assigned_waiter_role'] ?? 'pelayan')),
+                'requires_photo_proof' => (bool) ($template['requires_photo_proof'] ?? false),
+                'requires_photo_before' => (bool) ($template['requires_photo_before'] ?? false),
+                'is_active' => (bool) ($template['is_active'] ?? true),
+                'rolling_enabled' => (bool) ($template['rolling_enabled'] ?? false),
+                'rolling_period' => (string) ($template['rolling_period'] ?? 'weekly'),
+                'rolling_waiter_ids' => $rollingIds,
+                'rolling_anchor_date' => (string) ($template['rolling_anchor_date'] ?? ''),
+                'target_shift_id' => (string) ($template['target_shift_id'] ?? ''),
+            ];
+        }, $templates));
+
+        $jsShifts = array_values(array_map(function ($shift) {
+            return [
+                'id' => (string) ($shift['id'] ?? ''),
+                'name' => (string) ($shift['name'] ?? '-'),
+                'clock_in_time' => (string) ($shift['clock_in_time'] ?? ''),
+                'clock_out_time' => (string) ($shift['clock_out_time'] ?? ''),
+            ];
+        }, $this->firebase->getActiveShifts()));
+
+        return view('admin.tasks.studio', compact(
+            'scope',
+            'roles',
+            'jsWaiters',
+            'jsCategories',
+            'jsTemplates',
+            'jsShifts'
+        ));
+    }
+
+    /**
      * AJAX PATCH: update schedule fields of a recurring template (board drag-drop).
      * Body: {recurrence_type?, weekly_day?, is_active?}
      */
@@ -996,8 +1412,42 @@ class TaskController extends Controller
             $patch['is_active'] = (bool) $request->input('is_active');
         }
 
+        if ($request->has('rolling_enabled')) {
+            $patch['rolling_enabled'] = (bool) $request->input('rolling_enabled');
+        }
+
+        if ($request->has('rolling_period')) {
+            $patch['rolling_period'] = (string) $request->input('rolling_period');
+        }
+
+        if ($request->has('rolling_waiter_ids')) {
+            $patch['rolling_waiter_ids'] = $request->input('rolling_waiter_ids');
+        }
+
+        if ($request->has('rolling_anchor_date')) {
+            $patch['rolling_anchor_date'] = (string) $request->input('rolling_anchor_date');
+        }
+
+        if ($request->has('target_shift_id')) {
+            $patch['target_shift_id'] = (string) $request->input('target_shift_id');
+        }
+
         if (empty($patch)) {
             return response()->json(['success' => false, 'message' => 'Tidak ada field yang diupdate'], 422);
+        }
+
+        // ── CONFLICT GUARD on PATCH (apply patch onto current template snapshot) ──
+        $existingTemplate = $this->firebase->getRecurringWaiterTaskTemplateById($id);
+        if ($existingTemplate && (string) ($existingTemplate['task_type'] ?? 'general') === 'general') {
+            $merged = array_merge($existingTemplate, $patch);
+            $patchConflict = $this->validatePatchConflict($merged);
+            if (! empty($patchConflict)) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $patchConflict,
+                    'message' => 'Konfigurasi bentrok: '.implode(' / ', array_values($patchConflict)),
+                ], 422);
+            }
         }
 
         $result = $this->firebase->updateRecurringScheduleDays($id, $patch);
@@ -1418,6 +1868,11 @@ class TaskController extends Controller
                 'weekly_day' => $effectiveWeeklyDay,
                 'interval_days' => $effectiveIntervalDays,
                 'recurrence_anchor_date' => (string) $request->input('recurrence_anchor_date', date('Y-m-d')),
+                'rolling_enabled' => (bool) $request->input('rolling_enabled', false),
+                'rolling_period' => (string) $request->input('rolling_period', 'weekly'),
+                'rolling_waiter_ids' => $this->normalizeRollingWaiterIds($request->input('rolling_waiter_ids', [])),
+                'rolling_anchor_date' => (string) $request->input('rolling_anchor_date', ''),
+                'target_shift_id' => (string) $request->input('target_shift_id', ''),
             ]);
             $templateCount++;
         }

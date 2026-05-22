@@ -44,6 +44,11 @@ class StoreTaskRequest extends FormRequest
             'recurrence_type' => 'nullable|in:daily,weekly,every_n_days',
             'weekly_day' => 'nullable|integer|min:1|max:7',
             'interval_days' => 'nullable|integer|min:1|max:365',
+            'rolling_enabled' => 'nullable|boolean',
+            'rolling_period' => 'nullable|in:daily,weekly,monthly',
+            'rolling_waiter_ids' => 'nullable',
+            'rolling_anchor_date' => 'nullable|date_format:Y-m-d',
+            'target_shift_id' => 'nullable|string|max:64',
         ];
     }
 }
