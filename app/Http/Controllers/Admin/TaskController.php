@@ -123,11 +123,21 @@ class TaskController extends Controller
         $requestedScope = (string) $request->input('task_scope', 'general');
         $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
 
-        // v1: tugas umum dialihkan ke Studio (1 page lengkap).
-        // Cek rak masih pakai builder lama sampai studio scope rack_check rilis.
-        if ($taskScope === 'general') {
-            return redirect()->route('admin.tasks.studio');
+        // Studio sekarang handle BOTH scopes. Redirect old URL builder ke studio.
+        if ($taskScope === 'rack_check') {
+            return redirect()->route('admin.tasks.studio', ['scope' => 'rack_check']);
         }
+
+        return redirect()->route('admin.tasks.studio');
+    }
+
+    /**
+     * @deprecated Old builder logic. Kept for reference but unreachable from create().
+     */
+    public function createLegacy(Request $request)
+    {
+        $requestedScope = (string) $request->input('task_scope', 'general');
+        $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
 
         $waiters = $this->firebase->getActiveWaiters();
         $racks = $this->firebase->getActiveRacks();
@@ -313,7 +323,15 @@ class TaskController extends Controller
         }
 
         // ── CONFLICT GUARD: validate rolling + shift + assignment combinations ──
-        if ($taskType === 'general') {
+        // Active for BOTH general and rack_check (single-rak via studio).
+        // Skip for rack_check legacy multi-rack/hybrid builder (detected by presence
+        // of fixed_rack_assignments/rack_recurrence_map, OR multi rack_ids array).
+        $isLegacyRackBuilder = $taskType === 'rack_check' && (
+            count($fixedRackAssignments) > 0
+            || count($rackRecurrenceMap) > 0
+            || (is_array($request->input('rack_ids')) && count($request->input('rack_ids', [])) > 1)
+        );
+        if (! $isLegacyRackBuilder) {
             $conflictErrors = $this->validateConflictingConfig($request, null);
             if (! empty($conflictErrors)) {
                 if ($request->expectsJson() || $request->ajax()) {
@@ -818,21 +836,19 @@ class TaskController extends Controller
                 ->withInput();
         }
 
-        // CONFLICT GUARD
+        // CONFLICT GUARD: active for BOTH general and rack_check (single-rak studio).
         $taskType = (string) ($template['task_type'] ?? 'general');
-        if ($taskType === 'general') {
-            $conflictErrors = $this->validateConflictingConfig($request, $id);
-            if (! empty($conflictErrors)) {
-                if ($request->expectsJson() || $request->ajax()) {
-                    return response()->json([
-                        'success' => false,
-                        'errors' => $conflictErrors,
-                        'message' => 'Konfigurasi bentrok: '.implode(' / ', array_values($conflictErrors)),
-                    ], 422);
-                }
-
-                return back()->withErrors($conflictErrors)->withInput();
+        $conflictErrors = $this->validateConflictingConfig($request, $id);
+        if (! empty($conflictErrors)) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'errors' => $conflictErrors,
+                    'message' => 'Konfigurasi bentrok: '.implode(' / ', array_values($conflictErrors)),
+                ], 422);
             }
+
+            return back()->withErrors($conflictErrors)->withInput();
         }
 
         $scheduleMode = (string) $request->input('schedule_mode', 'fixed');
@@ -901,10 +917,22 @@ class TaskController extends Controller
             $scope = 'general';
         }
 
-        // v1: scope general dialihkan ke Studio (1 page).
-        // Cek rak masih pakai board lama sampai studio scope rack_check rilis.
-        if ($scope === 'general') {
-            return redirect()->route('admin.tasks.studio');
+        // Studio sekarang handle BOTH scopes. Redirect old board URL ke studio.
+        if ($scope === 'rack_check') {
+            return redirect()->route('admin.tasks.studio', ['scope' => 'rack_check']);
+        }
+
+        return redirect()->route('admin.tasks.studio');
+    }
+
+    /**
+     * @deprecated Old board logic. Kept for reference but unreachable from templatesBoard().
+     */
+    public function templatesBoardLegacy(Request $request)
+    {
+        $scope = $request->query('scope', 'general');
+        if (! in_array($scope, ['general', 'rack_check'], true)) {
+            $scope = 'general';
         }
 
         $viewMode = $request->query('view', 'role');
@@ -1034,6 +1062,9 @@ class TaskController extends Controller
     protected function validateConflictingConfig(\Illuminate\Http\Request $request, ?string $excludeTemplateId = null): array
     {
         $errors = [];
+        $taskType = (string) $request->input('task_type', 'general');
+        $taskScope = (string) $request->input('task_scope', $taskType);
+        $isRackCheck = ($taskType === 'rack_check' || $taskScope === 'rack_check');
         $assignmentType = (string) $request->input('assignment_type', 'all');
         $assignedWaiterId = trim((string) $request->input('assigned_waiter_id', ''));
         $assignedWaiterRole = strtolower(trim((string) $request->input('assigned_waiter_role', '')));
@@ -1046,6 +1077,60 @@ class TaskController extends Controller
         $scheduleTime = trim((string) $request->input('schedule_time', ''));
         $deadlineMode = (string) $request->input('deadline_mode', 'fixed');
         $timeLimitMinutes = (int) $request->input('time_limit_minutes', 0);
+
+        // === RACK_CHECK SPECIFIC RULES ===
+        if ($isRackCheck) {
+            $rackId = trim((string) $request->input('rack_id', ''));
+
+            // R1: rack_id required
+            if ($rackId === '') {
+                $errors['rack_id'] = 'Pilih rak target untuk tugas cek rak.';
+            } else {
+                // R3: rack must exist and be active
+                try {
+                    $activeRacks = $this->firebase->getActiveRacks();
+                    $rackFound = null;
+                    foreach ($activeRacks as $rack) {
+                        if ((string) ($rack['id'] ?? '') === $rackId) {
+                            $rackFound = $rack;
+                            break;
+                        }
+                    }
+                    if (! $rackFound) {
+                        $errors['rack_id'] = 'Rak tidak ditemukan atau sudah dinonaktifkan.';
+                    } else {
+                        // R2: rack uniqueness — only 1 active template per rack
+                        // (excluding self when editing)
+                        try {
+                            $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+                            foreach ($existingTemplates as $tpl) {
+                                $tplId = (string) ($tpl['id'] ?? '');
+                                if ($excludeTemplateId !== null && $tplId === $excludeTemplateId) {
+                                    continue;
+                                }
+                                if (($tpl['task_type'] ?? 'general') !== 'rack_check') {
+                                    continue;
+                                }
+                                if (empty($tpl['is_active'])) {
+                                    continue;
+                                }
+                                $tplRackId = (string) ($tpl['rack_id'] ?? '');
+                                if ($tplRackId === $rackId) {
+                                    $waiterLabel = (string) ($tpl['assigned_waiter_name'] ?? '')
+                                        ?: (string) ($tpl['assigned_waiter_role'] ?? 'lain');
+                                    $errors['rack_id'] = 'Rak ini sudah punya template aktif (ditugaskan ke '.$waiterLabel.'). Hapus/nonaktifkan dulu sebelum buat baru.';
+                                    break;
+                                }
+                            }
+                        } catch (\Throwable $e) {
+                            report($e);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+        }
 
         // assignment_type=single requires assigned_waiter_id
         if ($assignmentType === 'single' && $assignedWaiterId === '' && ! $rollingEnabled) {
@@ -1252,16 +1337,17 @@ class TaskController extends Controller
      *   GET    admin.tasks.today_generated                  — today's task feed
      *   DELETE admin.tasks.destroy                          — cancel today task
      */
-    public function studio()
+    public function studio(Request $request)
     {
         $scope = 'general';
         $waiters = $this->firebase->getActiveWaiters();
         $categories = $this->firebase->getTaskCategories();
+        $racks = $this->firebase->getActiveRacks();
         $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
 
-        $templates = array_values(array_filter($allTemplates, function ($template) {
-            return ($template['task_type'] ?? 'general') === 'general';
-        }));
+        // Studio handles BOTH scopes. Frontend toggles scope without reload.
+        // We pass ALL templates (general + rack_check) and let JS filter by scope.
+        $templates = $allTemplates;
 
         $roles = [
             'pelayan' => '👤 Pelayan',
@@ -1332,6 +1418,13 @@ class TaskController extends Controller
                 'rolling_waiter_ids' => $rollingIds,
                 'rolling_anchor_date' => (string) ($template['rolling_anchor_date'] ?? ''),
                 'target_shift_id' => (string) ($template['target_shift_id'] ?? ''),
+                // Rack-specific fields (only meaningful for task_type=rack_check)
+                'rack_id' => (string) ($template['rack_id'] ?? ''),
+                'rack_name' => (string) ($template['rack_name'] ?? ''),
+                'rack_location' => (string) ($template['rack_location'] ?? ''),
+                'rack_barcode_value' => (string) ($template['rack_barcode_value'] ?? ''),
+                'rack_type' => (string) ($template['rack_type'] ?? ''),
+                'requires_barcode_scan' => (bool) ($template['requires_barcode_scan'] ?? false),
             ];
         }, $templates));
 
@@ -1344,13 +1437,30 @@ class TaskController extends Controller
             ];
         }, $this->firebase->getActiveShifts()));
 
+        $jsRacks = array_values(array_map(function ($rack) {
+            return [
+                'id' => (string) ($rack['id'] ?? ''),
+                'name' => (string) ($rack['name'] ?? ''),
+                'location' => (string) ($rack['location'] ?? ''),
+                'barcode_value' => (string) ($rack['barcode_value'] ?? ''),
+                'rack_type' => (string) ($rack['rack_type'] ?? 'storage'),
+                'check_order' => (int) ($rack['check_order'] ?? 0),
+                'is_active' => (bool) ($rack['is_active'] ?? true),
+            ];
+        }, $racks));
+
+        // Initial scope from query (?scope=rack_check) — frontend can also toggle freely.
+        $initialScope = $request->query('scope') === 'rack_check' ? 'rack_check' : 'general';
+
         return view('admin.tasks.studio', compact(
             'scope',
             'roles',
             'jsWaiters',
             'jsCategories',
             'jsTemplates',
-            'jsShifts'
+            'jsShifts',
+            'jsRacks',
+            'initialScope'
         ));
     }
 
@@ -1437,8 +1547,9 @@ class TaskController extends Controller
         }
 
         // ── CONFLICT GUARD on PATCH (apply patch onto current template snapshot) ──
+        // Active for BOTH general and rack_check.
         $existingTemplate = $this->firebase->getRecurringWaiterTaskTemplateById($id);
-        if ($existingTemplate && (string) ($existingTemplate['task_type'] ?? 'general') === 'general') {
+        if ($existingTemplate) {
             $merged = array_merge($existingTemplate, $patch);
             $patchConflict = $this->validatePatchConflict($merged);
             if (! empty($patchConflict)) {

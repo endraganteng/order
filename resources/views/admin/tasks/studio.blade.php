@@ -79,6 +79,53 @@
     .ts-waiter-pill-name { font-weight: 600; color: #0f172a; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ts-waiter-pill-role { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
 
+    /* Rack pill: 2-row vertical layout for long names + locations */
+    .ts-rack-pill {
+        display: grid;
+        grid-template-columns: 32px 1fr auto;
+        column-gap: 8px;
+        row-gap: 1px;
+        align-items: center;
+        padding: 7px 10px;
+        margin-bottom: 5px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: grab;
+        user-select: none;
+        transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .ts-rack-pill:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.08); border-color: #94a3b8; }
+    .ts-rack-pill:active, .ts-rack-pill.is-dragging { cursor: grabbing; opacity: 0.5; transform: scale(0.97); }
+    .ts-rack-pill .ts-avatar { grid-row: span 2; }
+    .ts-rack-pill-name {
+        grid-column: 2;
+        grid-row: 1;
+        font-weight: 600;
+        color: #0f172a;
+        font-size: 12.5px;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .ts-rack-pill-loc {
+        grid-column: 2;
+        grid-row: 2;
+        font-size: 10px;
+        color: #94a3b8;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .ts-rack-pill-lock {
+        grid-column: 3;
+        grid-row: 1 / span 2;
+        align-self: center;
+        font-size: 12px;
+        color: #dc2626;
+    }
+
     .ts-cat-chip {
         display: inline-flex;
         align-items: center;
@@ -450,33 +497,53 @@
 
     {{-- Header --}}
     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
-        <div>
+        <div style="min-width:280px; flex:1;">
             <h2 style="margin:0; font-size:clamp(20px,3.5vw,26px); color:#0f172a;">
-                🎛️ Studio Tugas Umum
+                <span x-text="scopeIsRack() ? '📦 Studio Cek Rak' : '🎛️ Studio Tugas Umum'"></span>
             </h2>
             <div style="font-size:12px; color:#64748b; margin-top:3px;">
-                Buat, atur jadwal, dan pantau tugas dalam satu halaman. Drag card untuk pindah role atau hari, klik untuk edit.
+                <span x-show="!scopeIsRack()">Buat, atur jadwal, dan pantau tugas dalam satu halaman. Drag card untuk pindah role atau hari, klik untuk edit.</span>
+                <span x-show="scopeIsRack()">Atur tugas pengecekan rak: pilih rak, jadwalkan, tugaskan ke waiter atau rolling. Setiap rak hanya boleh punya 1 template aktif.</span>
             </div>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <a href="{{ route('admin.tasks.index') }}" class="ts-btn">📊 Daftar Tugas</a>
-            <a href="{{ route('admin.tasks.templates.board', ['scope' => 'rack_check']) }}" class="ts-btn">📦 Cek Rak</a>
-            <button class="ts-btn ts-btn--primary" @click="openDrawer(null)">+ Tugas Baru</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; flex-shrink:0;">
+            {{-- Scope tab toggle --}}
+            <div style="display:inline-flex; background:#f1f5f9; border-radius:10px; padding:4px;">
+                <button class="ts-btn"
+                        :class="!scopeIsRack() && 'ts-btn--primary'"
+                        style="border:none; padding:6px 14px; font-weight:600;"
+                        @click="switchScope('general')">🎛️ Tugas Umum</button>
+                <button class="ts-btn"
+                        :class="scopeIsRack() && 'ts-btn--primary'"
+                        style="border:none; padding:6px 14px; font-weight:600;"
+                        @click="switchScope('rack_check')">📦 Cek Rak</button>
+            </div>
+            {{-- Side action: link audit (fixed width supaya tidak shift) --}}
+            <a :href="scopeIsRack() ? '{{ route('admin.tasks.rack.index') }}' : '{{ route('admin.tasks.index') }}'"
+               class="ts-btn"
+               style="min-width:170px; text-align:center; white-space:nowrap;"
+               x-text="scopeIsRack() ? '📊 Riwayat Cek Rak' : '📊 Daftar Tugas'"></a>
+            {{-- Primary CTA (fixed width) --}}
+            <button class="ts-btn ts-btn--primary"
+                    style="min-width:170px; white-space:nowrap;"
+                    @click="openDrawer(null)"
+                    x-text="scopeIsRack() ? '+ Cek Rak Baru' : '+ Tugas Baru'"></button>
         </div>
     </div>
 
     {{-- Quick stats --}}
     <div class="ts-stats" style="margin-bottom:14px;">
-        <span class="ts-stat"><strong x-text="templates.length"></strong> template total</span>
-        <span class="ts-stat"><strong x-text="templates.filter(t => t.is_active).length"></strong> aktif</span>
-        <span class="ts-stat"><strong x-text="templates.filter(t => !t.is_active).length"></strong> tidak aktif</span>
+        <span class="ts-stat"><strong x-text="templatesInScope().length"></strong> template total</span>
+        <span class="ts-stat"><strong x-text="templatesInScope().filter(t => t.is_active).length"></strong> aktif</span>
+        <span class="ts-stat"><strong x-text="templatesInScope().filter(t => !t.is_active).length"></strong> tidak aktif</span>
         <span class="ts-stat"><strong x-text="(todayTasks||[]).length"></strong> tugas hari ini</span>
     </div>
 
     <div class="ts-shell">
         {{-- LEFT: palette --}}
         <aside class="ts-palette">
-            <div class="ts-palette-section">
+            {{-- Section: Waiter (only general scope) --}}
+            <div class="ts-palette-section" x-show="!scopeIsRack()">
                 <div class="ts-palette-title">👥 Waiter Aktif</div>
                 <input type="text" class="ts-palette-search" placeholder="🔍 Cari waiter…" x-model="waiterSearch">
                 <div>
@@ -498,6 +565,65 @@
                 </div>
             </div>
 
+            {{-- Section: Rak (only rack_check scope) --}}
+            <div class="ts-palette-section" x-show="scopeIsRack()">
+                <div class="ts-palette-title">📦 Rak Aktif</div>
+                <input type="text" class="ts-palette-search" placeholder="🔍 Cari rak…" x-model="rackSearch">
+                <div style="display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap;">
+                    <button class="ts-btn" style="padding:4px 10px; font-size:11px;"
+                            :class="rackTypeFilter === 'all' && 'ts-btn--primary'"
+                            @click="rackTypeFilter = 'all'">Semua</button>
+                    <button class="ts-btn" style="padding:4px 10px; font-size:11px;"
+                            :class="rackTypeFilter === 'storage' && 'ts-btn--primary'"
+                            @click="rackTypeFilter = 'storage'">📦 Gudang</button>
+                    <button class="ts-btn" style="padding:4px 10px; font-size:11px;"
+                            :class="rackTypeFilter === 'display' && 'ts-btn--primary'"
+                            @click="rackTypeFilter = 'display'">🛍️ Display</button>
+                </div>
+                <div>
+                    <template x-for="r in filteredRacks()" :key="r.id">
+                        <div class="ts-rack-pill"
+                             draggable="true"
+                             @dragstart="dragRackStart($event, r)"
+                             @dragend="dragWaiterEnd($event)"
+                             @click="openDrawer(null, { rack_id: r.id, rack_name: r.name, rack_location: r.location, rack_barcode_value: r.barcode_value, rack_type: r.rack_type, task_type: 'rack_check', requires_barcode_scan: true, requires_photo_proof: true })"
+                             :title="'Klik untuk buat template Cek Rak untuk ' + r.name + (r.location ? ' • ' + r.location : '')">
+                            <div class="ts-avatar" :class="r.rack_type === 'display' ? 'ts-avatar--kasir' : 'ts-avatar--pelayan'" style="font-size:14px;" x-text="r.rack_type === 'display' ? '🛍️' : '📦'"></div>
+                            <div class="ts-rack-pill-name" x-text="r.name"></div>
+                            <div class="ts-rack-pill-loc" x-text="r.location || '—'"></div>
+                            <template x-if="rackInUseByTemplate(r.id, null)">
+                                <span class="ts-rack-pill-lock" title="Sudah ada template aktif">🔒</span>
+                            </template>
+                        </div>
+                    </template>
+                    <div x-show="filteredRacks().length === 0" style="text-align:center; padding:14px; color:#cbd5e1; font-size:12px;">
+                        <span x-text="racks.length === 0 ? 'Belum ada rak aktif' : 'Tidak ada hasil'"></span>
+                    </div>
+                </div>
+                {{-- Inline add rack --}}
+                <div style="margin-top:10px;">
+                    <button class="ts-preset-btn" @click="addRackOpen = !addRackOpen" x-show="!addRackOpen">
+                        ➕ Tambah Rak Baru
+                    </button>
+                    <div x-show="addRackOpen" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:6px;">
+                        <input type="text" class="ts-palette-search" placeholder="Nama rak…" x-model="addRackForm.name" style="margin-bottom:0;">
+                        <input type="text" class="ts-palette-search" placeholder="Lokasi (opsional)…" x-model="addRackForm.location" style="margin-bottom:0;">
+                        <select x-model="addRackForm.rack_type" class="ts-palette-search" style="margin-bottom:0;">
+                            <option value="storage">📦 Gudang</option>
+                            <option value="display">🛍️ Display</option>
+                        </select>
+                        <div style="display:flex; gap:6px;">
+                            <button class="ts-btn ts-btn--primary" style="flex:1; padding:6px;"
+                                    @click="addRackInline()" :disabled="addRackSaving">
+                                <span x-text="addRackSaving ? 'Menyimpan…' : '✓ Simpan'"></span>
+                            </button>
+                            <button class="ts-btn" style="padding:6px;"
+                                    @click="addRackOpen = false; addRackForm = { name: '', location: '', rack_type: 'storage' };">Batal</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="ts-palette-section">
                 <div class="ts-palette-title">🗂️ Kategori</div>
                 <div>
@@ -511,7 +637,7 @@
                 </div>
             </div>
 
-            <div class="ts-palette-section">
+            <div class="ts-palette-section" x-show="!scopeIsRack()">
                 <div class="ts-palette-title">⚡ Preset Cepat</div>
                 <button class="ts-preset-btn" @click="openDrawer(null, { recurrence_type: 'daily', schedule_mode: 'shift_relative' })">
                     🔄 Harian (ikut shift)
@@ -573,11 +699,28 @@
                                      @dragstart="dragCardStart($event, t)"
                                      @dragend="dragCardEnd($event)"
                                      @click="openDrawer(t)">
-                                    <div class="ts-card-title" x-text="t.title || '(Tanpa judul)'"></div>
+                                    <div class="ts-card-title">
+                                        <template x-if="t.task_type === 'rack_check'">
+                                            <span x-text="(t.rack_type === 'display' ? '🛍️ ' : '📦 ') + (t.rack_name || t.title || '(Tanpa rak)')"></span>
+                                        </template>
+                                        <template x-if="t.task_type !== 'rack_check'">
+                                            <span x-text="t.title || '(Tanpa judul)'"></span>
+                                        </template>
+                                    </div>
                                     <div class="ts-card-meta">
                                         <span class="ts-badge ts-badge--freq" x-text="freqLabel(t)"></span>
                                         <span class="ts-badge ts-badge--time" x-text="timeLabel(t)"></span>
                                         <span class="ts-badge ts-badge--assign" x-text="assignLabel(t)"></span>
+                                        <template x-if="t.task_type === 'rack_check' && t.rack_location">
+                                            <span class="ts-badge" style="background:#e0e7ff; color:#3730a3;" :title="'Lokasi rak: ' + t.rack_location">
+                                                📍 <span x-text="t.rack_location"></span>
+                                            </span>
+                                        </template>
+                                        <template x-if="t.task_type === 'rack_check'">
+                                            <span class="ts-badge" style="background:#fce7f3; color:#9d174d;" title="Wajib scan QR rak saat eksekusi">
+                                                📷 QR
+                                            </span>
+                                        </template>
                                         <template x-if="t.rolling_enabled && (t.rolling_waiter_ids || []).length >= 2">
                                             <span class="ts-badge" style="background:#fef3c7; color:#92400e;" :title="rollingTooltip(t)">
                                                 🔄 <span x-text="rollingShortLabel(t)"></span>
@@ -613,7 +756,8 @@
                                 </div>
                             </template>
                             <div class="ts-col-empty" x-show="cardsForRole(col.key).length === 0">
-                                Drag waiter atau klik <strong>+</strong> untuk menambah tugas
+                                <span x-show="!scopeIsRack()">Drag waiter atau klik <strong>+</strong> untuk menambah tugas</span>
+                                <span x-show="scopeIsRack()">Drag rak ke kolom ini, atau klik <strong>+</strong> untuk Cek Rak baru</span>
                             </div>
                         </div>
                     </div>
@@ -640,10 +784,20 @@
                                      @dragstart="dragCardStart($event, t)"
                                      @dragend="dragCardEnd($event)"
                                      @click="openDrawer(t)">
-                                    <div class="ts-card-title" x-text="t.title || '(Tanpa judul)'"></div>
+                                    <div class="ts-card-title">
+                                        <template x-if="t.task_type === 'rack_check'">
+                                            <span x-text="(t.rack_type === 'display' ? '🛍️ ' : '📦 ') + (t.rack_name || t.title || '(Tanpa rak)')"></span>
+                                        </template>
+                                        <template x-if="t.task_type !== 'rack_check'">
+                                            <span x-text="t.title || '(Tanpa judul)'"></span>
+                                        </template>
+                                    </div>
                                     <div class="ts-card-meta">
                                         <span class="ts-badge ts-badge--time" x-text="timeLabel(t)"></span>
                                         <span class="ts-badge ts-badge--assign" x-text="assignLabel(t)"></span>
+                                        <template x-if="t.task_type === 'rack_check'">
+                                            <span class="ts-badge" style="background:#fce7f3; color:#9d174d;" title="Wajib scan QR rak">📷 QR</span>
+                                        </template>
                                         <template x-if="t.category_name">
                                             <span class="ts-badge ts-badge--cat">
                                                 <span class="ts-cat-dot" :style="'background:' + (categoryColor(t.category_id) || '#94a3b8')"></span>
@@ -673,21 +827,75 @@
     {{-- Drawer: edit / create --}}
     <aside class="ts-drawer" :class="drawer && 'is-open'" @click.stop>
         <header class="ts-drawer-header">
-            <span class="ts-drawer-title" x-text="form.id ? '✏️ Edit Tugas' : '➕ Tugas Baru'"></span>
+            <span class="ts-drawer-title">
+                <template x-if="form.task_type === 'rack_check'">
+                    <span x-text="form.id ? '✏️ Edit Cek Rak' : '➕ Cek Rak Baru'"></span>
+                </template>
+                <template x-if="form.task_type !== 'rack_check'">
+                    <span x-text="form.id ? '✏️ Edit Tugas' : '➕ Tugas Baru'"></span>
+                </template>
+            </span>
             <button class="ts-drawer-close" @click="closeDrawer()">×</button>
         </header>
         <div class="ts-drawer-body">
-            <div class="ts-field">
+            {{-- ── RACK SELECTOR (rack_check only) ─────────────────── --}}
+            <template x-if="form.task_type === 'rack_check'">
+                <div>
+                    <div class="ts-field">
+                        <label>Rak Target <span style="color:#dc2626">*</span></label>
+                        <select x-model="form.rack_id" @change="(() => {
+                                const r = rackById(form.rack_id);
+                                if (r) {
+                                    form.rack_name = r.name || '';
+                                    form.rack_location = r.location || '';
+                                    form.rack_barcode_value = r.barcode_value || '';
+                                    form.rack_type = r.rack_type || 'storage';
+                                    form.title = r.name || '';
+                                }
+                            })()" :disabled="form.id">
+                            <option value="">- Pilih rak -</option>
+                            <template x-for="r in racks.filter(x => x.is_active)" :key="r.id">
+                                <option :value="r.id" :disabled="rackInUseByTemplate(r.id, form.id) ? true : false"
+                                        x-text="(r.rack_type === 'display' ? '🛍️ ' : '📦 ') + r.name + (r.location ? ' • ' + r.location : '') + (rackInUseByTemplate(r.id, form.id) ? ' (sudah ada template)' : '')"></option>
+                            </template>
+                        </select>
+                        <template x-if="form.id">
+                            <div class="ts-hint">Rak template ini tidak bisa diganti. Hapus template dulu kalau mau pakai rak lain.</div>
+                        </template>
+                        <template x-if="!form.id">
+                            <div class="ts-hint">Setiap rak hanya boleh punya 1 template aktif. Pilih rak yang belum dikunci.</div>
+                        </template>
+                    </div>
+                    <template x-if="form.rack_id">
+                        <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:10px 12px; margin-bottom:14px;">
+                            <div style="font-weight:700; color:#0369a1; font-size:13px;">
+                                <span x-text="form.rack_type === 'display' ? '🛍️' : '📦'"></span>
+                                <span x-text="form.rack_name || '?'"></span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">
+                                <span x-show="form.rack_location">📍 <span x-text="form.rack_location"></span></span>
+                                <span x-show="form.rack_barcode_value" style="margin-left:8px;">🔖 <span x-text="form.rack_barcode_value"></span></span>
+                            </div>
+                            <div style="font-size:11px; color:#9d174d; margin-top:3px; font-weight:600;">
+                                📷 Wajib scan QR rak saat eksekusi (otomatis)
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            {{-- Title field — HIDDEN untuk rack_check (auto-set dari rack_name) --}}
+            <div class="ts-field" x-show="form.task_type !== 'rack_check'">
                 <label>Judul Tugas <span style="color:#dc2626">*</span></label>
                 <input type="text" x-model="form.title" placeholder="Contoh: Bersihkan area bar" maxlength="255">
             </div>
 
-            <div class="ts-field">
+            <div class="ts-field" x-show="form.task_type !== 'rack_check'">
                 <label>Deskripsi</label>
                 <textarea x-model="form.description" rows="2" placeholder="Detail (opsional)" maxlength="1000"></textarea>
             </div>
 
-            <div class="ts-field-row">
+            <div class="ts-field-row" x-show="form.task_type !== 'rack_check'">
                 <div class="ts-field">
                     <label>Kategori</label>
                     <select x-model="form.category_id" @change="syncCategoryName()">
@@ -705,6 +913,17 @@
                         <option value="low">⚪ Low</option>
                     </select>
                 </div>
+            </div>
+
+            {{-- Kategori only untuk rack_check (tanpa prioritas, tanpa deskripsi) --}}
+            <div class="ts-field" x-show="form.task_type === 'rack_check'">
+                <label>Kategori</label>
+                <select x-model="form.category_id" @change="syncCategoryName()">
+                    <option value="">- Tanpa kategori -</option>
+                    <template x-for="c in categories" :key="c.id">
+                        <option :value="c.id" x-text="c.name"></option>
+                    </template>
+                </select>
             </div>
 
             <hr style="border:none; border-top:1px solid #f1f5f9; margin:14px 0;">
@@ -959,26 +1178,35 @@ function taskStudio() {
     const initialCategories = @json($jsCategories);
     const initialTemplates = @json($jsTemplates);
     const initialShifts = @json($jsShifts);
+    const initialRacks = @json($jsRacks);
+    const initialScope = @json($initialScope);
 
     return {
         // ─── State ────────────────────────────────
+        scope: initialScope,         // 'general' | 'rack_check'
         waiters: initialWaiters,
         categories: initialCategories,
         templates: initialTemplates,
         shifts: initialShifts,
+        racks: initialRacks,
         viewMode: 'role',
         search: '',
         freqFilter: 'all',
         waiterSearch: '',
+        rackSearch: '',
+        rackTypeFilter: 'all',
         selected: null,
         drawer: false,
         todayDrawer: false,
+        addRackOpen: false,
+        addRackForm: { name: '', location: '', rack_type: 'storage' },
+        addRackSaving: false,
         saving: false,
         form: this.emptyForm ? this.emptyForm() : {},
         toast: { show: false, msg: '', type: 'success' },
         todayTasks: null,
         selectedToday: [],
-        dragging: null,         // {kind: 'card'|'waiter', payload}
+        dragging: null,         // {kind: 'card'|'waiter'|'rack', payload}
         dragOverCol: null,
 
         // ─── Constants ────────────────────────────
@@ -1010,6 +1238,7 @@ function taskStudio() {
 
         emptyForm() {
             const today = new Date().toISOString().slice(0, 10);
+            const isRack = this.scope === 'rack_check';
             return {
                 id: null,
                 title: '',
@@ -1030,7 +1259,7 @@ function taskStudio() {
                 assignment_mode: 'role_all', // UI-level: role_all | single | rolling | everyone
                 assigned_waiter_id: '',
                 assigned_waiter_role: 'pelayan',
-                requires_photo_proof: false,
+                requires_photo_proof: isRack ? true : false,
                 requires_photo_before: false,
                 is_active: true,
                 rolling_enabled: false,
@@ -1038,6 +1267,14 @@ function taskStudio() {
                 rolling_waiter_ids: [],
                 rolling_anchor_date: today,
                 target_shift_id: '',
+                // Rack-specific (only used when scope === 'rack_check')
+                task_type: isRack ? 'rack_check' : 'general',
+                rack_id: '',
+                rack_name: '',
+                rack_location: '',
+                rack_barcode_value: '',
+                rack_type: '',
+                requires_barcode_scan: isRack,
             };
         },
 
@@ -1046,6 +1283,110 @@ function taskStudio() {
             this.toast = { show: true, msg, type };
             clearTimeout(this._toastTimer);
             this._toastTimer = setTimeout(() => this.toast.show = false, 3200);
+        },
+
+        // Filter templates by current scope (general vs rack_check).
+        templatesInScope() {
+            if (this.scope === 'rack_check') {
+                return this.templates.filter(t => (t.task_type || 'general') === 'rack_check');
+            }
+            return this.templates.filter(t => (t.task_type || 'general') === 'general');
+        },
+
+        switchScope(newScope) {
+            if (newScope !== 'general' && newScope !== 'rack_check') return;
+            if (this.scope === newScope) return;
+            this.scope = newScope;
+            this.search = '';
+            this.freqFilter = 'all';
+            this.selectedToday = [];
+            // Drawer mungkin terbuka dgn form scope lama, tutup biar tidak ambigu
+            if (this.drawer) this.closeDrawer();
+            // Update URL tanpa reload supaya bookmarkable
+            try {
+                const url = new URL(window.location);
+                url.searchParams.set('scope', newScope);
+                window.history.replaceState({}, '', url);
+            } catch (e) {}
+            this.loadTodayTasks();
+        },
+
+        scopeIsRack() {
+            return this.scope === 'rack_check';
+        },
+
+        filteredRacks() {
+            const q = this.rackSearch.trim().toLowerCase();
+            return this.racks.filter(r => {
+                if (!r.is_active) return false;
+                if (this.rackTypeFilter !== 'all' && r.rack_type !== this.rackTypeFilter) return false;
+                if (!q) return true;
+                return (r.name || '').toLowerCase().includes(q)
+                    || (r.location || '').toLowerCase().includes(q)
+                    || (r.barcode_value || '').toLowerCase().includes(q);
+            });
+        },
+
+        rackById(id) {
+            return this.racks.find(r => r.id === id) || null;
+        },
+
+        rackInUseByTemplate(rackId, excludeId) {
+            return this.templates.find(t =>
+                (t.task_type || 'general') === 'rack_check'
+                && t.is_active
+                && t.rack_id === rackId
+                && t.id !== excludeId
+            ) || null;
+        },
+
+        rackTypeLabel(type) {
+            if (type === 'storage') return '📦 Gudang';
+            if (type === 'display') return '🛍️ Display';
+            return type || '-';
+        },
+
+        async addRackInline() {
+            const name = (this.addRackForm.name || '').trim();
+            const location = (this.addRackForm.location || '').trim();
+            if (name === '') {
+                this.showToast('Nama rak wajib diisi', 'error');
+                return;
+            }
+            this.addRackSaving = true;
+            try {
+                const fd = new FormData();
+                fd.append('_token', csrf);
+                fd.append('name', name);
+                fd.append('location', location);
+                fd.append('rack_type', this.addRackForm.rack_type || 'storage');
+                const res = await fetch('{{ route('admin.racks.ajax_store') }}', {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    body: fd,
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.success && data.rack) {
+                    this.racks.push({
+                        id: data.rack.id,
+                        name: data.rack.name || name,
+                        location: data.rack.location || location,
+                        barcode_value: data.rack.barcode_value || '',
+                        rack_type: data.rack.rack_type || this.addRackForm.rack_type,
+                        check_order: data.rack.check_order || 0,
+                        is_active: true,
+                    });
+                    this.addRackForm = { name: '', location: '', rack_type: 'storage' };
+                    this.addRackOpen = false;
+                    this.showToast('✓ Rak baru ditambahkan', 'success');
+                } else {
+                    this.showToast((data && (data.message || data.error)) || 'Gagal tambah rak', 'error');
+                }
+            } catch (e) {
+                this.showToast(e.message, 'error');
+            } finally {
+                this.addRackSaving = false;
+            }
         },
 
         filteredWaiters() {
@@ -1073,14 +1414,15 @@ function taskStudio() {
         },
 
         cardsForRole(roleKey) {
+            const inScope = this.templatesInScope();
             if (roleKey === 'inactive') {
-                return this.templates.filter(t => !t.is_active && this.passesSearch(t));
+                return inScope.filter(t => !t.is_active && this.passesSearch(t));
             }
-            return this.templates.filter(t => t.is_active && (t.assigned_waiter_role || 'pelayan') === roleKey && this.passesSearch(t));
+            return inScope.filter(t => t.is_active && (t.assigned_waiter_role || 'pelayan') === roleKey && this.passesSearch(t));
         },
 
         cardsForSchedule(col) {
-            return this.templates.filter(t => col.match(t) && this.passesSearch(t));
+            return this.templatesInScope().filter(t => col.match(t) && this.passesSearch(t));
         },
 
         freqLabel(t) {
@@ -1145,6 +1487,10 @@ function taskStudio() {
                 // Derive UI-level assignment_mode from raw fields
                 this.form.assignment_mode = this.deriveAssignmentMode(this.form);
                 this.selected = template.id;
+                // Saat edit rack_check, set task_type & requires_barcode_scan
+                if ((this.form.task_type || 'general') === 'rack_check') {
+                    this.form.requires_barcode_scan = true;
+                }
             } else {
                 this.form = this.emptyForm();
                 this.form.assignment_mode = 'role_all';
@@ -1306,8 +1652,23 @@ function taskStudio() {
         validateForm() {
             const e = [];
             const f = this.form;
+            const isRack = (f.task_type === 'rack_check') || this.scope === 'rack_check';
 
-            if (!f.title.trim()) e.push('Judul wajib diisi');
+            if (isRack) {
+                // Rack-specific hard errors
+                if (!f.rack_id) e.push('Pilih rak target untuk tugas cek rak');
+                if (f.rack_id) {
+                    const r = this.rackById(f.rack_id);
+                    if (!r || !r.is_active) e.push('Rak yang dipilih tidak valid atau sudah dinonaktifkan');
+                    const inUse = this.rackInUseByTemplate(f.rack_id, f.id);
+                    if (inUse) {
+                        e.push(`Rak ini sudah punya template aktif lain ("${inUse.title || inUse.rack_name || '?'}"). Hapus/nonaktifkan dulu sebelum buat baru.`);
+                    }
+                }
+                // Title bukan field user-input untuk rack_check, tapi tetap di-set dari rack_name di backend
+            } else {
+                if (!f.title.trim()) e.push('Judul wajib diisi');
+            }
             if (f.assignment_mode === 'single' && !f.assigned_waiter_id) {
                 e.push('Pilih satu waiter spesifik untuk mode tetap');
             }
@@ -1598,37 +1959,59 @@ function taskStudio() {
 
         async createTemplate() {
             // POST admin.tasks.store via FormData (mirip submit form classic)
+            const f = this.form;
+            const isRack = (f.task_type === 'rack_check') || this.scope === 'rack_check';
             const fd = new FormData();
             fd.append('_token', csrf);
-            fd.append('task_scope', 'general');
-            fd.append('task_type', 'general');
-            fd.append('title', this.form.title);
-            fd.append('description', this.form.description || '');
-            fd.append('priority', this.form.priority);
-            fd.append('category_id', this.form.category_id || '');
-            fd.append('category_name', this.form.category_name || '');
-            fd.append('is_recurring', '1');
-            fd.append('recurrence_type', this.form.recurrence_type);
-            if (this.form.recurrence_type === 'weekly') fd.append('weekly_day', this.form.weekly_day);
-            if (this.form.recurrence_type === 'every_n_days') fd.append('interval_days', String(this.form.interval_days));
-            fd.append('schedule_mode', this.form.schedule_mode);
-            if (this.form.schedule_mode === 'fixed') {
-                fd.append('schedule_time', this.form.schedule_time);
-                fd.append('time_limit_minutes', String(this.form.time_limit_minutes));
+            fd.append('task_scope', isRack ? 'rack_check' : 'general');
+            fd.append('task_type', isRack ? 'rack_check' : 'general');
+            if (isRack) {
+                // Title backend builds dari rack_name; kirim placeholder untuk debug.
+                const rack = this.rackById(f.rack_id);
+                if (rack) {
+                    fd.append('rack_id', rack.id);
+                    fd.append('rack_ids[]', rack.id);
+                    // Title fallback (backend akan override pakai buildRackCheckTaskTitle)
+                    fd.append('title', rack.name || '');
+                } else {
+                    fd.append('title', '');
+                }
+                fd.append('description', '');
+                fd.append('priority', 'normal');
+                fd.append('rack_target_scope', 'single');
+                if (f.requires_photo_proof) fd.append('requires_photo_proof', '1');
+                if (f.requires_photo_before) fd.append('requires_photo_before', '1');
             } else {
-                fd.append('shift_offset_minutes', String(this.form.shift_offset_minutes));
+                fd.append('title', f.title);
+                fd.append('description', f.description || '');
+                fd.append('priority', f.priority);
+                if (f.requires_photo_proof) fd.append('requires_photo_proof', '1');
+                if (f.requires_photo_before) fd.append('requires_photo_before', '1');
+            }
+            fd.append('category_id', f.category_id || '');
+            fd.append('category_name', f.category_name || '');
+            fd.append('is_recurring', '1');
+            fd.append('recurrence_type', f.recurrence_type);
+            if (f.recurrence_type === 'weekly') fd.append('weekly_day', f.weekly_day);
+            if (f.recurrence_type === 'every_n_days') fd.append('interval_days', String(f.interval_days));
+            fd.append('schedule_mode', f.schedule_mode);
+            if (f.schedule_mode === 'fixed') {
+                fd.append('schedule_time', f.schedule_time);
+                fd.append('time_limit_minutes', String(f.time_limit_minutes));
+            } else {
+                fd.append('shift_offset_minutes', String(f.shift_offset_minutes));
                 fd.append('deadline_mode', 'before_shift_end');
-                fd.append('deadline_before_end_minutes', String(this.form.deadline_before_end_minutes));
-                fd.append('schedule_time', this.form.schedule_time || '00:00');
-                fd.append('time_limit_minutes', String(this.form.time_limit_minutes));
+                fd.append('deadline_before_end_minutes', String(f.deadline_before_end_minutes));
+                fd.append('schedule_time', f.schedule_time || '00:00');
+                fd.append('time_limit_minutes', String(f.time_limit_minutes));
             }
-            fd.append('assignment_type', this.form.assignment_type);
-            fd.append('assigned_waiter_role', this.form.assigned_waiter_role || '');
-            if (this.form.assignment_type === 'single') {
-                fd.append('assigned_waiter_id', this.form.assigned_waiter_id);
+            fd.append('assignment_type', f.assignment_type);
+            fd.append('assigned_waiter_role', f.assigned_waiter_role || '');
+            // Untuk rack_check + rolling: backend mode lama pakai role_assignment_mode='rolling'.
+            // Studio kirim rolling_enabled=1 (general-style) yang sudah dihandle backend.
+            if (f.assignment_type === 'single') {
+                fd.append('assigned_waiter_id', f.assigned_waiter_id);
             }
-            if (this.form.requires_photo_proof) fd.append('requires_photo_proof', '1');
-            if (this.form.requires_photo_before) fd.append('requires_photo_before', '1');
             this.appendRollingFields(fd);
 
             const res = await fetch('{{ route('admin.tasks.store') }}', {
@@ -1817,6 +2200,11 @@ function taskStudio() {
             e.dataTransfer.effectAllowed = 'link';
             e.target.classList.add('is-dragging');
         },
+        dragRackStart(e, r) {
+            this.dragging = { kind: 'rack', payload: r };
+            e.dataTransfer.effectAllowed = 'link';
+            e.target.classList.add('is-dragging');
+        },
         dragWaiterEnd(e) {
             this.dragging = null;
             this.dragOverCol = null;
@@ -1836,6 +2224,25 @@ function taskStudio() {
         async dropOnRole(roleKey, e) {
             this.dragOverCol = null;
             if (!this.dragging) return;
+
+            // Drop rack from palette → buka drawer create rack_check pre-filled dgn role
+            if (this.dragging.kind === 'rack' && roleKey !== 'inactive') {
+                const r = this.dragging.payload;
+                this.openDrawer(null, {
+                    rack_id: r.id,
+                    rack_name: r.name,
+                    rack_location: r.location,
+                    rack_barcode_value: r.barcode_value,
+                    rack_type: r.rack_type,
+                    task_type: 'rack_check',
+                    requires_barcode_scan: true,
+                    requires_photo_proof: true,
+                    assigned_waiter_role: roleKey,
+                    assignment_type: 'role',
+                });
+                this.dragging = null;
+                return;
+            }
 
             // Drop card → ubah role / activeness
             if (this.dragging.kind === 'card') {
@@ -1898,7 +2305,8 @@ function taskStudio() {
         // ─── Today tasks ──────────────────────────
         async loadTodayTasks() {
             try {
-                const res = await fetch('/admin/tasks/today-generated?scope=general', {
+                const url = '/admin/tasks/today-generated?scope=' + encodeURIComponent(this.scope);
+                const res = await fetch(url, {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 });
                 this.todayTasks = await res.json();

@@ -3738,12 +3738,12 @@ class FirebaseService
                 continue;
             }
 
-            // === GENERAL ROLLING (waiter rotation across N candidates) ===
-            // Pick exactly 1 waiter from rolling_waiter_ids based on period offset.
-            // If picked waiter is off today, still assign and flag (per user spec).
+            // === ROLLING (rolling_enabled=true; pick 1 waiter from rolling_waiter_ids by period offset) ===
+            // Works for BOTH general AND rack_check templates created via studio.
+            // Legacy rack_check rolling via assignment_strategy='role_round_robin' tetap dihandle
+            // di branch $isRackRollingTemplate di bawah (tidak konflik karena flag-nya beda).
             $isGeneralRolling = ! $isRackRollingTemplate
                 && ! empty($template['rolling_enabled'])
-                && (string) ($template['task_type'] ?? 'general') !== 'rack_check'
                 && is_array($template['rolling_waiter_ids'] ?? null)
                 && count((array) $template['rolling_waiter_ids']) > 0;
 
