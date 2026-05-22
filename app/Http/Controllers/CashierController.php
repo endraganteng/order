@@ -411,4 +411,82 @@ class CashierController extends Controller
             ], 503);
         }
     }
+
+    /**
+     * Diagnostic endpoint untuk troubleshoot TTS di production.
+     * Cek:
+     *  - apakah GOOGLE_TTS_API_KEY ke-load
+     *  - apakah cache table ada
+     *  - apakah server bisa reach Google TTS API
+     *
+     * Hanya tampilkan info teknis, TIDAK expose API key.
+     */
+    public function ttsHealth()
+    {
+        $checks = [];
+
+        // 1. API key configured?
+        $apiKey = (string) config('services.google_tts.api_key');
+        $checks['api_key_configured'] = $apiKey !== '';
+        $checks['api_key_length'] = strlen($apiKey);
+        $checks['api_key_preview'] = $apiKey !== '' ? substr($apiKey, 0, 10) . '...' . substr($apiKey, -4) : null;
+
+        // 2. Default voice
+        $checks['default_voice'] = config('services.google_tts.default_voice');
+
+        // 3. Cache table exists?
+        try {
+            \Illuminate\Support\Facades\DB::table('cache')->limit(1)->get();
+            $checks['cache_table_ok'] = true;
+        } catch (\Throwable $e) {
+            $checks['cache_table_ok'] = false;
+            $checks['cache_table_error'] = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
+        }
+
+        // 4. Cache write/read test
+        try {
+            $testKey = 'tts_health_' . time();
+            \Illuminate\Support\Facades\Cache::put($testKey, 'hello', 60);
+            $read = \Illuminate\Support\Facades\Cache::get($testKey);
+            \Illuminate\Support\Facades\Cache::forget($testKey);
+            $checks['cache_write_ok'] = $read === 'hello';
+        } catch (\Throwable $e) {
+            $checks['cache_write_ok'] = false;
+            $checks['cache_write_error'] = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
+        }
+
+        // 5. Reach Google TTS API
+        if ($apiKey !== '') {
+            try {
+                $response = \Illuminate\Support\Facades\Http::timeout(10)
+                    ->post('https://texttospeech.googleapis.com/v1/text:synthesize?key=' . $apiKey, [
+                        'input' => ['text' => 'test'],
+                        'voice' => ['languageCode' => 'id-ID', 'name' => 'id-ID-Wavenet-A'],
+                        'audioConfig' => ['audioEncoding' => 'MP3', 'speakingRate' => 1.0],
+                    ]);
+                $checks['google_reachable'] = true;
+                $checks['google_status'] = $response->status();
+                $checks['google_ok'] = $response->successful();
+                if (! $response->successful()) {
+                    $checks['google_error_body'] = substr($response->body(), 0, 500);
+                }
+            } catch (\Throwable $e) {
+                $checks['google_reachable'] = false;
+                $checks['google_error'] = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
+            }
+        } else {
+            $checks['google_reachable'] = 'skipped (no api key)';
+        }
+
+        // 6. PHP & Laravel info
+        $checks['php_version'] = PHP_VERSION;
+        $checks['laravel_env'] = config('app.env');
+        $checks['cache_driver'] = config('cache.default');
+
+        return response()->json([
+            'success' => true,
+            'timestamp' => now()->toIso8601String(),
+            'checks' => $checks,
+        ], 200, [], JSON_PRETTY_PRINT);
+    }
 }

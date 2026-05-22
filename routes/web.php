@@ -328,6 +328,8 @@ Route::get('cashier/dana-payments', [CashierController::class, 'getDanaPayments'
 Route::post('cashier/tts/speak', [CashierController::class, 'ttsSpeak'])
     ->middleware('throttle:60,1')
     ->name('cashier.tts.speak');
+Route::get('cashier/tts/health', [CashierController::class, 'ttsHealth'])
+    ->name('cashier.tts.health');
 
 // === Finance Sync Webhook (dipanggil shift kasir setelah closing) ===
 // CSRF dikecualikan via bootstrap/app.php (webhooks/*).
