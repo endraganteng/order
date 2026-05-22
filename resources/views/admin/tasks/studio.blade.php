@@ -126,6 +126,259 @@
         color: #dc2626;
     }
 
+    /* ─── Mass-Assign Modal ───────────────────────── */
+    .ts-mass-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.55);
+        z-index: 1100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+    }
+    .ts-mass-modal {
+        background: #fff;
+        border-radius: 14px;
+        max-width: 1080px;
+        width: 100%;
+        max-height: calc(100vh - 48px);
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+    }
+    .ts-mass-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        padding: 18px 24px;
+        border-bottom: 1px solid #e2e8f0;
+        flex-shrink: 0;
+        background: #fff;
+    }
+    .ts-mass-body {
+        padding: 18px 24px;
+        overflow-y: auto;
+        flex: 1;
+    }
+    .ts-mass-footer {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        padding: 14px 24px;
+        border-top: 1px solid #e2e8f0;
+        flex-shrink: 0;
+        background: #f8fafc;
+    }
+    .ts-mass-step {
+        margin-bottom: 22px;
+    }
+    .ts-mass-step:last-of-type {
+        margin-bottom: 16px;
+    }
+    .ts-mass-step-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+        color: #0f172a;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+    .ts-mass-step-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        background: #3b82f6;
+        color: #fff;
+        border-radius: 50%;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .ts-mass-step-counter {
+        margin-left: auto;
+        font-size: 11px;
+        font-weight: 500;
+        color: #64748b;
+        background: #f1f5f9;
+        padding: 3px 10px;
+        border-radius: 12px;
+    }
+    .ts-mass-rack-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 6px;
+        max-height: 240px;
+        overflow-y: auto;
+        background: #f8fafc;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+    }
+    .ts-mass-pick {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 7px;
+        transition: background 0.12s, border-color 0.12s;
+    }
+    .ts-mass-pick:hover { border-color: #94a3b8; }
+    .ts-mass-pick.is-checked { background: #dbeafe; border-color: #3b82f6; }
+    .ts-mass-pick input[type="checkbox"] { margin: 0; flex-shrink: 0; }
+    .ts-mass-pick-icon { font-size: 16px; flex-shrink: 0; }
+    .ts-mass-pick-text { flex: 1; min-width: 0; }
+    .ts-mass-pick-name {
+        font-size: 12.5px;
+        font-weight: 600;
+        line-height: 1.3;
+        color: #0f172a;
+        word-break: break-word;
+    }
+    .ts-mass-pick-sub {
+        font-size: 10.5px;
+        color: #94a3b8;
+        line-height: 1.3;
+    }
+    .ts-mass-empty {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 18px;
+        color: #94a3b8;
+        font-size: 12.5px;
+    }
+    .ts-mass-bulk-actions {
+        margin-top: 8px;
+        display: flex;
+        gap: 6px;
+    }
+    .ts-mass-bulk-actions .ts-btn { padding: 5px 12px; font-size: 11.5px; }
+    .ts-mass-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-bottom: 10px;
+    }
+    .ts-mass-field { display: flex; flex-direction: column; gap: 4px; }
+    .ts-mass-field label { font-size: 12.5px; font-weight: 600; color: #334155; }
+    .ts-mass-field input,
+    .ts-mass-field select {
+        padding: 7px 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 7px;
+        font-size: 13px;
+        background: #fff;
+    }
+    .ts-mass-field input:focus, .ts-mass-field select:focus {
+        outline: 2px solid #93c5fd;
+        outline-offset: -1px;
+        border-color: #3b82f6;
+    }
+    .ts-mass-role-row,
+    .ts-mass-waiter-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        background: #f8fafc;
+        padding: 8px 10px;
+        border-radius: 7px;
+        border: 1px solid #e2e8f0;
+    }
+    .ts-mass-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        cursor: pointer;
+        font-size: 12.5px;
+        color: #334155;
+        transition: background 0.12s, border-color 0.12s;
+    }
+    .ts-mass-chip:hover { border-color: #94a3b8; }
+    .ts-mass-chip input[type="checkbox"] { margin: 0; }
+    .ts-mass-chip.is-checked {
+        background: #dbeafe;
+        border-color: #3b82f6;
+        color: #1e3a8a;
+        font-weight: 600;
+    }
+    .ts-mass-chip-role {
+        font-size: 9.5px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-left: 4px;
+    }
+    .ts-mass-checks {
+        display: flex;
+        gap: 18px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+    .ts-mass-checkline {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font-size: 12.5px;
+        color: #334155;
+    }
+    .ts-mass-preview {
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 8px;
+        padding: 14px;
+        margin-bottom: 4px;
+    }
+    .ts-mass-preview-title {
+        font-weight: 700;
+        color: #92400e;
+        margin-bottom: 10px;
+        font-size: 13px;
+    }
+    .ts-mass-preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 10px;
+    }
+    .ts-mass-preview-day {
+        background: #fff;
+        border: 1px solid #fde68a;
+        border-radius: 6px;
+        padding: 10px 12px;
+    }
+    .ts-mass-preview-day-label {
+        font-weight: 600;
+        color: #92400e;
+        font-size: 12.5px;
+        margin-bottom: 6px;
+        padding-bottom: 4px;
+        border-bottom: 1px dashed #fde68a;
+    }
+    .ts-mass-preview-row {
+        font-size: 11.5px;
+        color: #475569;
+        margin-bottom: 3px;
+        line-height: 1.4;
+    }
+    .ts-mass-preview-row strong {
+        color: #0f172a;
+        margin-right: 4px;
+    }
+    @media (max-width: 600px) {
+        .ts-mass-overlay { padding: 0; }
+        .ts-mass-modal { border-radius: 0; max-height: 100vh; }
+    }
+
     .ts-cat-chip {
         display: inline-flex;
         align-items: center;
@@ -523,6 +776,11 @@
                class="ts-btn"
                style="min-width:170px; text-align:center; white-space:nowrap;"
                x-text="scopeIsRack() ? '📊 Riwayat Cek Rak' : '📊 Daftar Tugas'"></a>
+            {{-- Mass-Assign button (only rack_check) --}}
+            <button class="ts-btn"
+                    style="min-width:170px; white-space:nowrap; background:#fef3c7; color:#92400e; border-color:#fbbf24;"
+                    @click="openMassAssign()"
+                    x-show="scopeIsRack()">⚡ Mass-Assign</button>
             {{-- Primary CTA (fixed width) --}}
             <button class="ts-btn ts-btn--primary"
                     style="min-width:170px; white-space:nowrap;"
@@ -915,16 +1173,7 @@
                 </div>
             </div>
 
-            {{-- Kategori only untuk rack_check (tanpa prioritas, tanpa deskripsi) --}}
-            <div class="ts-field" x-show="form.task_type === 'rack_check'">
-                <label>Kategori</label>
-                <select x-model="form.category_id" @change="syncCategoryName()">
-                    <option value="">- Tanpa kategori -</option>
-                    <template x-for="c in categories" :key="c.id">
-                        <option :value="c.id" x-text="c.name"></option>
-                    </template>
-                </select>
-            </div>
+            {{-- Kategori HILANG untuk rack_check (auto kosong, tidak ditanya) --}}
 
             <hr style="border:none; border-top:1px solid #f1f5f9; margin:14px 0;">
             <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;">⏰ Pengulangan & Jadwal</div>
@@ -1169,6 +1418,213 @@
             </template>
         </div>
     </aside>
+
+    {{-- Modal: Mass-Assign Cek Rak --}}
+    <div x-show="massAssignOpen"
+         class="ts-mass-overlay"
+         @click="closeMassAssign()">
+        <div class="ts-mass-modal" @click.stop>
+            {{-- Header (sticky top) --}}
+            <div class="ts-mass-header">
+                <div>
+                    <h3 style="margin:0; font-size:18px; color:#0f172a; font-weight:700;">⚡ Mass-Assign Cek Rak</h3>
+                    <div style="font-size:12px; color:#64748b; margin-top:2px;">Bagi banyak rak ke beberapa waiter dengan rotasi rata. Tiap hari, setiap waiter dapat rak yang berbeda.</div>
+                </div>
+                <button class="ts-drawer-close" @click="closeMassAssign()" style="font-size:22px;">×</button>
+            </div>
+
+            {{-- Body (scrollable) --}}
+            <div class="ts-mass-body">
+                {{-- Step 1 --}}
+                <section class="ts-mass-step">
+                    <div class="ts-mass-step-title">
+                        <span class="ts-mass-step-num">1</span>
+                        <span>Pilih rak yang akan dimasukkan rotasi</span>
+                        <span class="ts-mass-step-counter">
+                            <span x-text="massAssignForm.rack_ids.length"></span> / <span x-text="massAssignAvailableRacks().length"></span> dipilih
+                        </span>
+                    </div>
+                    <div class="ts-mass-rack-grid">
+                        <template x-for="r in massAssignAvailableRacks()" :key="r.id">
+                            <label class="ts-mass-pick"
+                                   :class="massAssignForm.rack_ids.includes(r.id) && 'is-checked'">
+                                <input type="checkbox"
+                                       :checked="massAssignForm.rack_ids.includes(r.id)"
+                                       @change="toggleRackPick(r.id)">
+                                <div class="ts-mass-pick-icon" x-text="r.rack_type === 'display' ? '🛍️' : '📦'"></div>
+                                <div class="ts-mass-pick-text">
+                                    <div class="ts-mass-pick-name" x-text="r.name"></div>
+                                    <div class="ts-mass-pick-sub" x-text="r.location || '—'"></div>
+                                </div>
+                            </label>
+                        </template>
+                        <div x-show="massAssignAvailableRacks().length === 0" class="ts-mass-empty">
+                            Tidak ada rak tersedia. Semua rak sudah punya template aktif. Hapus/nonaktifkan template lama dulu.
+                        </div>
+                    </div>
+                    <div class="ts-mass-bulk-actions">
+                        <button class="ts-btn"
+                                @click="massAssignForm.rack_ids = massAssignAvailableRacks().map(r => r.id)">Pilih semua</button>
+                        <button class="ts-btn"
+                                @click="massAssignForm.rack_ids = []">Bersihkan</button>
+                    </div>
+                </section>
+
+                {{-- Step 2: role + waiter rotasi --}}
+                <section class="ts-mass-step">
+                    <div class="ts-mass-step-title">
+                        <span class="ts-mass-step-num">2</span>
+                        <span>Pilih role dan waiter yang ikut rotasi</span>
+                        <span class="ts-mass-step-counter">
+                            <span x-text="massAssignForm.waiter_ids.length"></span> waiter dipilih
+                        </span>
+                    </div>
+                    <div class="ts-mass-row">
+                        <div class="ts-mass-field">
+                            <label>Role waiter (boleh lebih dari satu)</label>
+                            <div class="ts-mass-role-row">
+                                <template x-for="role in ['pelayan','kasir','finance','backup']" :key="role">
+                                    <label class="ts-mass-chip"
+                                           :class="massAssignForm.assigned_waiter_roles.includes(role) && 'is-checked'">
+                                        <input type="checkbox"
+                                               :checked="massAssignForm.assigned_waiter_roles.includes(role)"
+                                               @change="toggleMassRole(role)">
+                                        <span x-text="role.charAt(0).toUpperCase() + role.slice(1)"></span>
+                                    </label>
+                                </template>
+                            </div>
+                            <div class="ts-hint">Misalnya pilih Pelayan + Kasir kalau mau rotasi lintas role.</div>
+                        </div>
+                        <div class="ts-mass-field">
+                            <label>Tanggal mulai rotasi</label>
+                            <input type="date" x-model="massAssignForm.rolling_anchor_date">
+                        </div>
+                    </div>
+
+                    <div style="margin-top:8px;">
+                        <label style="font-size:12.5px; font-weight:600; color:#334155; display:block; margin-bottom:6px;">
+                            Pilih waiter yang ikut rotasi (minimal 2):
+                        </label>
+                        <div class="ts-mass-waiter-row">
+                            <template x-for="w in massAssignAvailableWaiters()" :key="w.id">
+                                <label class="ts-mass-chip ts-mass-chip--waiter"
+                                       :class="massAssignForm.waiter_ids.includes(w.id) && 'is-checked'">
+                                    <input type="checkbox"
+                                           :checked="massAssignForm.waiter_ids.includes(w.id)"
+                                           @change="toggleWaiterPick(w.id)">
+                                    <span class="ts-avatar"
+                                          :class="'ts-avatar--' + w.role"
+                                          style="width:20px; height:20px; font-size:10px;"
+                                          x-text="w.name.charAt(0).toUpperCase()"></span>
+                                    <span x-text="w.name"></span>
+                                    <span class="ts-mass-chip-role" x-text="w.role"></span>
+                                </label>
+                            </template>
+                            <div x-show="massAssignAvailableWaiters().length === 0" class="ts-mass-empty">
+                                Tidak ada waiter aktif untuk role yang dipilih.
+                            </div>
+                        </div>
+                        <div style="margin-top:6px; display:flex; gap:6px;">
+                            <button class="ts-btn"
+                                    @click="massAssignForm.waiter_ids = massAssignAvailableWaiters().map(w => w.id)">Pilih semua</button>
+                            <button class="ts-btn"
+                                    @click="massAssignForm.waiter_ids = []">Bersihkan</button>
+                        </div>
+                    </div>
+                </section>
+
+                {{-- Step 3: jadwal --}}
+                <section class="ts-mass-step">
+                    <div class="ts-mass-step-title">
+                        <span class="ts-mass-step-num">3</span>
+                        <span>Jadwal &amp; bukti (sama untuk semua rak)</span>
+                    </div>
+                    <div class="ts-mass-row">
+                        <div class="ts-mass-field">
+                            <label>Frekuensi</label>
+                            <select x-model="massAssignForm.recurrence_type">
+                                <option value="daily">Harian</option>
+                                <option value="weekly">Mingguan</option>
+                            </select>
+                        </div>
+                        <div class="ts-mass-field">
+                            <label>Mode jadwal</label>
+                            <select x-model="massAssignForm.schedule_mode">
+                                <option value="fixed">⏰ Jam tetap</option>
+                                <option value="shift_relative">🔄 Ikut shift</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="ts-mass-row" x-show="massAssignForm.schedule_mode === 'fixed'">
+                        <div class="ts-mass-field">
+                            <label>Jam mulai</label>
+                            <input type="time" x-model="massAssignForm.schedule_time">
+                        </div>
+                        <div class="ts-mass-field">
+                            <label>Batas (menit)</label>
+                            <input type="number" x-model="massAssignForm.time_limit_minutes" min="1">
+                        </div>
+                    </div>
+                    <div class="ts-mass-row" x-show="massAssignForm.schedule_mode === 'shift_relative'">
+                        <div class="ts-mass-field">
+                            <label>Offset shift (menit)</label>
+                            <input type="number" x-model="massAssignForm.shift_offset_minutes" min="0">
+                        </div>
+                        <div class="ts-mass-field">
+                            <label>Deadline sebelum akhir (menit)</label>
+                            <input type="number" x-model="massAssignForm.deadline_before_end_minutes" min="0">
+                        </div>
+                    </div>
+                    <div class="ts-mass-field">
+                        <label>Filter shift (opsional)</label>
+                        <select x-model="massAssignForm.target_shift_id">
+                            <option value="">— Tanpa filter shift —</option>
+                            <template x-for="s in shifts" :key="s.id">
+                                <option :value="s.id" x-text="s.name + ' (' + s.clock_in_time + ' - ' + s.clock_out_time + ')'"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="ts-mass-checks">
+                        <label class="ts-mass-checkline">
+                            <input type="checkbox" x-model="massAssignForm.requires_photo_proof"> 📸 Wajib foto bukti
+                        </label>
+                        <label class="ts-mass-checkline">
+                            <input type="checkbox" x-model="massAssignForm.requires_photo_before"> 📷 Foto sebelum mulai
+                        </label>
+                    </div>
+                </section>
+
+                {{-- Preview --}}
+                <section class="ts-mass-preview"
+                         x-show="massAssignForm.rack_ids.length >= 1 && massAssignForm.waiter_ids.length >= 2">
+                    <div class="ts-mass-preview-title">📋 Preview distribusi 3 hari pertama</div>
+                    <div class="ts-mass-preview-grid">
+                        <template x-for="day in massAssignPreview()" :key="day.label">
+                            <div class="ts-mass-preview-day">
+                                <div class="ts-mass-preview-day-label" x-text="day.label"></div>
+                                <template x-for="w in day.waiters" :key="w.name">
+                                    <div class="ts-mass-preview-row">
+                                        <strong x-text="w.name"></strong>
+                                        <span x-text="w.racks.length > 0 ? w.racks.join(', ') : '(tidak dapat rak)'"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </section>
+            </div>
+
+            {{-- Footer (sticky bottom) --}}
+            <div class="ts-mass-footer">
+                <button class="ts-btn" @click="closeMassAssign()" :disabled="massAssignSaving">Batal</button>
+                <button class="ts-btn ts-btn--primary"
+                        @click="submitMassAssign()"
+                        :disabled="massAssignSaving || massAssignForm.rack_ids.length === 0 || massAssignForm.waiter_ids.length < 2">
+                    <span x-text="massAssignSaving ? 'Membuat…' : '✓ Buat ' + massAssignForm.rack_ids.length + ' Template Sekaligus'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -1201,6 +1657,23 @@ function taskStudio() {
         addRackOpen: false,
         addRackForm: { name: '', location: '', rack_type: 'storage' },
         addRackSaving: false,
+        massAssignOpen: false,
+        massAssignSaving: false,
+        massAssignForm: {
+            rack_ids: [],
+            waiter_ids: [],
+            assigned_waiter_roles: ['pelayan'],
+            recurrence_type: 'daily',
+            schedule_mode: 'fixed',
+            schedule_time: '09:00',
+            shift_offset_minutes: 30,
+            time_limit_minutes: 60,
+            deadline_before_end_minutes: 60,
+            requires_photo_proof: true,
+            requires_photo_before: false,
+            target_shift_id: '',
+            rolling_anchor_date: '',
+        },
         saving: false,
         form: this.emptyForm ? this.emptyForm() : {},
         toast: { show: false, msg: '', type: 'success' },
@@ -1344,6 +1817,182 @@ function taskStudio() {
             if (type === 'storage') return '📦 Gudang';
             if (type === 'display') return '🛍️ Display';
             return type || '-';
+        },
+
+        // ── Mass-Assign Cek Rak ─────────────────────────────
+        openMassAssign() {
+            // Reset form, prefill rolling_anchor_date hari ini
+            const today = new Date();
+            const y = today.getFullYear();
+            const m = String(today.getMonth() + 1).padStart(2, '0');
+            const d = String(today.getDate()).padStart(2, '0');
+            this.massAssignForm = {
+                rack_ids: [],
+                waiter_ids: [],
+                assigned_waiter_roles: ['pelayan'],
+                recurrence_type: 'daily',
+                schedule_mode: 'fixed',
+                schedule_time: '09:00',
+                shift_offset_minutes: 30,
+                time_limit_minutes: 60,
+                deadline_before_end_minutes: 60,
+                requires_photo_proof: true,
+                requires_photo_before: false,
+                target_shift_id: '',
+                rolling_anchor_date: `${y}-${m}-${d}`,
+            };
+            this.massAssignOpen = true;
+        },
+
+        closeMassAssign() {
+            this.massAssignOpen = false;
+        },
+
+        toggleRackPick(rackId) {
+            const arr = this.massAssignForm.rack_ids;
+            const idx = arr.indexOf(rackId);
+            if (idx >= 0) {
+                arr.splice(idx, 1);
+            } else {
+                arr.push(rackId);
+            }
+        },
+
+        toggleWaiterPick(waiterId) {
+            const arr = this.massAssignForm.waiter_ids;
+            const idx = arr.indexOf(waiterId);
+            if (idx >= 0) {
+                arr.splice(idx, 1);
+            } else {
+                arr.push(waiterId);
+            }
+        },
+
+        // Available racks (active + tidak terkunci template aktif lain)
+        massAssignAvailableRacks() {
+            return this.racks.filter(r => r.is_active && !this.rackInUseByTemplate(r.id, null));
+        },
+
+        // Waiter sesuai role(s) yang dipilih (multi-role support)
+        massAssignAvailableWaiters() {
+            const roles = this.massAssignForm.assigned_waiter_roles || [];
+            if (roles.length === 0) return [];
+            return this.waiters.filter(w => roles.includes(w.role));
+        },
+
+        // Toggle role (multi-select)
+        toggleMassRole(role) {
+            const arr = this.massAssignForm.assigned_waiter_roles;
+            const idx = arr.indexOf(role);
+            if (idx >= 0) {
+                arr.splice(idx, 1);
+            } else {
+                arr.push(role);
+            }
+            // Bersihkan waiter_ids yang tidak match role yang masih dipilih
+            this.onMassRoleChange();
+        },
+
+        // Saat user ganti role: bersihkan waiter_ids yang tidak ada di role yang masih aktif
+        onMassRoleChange() {
+            const roles = this.massAssignForm.assigned_waiter_roles || [];
+            this.massAssignForm.waiter_ids = this.massAssignForm.waiter_ids.filter(id => {
+                const w = this.waiters.find(x => x.id === id);
+                return w && roles.includes(w.role);
+            });
+        },
+
+        // Preview distribusi 3 hari pertama
+        massAssignPreview() {
+            const f = this.massAssignForm;
+            if (f.rack_ids.length < 1 || f.waiter_ids.length < 2) return [];
+            const racks = f.rack_ids.map(id => this.rackById(id)).filter(Boolean);
+            const waiters = f.waiter_ids.map(id => this.waiters.find(w => w.id === id)).filter(Boolean);
+            const days = [];
+            const anchor = new Date(f.rolling_anchor_date + 'T00:00:00');
+            if (isNaN(anchor.getTime())) return [];
+            for (let dayOff = 0; dayOff < 3; dayOff++) {
+                const date = new Date(anchor);
+                if (f.recurrence_type === 'daily') {
+                    date.setDate(date.getDate() + dayOff);
+                } else if (f.recurrence_type === 'weekly') {
+                    date.setDate(date.getDate() + dayOff * 7);
+                } else {
+                    const interval = parseInt(f.shift_offset_minutes) || 2; // unused, but safe
+                    date.setDate(date.getDate() + dayOff);
+                }
+                // Group by waiter for this day
+                const byWaiter = {};
+                waiters.forEach(w => byWaiter[w.id] = []);
+                racks.forEach((r, slotIdx) => {
+                    // Backend formula: (slotIndex + dayOffset) % numWaiters
+                    const dayOffset = Math.floor((date.getTime() - new Date('1970-01-01T00:00:00').getTime()) / 86400000);
+                    const pickIdx = (slotIdx + dayOffset) % waiters.length;
+                    const waiter = waiters[(pickIdx + waiters.length) % waiters.length];
+                    if (waiter && byWaiter[waiter.id]) byWaiter[waiter.id].push(r.name);
+                });
+                const dayName = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'][date.getDay()];
+                const dd = String(date.getDate()).padStart(2, '0');
+                const mm = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'][date.getMonth()];
+                days.push({
+                    label: `${dayName} ${dd} ${mm}`,
+                    waiters: waiters.map(w => ({
+                        name: w.name,
+                        racks: byWaiter[w.id] || [],
+                    })),
+                });
+            }
+            return days;
+        },
+
+        async submitMassAssign() {
+            const f = this.massAssignForm;
+            if (f.rack_ids.length < 1) { this.showToast('Pilih minimal 1 rak', 'error'); return; }
+            if (f.waiter_ids.length < 2) { this.showToast('Pilih minimal 2 waiter untuk rotasi rata', 'error'); return; }
+            if ((f.assigned_waiter_roles || []).length === 0) { this.showToast('Pilih minimal 1 role waiter', 'error'); return; }
+            if (f.schedule_mode === 'fixed' && !f.schedule_time) { this.showToast('Jam mulai wajib diisi', 'error'); return; }
+            if (!f.rolling_anchor_date) { this.showToast('Tanggal mulai wajib diisi', 'error'); return; }
+
+            this.massAssignSaving = true;
+            try {
+                const body = {
+                    rack_ids: f.rack_ids,
+                    waiter_ids: f.waiter_ids,
+                    assigned_waiter_roles: f.assigned_waiter_roles,
+                    recurrence_type: f.recurrence_type,
+                    schedule_mode: f.schedule_mode,
+                    schedule_time: f.schedule_time,
+                    shift_offset_minutes: f.shift_offset_minutes,
+                    time_limit_minutes: f.time_limit_minutes,
+                    deadline_before_end_minutes: f.deadline_before_end_minutes,
+                    requires_photo_proof: f.requires_photo_proof ? 1 : 0,
+                    requires_photo_before: f.requires_photo_before ? 1 : 0,
+                    target_shift_id: f.target_shift_id || '',
+                    rolling_anchor_date: f.rolling_anchor_date,
+                };
+                const res = await fetch('{{ route('admin.tasks.rack_mass_assign') }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': csrf,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.success) {
+                    this.showToast(`✓ ${data.created} template Cek Rak dibuat. Memuat ulang…`, 'success');
+                    this.closeMassAssign();
+                    setTimeout(() => window.location.reload(), 800);
+                } else {
+                    this.showToast(data.message || 'Gagal mass-assign', 'error');
+                }
+            } catch (e) {
+                this.showToast(e.message, 'error');
+            } finally {
+                this.massAssignSaving = false;
+            }
         },
 
         async addRackInline() {

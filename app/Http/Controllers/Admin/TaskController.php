@@ -796,6 +796,226 @@ class TaskController extends Controller
     }
 
     /**
+     * Mass-assign Cek Rak: bikin N templates rolling rata antar M waiter.
+     *
+     * Mekanisme: setiap rak dikasih rolling_slot_index incremental (0..N-1).
+     * Saat generate harian, formula `(slotIndex + dayOffset) % numWaiters` memastikan:
+     * - Hari yang sama: tidak ada 2 rak share waiter (selama N <= kelipatan M)
+     * - Hari berikutnya: setiap waiter dapat rak yang berbeda dari kemarin (offset shift)
+     *
+     * Body JSON:
+     *   rack_ids[]: array of rack IDs
+     *   waiter_ids[]: array of waiter IDs (rotation order)
+     *   assigned_waiter_role: string (role waiter)
+     *   recurrence_type: 'daily' (only daily supported untuk MVP)
+     *   schedule_mode: 'fixed' | 'shift_relative'
+     *   schedule_time: string HH:MM
+     *   shift_offset_minutes, time_limit_minutes, deadline_before_end_minutes
+     *   requires_photo_proof, requires_photo_before
+     */
+    public function rackMassAssign(Request $request)
+    {
+        $rackIds = (array) $request->input('rack_ids', []);
+        $rackIds = array_values(array_filter(array_map(fn ($x) => trim((string) $x), $rackIds), fn ($x) => $x !== ''));
+        $waiterIds = (array) $request->input('waiter_ids', []);
+        $waiterIds = array_values(array_filter(array_map(fn ($x) => trim((string) $x), $waiterIds), fn ($x) => $x !== ''));
+        $waiterIds = array_values(array_unique($waiterIds));
+
+        if (count($rackIds) < 1) {
+            return response()->json(['success' => false, 'message' => 'Pilih minimal 1 rak.'], 422);
+        }
+        if (count($waiterIds) < 2) {
+            return response()->json(['success' => false, 'message' => 'Pilih minimal 2 waiter untuk rotasi rata.'], 422);
+        }
+
+        // Validasi rak aktif + tidak konflik dengan template aktif
+        $activeRacks = $this->firebase->getActiveRacks();
+        $rackMap = [];
+        foreach ($activeRacks as $rack) {
+            $rackMap[(string) ($rack['id'] ?? '')] = $rack;
+        }
+        $invalidRacks = [];
+        foreach ($rackIds as $rid) {
+            if (! isset($rackMap[$rid])) {
+                $invalidRacks[] = $rid;
+            }
+        }
+        if (count($invalidRacks) > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Rak tidak ditemukan/nonaktif: '.implode(', ', $invalidRacks),
+            ], 422);
+        }
+
+        // Cek rack uniqueness — tolak rak yang sudah punya template aktif
+        try {
+            $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+            $lockedRacks = [];
+            foreach ($existingTemplates as $tpl) {
+                if (($tpl['task_type'] ?? 'general') !== 'rack_check') {
+                    continue;
+                }
+                if (empty($tpl['is_active'])) {
+                    continue;
+                }
+                $tplRackId = (string) ($tpl['rack_id'] ?? '');
+                if ($tplRackId !== '' && in_array($tplRackId, $rackIds, true)) {
+                    $lockedRacks[$tplRackId] = (string) ($tpl['rack_name'] ?? $tplRackId);
+                }
+            }
+            if (count($lockedRacks) > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Rak berikut sudah punya template aktif: '.implode(', ', array_values($lockedRacks)).'. Hapus/nonaktifkan dulu.',
+                ], 422);
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // Validasi waiter aktif + role match (multi-role support)
+        $assignedRoles = (array) $request->input('assigned_waiter_roles', []);
+        if (empty($assignedRoles)) {
+            // Backward-compat: terima single field 'assigned_waiter_role' jadi array
+            $singleRole = strtolower(trim((string) $request->input('assigned_waiter_role', '')));
+            if ($singleRole !== '') {
+                $assignedRoles = [$singleRole];
+            }
+        }
+        $assignedRoles = array_values(array_unique(array_filter(array_map(
+            fn ($r) => strtolower(trim((string) $r)),
+            $assignedRoles
+        ), fn ($r) => $r !== '' && in_array($r, ['kasir', 'pelayan', 'backup', 'finance'], true))));
+
+        if (count($assignedRoles) === 0) {
+            return response()->json(['success' => false, 'message' => 'Pilih minimal 1 role waiter yang valid (kasir/pelayan/backup/finance).'], 422);
+        }
+
+        // Primary role untuk template = role pertama (assigned_waiter_role tetap diisi
+        // untuk kompatibilitas data; selected_waiter_ids menentukan rotasi rata).
+        $assignedRole = $assignedRoles[0];
+
+        $invalidWaiters = [];
+        $crossRoleWaiters = [];
+        foreach ($waiterIds as $wid) {
+            $w = $this->firebase->getWaiterById($wid);
+            if (! $w || ! ($w['is_active'] ?? true)) {
+                $invalidWaiters[] = $wid;
+                continue;
+            }
+            $waiterRole = strtolower((string) ($w['waiter_role'] ?? ''));
+            if ($waiterRole !== '' && ! in_array($waiterRole, $assignedRoles, true)) {
+                $crossRoleWaiters[] = $w['name'] ?? $wid;
+            }
+        }
+        if (count($invalidWaiters) > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Waiter tidak ditemukan/nonaktif: '.implode(', ', $invalidWaiters),
+            ], 422);
+        }
+        if (count($crossRoleWaiters) > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Beberapa waiter role-nya tidak cocok dengan role tugas ('.implode('+', $assignedRoles).'): '.implode(', ', $crossRoleWaiters),
+            ], 422);
+        }
+
+        // Schedule fields
+        $recurrenceType = (string) $request->input('recurrence_type', 'daily');
+        if (! in_array($recurrenceType, ['daily', 'weekly', 'every_n_days'], true)) {
+            $recurrenceType = 'daily';
+        }
+        $weeklyDay = $recurrenceType === 'weekly' ? max(1, min(7, (int) $request->input('weekly_day', 1))) : null;
+        $intervalDays = $recurrenceType === 'every_n_days' ? max(2, (int) $request->input('interval_days', 2)) : null;
+        $scheduleMode = (string) $request->input('schedule_mode', 'fixed');
+        $scheduleTime = (string) $request->input('schedule_time', '09:00');
+        $timeLimitMinutes = max(1, (int) $request->input('time_limit_minutes', 30));
+        $shiftOffsetMinutes = max(0, (int) $request->input('shift_offset_minutes', 0));
+        $deadlineBeforeEndMinutes = max(0, (int) $request->input('deadline_before_end_minutes', 60));
+        $deadlineMode = $scheduleMode === 'fixed' ? 'fixed' : 'before_shift_end';
+        $requiresPhotoProof = (bool) $request->boolean('requires_photo_proof');
+        $requiresPhotoBefore = (bool) $request->boolean('requires_photo_before');
+        $anchorDate = (string) $request->input('rolling_anchor_date', date('Y-m-d'));
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $anchorDate)) {
+            $anchorDate = date('Y-m-d');
+        }
+        $targetShiftId = (string) $request->input('target_shift_id', '');
+        if ($targetShiftId !== '') {
+            $shift = $this->firebase->getShiftById($targetShiftId);
+            if (! $shift || ! ($shift['is_active'] ?? true)) {
+                return response()->json(['success' => false, 'message' => 'Shift target tidak valid.'], 422);
+            }
+        }
+
+        // Bikin N templates dengan slot_index incremental
+        $created = 0;
+        $errors = [];
+        foreach ($rackIds as $idx => $rackId) {
+            $rack = $rackMap[$rackId];
+            try {
+                $this->firebase->createRecurringWaiterTaskTemplate([
+                    'title' => (string) ($rack['name'] ?? 'Rak'),
+                    'description' => '',
+                    'priority' => 'normal',
+                    'assigned_by' => 'Supervisor',
+                    'task_type' => 'rack_check',
+                    'category_id' => null,
+                    'category_name' => null,
+                    'requires_barcode_scan' => true,
+                    'requires_photo_proof' => $requiresPhotoProof,
+                    'requires_photo_before' => $requiresPhotoBefore,
+                    'rack_target_scope' => 'single',
+                    'rack_id' => $rackId,
+                    'rack_name' => $rack['name'] ?? '',
+                    'rack_location' => $rack['location'] ?? '',
+                    'rack_barcode_value' => $rack['barcode_value'] ?? '',
+                    'rack_type' => $rack['rack_type'] ?? 'storage',
+                    'assignment_type' => 'role',
+                    'assignment_strategy' => 'role_round_robin',
+                    'assigned_waiter_id' => null,
+                    'assigned_waiter_role' => $assignedRole,
+                    'selected_waiter_ids' => $waiterIds,
+                    'rolling_slot_index' => $idx,
+                    'schedule_time' => $scheduleTime,
+                    'time_limit_minutes' => $timeLimitMinutes,
+                    'schedule_mode' => $scheduleMode,
+                    'shift_offset_minutes' => $shiftOffsetMinutes,
+                    'deadline_mode' => $deadlineMode,
+                    'deadline_before_end_minutes' => $deadlineBeforeEndMinutes,
+                    'recurrence_type' => $recurrenceType,
+                    'weekly_day' => $weeklyDay,
+                    'interval_days' => $intervalDays,
+                    'recurrence_anchor_date' => $anchorDate,
+                    'rolling_enabled' => false,
+                    'rolling_period' => 'daily',
+                    'rolling_waiter_ids' => [],
+                    'rolling_anchor_date' => '',
+                    'target_shift_id' => $targetShiftId,
+                ]);
+                $created++;
+            } catch (\Throwable $e) {
+                report($e);
+                $errors[] = ($rack['name'] ?? $rackId).': '.$e->getMessage();
+            }
+        }
+
+        if ($created === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat template: '.implode('; ', $errors),
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'created' => $created,
+            'errors' => $errors,
+            'message' => "Mass-assign berhasil: {$created} template Cek Rak dibuat dengan rotasi rata antar ".count($waiterIds).' waiter.',
+        ]);
+    }
+
+    /**
      * Show edit recurring task template form.
      */
     public function recurringEdit($id)

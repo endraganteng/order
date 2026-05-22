@@ -1405,6 +1405,91 @@
             .reward-points-value { font-size: 48px; }
             .reward-title { font-size: 20px; }
         }
+
+        /* ─── Recheck Modal & Cards ─────────────── */
+        .recheck-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .recheck-modal {
+            background: #fff;
+            border-radius: 14px;
+            max-width: 520px;
+            width: 100%;
+            max-height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        .recheck-modal-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            padding: 14px 18px;
+            border-bottom: 1px solid #e2e8f0;
+            flex-shrink: 0;
+        }
+        .recheck-modal-close {
+            background: none;
+            border: none;
+            font-size: 22px;
+            color: #64748b;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .recheck-modal-body {
+            padding: 16px 18px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .recheck-modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            padding: 12px 18px;
+            border-top: 1px solid #e2e8f0;
+            flex-shrink: 0;
+            background: #f8fafc;
+        }
+        .recheck-modal-footer .btn {
+            padding: 8px 14px;
+            border-radius: 7px;
+            border: 1px solid #cbd5e1;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .recheck-modal-footer .btn-cancel { background: #fff; color: #475569; }
+        .recheck-modal-footer .btn-primary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+        .recheck-pending-card {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-left: 4px solid #f97316;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: box-shadow 0.15s, border-color 0.15s;
+        }
+        .recheck-pending-card:hover {
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+            border-color: #f97316;
+        }
+        .recheck-pending-card-title { font-weight: 700; color: #0f172a; font-size: 14px; margin-bottom: 3px; }
+        .recheck-pending-card-meta { font-size: 11.5px; color: #64748b; display: flex; gap: 10px; flex-wrap: wrap; }
+        .recheck-status-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 8px;
+            font-size: 10px; font-weight: 600; margin-left: 4px;
+        }
+        .recheck-status-pending { background: #fef3c7; color: #92400e; }
+        .recheck-status-done { background: #d1fae5; color: #065f46; }
     </style>
 </head>
 <body>
@@ -1466,7 +1551,69 @@
             <button type="button" class="tab-btn js-tab-btn" data-tab="tasks">📝 Tugas <span id="badge-tab-general" class="menu-badge js-general-menu-badge hidden">0</span></button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="reports">📔 Laporan Kegiatan</button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="bonus">🏆 Bonus</button>
+            @if(!empty($isFinance))
+            <button type="button" class="tab-btn js-tab-btn" data-tab="recheck">🔍 Recheck Rak <span id="badge-tab-recheck" class="menu-badge js-recheck-menu-badge hidden">0</span></button>
+            @endif
         </div>
+
+        @if(!empty($isFinance))
+        <section id="panel-recheck" class="portal-panel">
+            <h2 style="margin: 0 0 10px 0;">🔍 Recheck Cek Rak (Finance)</h2>
+            <div style="background:#fff7ed; border:1px solid #fdba74; border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:13px; color:#7c2d12;">
+                Berikut daftar cek rak yang sudah dikerjakan waiter dan menunggu review Anda. Klik untuk kasih poin (0-10) + catatan.
+                Poin recheck masuk kategori "Recheck Rak" di bonus harian waiter (max 10/hari).
+            </div>
+            <div id="recheck-pending-container"></div>
+            <div id="recheck-empty" style="text-align:center; padding:30px; color:#94a3b8; display:none;">
+                ✅ Tidak ada cek rak yang menunggu review.
+            </div>
+        </section>
+
+        {{-- Modal review --}}
+        <div id="recheck-modal" class="recheck-modal-overlay" style="display:none;">
+            <div class="recheck-modal">
+                <div class="recheck-modal-header">
+                    <div>
+                        <div style="font-weight:700; color:#0f172a; font-size:16px;">🔍 Review Cek Rak</div>
+                        <div id="recheck-modal-meta" style="font-size:12px; color:#64748b; margin-top:2px;">—</div>
+                    </div>
+                    <button type="button" class="recheck-modal-close" onclick="closeRecheckModal()">×</button>
+                </div>
+                <div class="recheck-modal-body">
+                    <div id="recheck-photo-wrap" style="margin-bottom:14px;">
+                        <div style="font-size:11.5px; font-weight:600; color:#475569; margin-bottom:4px;">Bukti foto waiter:</div>
+                        <img id="recheck-photo" src="" alt="Bukti foto" style="max-width:100%; max-height:300px; border-radius:8px; border:1px solid #e2e8f0; display:none;">
+                        <div id="recheck-photo-empty" style="font-size:12px; color:#94a3b8;">(Tidak ada foto)</div>
+                    </div>
+                    <div style="margin-bottom:14px;">
+                        <label style="font-size:12.5px; font-weight:600; color:#334155; display:block; margin-bottom:4px;">
+                            Poin (0-10) <span id="recheck-points-display" style="font-weight:700; color:#3b82f6; margin-left:8px;">5</span>
+                        </label>
+                        <input type="range" id="recheck-points" min="0" max="10" step="1" value="5"
+                               style="width:100%; cursor:pointer;"
+                               oninput="document.getElementById('recheck-points-display').innerText = this.value;">
+                        <div style="display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; margin-top:2px;">
+                            <span>0 (sangat buruk)</span>
+                            <span>5 (cukup)</span>
+                            <span>10 (sempurna)</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:6px;">
+                        <label style="font-size:12.5px; font-weight:600; color:#334155; display:block; margin-bottom:4px;">
+                            Catatan / feedback (opsional)
+                        </label>
+                        <textarea id="recheck-notes" rows="3" maxlength="1000"
+                                  placeholder="Mis. 'Rak sudah rapi tapi ada 1 kotak miring' atau 'Bersih sekali, terus pertahankan'"
+                                  style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:7px; font-size:13px; resize:vertical; font-family:inherit;"></textarea>
+                    </div>
+                </div>
+                <div class="recheck-modal-footer">
+                    <button type="button" class="btn btn-cancel" onclick="closeRecheckModal()">Batal</button>
+                    <button type="button" class="btn btn-primary" id="recheck-submit-btn" onclick="submitRecheck()">✓ Simpan Review</button>
+                </div>
+            </div>
+        </div>
+        @endif
 
         <section id="panel-rack" class="portal-panel active">
             <h2 style="margin: 0 0 10px 0;">Cek Rak Saya (<span id="rack-pending-count">0</span>)</h2>
@@ -1487,6 +1634,7 @@
                                 <th>Verifikasi Rak</th>
                                 <th>Laporan Stok Rak</th>
                                 <th>Bukti Foto</th>
+                                <th>Recheck Finance</th>
                                 <th>Waktu</th>
                             </tr>
                         </thead>
@@ -2183,7 +2331,7 @@
         }
 
         function setActiveTab(tab) {
-            const allowedTabs = ['rack', 'tasks', 'reports', 'bonus'];
+            const allowedTabs = ['rack', 'tasks', 'reports', 'bonus', 'recheck'];
             const targetTab = allowedTabs.includes(tab) ? tab : 'rack';
 
             panelRack.classList.toggle('active', targetTab === 'rack');
@@ -2191,6 +2339,8 @@
             panelTasks.classList.toggle('active', targetTab === 'tasks');
             panelReports.classList.toggle('active', targetTab === 'reports');
             panelBonus.classList.toggle('active', targetTab === 'bonus');
+            const panelRecheck = document.getElementById('panel-recheck');
+            panelRecheck?.classList.toggle('active', targetTab === 'recheck');
 
             tabButtons.forEach((button) => {
                 const isMatch = String(button.getAttribute('data-tab') || '') === targetTab;
@@ -2273,6 +2423,14 @@
             normalized.created_at = parseTimestamp(normalized.created_at);
             normalized.completed_at = parseTimestamp(normalized.completed_at);
             normalized.deadline_at = parseTimestamp(normalized.deadline_at);
+            // Recheck fields (rack_check tasks only)
+            normalized.recheck_pending = Boolean(normalized.recheck_pending);
+            if (normalized.recheck_points !== null && normalized.recheck_points !== undefined && normalized.recheck_points !== '') {
+                normalized.recheck_points = parseInt(normalized.recheck_points);
+            }
+            normalized.recheck_notes = String(normalized.recheck_notes || '');
+            normalized.recheck_by_name = String(normalized.recheck_by_name || '');
+            normalized.recheck_at = parseTimestamp(normalized.recheck_at);
             return normalized;
         }
 
@@ -3009,8 +3167,12 @@
                 return;
             }
 
+            // Determine if we're in rack history (has 8 cols) or general (7 cols)
+            const isRackTable = historyTarget.id === 'rack-history-body';
+            const colspan = isRackTable ? 8 : 7;
+
             if (!historyTasks.length) {
-                historyTarget.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #6b7280;">${escapeHtml(emptyMessage || 'Belum ada riwayat.')}</td></tr>`;
+                historyTarget.innerHTML = `<tr><td colspan="${colspan}" style="text-align: center; color: #6b7280;">${escapeHtml(emptyMessage || 'Belum ada riwayat.')}</td></tr>`;
                 return;
             }
 
@@ -3020,6 +3182,33 @@
                     statusText = '✅ Selesai';
                 } else if (task.status === 'overdue') {
                     statusText = '❌ Tidak Selesai';
+                }
+
+                // Recheck cell (only for rack table + rack_check tasks)
+                let recheckCell = '';
+                if (isRackTable) {
+                    if (task.task_type === 'rack_check' && task.status === 'done') {
+                        if (task.recheck_pending) {
+                            recheckCell = `<td><span style="display:inline-block; padding:3px 8px; background:#fef3c7; color:#92400e; border-radius:8px; font-size:11px; font-weight:600;">⏳ Menunggu Finance</span></td>`;
+                        } else if (task.recheck_points !== null && task.recheck_points !== undefined) {
+                            const pts = parseInt(task.recheck_points) || 0;
+                            const color = pts >= 8 ? '#065f46' : (pts >= 5 ? '#92400e' : '#7f1d1d');
+                            const bg = pts >= 8 ? '#d1fae5' : (pts >= 5 ? '#fef3c7' : '#fee2e2');
+                            const reviewer = escapeHtml(task.recheck_by_name || 'Finance');
+                            const notes = task.recheck_notes ? `<div style="font-size:11px; color:#475569; margin-top:3px; max-width:200px;">📝 ${escapeHtml(task.recheck_notes)}</div>` : '';
+                            recheckCell = `<td>
+                                <span style="display:inline-block; padding:3px 8px; background:${bg}; color:${color}; border-radius:8px; font-size:11px; font-weight:700;">
+                                    ✅ ${pts}/10 poin
+                                </span>
+                                <div style="font-size:10px; color:#94a3b8; margin-top:2px;">oleh ${reviewer}</div>
+                                ${notes}
+                            </td>`;
+                        } else {
+                            recheckCell = `<td><span style="color:#9ca3af; font-size:11px;">—</span></td>`;
+                        }
+                    } else {
+                        recheckCell = `<td><span style="color:#9ca3af; font-size:11px;">—</span></td>`;
+                    }
                 }
 
                 return `<tr>
@@ -3056,6 +3245,7 @@
                         : (task.requires_photo_proof
                             ? '<span style="color:#9a3412; font-size:12px;">(wajib foto)</span>'
                             : '-')}</td>
+                    ${recheckCell}
                     <td>
                         ${isRackScanTask(task)
                             ? `Selesai: ${escapeHtml(formatDateTime(task.completed_at))}`
@@ -4919,6 +5109,128 @@
                 syncIntervalId = setInterval(syncDueTasks, SYNC_DUE_INTERVAL);
             }
         });
+
+        // ─── Recheck Cek Rak (Finance) ────────────────────────
+        @if(!empty($isFinance))
+        let recheckPendingTasks = @json($rackCheckPendingReview ?? []);
+        let recheckSelectedId = null;
+
+        function renderRecheckPending() {
+            const container = document.getElementById('recheck-pending-container');
+            const empty = document.getElementById('recheck-empty');
+            const badge = document.getElementById('badge-tab-recheck');
+            if (!container) return;
+            container.innerHTML = '';
+            if (recheckPendingTasks.length === 0) {
+                if (empty) empty.style.display = 'block';
+                if (badge) badge.classList.add('hidden');
+                return;
+            }
+            if (empty) empty.style.display = 'none';
+            if (badge) {
+                badge.classList.remove('hidden');
+                badge.textContent = String(recheckPendingTasks.length);
+            }
+            recheckPendingTasks.forEach(t => {
+                const card = document.createElement('div');
+                card.className = 'recheck-pending-card';
+                card.innerHTML = `
+                    <div class="recheck-pending-card-title">${escapeHtml(t.rack_name || t.title || 'Rak')}</div>
+                    <div class="recheck-pending-card-meta">
+                        <span>👤 ${escapeHtml(t.completed_by_waiter_name || t.assigned_waiter_name || '?')}</span>
+                        <span>📍 ${escapeHtml(t.rack_location || '—')}</span>
+                        <span>⏱ ${formatTaskTime(t.completed_at)}</span>
+                        ${t.completed_scanned_barcode ? `<span style="color:#059669;">✅ QR scanned</span>` : `<span style="color:#dc2626;">⚠️ no QR</span>`}
+                    </div>`;
+                card.addEventListener('click', () => openRecheckModal(t));
+                container.appendChild(card);
+            });
+        }
+
+        function openRecheckModal(task) {
+            recheckSelectedId = task.id;
+            const modal = document.getElementById('recheck-modal');
+            document.getElementById('recheck-modal-meta').textContent =
+                (task.rack_name || task.title || '?') + ' • ' + (task.completed_by_waiter_name || '?');
+            const photo = document.getElementById('recheck-photo');
+            const photoEmpty = document.getElementById('recheck-photo-empty');
+            const photoUrl = task.photo_proof_url
+                || (task.completions && Object.values(task.completions || {}).find(c => c && c.photo_proof_url) || {}).photo_proof_url;
+            if (photoUrl) {
+                photo.src = photoUrl;
+                photo.style.display = 'block';
+                photoEmpty.style.display = 'none';
+            } else {
+                photo.style.display = 'none';
+                photoEmpty.style.display = 'block';
+            }
+            document.getElementById('recheck-points').value = '5';
+            document.getElementById('recheck-points-display').textContent = '5';
+            document.getElementById('recheck-notes').value = '';
+            modal.style.display = 'flex';
+        }
+
+        function closeRecheckModal() {
+            document.getElementById('recheck-modal').style.display = 'none';
+            recheckSelectedId = null;
+        }
+
+        async function submitRecheck() {
+            if (!recheckSelectedId) return;
+            const points = parseInt(document.getElementById('recheck-points').value) || 0;
+            const notes = document.getElementById('recheck-notes').value || '';
+            const btn = document.getElementById('recheck-submit-btn');
+            btn.disabled = true;
+            btn.textContent = 'Menyimpan…';
+            try {
+                const res = await fetch('/waiter/tasks/' + recheckSelectedId + '/recheck', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({ points, notes }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.success) {
+                    recheckPendingTasks = recheckPendingTasks.filter(t => t.id !== recheckSelectedId);
+                    renderRecheckPending();
+                    closeRecheckModal();
+                    showFlash('Review tersimpan: ' + points + ' poin', 'success');
+                } else {
+                    alert(data.message || 'Gagal menyimpan review.');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '✓ Simpan Review';
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function formatTaskTime(ts) {
+            if (!ts) return '?';
+            const d = new Date(parseInt(ts) * 1000);
+            return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function showFlash(msg, type) {
+            const id = type === 'success' ? 'flash-success' : 'flash-error';
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = (type === 'success' ? '✅ ' : '❌ ') + msg;
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 3500);
+        }
+
+        document.addEventListener('DOMContentLoaded', renderRecheckPending);
+        @endif
     </script>
 
     <!-- ===== REWARD OVERLAY ===== -->

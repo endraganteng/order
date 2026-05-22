@@ -23,16 +23,32 @@ class BonusService
 
     /**
      * Get bonus configuration from Firebase, falling back to defaults.
+     * Uses deep merge so newly-added categories (e.g. rack_recheck) survive
+     * even when Firebase has older config.
      */
     public function getBonusConfig(): array
     {
         $snapshot = $this->database->getReference('bonus_config')->getSnapshot();
+        $defaults = $this->getDefaultConfig();
 
-        if ($snapshot->exists()) {
-            return array_merge($this->getDefaultConfig(), (array) $snapshot->getValue());
+        if (! $snapshot->exists()) {
+            return $defaults;
         }
 
-        return $this->getDefaultConfig();
+        $stored = (array) $snapshot->getValue();
+
+        // Deep merge: ensure stored point_categories preserved, but missing keys
+        // (like newly-added 'rack_recheck') filled from defaults.
+        $merged = array_merge($defaults, $stored);
+        if (isset($defaults['point_categories']) && is_array($defaults['point_categories'])) {
+            $storedCats = isset($stored['point_categories']) && is_array($stored['point_categories'])
+                ? $stored['point_categories']
+                : [];
+            // Stored categories override defaults, but missing categories are added from defaults.
+            $merged['point_categories'] = $storedCats + $defaults['point_categories'];
+        }
+
+        return $merged;
     }
 
     /**
@@ -45,14 +61,15 @@ class BonusService
             'working_days_per_month' => 26,
             'total_bonus_pool' => 500000,
             'perfect_day_bonus' => 5,
-            'daily_max_points' => 20,
+            'daily_max_points' => 30,
 
             'point_categories' => [
-                'discipline'  => ['name' => 'Disiplin', 'max_daily_points' => 5, 'sort_order' => 1, 'scoring_type' => 'daily'],
-                'operational' => ['name' => 'Operasional', 'max_daily_points' => 10, 'sort_order' => 2, 'scoring_type' => 'daily'],
-                'service'     => ['name' => 'Pelayanan', 'max_daily_points' => 5, 'sort_order' => 3, 'scoring_type' => 'monthly'],
-                'sales'       => ['name' => 'Penjualan', 'max_daily_points' => 5, 'sort_order' => 4, 'scoring_type' => 'monthly'],
-                'attitude'    => ['name' => 'Sikap', 'max_daily_points' => 5, 'sort_order' => 5, 'scoring_type' => 'daily'],
+                'discipline'   => ['name' => 'Disiplin', 'max_daily_points' => 5, 'sort_order' => 1, 'scoring_type' => 'daily'],
+                'operational'  => ['name' => 'Operasional', 'max_daily_points' => 10, 'sort_order' => 2, 'scoring_type' => 'daily'],
+                'service'      => ['name' => 'Pelayanan', 'max_daily_points' => 5, 'sort_order' => 3, 'scoring_type' => 'monthly'],
+                'sales'        => ['name' => 'Penjualan', 'max_daily_points' => 5, 'sort_order' => 4, 'scoring_type' => 'monthly'],
+                'attitude'     => ['name' => 'Sikap', 'max_daily_points' => 5, 'sort_order' => 5, 'scoring_type' => 'daily'],
+                'rack_recheck' => ['name' => 'Recheck Rak', 'max_daily_points' => 10, 'sort_order' => 6, 'scoring_type' => 'daily'],
             ],
 
             'penalty_types' => [
@@ -194,7 +211,13 @@ class BonusService
     /**
      * Score daily points for a waiter on a given date.
      *
-     * Only daily-scored categories (discipline, operational, attitude) are written.
+     * Only daily-scored categories are written:
+     * - discipline (max 5)
+     * - operational (max 10) — auto from non-rack_check task ratio
+     * - attitude (max 5)
+     * - rack_recheck (max 10) — manual from Finance review
+     *
+     * Service and Sales are scored monthly (percentage) at finalization time.
      * Monthly categories (service, sales) are excluded from daily records.
      *
      * @param  string  $waiterId
@@ -387,10 +410,11 @@ class BonusService
     /**
      * Auto-calculate daily scores for a waiter based on PRE-FETCHED data.
      *
-     * Daily auto-scored categories (3 only):
+     * Daily auto-scored categories:
      * - discipline (max 5): from attendance record
-     * - operational (max 10): from task completion ratio
+     * - operational (max 10): from non-rack_check task completion ratio
      * - attitude (max 5): from activity report submission
+     * - rack_recheck (max 10): from sum of Finance recheck_points on rack_check tasks
      *
      * Service and Sales are scored monthly (percentage) at finalization time.
      *
@@ -429,22 +453,26 @@ class BonusService
         }
 
         // -----------------------------------------------------------------
-        //  OPERATIONAL (max 10) — from task completion
+        //  OPERATIONAL (max 10) — from non-rack_check task completion
+        //  rack_check tasks are scored separately via Finance recheck.
         // -----------------------------------------------------------------
         $operationalMax = (int) ($config['point_categories']['operational']['max_daily_points'] ?? 10);
-        $totalTasks = count($waiterTasks);
+        $nonRackTasks = array_values(array_filter($waiterTasks, function ($task) {
+            return ($task['task_type'] ?? 'general') !== 'rack_check';
+        }));
+        $totalTasks = count($nonRackTasks);
 
         if ($totalTasks > 0) {
-            $completedTasks = count(array_filter($waiterTasks, function ($task) {
+            $completedTasks = count(array_filter($nonRackTasks, function ($task) {
                 return ($task['status'] ?? 'pending') === 'done';
             }));
 
             $operationalScore = (int) round(($completedTasks / $totalTasks) * $operationalMax);
-            $operationalReason = $completedTasks . '/' . $totalTasks . ' tugas selesai';
+            $operationalReason = $completedTasks . '/' . $totalTasks . ' tugas umum selesai';
         } else {
-            // Tidak ada task dijadwalkan = waiter tidak bisa kontrol; default full poin agar fair.
+            // Tidak ada task umum dijadwalkan = waiter tidak bisa kontrol; default full poin agar fair.
             $operationalScore = $operationalMax;
-            $operationalReason = 'Tidak ada tugas dijadwalkan (default poin penuh)';
+            $operationalReason = 'Tidak ada tugas umum dijadwalkan (default poin penuh)';
         }
 
         // -----------------------------------------------------------------
@@ -458,14 +486,48 @@ class BonusService
             $attitudeReason = 'Laporan kegiatan disubmit';
         }
 
+        // -----------------------------------------------------------------
+        //  RACK_RECHECK (max 10) — sum of Finance recheck_points on rack_check tasks
+        // -----------------------------------------------------------------
+        $rackRecheckMax = (int) ($config['point_categories']['rack_recheck']['max_daily_points'] ?? 10);
+        $rackTasks = array_values(array_filter($waiterTasks, function ($task) {
+            return ($task['task_type'] ?? 'general') === 'rack_check';
+        }));
+        $rackRecheckScore = 0;
+        $rackRecheckReason = 'Belum ada cek rak';
+        if (count($rackTasks) > 0) {
+            $reviewedRackTasks = array_values(array_filter($rackTasks, function ($task) {
+                return isset($task['recheck_points']) && empty($task['recheck_pending']);
+            }));
+            $totalRackTasks = count($rackTasks);
+            $reviewedCount = count($reviewedRackTasks);
+            if ($reviewedCount > 0) {
+                // Average poin per rak yang sudah direview, di-scale ke max 10
+                $sumPoints = 0;
+                foreach ($reviewedRackTasks as $rt) {
+                    $sumPoints += max(0, min(10, (int) ($rt['recheck_points'] ?? 0)));
+                }
+                // Average yang sudah direview, lalu pro-rate dengan total rak hari itu
+                // Supaya kalau Finance baru review 2 dari 5 rak, waiter dapat sebagian.
+                $avgPoints = $sumPoints / $reviewedCount;
+                $rackRecheckScore = (int) round($avgPoints * ($reviewedCount / $totalRackTasks));
+                $rackRecheckScore = max(0, min($rackRecheckMax, $rackRecheckScore));
+                $rackRecheckReason = $reviewedCount . '/' . $totalRackTasks . ' rak direview Finance, total ' . $sumPoints . ' poin';
+            } else {
+                $rackRecheckReason = '0/' . $totalRackTasks . ' rak direview Finance (menunggu)';
+            }
+        }
+
         return [
-            'discipline'  => $disciplineScore,
-            'operational' => $operationalScore,
-            'attitude'    => $attitudeScore,
+            'discipline'   => $disciplineScore,
+            'operational'  => $operationalScore,
+            'attitude'     => $attitudeScore,
+            'rack_recheck' => $rackRecheckScore,
             'auto_details' => [
-                'discipline_reason'  => $disciplineReason,
-                'operational_reason' => $operationalReason,
-                'attitude_reason'    => $attitudeReason,
+                'discipline_reason'   => $disciplineReason,
+                'operational_reason'  => $operationalReason,
+                'attitude_reason'     => $attitudeReason,
+                'rack_recheck_reason' => $rackRecheckReason,
             ],
         ];
     }
@@ -1330,6 +1392,10 @@ class BonusService
      * Calculate perfect day bonus.
      * Awards bonus points when ALL daily-scored categories have a value > 0.
      * Monthly categories (service, sales) are excluded from perfect day check.
+     *
+     * Special case: rack_recheck is excluded from perfect day check if waiter
+     * had ZERO rack_check tasks that day (kategori tidak relevan untuk waiter
+     * tersebut, mis. role kasir/finance).
      */
     public function calculatePerfectDayBonus(array $categoryScores, array $config): int
     {
@@ -1339,6 +1405,10 @@ class BonusService
         foreach ($categories as $key => $meta) {
             // Skip monthly-scored categories
             if (($meta['scoring_type'] ?? 'daily') === 'monthly') {
+                continue;
+            }
+            // Skip rack_recheck kalau tidak ada di scores (waiter tanpa task rack_check)
+            if ($key === 'rack_recheck' && ! isset($categoryScores[$key])) {
                 continue;
             }
             if (! isset($categoryScores[$key]) || (int) $categoryScores[$key] <= 0) {

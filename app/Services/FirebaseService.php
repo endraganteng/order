@@ -2521,6 +2521,94 @@ class FirebaseService
     }
 
     /**
+     * Submit Finance recheck review untuk task rack_check yang sudah done.
+     *
+     * Validates:
+     * - Task ada
+     * - Task type rack_check
+     * - Task status done
+     * - Task masih recheck_pending (belum direview)
+     * - Points 0..maxPoints
+     *
+     * Updates task fields: recheck_pending=false, recheck_points, recheck_notes,
+     * recheck_by, recheck_by_name, recheck_at.
+     *
+     * Caller (controller) bertanggung jawab re-trigger autoScoreDailyPoints
+     * untuk waiter pemilik task supaya kategori rack_recheck terupdate.
+     *
+     * @return array { success, task?, message? }
+     */
+    public function submitRackCheckReview(
+        string $taskId,
+        string $financeId,
+        string $financeName,
+        int $points,
+        string $notes,
+        int $maxPoints = 10
+    ): array {
+        $points = max(0, min($maxPoints, $points));
+        $taskRef = $this->database->getReference('waiter_tasks/'.$taskId);
+        $snapshot = $taskRef->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return ['success' => false, 'message' => 'Task tidak ditemukan.'];
+        }
+
+        $task = $snapshot->getValue();
+        $taskType = (string) ($task['task_type'] ?? 'general');
+        $status = (string) ($task['status'] ?? '');
+
+        if ($taskType !== 'rack_check') {
+            return ['success' => false, 'message' => 'Task bukan tugas Cek Rak.'];
+        }
+        if ($status !== 'done') {
+            return ['success' => false, 'message' => 'Task belum selesai (status: '.$status.').'];
+        }
+
+        $now = time();
+        $updates = [
+            'recheck_pending' => false,
+            'recheck_points' => $points,
+            'recheck_notes' => trim($notes),
+            'recheck_by' => $financeId,
+            'recheck_by_name' => $financeName,
+            'recheck_at' => $now,
+        ];
+
+        $taskRef->update($updates);
+
+        $updatedTask = array_merge(['id' => $taskId], $task, $updates);
+
+        return [
+            'success' => true,
+            'task' => $updatedTask,
+            'message' => 'Review berhasil disimpan: '.$points.' poin.',
+        ];
+    }
+
+    /**
+     * Get list of rack_check tasks pending Finance review.
+     * Returns tasks where: task_type=rack_check, status=done, recheck_pending=true.
+     *
+     * @param  string|null  $date  Filter by scheduled_for_date (Y-m-d), null = today
+     * @return array
+     */
+    public function getRackCheckPendingReview(?string $date = null): array
+    {
+        $date = $date ?: date('Y-m-d');
+        $tasks = $this->getWaiterTasksByDate($date);
+        $pending = array_values(array_filter($tasks, function ($t) {
+            return ($t['task_type'] ?? '') === 'rack_check'
+                && ($t['status'] ?? '') === 'done'
+                && ! empty($t['recheck_pending']);
+        }));
+        usort($pending, function ($a, $b) {
+            return ($b['completed_at'] ?? 0) - ($a['completed_at'] ?? 0);
+        });
+        return $pending;
+    }
+
+    /**
      * Get all waiter tasks.
      */
     public function getWaiterTasks()
@@ -2949,6 +3037,16 @@ class FirebaseService
         if ($isFullyDone) {
             $updates['status'] = $status;
             $updates['completed_at'] = $now;
+            // Untuk task rack_check, tandai pending review oleh Finance.
+            // Waiter belum dapat poin operasional/recheck sampai Finance review.
+            if ($taskType === 'rack_check' && $status === 'done') {
+                $updates['recheck_pending'] = true;
+                $updates['recheck_points'] = null;
+                $updates['recheck_notes'] = null;
+                $updates['recheck_by'] = null;
+                $updates['recheck_by_name'] = null;
+                $updates['recheck_at'] = null;
+            }
         } else {
             // Partial completion — keep task active
             $updates['status'] = 'in_progress';

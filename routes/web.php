@@ -131,6 +131,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::delete('tasks/recurring/{id}', [TaskController::class, 'recurringDestroy'])->name('tasks.recurring.destroy');
         Route::delete('tasks/{id}', [TaskController::class, 'destroy'])->name('tasks.destroy');
         Route::post('tasks/recurring/batch-destroy', [TaskController::class, 'recurringBatchDestroy'])->name('tasks.recurring.batch_destroy');
+        Route::post('tasks/rack-mass-assign', [TaskController::class, 'rackMassAssign'])->name('tasks.rack_mass_assign');
 
         // Live Dashboard
         Route::get('tasks/live', [TaskController::class, 'live'])->name('tasks.live');
@@ -368,6 +369,23 @@ Route::post('cashier/tasks/{id}/status', [CashierController::class, 'updateTaskS
 Route::prefix('waiter')->name('waiter.')->group(function () {
     Route::get('login', [WaiterController::class, 'showLogin'])->name('login');
     Route::post('login', [WaiterController::class, 'login'])->name('login.post');
+
+    // Dev-only: testing helper to login as a waiter by id (no password needed).
+    // Disable in production via env check.
+    if (app()->environment('local')) {
+        Route::get('dev-login/{waiterId}', function ($waiterId) {
+            $svc = app(\App\Services\FirebaseService::class);
+            $waiter = $svc->getWaiterById($waiterId);
+            if (! $waiter || ! ($waiter['is_active'] ?? true)) {
+                abort(404);
+            }
+            session()->put('waiter_authenticated', true);
+            session()->put('waiter_id', $waiter['id']);
+            session()->put('waiter_name', $waiter['name'] ?? 'Waiter');
+            session()->put('waiter_email', $waiter['email'] ?? '');
+            return redirect()->route('waiter.tasks');
+        });
+    }
     Route::post('login/google', [WaiterController::class, 'loginWithGoogle'])
         ->middleware('throttle:20,1')
         ->name('login.google');
@@ -383,6 +401,7 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         Route::post('tasks/{id}/claim', [WaiterController::class, 'claimTask'])->name('task.claim');
         Route::post('tasks/{id}/release', [WaiterController::class, 'releaseTask'])->name('task.release');
         Route::post('tasks/{id}/complete', [WaiterController::class, 'completeTask'])->name('task.complete');
+        Route::post('tasks/{id}/recheck', [WaiterController::class, 'submitRackCheckReview'])->name('task.recheck');
         Route::get('stock-take', [WaiterController::class, 'stockTakeIndex'])->name('stock_take');
         Route::post('stock-take/resolve-rack', [WaiterController::class, 'resolveStockTakeRack'])->name('stock_take.resolve_rack');
         Route::post('stock-take/submit', [WaiterController::class, 'submitStockTake'])->name('stock_take.submit');

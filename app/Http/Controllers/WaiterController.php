@@ -109,10 +109,21 @@ class WaiterController extends Controller
         $settings = $this->firebase->getSettings();
         $clockOutEnabled = !empty($settings['clock_out_enabled']);
 
+        // Finance recheck inbox: kalau waiter login ini role finance,
+        // tampilkan list task rack_check yang done & menunggu review.
+        $waiterRecord = $this->firebase->getWaiterById($waiterId);
+        $waiterRole = strtolower((string) ($waiterRecord['waiter_role'] ?? ''));
+        $isFinance = $waiterRole === 'finance';
+        $rackCheckPendingReview = $isFinance
+            ? $this->firebase->getRackCheckPendingReview($reportDate)
+            : [];
+
         return view('waiter.tasks', [
             'waiterId' => $waiterId,
             'waiterName' => $waiterName,
             'waiterEmail' => (string) session('waiter_email', ''),
+            'waiterRole' => $waiterRole,
+            'isFinance' => $isFinance,
             'reportDate' => $reportDate,
             'pendingTasks' => $taskBuckets['pending_tasks'],
             'taskHistory' => $taskBuckets['task_history'],
@@ -123,6 +134,7 @@ class WaiterController extends Controller
             'waiterShift' => $waiterShift,
             'shiftStartTime' => $waiterShift ? ($waiterShift['clock_in_time'] ?? null) : null,
             'clockOutEnabled' => $clockOutEnabled,
+            'rackCheckPendingReview' => $rackCheckPendingReview,
         ]);
     }
 
@@ -211,10 +223,11 @@ class WaiterController extends Controller
             $autoScores = $bonusService->autoScoreDailyPoints($waiterId, $today, $attendance, $todayTasks, $reports);
 
             $categoryScores = [
-                'discipline' => $autoScores['discipline'],
-                'operational' => $autoScores['operational'],
-                'attitude' => $autoScores['attitude'],
-            ];
+                            'discipline' => $autoScores['discipline'],
+                            'operational' => $autoScores['operational'],
+                            'attitude' => $autoScores['attitude'],
+                            'rack_recheck' => $autoScores['rack_recheck'] ?? 0,
+                        ];
 
             $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on activity report', $autoScores['auto_details'] ?? []);
         } catch (\Throwable $e) {
@@ -321,10 +334,11 @@ class WaiterController extends Controller
             $autoScores = $bonusService->autoScoreDailyPoints($waiterId, $today, $attendance, $todayTasks, $reports);
 
             $categoryScores = [
-                'discipline' => $autoScores['discipline'],
-                'operational' => $autoScores['operational'],
-                'attitude' => $autoScores['attitude'],
-            ];
+                            'discipline' => $autoScores['discipline'],
+                            'operational' => $autoScores['operational'],
+                            'attitude' => $autoScores['attitude'],
+                            'rack_recheck' => $autoScores['rack_recheck'] ?? 0,
+                        ];
 
             $saveResult = $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on task completion', $autoScores['auto_details'] ?? []);
 
@@ -467,6 +481,85 @@ class WaiterController extends Controller
             'success' => true,
             'rack_products_map' => $rackProductsMap,
             'rack_types_map' => $rackTypesMap,
+        ]);
+    }
+
+    /**
+     * Submit Finance review of a rack_check task.
+     * Hanya waiter dengan role finance yang bisa.
+     *
+     * Body:
+     *   points: int 0-10
+     *   notes: string
+     */
+    public function submitRackCheckReview($id, Request $request, BonusService $bonusService)
+    {
+        $waiterId = (string) session('waiter_id');
+        $waiter = $this->firebase->getWaiterById($waiterId);
+        if (! $waiter) {
+            return response()->json(['success' => false, 'message' => 'Waiter tidak ditemukan.'], 401);
+        }
+        $role = strtolower((string) ($waiter['waiter_role'] ?? ''));
+        if ($role !== 'finance') {
+            return response()->json(['success' => false, 'message' => 'Hanya role Finance yang dapat melakukan recheck.'], 403);
+        }
+
+        $request->validate([
+            'points' => 'required|integer|min:0|max:10',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        $points = (int) $request->input('points');
+        $notes = (string) $request->input('notes', '');
+
+        $config = $bonusService->getBonusConfig();
+        $maxPoints = (int) ($config['point_categories']['rack_recheck']['max_daily_points'] ?? 10);
+
+        $result = $this->firebase->submitRackCheckReview(
+            (string) $id,
+            $waiterId,
+            (string) ($waiter['name'] ?? 'Finance'),
+            $points,
+            $notes,
+            $maxPoints
+        );
+
+        if (! ($result['success'] ?? false)) {
+            return response()->json($result, 422);
+        }
+
+        // Re-trigger autoScoreDailyPoints untuk waiter pemilik task
+        $task = $result['task'] ?? [];
+        $ownerWaiterId = (string) ($task['assigned_waiter_id'] ?? '');
+        $taskDate = (string) ($task['scheduled_for_date'] ?? date('Y-m-d'));
+        if ($ownerWaiterId !== '') {
+            try {
+                $attendance = $this->firebase->getAttendanceByDate($ownerWaiterId, $taskDate);
+                $ownerTasks = $this->firebase->getWaiterTasksForDate($ownerWaiterId, $taskDate);
+                $reports = $this->firebase->getWaiterActivityReportsByWaiterIdForDate($ownerWaiterId, $taskDate);
+                $autoScores = $bonusService->autoScoreDailyPoints($ownerWaiterId, $taskDate, $attendance, $ownerTasks, $reports);
+                $categoryScores = [
+                    'discipline' => $autoScores['discipline'] ?? 0,
+                    'operational' => $autoScores['operational'] ?? 0,
+                    'attitude' => $autoScores['attitude'] ?? 0,
+                    'rack_recheck' => $autoScores['rack_recheck'] ?? 0,
+                ];
+                $bonusService->saveAutoDailyScore(
+                    $ownerWaiterId,
+                    $taskDate,
+                    $categoryScores,
+                    'Auto-rescore on Finance recheck',
+                    $autoScores['auto_details'] ?? []
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'task' => $task,
+            'message' => $result['message'] ?? 'Review berhasil disimpan.',
         ]);
     }
 
@@ -714,10 +807,11 @@ class WaiterController extends Controller
                 $autoScores = $bonusService->autoScoreDailyPoints($waiterId, $today, $attendance, $todayTasks, $reports);
 
                 $categoryScores = [
-                    'discipline' => $autoScores['discipline'],
-                    'operational' => $autoScores['operational'],
-                    'attitude' => $autoScores['attitude'],
-                ];
+                                'discipline' => $autoScores['discipline'],
+                                'operational' => $autoScores['operational'],
+                                'attitude' => $autoScores['attitude'],
+                                'rack_recheck' => $autoScores['rack_recheck'] ?? 0,
+                            ];
 
                 $bonusService->saveAutoDailyScore($waiterId, $today, $categoryScores, 'Auto-scored on clock-in', $autoScores['auto_details'] ?? []);
             } catch (\Throwable $e) {
