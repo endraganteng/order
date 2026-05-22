@@ -1330,6 +1330,7 @@
                         <div class="dropdown-divider"></div>
                         <a class="{{ request()->routeIs('admin.attendance.*') ? 'is-active' : '' }}" href="{{ route('admin.attendance.index') }}">📋 Absensi</a>
                         <a class="{{ request()->routeIs('admin.reconciliation.*') ? 'is-active' : '' }}" href="{{ route('admin.reconciliation.index') }}">🔍 Reconciliation</a>
+                        <a class="{{ request()->routeIs('admin.dana_payments.*') ? 'is-active' : '' }}" href="{{ route('admin.dana_payments.index') }}">💰 DANA Masuk</a>
                         <a class="{{ request()->routeIs('admin.cleanup') ? 'is-active' : '' }}" href="{{ route('admin.cleanup') }}">🧹 Cleanup</a>
                     </div>
                 </li>
@@ -1368,6 +1369,7 @@
                         <a class="{{ request()->routeIs('admin.finance.expenses') ? 'is-active' : '' }}" href="{{ route('admin.finance.expenses') }}">💸 Pengeluaran</a>
                         <a class="{{ request()->routeIs('admin.finance.debts') ? 'is-active' : '' }}" href="{{ route('admin.finance.debts') }}">📋 Hutang Supplier</a>
                         <a class="{{ request()->routeIs('admin.finance.shifts') ? 'is-active' : '' }}" href="{{ route('admin.finance.shifts') }}">🕐 Detail Shift</a>
+                        <a class="{{ request()->routeIs('admin.dana_payments.*') ? 'is-active' : '' }}" href="{{ route('admin.dana_payments.index') }}">💰 DANA Masuk</a>
                     </div>
                 </li>
                 <li class="{{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log']) ? 'is-active-group' : '' }}">

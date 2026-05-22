@@ -237,6 +237,262 @@
 
         .section-title.orders { color: #00d9ff; }
         .section-title.tasks { color: #f093fb; }
+        .section-title.dana { color: #4ade80; }
+
+        /* ========== DANA TAB ========== */
+        .dana-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            max-width: 1200px;
+            margin: 0 auto 24px;
+        }
+
+        .dana-summary-card {
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.12), rgba(34, 197, 94, 0.06));
+            border: 1px solid rgba(74, 222, 128, 0.25);
+            border-radius: 12px;
+            padding: 16px 20px;
+        }
+
+        .dana-summary-label {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .dana-summary-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #4ade80;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dana-summary-value.status-listening { color: #4ade80; font-size: 18px; }
+        .dana-summary-value.status-offline { color: #ef4444; font-size: 18px; }
+
+        /* Voice toggle */
+        .dana-voice-control {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .dana-voice-toggle {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+            cursor: pointer;
+        }
+
+        .dana-voice-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .dana-voice-slider {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #475569;
+            border-radius: 26px;
+            transition: 0.25s;
+        }
+
+        .dana-voice-slider:before {
+            content: '';
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            top: 3px;
+            background: #cbd5e1;
+            border-radius: 50%;
+            transition: 0.25s;
+        }
+
+        .dana-voice-toggle input:checked + .dana-voice-slider {
+            background: #4ade80;
+        }
+
+        .dana-voice-toggle input:checked + .dana-voice-slider:before {
+            transform: translateX(24px);
+            background: #fff;
+        }
+
+        .dana-voice-test-btn {
+            background: rgba(74, 222, 128, 0.15);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: #4ade80;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .dana-voice-test-btn:hover {
+            background: rgba(74, 222, 128, 0.25);
+        }
+
+        .dana-voice-test-btn:active {
+            transform: scale(0.96);
+        }
+
+        .dana-voice-select {
+            margin-top: 10px;
+            width: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: #e2e8f0;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .dana-voice-select:focus {
+            outline: none;
+            border-color: rgba(74, 222, 128, 0.6);
+        }
+
+        .dana-voice-select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .dana-payments-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .no-dana-payments {
+            text-align: center;
+            color: #64748b;
+            padding: 40px 20px;
+            font-size: 16px;
+            background: rgba(148, 163, 184, 0.05);
+            border-radius: 12px;
+            border: 1px dashed rgba(148, 163, 184, 0.2);
+        }
+
+        .dana-payment-card {
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.08), rgba(34, 197, 94, 0.04));
+            border: 1px solid rgba(74, 222, 128, 0.2);
+            border-left: 4px solid #4ade80;
+            border-radius: 10px;
+            padding: 16px 20px;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 16px;
+            align-items: center;
+            animation: slideIn 0.3s ease-out;
+            transition: background 0.3s ease;
+        }
+
+        .dana-payment-card.fresh {
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.25), rgba(34, 197, 94, 0.12));
+            box-shadow: 0 0 24px rgba(74, 222, 128, 0.4);
+        }
+
+        .dana-payment-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4ade80, #22c55e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .dana-payment-info {
+            min-width: 0;
+        }
+
+        .dana-payment-amount {
+            font-size: 22px;
+            font-weight: 700;
+            color: #4ade80;
+            margin-bottom: 4px;
+        }
+
+        .dana-payment-sender {
+            font-size: 14px;
+            color: #e2e8f0;
+            font-weight: 500;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .dana-payment-meta {
+            font-size: 12px;
+            color: #94a3b8;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .dana-payment-time {
+            font-size: 13px;
+            color: #cbd5e1;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .dana-payment-time-relative {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .dana-source-badge {
+            display: inline-block;
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        @media (max-width: 600px) {
+            .dana-payment-card {
+                grid-template-columns: auto 1fr;
+            }
+            .dana-payment-time {
+                grid-column: 1 / -1;
+                text-align: left;
+                padding-left: 64px;
+            }
+        }
+        /* ========== END DANA TAB ========== */
 
         /* ========== ORDER CARDS ========== */
         #orders-container {
@@ -573,8 +829,12 @@
             <span id="attendance-badge" class="tab-badge zero">0</span>
         </button>
         <button class="tab-btn" data-tab="tasks" onclick="switchTab('tasks')">
-            📝 Tugas Supervisor
+            ?? Tugas Supervisor
             <span id="task-badge" class="tab-badge zero">0</span>
+        </button>
+        <button class="tab-btn" data-tab="dana" onclick="switchTab('dana')">
+            💰 DANA Masuk
+            <span id="dana-badge" class="tab-badge zero">0</span>
         </button>
     </div>
 
@@ -669,12 +929,53 @@
 
     <!-- TAB: TASKS -->
     <div id="tab-tasks" class="tab-content">
-        <h1 class="section-title tasks">📝 Tugas dari Supervisor</h1>
+        <h1 class="section-title tasks">?? Tugas dari Supervisor</h1>
         <div id="tasks-container">
             <div class="no-tasks">
-                <span class="empty-icon">✅</span>
+                <span class="empty-icon">?</span>
                 Tidak ada tugas saat ini
             </div>
+        </div>
+    </div>
+
+    <!-- TAB: DANA MASUK -->
+    <div id="tab-dana" class="tab-content">
+        <h1 class="section-title dana">💰 Pembayaran DANA Masuk</h1>
+
+        <div class="dana-summary">
+            <div class="dana-summary-card">
+                <div class="dana-summary-label">Total Hari Ini</div>
+                <div id="dana-summary-total" class="dana-summary-value">Rp 0</div>
+            </div>
+            <div class="dana-summary-card">
+                <div class="dana-summary-label">Jumlah Transaksi</div>
+                <div id="dana-summary-count" class="dana-summary-value">0</div>
+            </div>
+            <div class="dana-summary-card">
+                <div class="dana-summary-label">Status</div>
+                <div id="dana-summary-status" class="dana-summary-value status-listening">
+                    <span class="status-dot"></span> Mendengarkan
+                </div>
+            </div>
+            <div class="dana-summary-card">
+                <div class="dana-summary-label">Suara Nominal</div>
+                <div class="dana-voice-control">
+                    <label class="dana-voice-toggle">
+                        <input type="checkbox" id="dana-voice-enabled" checked>
+                        <span class="dana-voice-slider"></span>
+                    </label>
+                    <button type="button" id="dana-voice-test" class="dana-voice-test-btn" title="Test suara">🔊 Test</button>
+                </div>
+                <select id="dana-voice-select" class="dana-voice-select" title="Pilih suara">
+                    <option value="">Memuat suara...</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="dana-payments-container" class="dana-payments-container">
+            <div class="no-dana-payments">Belum ada pembayaran DANA hari ini.</div>
+        </div>
+    </div>
         </div>
     </div>
 
@@ -1984,6 +2285,590 @@
 
         // Initialize badge on page load
         initAttendanceBadge();
+
+        // ========================================
+        // DANA PAYMENTS TAB - REALTIME VIA FIREBASE
+        // ========================================
+        const danaContainer = document.getElementById('dana-payments-container');
+        const danaBadge = document.getElementById('dana-badge');
+        const danaSummaryTotal = document.getElementById('dana-summary-total');
+        const danaSummaryCount = document.getElementById('dana-summary-count');
+        const danaSummaryStatus = document.getElementById('dana-summary-status');
+        const danaVoiceEnabledEl = document.getElementById('dana-voice-enabled');
+        const danaVoiceTestBtn = document.getElementById('dana-voice-test');
+        const danaVoiceSelectEl = document.getElementById('dana-voice-select');
+        const danaPaymentsEndpoint = @json(route('cashier.dana_payments', [], false));
+
+        // Voice config
+        const DANA_VOICE_STORAGE_KEY = 'cashier_dana_voice_enabled';
+        const DANA_VOICE_NAME_STORAGE_KEY = 'cashier_dana_voice_name';
+        const danaVoiceSupported = typeof window.speechSynthesis !== 'undefined'
+            && typeof window.SpeechSynthesisUtterance !== 'undefined';
+
+        // Endpoint untuk Google Cloud TTS proxy. Server hide API key.
+        const ttsSpeakEndpoint = @json(route('cashier.tts.speak', [], false));
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+        // Daftar voice Google Cloud TTS Indonesia (akan di-merge dengan Web Speech API voices).
+        // Tidak ada cara fetch ini dari API tanpa list-voices endpoint, jadi hard-code list yang umum.
+        const GOOGLE_TTS_VOICES = [
+            { name: 'id-ID-Wavenet-A', label: 'Google Wavenet A (Perempuan)', gender: 'F' },
+            { name: 'id-ID-Wavenet-B', label: 'Google Wavenet B (Laki-laki)', gender: 'M' },
+            { name: 'id-ID-Wavenet-C', label: 'Google Wavenet C (Laki-laki)', gender: 'M' },
+            { name: 'id-ID-Wavenet-D', label: 'Google Wavenet D (Perempuan)', gender: 'F' },
+            { name: 'id-ID-Standard-A', label: 'Google Standard A (Perempuan)', gender: 'F' },
+            { name: 'id-ID-Standard-B', label: 'Google Standard B (Laki-laki)', gender: 'M' },
+            { name: 'id-ID-Standard-C', label: 'Google Standard C (Laki-laki)', gender: 'M' },
+            { name: 'id-ID-Standard-D', label: 'Google Standard D (Perempuan)', gender: 'F' },
+        ];
+
+        // Restore enabled toggle (default: ON)
+        const storedVoice = localStorage.getItem(DANA_VOICE_STORAGE_KEY);
+        if (storedVoice === '0') {
+            danaVoiceEnabledEl.checked = false;
+        }
+
+        // Selected voice (default: Google Wavenet A — paling natural id-ID)
+        let selectedVoiceName = localStorage.getItem(DANA_VOICE_NAME_STORAGE_KEY) || 'google:id-ID-Wavenet-A';
+
+        if (!danaVoiceSupported) {
+            // Web Speech tidak support, tapi Google TTS tetap bisa
+            console.log('Web Speech API tidak support, akan pakai Google TTS saja');
+        }
+
+        danaVoiceEnabledEl.addEventListener('change', () => {
+            localStorage.setItem(DANA_VOICE_STORAGE_KEY, danaVoiceEnabledEl.checked ? '1' : '0');
+        });
+
+        /**
+         * Populate voice dropdown.
+         * Group:
+         *   - Google Cloud TTS (premium, online — recommended)
+         *   - Browser (Web Speech API — fallback offline)
+         */
+        function populateVoiceDropdown() {
+            danaVoiceSelectEl.innerHTML = '';
+
+            // Group 1: Google Cloud TTS (premium id-ID)
+            const optgroupGoogle = document.createElement('optgroup');
+            optgroupGoogle.label = '☁️ Google Cloud TTS (Indonesia, Premium)';
+            GOOGLE_TTS_VOICES.forEach((v) => {
+                const opt = document.createElement('option');
+                opt.value = 'google:' + v.name;
+                opt.textContent = v.label;
+                if (opt.value === selectedVoiceName) opt.selected = true;
+                optgroupGoogle.appendChild(opt);
+            });
+            danaVoiceSelectEl.appendChild(optgroupGoogle);
+
+            // Group 2: Web Speech API voices (kalau browser support)
+            if (danaVoiceSupported) {
+                const voices = window.speechSynthesis.getVoices() || [];
+                const sorted = voices.slice().sort((a, b) => {
+                    const aIsId = a.lang.startsWith('id') ? 0 : (a.lang.startsWith('en') ? 1 : 2);
+                    const bIsId = b.lang.startsWith('id') ? 0 : (b.lang.startsWith('en') ? 1 : 2);
+                    if (aIsId !== bIsId) return aIsId - bIsId;
+                    return a.name.localeCompare(b.name);
+                });
+
+                let lastGroup = null;
+                sorted.forEach((v) => {
+                    const groupLabel = v.lang.startsWith('id') ? '🌐 Browser (Indonesia)'
+                                    : v.lang.startsWith('en') ? '🌐 Browser (English)'
+                                    : '🌐 Browser (Lainnya)';
+
+                    if (groupLabel !== lastGroup) {
+                        const optgroup = document.createElement('optgroup');
+                        optgroup.label = groupLabel;
+                        danaVoiceSelectEl.appendChild(optgroup);
+                        lastGroup = groupLabel;
+                    }
+
+                    const opt = document.createElement('option');
+                    opt.value = 'browser:' + v.name;
+                    opt.textContent = `${v.name} (${v.lang})`;
+                    if (opt.value === selectedVoiceName) opt.selected = true;
+                    const lastOptgroup = danaVoiceSelectEl.lastElementChild;
+                    lastOptgroup.appendChild(opt);
+                });
+            }
+        }
+
+        populateVoiceDropdown();
+        if (danaVoiceSupported) {
+            window.speechSynthesis.onvoiceschanged = populateVoiceDropdown;
+        }
+
+        danaVoiceSelectEl.addEventListener('change', () => {
+            selectedVoiceName = danaVoiceSelectEl.value;
+            localStorage.setItem(DANA_VOICE_NAME_STORAGE_KEY, selectedVoiceName);
+            // Auto-preview saat ganti
+            speakNominal(50000, 'Endra Putra');
+        });
+
+        /**
+         * Convert angka ke kata Indonesia.
+         * Support 0 - 999.999.999.999 (triliun).
+         */
+        function angkaKeKata(n) {
+            n = Math.floor(Math.abs(Number(n) || 0));
+            if (n === 0) return 'nol';
+
+            const satuan = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan',
+                            'sepuluh', 'sebelas'];
+
+            function ratusan(num) {
+                if (num === 0) return '';
+                if (num < 12) return satuan[num];
+                if (num < 20) return satuan[num - 10] + ' belas';
+                if (num < 100) {
+                    const puluh = Math.floor(num / 10);
+                    const sisa = num % 10;
+                    return satuan[puluh] + ' puluh' + (sisa ? ' ' + satuan[sisa] : '');
+                }
+                if (num < 200) {
+                    const sisa = num - 100;
+                    return 'seratus' + (sisa ? ' ' + ratusan(sisa) : '');
+                }
+                const ratus = Math.floor(num / 100);
+                const sisa = num % 100;
+                return satuan[ratus] + ' ratus' + (sisa ? ' ' + ratusan(sisa) : '');
+            }
+
+            // Pecah ke triliun, miliar, juta, ribu, ratusan
+            const segments = [
+                { value: 1000000000000, label: 'triliun' },
+                { value: 1000000000, label: 'miliar' },
+                { value: 1000000, label: 'juta' },
+                { value: 1000, label: 'ribu' },
+            ];
+
+            let result = '';
+            let rem = n;
+
+            for (const seg of segments) {
+                if (rem >= seg.value) {
+                    const count = Math.floor(rem / seg.value);
+                    rem = rem % seg.value;
+                    if (seg.label === 'ribu' && count === 1) {
+                        result += 'seribu ';
+                    } else {
+                        result += ratusan(count) + ' ' + seg.label + ' ';
+                    }
+                }
+            }
+
+            if (rem > 0) {
+                result += ratusan(rem);
+            }
+
+            return result.trim();
+        }
+
+        /**
+         * Audio object untuk playback Google TTS. Dipakai untuk cancel/replace
+         * supaya tidak antri kalau notif beruntun.
+         */
+        let currentTtsAudio = null;
+
+        /**
+         * Speak via Google Cloud TTS atau Web Speech API tergantung pilihan user.
+         * Format selectedVoiceName:
+         *   - "google:id-ID-Wavenet-A"  → server proxy
+         *   - "browser:Microsoft Andika" → Web Speech API
+         */
+        function speakNominal(amount, senderName) {
+            if (!danaVoiceEnabledEl.checked) return;
+
+            const kata = angkaKeKata(amount);
+            let teks = 'Diterima ' + kata + ' rupiah';
+            if (senderName) {
+                teks += ' dari ' + senderName;
+            }
+
+            const [provider, voiceName] = (selectedVoiceName || 'google:id-ID-Wavenet-A').split(':');
+
+            if (provider === 'google') {
+                speakViaGoogle(teks, voiceName);
+            } else {
+                speakViaBrowser(teks, voiceName);
+            }
+        }
+
+        /**
+         * Google Cloud TTS via server proxy.
+         * Fallback ke Web Speech API kalau gagal (offline / quota habis).
+         */
+        async function speakViaGoogle(teks, voiceName) {
+            // Cancel audio sebelumnya kalau masih jalan
+            if (currentTtsAudio) {
+                try { currentTtsAudio.pause(); } catch (e) { /* ignore */ }
+                currentTtsAudio = null;
+            }
+
+            try {
+                const res = await fetch(ttsSpeakEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'audio/mpeg, application/json',
+                    },
+                    body: JSON.stringify({
+                        text: teks,
+                        voice: voiceName || 'id-ID-Wavenet-A',
+                        speed: 1.0,
+                    }),
+                });
+
+                if (!res.ok) {
+                    console.warn('Google TTS failed:', res.status, '— fallback ke Web Speech API');
+                    speakViaBrowser(teks, '');
+                    return;
+                }
+
+                const blob = await res.blob();
+                if (blob.size === 0) {
+                    console.warn('Google TTS returned empty audio — fallback');
+                    speakViaBrowser(teks, '');
+                    return;
+                }
+
+                const audioUrl = URL.createObjectURL(blob);
+                currentTtsAudio = new Audio(audioUrl);
+                currentTtsAudio.volume = 1.0;
+                currentTtsAudio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    currentTtsAudio = null;
+                };
+                currentTtsAudio.onerror = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    currentTtsAudio = null;
+                    console.warn('Audio playback error — fallback');
+                    speakViaBrowser(teks, '');
+                };
+                await currentTtsAudio.play();
+            } catch (e) {
+                console.warn('Google TTS exception:', e.message, '— fallback ke Web Speech API');
+                speakViaBrowser(teks, '');
+            }
+        }
+
+        /**
+         * Web Speech API (browser-native).
+         */
+        function speakViaBrowser(teks, voiceName) {
+            if (!danaVoiceSupported) {
+                console.warn('Web Speech API tidak support, audio tidak diputar');
+                return;
+            }
+
+            try {
+                window.speechSynthesis.cancel();
+
+                const utterance = new SpeechSynthesisUtterance(teks);
+                utterance.lang = 'id-ID';
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+
+                const voices = window.speechSynthesis.getVoices();
+                let voiceToUse = null;
+                if (voiceName) {
+                    voiceToUse = voices.find(v => v.name === voiceName);
+                }
+                if (!voiceToUse) {
+                    voiceToUse = voices.find(v => v.lang === 'id-ID')
+                              || voices.find(v => v.lang.startsWith('id'));
+                }
+                if (voiceToUse) utterance.voice = voiceToUse;
+
+                window.speechSynthesis.speak(utterance);
+            } catch (e) {
+                console.warn('Voice synthesis error:', e);
+            }
+        }
+
+        // Test button — preview suara dengan amount sample
+        danaVoiceTestBtn.addEventListener('click', () => {
+            speakNominal(50000, 'Endra Putra');
+        });
+
+        // State: id -> payment object (Map untuk maintain insertion order kalau perlu)
+        const danaPaymentsById = new Map();
+        let danaUnreadCount = 0;
+        let danaInitialLoadComplete = false;
+        // Cutoff: hanya treat sebagai "baru" kalau received_at_ms > cutoff (anti notif untuk historical)
+        let danaInitialCutoffMs = Date.now();
+
+        function formatRupiah(n) {
+            const num = Math.round(Number(n) || 0);
+            return 'Rp ' + num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+
+        function formatTime(ts) {
+            try {
+                const d = ts instanceof Date ? ts : new Date(ts);
+                if (isNaN(d.getTime())) return '-';
+                const pad = (n) => String(n).padStart(2, '0');
+                return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+            } catch (e) {
+                return '-';
+            }
+        }
+
+        function formatRelativeTime(ms) {
+            const diff = Math.floor((Date.now() - ms) / 1000);
+            if (diff < 5) return 'baru saja';
+            if (diff < 60) return diff + ' detik lalu';
+            if (diff < 3600) return Math.floor(diff / 60) + ' menit lalu';
+            if (diff < 86400) return Math.floor(diff / 3600) + ' jam lalu';
+            return Math.floor(diff / 86400) + ' hari lalu';
+        }
+
+        function isToday(ms) {
+            if (!ms) return false;
+            const d = new Date(ms);
+            const now = new Date();
+            return d.getFullYear() === now.getFullYear()
+                && d.getMonth() === now.getMonth()
+                && d.getDate() === now.getDate();
+        }
+
+        function renderDanaPaymentCard(payment) {
+            const card = document.createElement('div');
+            card.className = 'dana-payment-card';
+            card.dataset.paymentId = String(payment.id);
+
+            const receivedMs = payment.received_at_ms || (payment.received_at ? new Date(payment.received_at).getTime() : Date.now());
+
+            const sender = payment.sender_name || '(Pengirim tidak terdeteksi)';
+            const source = payment.source || 'DANA';
+            const amount = formatRupiah(payment.amount);
+            const timeStr = formatTime(receivedMs);
+            const relativeStr = formatRelativeTime(receivedMs);
+
+            card.innerHTML = `
+                <div class="dana-payment-icon">💰</div>
+                <div class="dana-payment-info">
+                    <div class="dana-payment-amount">${amount}</div>
+                    <div class="dana-payment-sender" title="${escapeHtml(sender)}">${escapeHtml(sender)}</div>
+                    <div class="dana-payment-meta">
+                        <span class="dana-source-badge">${escapeHtml(source)}</span>
+                    </div>
+                </div>
+                <div class="dana-payment-time">
+                    <div>${timeStr}</div>
+                    <div class="dana-payment-time-relative" data-received-ms="${receivedMs}">${relativeStr}</div>
+                </div>
+            `;
+            return card;
+        }
+
+        function updateDanaSummary() {
+            // Filter hanya pembayaran hari ini
+            const todayPayments = Array.from(danaPaymentsById.values()).filter(p => {
+                const ms = p.received_at_ms || (p.received_at ? new Date(p.received_at).getTime() : 0);
+                return isToday(ms);
+            });
+
+            const total = todayPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+            danaSummaryTotal.textContent = formatRupiah(total);
+            danaSummaryCount.textContent = String(todayPayments.length);
+        }
+
+        function updateDanaBadge() {
+            danaBadge.textContent = String(danaUnreadCount);
+            if (danaUnreadCount > 0) {
+                danaBadge.classList.remove('zero');
+            } else {
+                danaBadge.classList.add('zero');
+            }
+        }
+
+        function refreshDanaContainer() {
+            // Sort newest first
+            const sorted = Array.from(danaPaymentsById.values()).sort((a, b) => {
+                const am = a.received_at_ms || new Date(a.received_at || 0).getTime();
+                const bm = b.received_at_ms || new Date(b.received_at || 0).getTime();
+                return bm - am;
+            });
+
+            danaContainer.innerHTML = '';
+            if (sorted.length === 0) {
+                danaContainer.innerHTML = '<div class="no-dana-payments">Belum ada pembayaran DANA hari ini.</div>';
+                return;
+            }
+
+            sorted.forEach((p) => {
+                const card = renderDanaPaymentCard(p);
+                danaContainer.appendChild(card);
+            });
+        }
+
+        function notifyNewDanaPayment(payment) {
+            // Voice — ucapkan nominal + sender (Bahasa Indonesia).
+            // Tidak pakai chime ordermasuk.mp3 supaya beda dengan notif order masuk.
+            speakNominal(payment.amount, payment.sender_name);
+
+            // Toast
+            const sender = payment.sender_name || 'Pembayaran masuk';
+            const amount = formatRupiah(payment.amount);
+            showToast(`💰 ${amount} dari ${sender}`, 'order');
+
+            // Visual highlight on card (fresh class for 6 detik)
+            setTimeout(() => {
+                const card = danaContainer.querySelector(`.dana-payment-card[data-payment-id="${payment.id}"]`);
+                if (card) {
+                    card.classList.add('fresh');
+                    setTimeout(() => card.classList.remove('fresh'), 6000);
+                }
+            }, 50);
+
+            // Badge count (skip kalau tab DANA aktif)
+            const danaTabActive = document.getElementById('tab-dana')?.classList.contains('active');
+            if (!danaTabActive) {
+                danaUnreadCount++;
+                updateDanaBadge();
+            }
+        }
+
+        async function loadInitialDanaPayments() {
+            try {
+                const today = new Date();
+                const dateStr = today.getFullYear() + '-'
+                    + String(today.getMonth() + 1).padStart(2, '0') + '-'
+                    + String(today.getDate()).padStart(2, '0');
+
+                const res = await fetch(danaPaymentsEndpoint + '?date=' + dateStr + '&limit=100', {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+
+                if (data && data.success && Array.isArray(data.payments)) {
+                    data.payments.forEach((p) => {
+                        const receivedMs = p.received_at ? new Date(p.received_at).getTime() : 0;
+                        danaPaymentsById.set(p.id, {
+                            id: p.id,
+                            payhook_reference: p.payhook_reference,
+                            amount: Number(p.amount) || 0,
+                            source: p.source,
+                            sender_name: p.sender_name,
+                            notification_title: p.notification_title,
+                            notification_text: p.notification_text,
+                            notified_at: p.notified_at,
+                            received_at: p.received_at,
+                            received_at_ms: receivedMs,
+                            firebase_key: p.firebase_key,
+                        });
+                    });
+                }
+            } catch (e) {
+                console.warn('Gagal load initial DANA payments:', e.message);
+            } finally {
+                refreshDanaContainer();
+                updateDanaSummary();
+                // Setelah initial load: anggap semua data existing sudah di-acknowledge
+                danaInitialCutoffMs = Date.now();
+                danaInitialLoadComplete = true;
+            }
+        }
+
+        function setDanaListeningStatus(online) {
+            if (online) {
+                danaSummaryStatus.classList.remove('status-offline');
+                danaSummaryStatus.classList.add('status-listening');
+                danaSummaryStatus.innerHTML = '<span class="status-dot"></span> Mendengarkan';
+            } else {
+                danaSummaryStatus.classList.remove('status-listening');
+                danaSummaryStatus.classList.add('status-offline');
+                danaSummaryStatus.innerHTML = '<span class="status-dot"></span> Offline';
+            }
+        }
+
+        // Listener Firebase: /dana_payments
+        // Pakai limitToLast(50) untuk hindari load semua history.
+        const danaPaymentsRef = ref(database, 'dana_payments');
+        const danaPaymentsQuery = query(danaPaymentsRef, limitToLast(50));
+
+        loadInitialDanaPayments().then(() => {
+            onValue(danaPaymentsQuery, (snapshot) => {
+                if (!snapshot.exists()) {
+                    return;
+                }
+
+                let hasNew = false;
+                let newestPayment = null;
+
+                snapshot.forEach((childSnapshot) => {
+                    const fb = childSnapshot.val() || {};
+                    const id = Number(fb.id) || 0;
+                    if (!id) return;
+
+                    const existing = danaPaymentsById.get(id);
+                    if (!existing) {
+                        const receivedMs = Number(fb.received_at_ms)
+                            || (fb.received_at ? new Date(fb.received_at).getTime() : Date.now());
+
+                        const payment = {
+                            id,
+                            payhook_reference: fb.payhook_reference,
+                            amount: Number(fb.amount) || 0,
+                            source: fb.source,
+                            sender_name: fb.sender_name,
+                            notification_title: fb.notification_title,
+                            notification_text: fb.notification_text,
+                            notified_at: fb.notified_at,
+                            received_at: fb.received_at,
+                            received_at_ms: receivedMs,
+                            firebase_key: childSnapshot.key,
+                        };
+
+                        danaPaymentsById.set(id, payment);
+
+                        // Hanya treat sebagai notif baru kalau diterima setelah initial cutoff
+                        if (danaInitialLoadComplete && receivedMs > danaInitialCutoffMs) {
+                            hasNew = true;
+                            if (!newestPayment || receivedMs > (newestPayment.received_at_ms || 0)) {
+                                newestPayment = payment;
+                            }
+                        }
+                    }
+                });
+
+                refreshDanaContainer();
+                updateDanaSummary();
+
+                if (hasNew && newestPayment) {
+                    notifyNewDanaPayment(newestPayment);
+                }
+
+                setDanaListeningStatus(true);
+            }, (error) => {
+                console.warn('Firebase /dana_payments listener error:', error.message);
+                setDanaListeningStatus(false);
+            });
+        });
+
+        // Reset badge saat tab DANA aktif
+        const origSwitchTabHandler = window.switchTab;
+        window.switchTab = function(tabName) {
+            origSwitchTabHandler(tabName);
+            if (tabName === 'dana') {
+                danaUnreadCount = 0;
+                updateDanaBadge();
+            }
+        };
+
+        // Update relative timestamp tiap 30 detik
+        setInterval(() => {
+            const elements = danaContainer.querySelectorAll('.dana-payment-time-relative[data-received-ms]');
+            elements.forEach((el) => {
+                const ms = Number(el.dataset.receivedMs);
+                if (ms) el.textContent = formatRelativeTime(ms);
+            });
+        }, 30000);
     </script>
 </body>
 

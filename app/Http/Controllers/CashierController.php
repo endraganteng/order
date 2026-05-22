@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CashierController extends Controller
 {
@@ -225,5 +226,189 @@ class CashierController extends Controller
         }
 
         return response()->json($result);
+    }
+
+    /**
+     * List notifikasi pembayaran DANA Bisnis (untuk tab "DANA Masuk").
+     * Default: hari ini, newest-first, max 100 entries.
+     * Query params:
+     *   - date=YYYY-MM-DD (default: today)
+     *   - limit=N (default 100, max 500)
+     */
+    public function getDanaPayments(Request $request)
+    {
+        $date = (string) $request->query('date', date('Y-m-d'));
+        $limit = (int) $request->query('limit', 100);
+        $limit = max(1, min($limit, 500));
+
+        // Validasi format tanggal sederhana
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date = date('Y-m-d');
+        }
+
+        $rows = DB::table('dana_payment_notifications')
+            ->whereDate('received_at', $date)
+            ->orderBy('received_at', 'desc')
+            ->limit($limit)
+            ->get([
+                'id',
+                'payhook_reference',
+                'amount',
+                'source',
+                'sender_name',
+                'notification_title',
+                'notification_text',
+                'notified_at',
+                'received_at',
+                'firebase_key',
+            ]);
+
+        $total = (int) DB::table('dana_payment_notifications')
+            ->whereDate('received_at', $date)
+            ->sum('amount');
+
+        $count = (int) DB::table('dana_payment_notifications')
+            ->whereDate('received_at', $date)
+            ->count();
+
+        return response()->json([
+            'success'   => true,
+            'date'      => $date,
+            'count'     => $count,
+            'total'     => $total,
+            'payments'  => $rows->map(function ($r) {
+                return [
+                    'id'                  => (int) $r->id,
+                    'payhook_reference'   => $r->payhook_reference,
+                    'amount'              => (int) $r->amount,
+                    'source'              => $r->source,
+                    'sender_name'         => $r->sender_name,
+                    'notification_title'  => $r->notification_title,
+                    'notification_text'   => $r->notification_text,
+                    'notified_at'         => $r->notified_at,
+                    'received_at'         => $r->received_at,
+                    'firebase_key'        => $r->firebase_key,
+                ];
+            })->values(),
+        ]);
+    }
+
+    /**
+     * Proxy Google Cloud Text-to-Speech API.
+     * Browser POST {text, voice} → server panggil Google TTS → return MP3 audio bytes.
+     * API key TIDAK pernah expose ke browser.
+     *
+     * Body JSON:
+     *   - text (required, max 500 char): teks yang mau diucapkan
+     *   - voice (optional): nama voice id-ID-Wavenet-A, id-ID-Neural2-B, dll. Default dari config.
+     *   - speed (optional, 0.5-2.0): kecepatan bicara, default 1.0
+     *
+     * Response:
+     *   - 200 audio/mpeg (binary MP3)
+     *   - 422 kalau input invalid
+     *   - 500 kalau Google API error
+     */
+    public function ttsSpeak(Request $request)
+    {
+        $request->validate([
+            'text' => 'required|string|max:500',
+            'voice' => 'nullable|string|max:50',
+            'speed' => 'nullable|numeric|min:0.5|max:2.0',
+        ]);
+
+        $apiKey = (string) config('services.google_tts.api_key');
+        if ($apiKey === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Google TTS belum dikonfigurasi (GOOGLE_TTS_API_KEY missing).',
+            ], 500);
+        }
+
+        $text = (string) $request->input('text');
+        $voice = (string) $request->input('voice', config('services.google_tts.default_voice'));
+        $speed = (float) $request->input('speed', 1.0);
+
+        // Cache 24 jam: text + voice + speed yang sama → return audio yang sudah di-cache.
+        // Ini hemat quota Google untuk teks yang sering muncul (mis. test button, nominal serupa).
+        // Audio bytes di-base64 sebelum cache karena cache driver (MySQL) tidak handle binary.
+        $cacheKey = 'tts_google_' . sha1($text . '|' . $voice . '|' . $speed);
+        $cachedB64 = \Illuminate\Support\Facades\Cache::get($cacheKey);
+        if ($cachedB64 !== null) {
+            $cachedBytes = base64_decode($cachedB64);
+            if ($cachedBytes !== false) {
+                return response($cachedBytes, 200, [
+                    'Content-Type' => 'audio/mpeg',
+                    'X-TTS-Cache' => 'HIT',
+                    'Content-Length' => (string) strlen($cachedBytes),
+                ]);
+            }
+        }
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(15)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post('https://texttospeech.googleapis.com/v1/text:synthesize?key=' . $apiKey, [
+                    'input' => ['text' => $text],
+                    'voice' => [
+                        'languageCode' => 'id-ID',
+                        'name' => $voice,
+                    ],
+                    'audioConfig' => [
+                        'audioEncoding' => 'MP3',
+                        'speakingRate' => $speed,
+                    ],
+                ]);
+
+            if (! $response->successful()) {
+                \Illuminate\Support\Facades\Log::warning('Google TTS API error', [
+                    'status' => $response->status(),
+                    'body' => substr($response->body(), 0, 300),
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Google TTS error: ' . $response->status(),
+                ], 502);
+            }
+
+            $payload = $response->json();
+            $audioBase64 = $payload['audioContent'] ?? null;
+            if (! $audioBase64) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Google TTS tidak return audio content.',
+                ], 502);
+            }
+
+            // Cache pakai base64 (string) supaya safe untuk semua cache driver.
+            \Illuminate\Support\Facades\Cache::put($cacheKey, $audioBase64, now()->addHours(24));
+
+            $audioBytes = base64_decode($audioBase64);
+            if ($audioBytes === false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Audio content tidak bisa di-decode.',
+                ], 502);
+            }
+
+            return response($audioBytes, 200, [
+                'Content-Type' => 'audio/mpeg',
+                'X-TTS-Cache' => 'MISS',
+                'Content-Length' => (string) strlen($audioBytes),
+            ]);
+        } catch (\Throwable $e) {
+            // Sanitize: pastikan message valid UTF-8 sebelum di-JSON-encode
+            $safeMessage = mb_convert_encoding(
+                (string) $e->getMessage(),
+                'UTF-8',
+                'UTF-8'
+            );
+            \Illuminate\Support\Facades\Log::warning('Google TTS request failed', [
+                'error' => $safeMessage,
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'TTS service unavailable.',
+            ], 503);
+        }
     }
 }

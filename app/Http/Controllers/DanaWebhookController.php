@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\DanaPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -13,10 +14,16 @@ use Illuminate\Support\Str;
  * - POST /webhooks/dana-listener  → terima payload apapun, log ke file.
  * - GET  /webhooks/dana-listener/inspect → halaman lihat semua payload masuk.
  *
- * NO AUTH — testing only. JANGAN dipakai production sebelum tambah auth.
+ * Selain logging, kalau payload dikenali sebagai notifikasi DANA Bisnis
+ * (source=DANA, title="Pembayaran Masuk"), akan di-persist ke MySQL +
+ * di-push ke Firebase /dana_payments untuk realtime broadcast ke kasir.
  */
 class DanaWebhookController extends Controller
 {
+    public function __construct(private DanaPaymentService $danaPayment)
+    {
+    }
+
     /**
      * Path file log relatif ke storage/app/private.
      * Format: 1 baris JSON per request (NDJSON).
@@ -33,6 +40,8 @@ class DanaWebhookController extends Controller
      */
     public function receive(Request $request)
     {
+        $jsonBody = $this->tryJson($request);
+
         $entry = [
             'id'           => (string) Str::uuid(),
             'received_at'  => now()->toIso8601String(),
@@ -44,19 +53,31 @@ class DanaWebhookController extends Controller
             'content_type' => (string) $request->header('Content-Type'),
             'headers'      => $this->safeHeaders($request),
             'query'        => $request->query(),
-            'json'         => $this->tryJson($request),
+            'json'         => $jsonBody,
             'form'         => $request->post(),
             'raw_preview'  => $this->rawPreview($request),
         ];
 
         $this->appendLog($entry);
 
+        // Persist + broadcast realtime kalau ini notifikasi DANA Bisnis valid.
+        $danaResult = ['handled' => false, 'duplicate' => false, 'id' => null];
+        if (is_array($jsonBody) && $this->danaPayment->isDanaPayment($jsonBody)) {
+            $result = $this->danaPayment->record($jsonBody, $entry);
+            $danaResult = [
+                'handled'   => $result['stored'] || $result['duplicate'],
+                'duplicate' => $result['duplicate'],
+                'id'        => $result['id'],
+            ];
+        }
+
         return response()->json([
-            'ok'         => true,
-            'received'   => true,
-            'message'    => 'Payload diterima dan dicatat. Lihat /webhooks/dana-listener/inspect.',
-            'entry_id'   => $entry['id'],
+            'ok'          => true,
+            'received'    => true,
+            'message'     => 'Payload diterima dan dicatat. Lihat /webhooks/dana-listener/inspect.',
+            'entry_id'    => $entry['id'],
             'received_at' => $entry['received_at'],
+            'dana'        => $danaResult,
         ]);
     }
 

@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'google_tts' => [
+        'api_key' => env('GOOGLE_TTS_API_KEY'),
+        // Default voice id-ID (alternatif: Wavenet-A,B,C,D / Neural2-A,B,C,D / Standard-A,B,C,D)
+        'default_voice' => env('GOOGLE_TTS_DEFAULT_VOICE', 'id-ID-Wavenet-A'),
+    ],
+
 ];
