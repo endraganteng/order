@@ -20,12 +20,15 @@ class BonusServiceTest extends TestCase
 
         $capacity = $service->getMonthlyPointsCapacity($service->getDefaultConfig());
 
+        // Default config: daily=30 (5 disiplin + 10 operasional + 5 attitude + 10 rack_recheck),
+        // service & sales monthly (5 per day each), perfect_day_bonus=5.
         $this->assertSame(26, $capacity['working_days']);
-        $this->assertSame(20, $capacity['daily_max_points']);
-        $this->assertSame(25, $capacity['daily_max_with_perfect']);
+        $this->assertSame(30, $capacity['daily_max_points']);
+        $this->assertSame(35, $capacity['daily_max_with_perfect']);
         $this->assertSame(130, $capacity['monthly_service_max']);
         $this->assertSame(130, $capacity['monthly_sales_max']);
-        $this->assertSame(910, $capacity['theoretical_max']);
+        // 35*26 daily + 130 service + 130 sales = 910 + 260 = 1170
+        $this->assertSame(1170, $capacity['theoretical_max']);
     }
 
     public function test_waiter_monthly_progress_uses_canonical_totals_and_percentage(): void
@@ -79,10 +82,11 @@ class BonusServiceTest extends TestCase
         $this->assertSame(30, $progress['service_points']);
         $this->assertSame(10, $progress['sales_points']);
         $this->assertSame(70, $progress['net_points']);
-        $this->assertSame(910, $progress['theoretical_max']);
+        $this->assertSame(1170, $progress['theoretical_max']);
         $this->assertSame(1, $progress['perfect_days']);
         $this->assertSame(2, $progress['days_scored']);
-        $this->assertSame(7.7, $progress['percentage']);
+        // 70 / 1170 * 100 = 5.98... → 6.0
+        $this->assertSame(6.0, $progress['percentage']);
     }
 
     public function test_save_auto_daily_score_skips_existing_admin_override(): void
@@ -184,7 +188,7 @@ class BonusServiceTest extends TestCase
         $this->assertFalse($transaction->setCalled);
     }
 
-    public function test_get_leaderboard_filters_deleted_and_inactive_waiters_from_saved_snapshot(): void
+    public function test_get_leaderboard_returns_live_ranking_for_active_waiters_only(): void
     {
         $firebase = $this->createMock(FirebaseService::class);
         $firebase->method('getActiveWaiters')->willReturn([
@@ -192,62 +196,52 @@ class BonusServiceTest extends TestCase
             ['id' => 'waiter-3', 'name' => 'Active Three', 'is_active' => true],
         ]);
 
-        $reference = $this->createMock(Reference::class);
-        $snapshot = new Snapshot($reference, [
-            'month' => '2026-05',
-            'generated_at' => 1234567890,
-            'total_waiters' => 3,
-            'rankings' => [
-                ['rank' => 1, 'waiter_id' => 'waiter-2', 'waiter_name' => 'Deleted User', 'total_points' => 99, 'total_bonus' => 400000],
-                ['rank' => 2, 'waiter_id' => 'waiter-1', 'waiter_name' => 'Active One', 'total_points' => 80, 'total_bonus' => 300000],
-                ['rank' => 3, 'waiter_id' => 'waiter-3', 'waiter_name' => 'Active Three', 'total_points' => 60, 'total_bonus' => 200000],
-            ],
-        ]);
-        $reference->method('getSnapshot')->willReturn($snapshot);
-
-        $database = $this->createMock(Database::class);
-        $database->method('getReference')->with('waiter_leaderboard/2026-05')->willReturn($reference);
-
-        $service = new BonusService($firebase, $database);
+        // Live leaderboard memanggil calculateMonthlyBonus per waiter aktif
+        // (atau getMonthlyBonusSummary kalau ada). Subclass override agar
+        // tidak perlu mock-up panjang Firebase reads.
+        $service = new class($firebase, $this->createMock(Database::class)) extends BonusService
+        {
+            public function getMonthlyBonusSummary(string $waiterId, string $month): ?array
+            {
+                return match ($waiterId) {
+                    'waiter-1' => [
+                        'net_points' => 80, 'points_percentage' => 8.5,
+                        'perfect_days' => 1, 'penalty_count' => 0,
+                        'total_bonus' => 300000, 'points_bonus' => 300000, 'sales_bonus' => 0,
+                    ],
+                    'waiter-3' => [
+                        'net_points' => 60, 'points_percentage' => 6.5,
+                        'perfect_days' => 0, 'penalty_count' => 1,
+                        'total_bonus' => 200000, 'points_bonus' => 200000, 'sales_bonus' => 0,
+                    ],
+                    default => null,
+                };
+            }
+        };
 
         $leaderboard = $service->getLeaderboard('2026-05');
 
         $this->assertSame('2026-05', $leaderboard['month']);
-        $this->assertSame(1234567890, $leaderboard['generated_at']);
+        $this->assertTrue($leaderboard['live'] ?? false);
         $this->assertSame(2, $leaderboard['total_waiters']);
         $this->assertSame(['waiter-1', 'waiter-3'], array_column($leaderboard['rankings'], 'waiter_id'));
         $this->assertSame([1, 2], array_column($leaderboard['rankings'], 'rank'));
         $this->assertSame([300000, 200000], array_column($leaderboard['rankings'], 'total_bonus'));
+        $this->assertSame([80, 60], array_column($leaderboard['rankings'], 'total_points'));
     }
 
-    public function test_get_leaderboard_returns_empty_rankings_when_no_saved_entries_match_active_waiters(): void
+    public function test_get_leaderboard_returns_empty_rankings_when_no_active_waiters(): void
     {
         $firebase = $this->createMock(FirebaseService::class);
-        $firebase->method('getActiveWaiters')->willReturn([
-            ['id' => 'waiter-9', 'name' => 'Different Waiter', 'is_active' => true],
-        ]);
+        $firebase->method('getActiveWaiters')->willReturn([]);
 
-        $reference = $this->createMock(Reference::class);
-        $snapshot = new Snapshot($reference, [
-            'month' => '2026-06',
-            'generated_at' => 22334455,
-            'total_waiters' => 1,
-            'rankings' => [
-                ['rank' => 1, 'waiter_id' => 'waiter-2', 'waiter_name' => 'Former Waiter', 'total_points' => 50],
-            ],
-        ]);
-        $reference->method('getSnapshot')->willReturn($snapshot);
-
-        $database = $this->createMock(Database::class);
-        $database->method('getReference')->with('waiter_leaderboard/2026-06')->willReturn($reference);
-
-        $service = new BonusService($firebase, $database);
+        $service = new BonusService($firebase, $this->createMock(Database::class));
 
         $leaderboard = $service->getLeaderboard('2026-06');
 
         $this->assertSame('2026-06', $leaderboard['month']);
-        $this->assertSame(22334455, $leaderboard['generated_at']);
         $this->assertSame(0, $leaderboard['total_waiters']);
         $this->assertSame([], $leaderboard['rankings']);
+        $this->assertTrue($leaderboard['live'] ?? false);
     }
 }

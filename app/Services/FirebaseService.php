@@ -2582,6 +2582,48 @@ class FirebaseService
     /**
      * Get a single waiter task by ID.
      */
+    /**
+     * Mark a legacy rack_check task as pending review.
+     * Dipakai oleh BonusRackRecheckMarkLegacy command untuk migrasi data
+     * task `done` yang dibuat sebelum field recheck_pending ditambahkan ke schema.
+     *
+     * Aman dipanggil idempoten: kalau task sudah punya recheck_pending field,
+     * caller harus skip duluan.
+     *
+     * @return array{success: bool, message?: string}
+     */
+    public function markRackCheckPendingReview(string $taskId): array
+    {
+        $taskRef = $this->database->getReference('waiter_tasks/'.$taskId);
+        $snapshot = $taskRef->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return ['success' => false, 'message' => 'Task tidak ditemukan.'];
+        }
+
+        $task = (array) $snapshot->getValue();
+        $type = (string) ($task['task_type'] ?? '');
+        $status = (string) ($task['status'] ?? '');
+
+        if ($type !== 'rack_check') {
+            return ['success' => false, 'message' => 'Bukan rack_check task.'];
+        }
+        if ($status !== 'done') {
+            return ['success' => false, 'message' => 'Task belum done (status: '.$status.').'];
+        }
+
+        $taskRef->update([
+            'recheck_pending' => true,
+            'recheck_points' => null,
+            'recheck_notes' => null,
+            'recheck_by' => null,
+            'recheck_by_name' => null,
+            'recheck_at' => null,
+        ]);
+
+        return ['success' => true];
+    }
+
     public function getWaiterTaskById(string $taskId): ?array
     {
         $snapshot = $this->database->getReference('waiter_tasks/'.$taskId)->getSnapshot();

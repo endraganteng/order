@@ -480,6 +480,71 @@
             margin-top: 0.15rem;
         }
 
+        /* === Riwayat Poin Masuk timeline === */
+        .events-list {
+            max-height: 420px;
+            overflow-y: auto;
+            margin: 0 -0.25rem;
+        }
+        .event-item {
+            display: grid;
+            grid-template-columns: 36px 1fr auto;
+            gap: 0.65rem;
+            padding: 0.65rem 0.25rem;
+            border-bottom: 1px solid #f3f4f6;
+            align-items: flex-start;
+        }
+        .event-item:last-child { border-bottom: none; }
+        .event-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .event-icon.rack    { background: #ecfdf5; color: #059669; }
+        .event-icon.bonus   { background: #eff6ff; color: #2563eb; }
+        .event-icon.penalty { background: #fef2f2; color: #dc2626; }
+        .event-icon.deduction { background: #fef3c7; color: #d97706; }
+        .event-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            min-width: 0;
+        }
+        .event-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .event-reason {
+            font-size: 0.74rem;
+            color: #6b7280;
+            word-break: break-word;
+        }
+        .event-meta {
+            font-size: 0.68rem;
+            color: #9ca3af;
+            margin-top: 0.1rem;
+        }
+        .event-points {
+            font-size: 0.95rem;
+            font-weight: 700;
+            white-space: nowrap;
+            align-self: center;
+        }
+        .event-points.positive { color: #059669; }
+        .event-points.negative { color: #dc2626; }
+        .event-empty {
+            text-align: center;
+            padding: 1.25rem 0.5rem;
+            color: #9ca3af;
+            font-size: 0.78rem;
+        }
+
         .sales-progress-bar {
             width: 100%;
             height: 12px;
@@ -1086,6 +1151,64 @@
                     </div>
                 @empty
                     <div class="empty-state">Belum ada data harian</div>
+                @endforelse
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📥 Riwayat Poin Masuk</div>
+            <div style="font-size: 0.72rem; color: #9ca3af; margin-bottom: 0.5rem;">
+                Setiap kali Finance review rak, supervisor menambah bonus, atau ada penalti — masuk di sini.
+            </div>
+            <div class="events-list">
+                @php
+                    $events = $pointEvents ?? [];
+                @endphp
+                @forelse($events as $ev)
+                    @php
+                        $type = (string) ($ev['type'] ?? '');
+                        $points = (int) ($ev['points'] ?? 0);
+                        $iconClass = match ($type) {
+                            'rack_recheck'      => 'rack',
+                            'manual_bonus'      => 'bonus',
+                            'manual_deduction'  => 'deduction',
+                            'penalty'           => 'penalty',
+                            default             => 'bonus',
+                        };
+                        $iconChar = match ($type) {
+                            'rack_recheck'      => '📦',
+                            'manual_bonus'      => '✨',
+                            'manual_deduction'  => '➖',
+                            'penalty'           => '⚠️',
+                            default             => '•',
+                        };
+                        $pointsClass = $points >= 0 ? 'positive' : 'negative';
+                        $pointsText = ($points > 0 ? '+' : '') . $points;
+                        $createdAt = (int) ($ev['created_at'] ?? 0);
+                        $when = $createdAt > 0
+                            ? \Carbon\Carbon::createFromTimestamp($createdAt)->setTimezone(config('app.timezone', 'Asia/Jakarta'))->translatedFormat('d M, H:i')
+                            : (string) ($ev['date'] ?? '');
+                        $actor = trim((string) ($ev['actor'] ?? ''));
+                        $reason = trim((string) ($ev['reason'] ?? ''));
+                    @endphp
+                    <div class="event-item">
+                        <div class="event-icon {{ $iconClass }}">{{ $iconChar }}</div>
+                        <div class="event-body">
+                            <span class="event-label">{{ $ev['label'] ?? '-' }}</span>
+                            @if($reason !== '')
+                                <span class="event-reason">{{ $reason }}</span>
+                            @endif
+                            <span class="event-meta">
+                                {{ $when }}
+                                @if($actor !== '')
+                                    · oleh {{ $actor }}
+                                @endif
+                            </span>
+                        </div>
+                        <span class="event-points {{ $pointsClass }}">{{ $pointsText }}</span>
+                    </div>
+                @empty
+                    <div class="event-empty">Belum ada riwayat poin bulan ini.</div>
                 @endforelse
             </div>
         </div>

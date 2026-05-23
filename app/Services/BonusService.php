@@ -148,6 +148,7 @@ class BonusService
         $salesTarget = $this->getSalesTarget($waiterId, $month);
         $bonusSummary = $this->getMonthlyBonusSummary($waiterId, $month);
         $leaderboard = $this->getLeaderboard($month);
+        $manualBonusTotal = $this->sumManualBonusForMonth($waiterId, $month);
 
         $totalEarned = 0;
         $penaltySignedTotal = 0;
@@ -173,7 +174,9 @@ class BonusService
 
         $servicePoints = (int) ($bonusSummary['service_points'] ?? 0);
         $salesPoints = (int) ($bonusSummary['sales_points'] ?? 0);
-        $netPoints = max(0, $totalEarned + $servicePoints + $salesPoints + $penaltySignedTotal);
+        // Manual bonus (signed) ikut dihitung agar konsisten dengan calculateMonthlyBonus
+        // — supaya yang waiter lihat di dashboard match dengan summary bulan admin.
+        $netPoints = max(0, $totalEarned + $servicePoints + $salesPoints + $penaltySignedTotal + $manualBonusTotal);
         $theoreticalMax = (int) $capacity['theoretical_max'];
         $percentage = $theoreticalMax > 0 ? round(($netPoints / $theoreticalMax) * 100, 1) : 0.0;
 
@@ -189,6 +192,7 @@ class BonusService
             'penalty_signed_total' => $penaltySignedTotal,
             'service_points' => $servicePoints,
             'sales_points' => $salesPoints,
+            'manual_bonus_total' => $manualBonusTotal,
             'net_points' => $netPoints,
             'days_scored' => $daysScored,
             'perfect_days' => $perfectDays,
@@ -314,6 +318,101 @@ class BonusService
             'preserve_admin_override' => true,
             'auto_details' => $autoDetails,
         ]);
+    }
+
+    /**
+     * Targeted merge of `rack_recheck` category into the existing daily record.
+     *
+     * Sengaja BUKAN lewat scoreDailyPoints — Finance recheck harus tetap menulis
+     * poin rak meskipun supervisor sudah pernah save manual (admin_override=true)
+     * di hari yang sama. Tanpa method ini, review Finance silently di-skip.
+     *
+     * Yang di-preserve: discipline/operational/attitude (manual maupun auto),
+     * admin_override flag, score_source, created_at.
+     * Yang di-overwrite: categories[rack_recheck], raw_total, perfect_day_bonus,
+     * daily_total, auto_details[rack_recheck_*], updated_at, scored_at, notes.
+     */
+    public function mergeRackRecheckPoints(
+        string $waiterId,
+        string $date,
+        int $rackRecheckScore,
+        string $notes = '',
+        array $autoDetails = []
+    ): array {
+        $config = $this->getBonusConfig();
+        $categories = $config['point_categories'] ?? [];
+
+        $rackMeta = $categories['rack_recheck'] ?? null;
+        if (! is_array($rackMeta) || ($rackMeta['scoring_type'] ?? 'daily') === 'monthly') {
+            return [
+                'success' => false,
+                'message' => 'Kategori rack_recheck tidak aktif di config.',
+            ];
+        }
+
+        $rackMax = (int) ($rackMeta['max_daily_points'] ?? 10);
+        $rackRecheckScore = max(0, min($rackMax, $rackRecheckScore));
+
+        $existing = $this->getDailyPoints($waiterId, $date);
+        $existingCategories = is_array($existing['categories'] ?? null) ? $existing['categories'] : [];
+
+        // Build the daily-scored category map: keep all existing daily values,
+        // override just rack_recheck.
+        $merged = [];
+        foreach ($categories as $key => $meta) {
+            if (($meta['scoring_type'] ?? 'daily') === 'monthly') {
+                continue;
+            }
+            $merged[$key] = (int) ($existingCategories[$key] ?? 0);
+        }
+        $merged['rack_recheck'] = $rackRecheckScore;
+
+        $rawTotal = array_sum($merged);
+        $perfectDayBonus = $this->calculatePerfectDayBonus($merged, $config);
+        $dailyTotal = $rawTotal + $perfectDayBonus;
+
+        $now = time();
+        $existingAutoDetails = is_array($existing['auto_details'] ?? null) ? $existing['auto_details'] : [];
+        $mergedAutoDetails = $existingAutoDetails;
+        foreach ($autoDetails as $k => $v) {
+            // Hanya merge field rack_recheck_* supaya tidak menimpa reason kategori lain.
+            if (str_starts_with((string) $k, 'rack_recheck_')) {
+                $mergedAutoDetails[$k] = $v;
+            }
+        }
+
+        $record = [
+            'waiter_id'         => $waiterId,
+            'date'              => $date,
+            'month'             => substr($date, 0, 7),
+            'categories'        => $merged,
+            'raw_total'         => $rawTotal,
+            'perfect_day_bonus' => $perfectDayBonus,
+            'daily_total'       => $dailyTotal,
+            'notes'             => $notes !== '' ? $notes : (string) ($existing['notes'] ?? ''),
+            'scored_at'         => $now,
+            'updated_at'        => $now,
+            // Preserve provenance: kalau record ada, jangan ubah source/admin_override.
+            'score_source'      => (string) ($existing['score_source'] ?? 'auto'),
+            'admin_override'    => (bool) ($existing['admin_override'] ?? false),
+            'auto_details'      => $mergedAutoDetails,
+            'created_at'        => isset($existing['created_at'])
+                ? (int) $existing['created_at']
+                : $now,
+        ];
+
+        $this->database->getReference('waiter_daily_points/' . $waiterId . '/' . $date)->set($record);
+
+        return [
+            'success'           => true,
+            'merged'            => true,
+            'daily_total'       => $dailyTotal,
+            'raw_total'         => $rawTotal,
+            'perfect_day'       => $perfectDayBonus > 0,
+            'perfect_day_bonus' => $perfectDayBonus,
+            'categories'        => $merged,
+            'admin_override'    => (bool) ($existing['admin_override'] ?? false),
+        ];
     }
 
     /**
@@ -497,7 +596,19 @@ class BonusService
         $rackRecheckReason = 'Belum ada cek rak';
         if (count($rackTasks) > 0) {
             $reviewedRackTasks = array_values(array_filter($rackTasks, function ($task) {
-                return isset($task['recheck_points']) && empty($task['recheck_pending']);
+                if (! isset($task['recheck_points'])) {
+                    return false;
+                }
+
+                // Firebase REST kadang me-return boolean sebagai string ("false"/"true").
+                // empty("false") === false → menganggap masih pending. Pakai parser eksplisit.
+                $pending = $task['recheck_pending'] ?? null;
+                if ($pending === null || $pending === false || $pending === 0 || $pending === '0' || $pending === '') {
+                    return true;
+                }
+                $bool = filter_var($pending, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+                return $bool === false;
             }));
             $totalRackTasks = count($rackTasks);
             $reviewedCount = count($reviewedRackTasks);
@@ -905,6 +1016,170 @@ class BonusService
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    // =========================================================================
+    //  POINT EVENTS TIMELINE (untuk dashboard waiter)
+    // =========================================================================
+
+    /**
+     * Bangun timeline kronologis "kapan poin masuk" untuk satu waiter di satu
+     * bulan. Gabungan dari 3 sumber yang menambah poin (atau mengurangi):
+     *
+     *   - rack_recheck : task rack_check yang sudah direview Finance
+     *                    → tipe='rack_recheck', points = recheck_points,
+     *                      created_at = recheck_at
+     *   - manual_bonus : penambahan poin manual oleh supervisor
+     *                    → tipe='manual_bonus' / 'manual_deduction'
+     *   - penalty      : pengurangan poin oleh sistem/admin
+     *                    → tipe='penalty', points negatif
+     *
+     * Sort: terbaru di atas (created_at desc, fallback date desc).
+     *
+     * @return array<int, array{
+     *   type: string,
+     *   points: int,
+     *   label: string,
+     *   reason: string,
+     *   date: string,
+     *   created_at: int,
+     *   actor: string,
+     *   ref_id: string,
+     * }>
+     */
+    public function getWaiterPointEvents(string $waiterId, string $month): array
+    {
+        $events = [];
+
+        // --- 1. rack_recheck events ---
+        // Ambil semua waiter_tasks lalu filter PHP-side. Volume rendah (≤ ratusan
+        // task aktif per bulan), dan kita tidak punya index `recheck_at` di Firebase.
+        $candidates = [];
+
+        // 1a. Query by assigned_waiter_id (single + role-based yang sudah resolve)
+        try {
+            $snapshot = $this->database->getReference('waiter_tasks')
+                ->orderByChild('assigned_waiter_id')
+                ->equalTo($waiterId)
+                ->getSnapshot();
+            if ($snapshot->exists()) {
+                $candidates = (array) $snapshot->getValue();
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // 1b. Query by completed_by_waiter_id (catch task role-based yang
+        // assigned_waiter_id-nya null). Kalau index tidak ada di Firebase rules,
+        // skip silently — query 1a sudah cover sebagian besar kasus.
+        try {
+            $snapshotCompl = $this->database->getReference('waiter_tasks')
+                ->orderByChild('completed_by_waiter_id')
+                ->equalTo($waiterId)
+                ->getSnapshot();
+            if ($snapshotCompl->exists()) {
+                foreach ((array) $snapshotCompl->getValue() as $id => $task) {
+                    if (! isset($candidates[$id])) {
+                        $candidates[$id] = $task;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Index missing on Firebase = ok, lanjut tanpa data tambahan.
+            // Log untuk awareness saja.
+            \Log::debug('point-events: completed_by_waiter_id index missing, skipping query 1b', [
+                'waiter_id' => $waiterId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            foreach ($candidates as $id => $task) {
+                $task = (array) $task;
+                if (($task['task_type'] ?? '') !== 'rack_check') {
+                    continue;
+                }
+                if (! isset($task['recheck_points'])) {
+                    continue;
+                }
+                $pending = $task['recheck_pending'] ?? null;
+                $bool = filter_var($pending, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                if ($bool === true) {
+                    continue;
+                }
+
+                $taskMonth = (string) (substr((string) ($task['scheduled_for_date'] ?? ''), 0, 7));
+                if ($taskMonth !== $month) {
+                    continue;
+                }
+
+                $points = max(0, (int) ($task['recheck_points'] ?? 0));
+                $events[] = [
+                    'type'       => 'rack_recheck',
+                    'points'     => $points,
+                    'label'      => 'Cek Rak',
+                    'reason'     => trim((string) ($task['rack_name'] ?? $task['title'] ?? 'Rak')) .
+                                    (! empty($task['recheck_notes']) ? ' — ' . trim((string) $task['recheck_notes']) : ''),
+                    'date'       => (string) ($task['scheduled_for_date'] ?? ''),
+                    'created_at' => (int) ($task['recheck_at'] ?? $task['completed_at'] ?? 0),
+                    'actor'      => trim((string) ($task['recheck_by_name'] ?? 'Finance')),
+                    'ref_id'     => (string) $id,
+                ];
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // --- 2. manual_bonus events ---
+        try {
+            $bonuses = $this->getManualBonusesByMonth($month, $waiterId);
+            foreach ($bonuses as $b) {
+                $points = (int) ($b['points'] ?? 0);
+                $events[] = [
+                    'type'       => $points >= 0 ? 'manual_bonus' : 'manual_deduction',
+                    'points'     => $points,
+                    'label'      => $points >= 0 ? 'Bonus Manual' : 'Pengurangan Manual',
+                    'reason'     => (string) ($b['reason'] ?? ''),
+                    'date'       => (string) ($b['date'] ?? ''),
+                    'created_at' => (int) ($b['created_at'] ?? 0),
+                    'actor'      => (string) ($b['created_by'] ?? 'supervisor'),
+                    'ref_id'     => (string) ($b['bonus_id'] ?? ''),
+                ];
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // --- 3. penalty events ---
+        try {
+            $penalties = $this->getPenaltiesByMonth($month, $waiterId);
+            foreach ($penalties as $p) {
+                $events[] = [
+                    'type'       => 'penalty',
+                    'points'     => (int) ($p['points_deducted'] ?? 0),
+                    'label'      => (string) ($p['penalty_label'] ?? ($p['penalty_type'] ?? 'Penalti')),
+                    'reason'     => (string) ($p['reason'] ?? ''),
+                    'date'       => (string) ($p['date'] ?? ''),
+                    'created_at' => (int) ($p['created_at'] ?? 0),
+                    'actor'      => 'Sistem',
+                    'ref_id'     => (string) ($p['id'] ?? ''),
+                ];
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // Sort terbaru di atas
+        usort($events, function ($a, $b) {
+            $cmp = ($b['created_at'] ?? 0) <=> ($a['created_at'] ?? 0);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return strcmp((string) ($b['date'] ?? ''), (string) ($a['date'] ?? ''));
+        });
+
+        return $events;
     }
 
 
@@ -1498,49 +1773,69 @@ class BonusService
     }
 
     /**
-     * Get the pre-computed leaderboard for a month.
+     * Live leaderboard: hitung dari scratch setiap call.
+     *
+     * Sebelumnya leaderboard di-snapshot sekali sehari (cron 06:00). Akibatnya
+     * manual_bonus / rack_recheck / penalty yang masuk siang/sore tidak terlihat
+     * sampai keesokan harinya. Sekarang dihitung live agar selalu match dengan
+     * angka yang waiter lihat di dashboard.
+     *
+     * Volume: ~8 waiter aktif × ~6 firebase reads = acceptable per page load.
+     * Snapshot di /waiter_leaderboard/{month} tetap dibuat oleh cron untuk
+     * audit history bulanan, tapi BUKAN dipakai untuk display.
      */
     public function getLeaderboard(string $month): array
     {
-        $snapshot = $this->database->getReference('waiter_leaderboard/' . $month)->getSnapshot();
+        $waiters = $this->firebase->getActiveWaiters();
+        $rankings = [];
 
-        if (! $snapshot->exists()) {
-            return [];
-        }
-
-        $leaderboard = (array) $snapshot->getValue();
-        $rankings = $leaderboard['rankings'] ?? [];
-
-        if (! is_array($rankings)) {
-            $leaderboard['rankings'] = [];
-            $leaderboard['total_waiters'] = 0;
-
-            return $leaderboard;
-        }
-
-        $activeWaiterIds = array_fill_keys(array_map(function ($waiter) {
-            return (string) ($waiter['id'] ?? '');
-        }, $this->firebase->getActiveWaiters()), true);
-
-        unset($activeWaiterIds['']);
-
-        $filteredRankings = array_values(array_filter($rankings, function ($entry) use ($activeWaiterIds) {
-            $waiterId = (string) ((is_array($entry) ? ($entry['waiter_id'] ?? '') : '') ?: '');
-
-            return $waiterId !== '' && isset($activeWaiterIds[$waiterId]);
-        }));
-
-        foreach ($filteredRankings as $index => &$entry) {
-            if (is_array($entry)) {
-                $entry['rank'] = $index + 1;
+        foreach ($waiters as $waiter) {
+            $waiterId = (string) ($waiter['id'] ?? '');
+            if ($waiterId === '') {
+                continue;
             }
+
+            // Prefer finalized summary; fall back to live calculation.
+            $summary = $this->getMonthlyBonusSummary($waiterId, $month);
+            if ($summary === null) {
+                $summary = $this->calculateMonthlyBonus($waiterId, $month);
+            }
+
+            $rankings[] = [
+                'waiter_id'         => $waiterId,
+                'waiter_name'       => (string) ($waiter['name'] ?? ''),
+                'total_points'      => (int) ($summary['net_points'] ?? 0),
+                'points_percentage' => (float) ($summary['points_percentage'] ?? 0),
+                'perfect_days'      => (int) ($summary['perfect_days'] ?? 0),
+                'penalty_count'     => (int) ($summary['penalty_count'] ?? 0),
+                'total_bonus'       => (int) ($summary['total_bonus'] ?? 0),
+                'points_bonus'      => (int) ($summary['points_bonus'] ?? 0),
+                'sales_bonus'       => (int) ($summary['sales_bonus'] ?? 0),
+            ];
+        }
+
+        // Sort by total_points desc, perfect_days desc tiebreaker.
+        usort($rankings, function ($a, $b) {
+            $cmp = $b['total_points'] <=> $a['total_points'];
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return $b['perfect_days'] <=> $a['perfect_days'];
+        });
+
+        foreach ($rankings as $index => &$entry) {
+            $entry['rank'] = $index + 1;
         }
         unset($entry);
 
-        $leaderboard['rankings'] = $filteredRankings;
-        $leaderboard['total_waiters'] = count($filteredRankings);
-
-        return $leaderboard;
+        return [
+            'month'         => $month,
+            'generated_at'  => time(),
+            'total_waiters' => count($rankings),
+            'rankings'      => $rankings,
+            'live'          => true,
+        ];
     }
 
     // =========================================================================

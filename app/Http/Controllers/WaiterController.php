@@ -528,9 +528,17 @@ class WaiterController extends Controller
             return response()->json($result, 422);
         }
 
-        // Re-trigger autoScoreDailyPoints untuk waiter pemilik task
+        // Re-trigger autoScoreDailyPoints untuk waiter pemilik task.
+        // Untuk task role-based, assigned_waiter_id bisa kosong → fallback ke
+        // completed_by_waiter_id (waiter yang benar-benar mengerjakan task).
         $task = $result['task'] ?? [];
         $ownerWaiterId = (string) ($task['assigned_waiter_id'] ?? '');
+        if ($ownerWaiterId === '') {
+            $ownerWaiterId = (string) ($task['completed_by_waiter_id'] ?? '');
+        }
+        if ($ownerWaiterId === '') {
+            $ownerWaiterId = (string) ($task['claimed_by'] ?? '');
+        }
         $taskDate = (string) ($task['scheduled_for_date'] ?? date('Y-m-d'));
         if ($ownerWaiterId !== '') {
             try {
@@ -538,16 +546,13 @@ class WaiterController extends Controller
                 $ownerTasks = $this->firebase->getWaiterTasksForDate($ownerWaiterId, $taskDate);
                 $reports = $this->firebase->getWaiterActivityReportsByWaiterIdForDate($ownerWaiterId, $taskDate);
                 $autoScores = $bonusService->autoScoreDailyPoints($ownerWaiterId, $taskDate, $attendance, $ownerTasks, $reports);
-                $categoryScores = [
-                    'discipline' => $autoScores['discipline'] ?? 0,
-                    'operational' => $autoScores['operational'] ?? 0,
-                    'attitude' => $autoScores['attitude'] ?? 0,
-                    'rack_recheck' => $autoScores['rack_recheck'] ?? 0,
-                ];
-                $bonusService->saveAutoDailyScore(
+
+                // Pakai mergeRackRecheckPoints supaya record dengan admin_override=true
+                // tetap menerima poin rak (tidak silently skipped).
+                $bonusService->mergeRackRecheckPoints(
                     $ownerWaiterId,
                     $taskDate,
-                    $categoryScores,
+                    (int) ($autoScores['rack_recheck'] ?? 0),
                     'Auto-rescore on Finance recheck',
                     $autoScores['auto_details'] ?? []
                 );

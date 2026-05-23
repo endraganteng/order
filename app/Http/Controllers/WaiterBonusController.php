@@ -26,6 +26,7 @@ class WaiterBonusController extends Controller
         $waiterName = session('waiter_name', 'Waiter');
         $month = $request->get('month', date('Y-m'));
         $progress = $this->bonus->getWaiterMonthlyProgress((string) $waiterId, $month);
+        $pointEvents = $this->bonus->getWaiterPointEvents((string) $waiterId, $month);
 
         // Fetch waiter role for sales eligibility check in dashboard.
         $waiterRole = '';
@@ -69,7 +70,7 @@ class WaiterBonusController extends Controller
         return view('waiter.bonus_dashboard', compact(
             'waiterId', 'waiterName', 'waiterRole', 'month', 'config',
             'monthlyPoints', 'penalties', 'salesTarget', 'bonusSummary',
-            'leaderboard', 'myRank',
+            'leaderboard', 'myRank', 'pointEvents',
             'totalEarned', 'totalPenalties', 'netPoints', 'daysScored', 'perfectDays',
             'percentage', 'theoreticalMax', 'workingDays', 'dailyMaxWithPerfect', 'monthlyServiceMax', 'monthlySalesMax'
         ));
@@ -83,6 +84,7 @@ class WaiterBonusController extends Controller
         $waiterId = session('waiter_id');
         $month = $request->get('month', date('Y-m'));
         $progress = $this->bonus->getWaiterMonthlyProgress((string) $waiterId, $month);
+        $pointEvents = $this->bonus->getWaiterPointEvents((string) $waiterId, $month);
         
         return response()->json([
             'total_earned' => $progress['total_earned'],
@@ -99,6 +101,7 @@ class WaiterBonusController extends Controller
             'daily_max_with_perfect' => $progress['daily_max_with_perfect'],
             'monthly_service_max' => $progress['monthly_service_max'],
             'monthly_sales_max' => $progress['monthly_sales_max'],
+            'point_events' => $pointEvents,
         ]);
     }
 }
