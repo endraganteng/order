@@ -1504,6 +1504,7 @@
                 <div style="padding: 10px 14px; font-size: 12px; color: #9ca3af;">Login sebagai <strong style="color:#374151;">{{ $waiterName }}</strong></div>
                 <div class="top-dropdown-divider"></div>
                 <a href="{{ route('waiter.payroll', [], false) }}" class="top-dropdown-item">💰 Gaji Saya</a>
+                <a href="{{ route('waiter.ai_chat.index', [], false) }}" class="top-dropdown-item">🤖 AI Chat Produk</a>
                 <div class="top-dropdown-divider"></div>
                 <a href="{{ route('waiter.logout', [], false) }}" class="top-dropdown-item danger" onclick="return confirm('Yakin mau logout?')">🚪 Logout</a>
             </div>

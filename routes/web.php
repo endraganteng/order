@@ -318,6 +318,42 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::post('tutup-buku/reopen', [\App\Http\Controllers\Admin\FinanceController::class, 'reopenMonth'])->name('tutup_buku.reopen');
             Route::get('laba-rugi', [\App\Http\Controllers\Admin\FinanceController::class, 'labaRugi'])->name('laba_rugi');
         });
+
+        // AI Product Knowledge Enrichment (admin only)
+        Route::prefix('ai-products')->name('ai_products.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'index'])->name('index');
+            Route::get('search', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'searchProducts'])->name('search');
+            Route::post('generate', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'generate'])
+                ->middleware('throttle:30,1')->name('generate');
+            Route::post('generate-batch', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'generateBatch'])
+                ->middleware('throttle:5,1')->name('generate_batch');
+
+            // Background batch processing
+            Route::post('batch/start', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchStart'])
+                ->middleware('throttle:10,1')->name('batch.start');
+            Route::get('batch/list', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchList'])->name('batch.list');
+            Route::get('batch/{id}/status', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchStatus'])
+                ->whereNumber('id')->name('batch.status');
+            Route::post('batch/{id}/cancel', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchCancel'])
+                ->whereNumber('id')->name('batch.cancel');
+
+            Route::get('{id}', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'show'])->whereNumber('id')->name('show');
+            Route::post('{id}/approve', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'approve'])->whereNumber('id')->name('approve');
+            Route::post('{id}/reject', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'reject'])->whereNumber('id')->name('reject');
+            Route::put('{id}/knowledge', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'updateKnowledge'])->whereNumber('id')->name('knowledge.update');
+            Route::post('{id}/resync', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'resyncVector'])->whereNumber('id')->name('resync');
+        });
+
+        // AI Product Chat (admin)
+        Route::prefix('ai-chat')->name('ai_chat.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\AiProductChatController::class, 'adminIndex'])->name('index');
+            Route::post('send', [\App\Http\Controllers\AiProductChatController::class, 'adminSend'])
+                ->middleware('throttle:30,1')->name('send');
+            Route::get('sessions/{id}/messages', [\App\Http\Controllers\AiProductChatController::class, 'adminMessages'])
+                ->whereNumber('id')->name('messages');
+            Route::post('feedback', [\App\Http\Controllers\AiProductChatController::class, 'adminFeedback'])
+                ->middleware('throttle:60,1')->name('feedback');
+        });
     });
 });
 
@@ -432,6 +468,17 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         Route::get('restock', [WaiterController::class, 'restockList'])->name('restock');
         Route::post('restock/{poId}/receive', [WaiterController::class, 'receiveRestockItem'])->name('restock.receive');
         Route::post('restock/{poId}/report-issue', [WaiterController::class, 'reportRestockIssue'])->name('restock.report_issue');
+
+        // AI Product Chat (waiter)
+        Route::prefix('ai-chat')->name('ai_chat.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\AiProductChatController::class, 'waiterIndex'])->name('index');
+            Route::post('send', [\App\Http\Controllers\AiProductChatController::class, 'waiterSend'])
+                ->middleware('throttle:30,1')->name('send');
+            Route::get('sessions/{id}/messages', [\App\Http\Controllers\AiProductChatController::class, 'waiterMessages'])
+                ->whereNumber('id')->name('messages');
+            Route::post('feedback', [\App\Http\Controllers\AiProductChatController::class, 'waiterFeedback'])
+                ->middleware('throttle:60,1')->name('feedback');
+        });
 
         Route::get('logout', [WaiterController::class, 'logout'])->name('logout');
     });

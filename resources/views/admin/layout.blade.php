@@ -1289,6 +1289,7 @@
                     $grpPayroll    = request()->routeIs(['admin.payroll.index','admin.payroll.show','admin.payroll.withdrawals']);
                     $grpFinance    = request()->routeIs('admin.finance.*') || $grpPayroll;
                     $grpSistem     = request()->routeIs(['admin.audit_log.*','admin.settings']);
+                    $grpAi         = request()->routeIs(['admin.ai_products.*','admin.ai_chat.*']);
                 @endphp
                 @if($adminRole !== 'finance')
                 {{-- Ringkasan --}}
@@ -1448,6 +1449,15 @@
                                 <a class="{{ request()->routeIs('admin.finance.allocations') ? 'is-active' : '' }}" href="{{ route('admin.finance.allocations') }}">📊 Alokasi Dana</a>
                             </div>
                         </div>
+                    </div>
+                </li>
+
+                {{-- AI --}}
+                <li class="{{ $grpAi ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ $grpAi ? 'is-active-group' : '' }}">AI <span class="caret">▾</span></button>
+                    <div class="dropdown-menu">
+                        <a class="{{ request()->routeIs('admin.ai_chat.*') ? 'is-active' : '' }}" href="{{ route('admin.ai_chat.index') }}">💬 Chat Produk</a>
+                        <a class="{{ request()->routeIs('admin.ai_products.*') ? 'is-active' : '' }}" href="{{ route('admin.ai_products.index') }}">🧠 Knowledge Produk</a>
                     </div>
                 </li>
 
