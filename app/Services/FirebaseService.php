@@ -4215,6 +4215,16 @@ class FirebaseService
                     }
                 }
 
+                // GUARD: skip task hari ini kalau deadline-nya sudah lewat.
+                // Mencegah kasus "buat template siang hari, langsung tergenerate
+                // dengan deadline sudah expired (09:30 padahal sekarang 12:00)
+                // → langsung overdue + apply penalty otomatis."
+                // Tetap mark last_generated_date supaya besok jalan normal.
+                if ($isToday && $waiterDeadlineAt !== null && $waiterDeadlineAt > 0 && $waiterDeadlineAt <= time()) {
+                    $existingRecurringMap[$mapKey] = true;
+                    continue;
+                }
+
                 $taskData = $this->buildWaiterTaskPayload($template, $waiter, [
                     'status' => 'pending',
                     'created_at' => time(),

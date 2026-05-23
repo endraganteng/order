@@ -1907,7 +1907,18 @@ function taskStudio() {
             const f = this.massAssignForm;
             if (f.rack_ids.length < 1 || f.waiter_ids.length < 2) return [];
             const racks = f.rack_ids.map(id => this.rackById(id)).filter(Boolean);
-            const waiters = f.waiter_ids.map(id => this.waiters.find(w => w.id === id)).filter(Boolean);
+            // Backend sort waiters alfabetis (lihat FirebaseService::generateDueRecurringWaiterTasks
+            // line ~4106). Preview HARUS pakai urutan sama supaya yang kelihatan di UI
+            // = yang benar-benar tergenerate.
+            const waiters = f.waiter_ids
+                .map(id => this.waiters.find(w => w.id === id))
+                .filter(Boolean)
+                .slice()
+                .sort((a, b) => {
+                    const nameCmp = (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+                    if (nameCmp !== 0) return nameCmp;
+                    return (a.id || '').localeCompare(b.id || '');
+                });
             const days = [];
             const anchor = new Date(f.rolling_anchor_date + 'T00:00:00');
             if (isNaN(anchor.getTime())) return [];
