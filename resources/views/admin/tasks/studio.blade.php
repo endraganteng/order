@@ -1212,17 +1212,24 @@
                     <option value="fixed">⏰ Jam tetap</option>
                     <option value="shift_relative">🔄 Ikuti shift waiter</option>
                 </select>
-                <div class="ts-hint">Mode "Ikuti Shift" = jam tugas mengikuti shift masing-masing waiter</div>
+                <div class="ts-hint" x-show="form.schedule_mode === 'fixed'" style="background:#f3f4f6;padding:6px 10px;border-radius:6px;margin-top:4px;">
+                    💡 <strong>Jam tetap</strong>: semua waiter mulai bareng di jam yang sama (misal 09:00). Cocok kalau toko buka jam yang sama tiap hari.
+                </div>
+                <div class="ts-hint" x-show="form.schedule_mode === 'shift_relative'" style="background:#fef3c7;padding:6px 10px;border-radius:6px;margin-top:4px;">
+                    💡 <strong>Ikut shift waiter</strong>: jam mulai task otomatis ngikutin shift masing-masing waiter (pagi/siang/sore beda jam).
+                </div>
             </div>
 
             <div class="ts-field-row" x-show="form.schedule_mode === 'fixed'">
                 <div class="ts-field">
                     <label>Jam mulai</label>
                     <input type="time" x-model="form.schedule_time">
+                    <div class="ts-hint" style="font-size:11px;color:#9ca3af;">Jam tugas muncul untuk waiter</div>
                 </div>
                 <div class="ts-field">
-                    <label>Batas (menit)</label>
+                    <label>Batas pengerjaan (menit)</label>
                     <input type="number" x-model="form.time_limit_minutes" min="0" max="1440">
+                    <div class="ts-hint" style="font-size:11px;color:#9ca3af;">Deadline = jam mulai + N menit. Lewat = overdue.</div>
                 </div>
             </div>
 
@@ -1230,11 +1237,16 @@
                 <div class="ts-field">
                     <label>Offset shift (menit)</label>
                     <input type="number" x-model="form.shift_offset_minutes" min="0" max="480">
-                    <div class="ts-hint">Mis. 30 = muncul 30 menit setelah shift mulai</div>
+                    <div class="ts-hint" style="font-size:11px;color:#9ca3af;">
+                        <strong>0</strong> = task muncul tepat saat shift mulai. <strong>30</strong> = waiter punya 30 menit siap-siap dulu.
+                    </div>
                 </div>
                 <div class="ts-field">
-                    <label>Deadline sebelum akhir (menit)</label>
+                    <label>Deadline sebelum shift selesai (menit)</label>
                     <input type="number" x-model="form.deadline_before_end_minutes" min="0" max="480">
+                    <div class="ts-hint" style="font-size:11px;color:#9ca3af;">
+                        Tugas harus done <strong>N menit sebelum</strong> shift berakhir. Misal 60 = 1 jam sebelum pulang.
+                    </div>
                 </div>
             </div>
 
@@ -1551,29 +1563,52 @@
                             <label>Mode jadwal</label>
                             <select x-model="massAssignForm.schedule_mode">
                                 <option value="fixed">⏰ Jam tetap</option>
-                                <option value="shift_relative">🔄 Ikut shift</option>
+                                <option value="shift_relative">🔄 Ikut shift waiter</option>
                             </select>
                         </div>
+                    </div>
+                    <div class="ts-mass-hint" x-show="massAssignForm.schedule_mode === 'fixed'" style="font-size:12px;color:#6b7280;margin:-4px 0 8px;padding:6px 10px;background:#f3f4f6;border-radius:6px;">
+                        💡 <strong>Jam tetap</strong>: semua waiter mulai bareng di jam yang sama (misal 09:00).
+                        Cocok kalau toko buka jam yang sama tiap hari.
+                    </div>
+                    <div class="ts-mass-hint" x-show="massAssignForm.schedule_mode === 'shift_relative'" style="font-size:12px;color:#6b7280;margin:-4px 0 8px;padding:6px 10px;background:#fef3c7;border-radius:6px;">
+                        💡 <strong>Ikut shift waiter</strong>: jam mulai task otomatis ngikutin jam masuk shift
+                        masing-masing waiter. Cocok kalau ada shift pagi/siang/sore beda jam.
                     </div>
                     <div class="ts-mass-row" x-show="massAssignForm.schedule_mode === 'fixed'">
                         <div class="ts-mass-field">
                             <label>Jam mulai</label>
                             <input type="time" x-model="massAssignForm.schedule_time">
+                            <div class="ts-mass-tiny" style="font-size:11px;color:#9ca3af;margin-top:2px;">Jam tugas muncul untuk waiter (HH:MM)</div>
                         </div>
                         <div class="ts-mass-field">
-                            <label>Batas (menit)</label>
+                            <label>Batas pengerjaan (menit)</label>
                             <input type="number" x-model="massAssignForm.time_limit_minutes" min="1">
+                            <div class="ts-mass-tiny" style="font-size:11px;color:#9ca3af;margin-top:2px;">Deadline = jam mulai + N menit. Lewat = overdue.</div>
                         </div>
                     </div>
                     <div class="ts-mass-row" x-show="massAssignForm.schedule_mode === 'shift_relative'">
                         <div class="ts-mass-field">
                             <label>Offset shift (menit)</label>
                             <input type="number" x-model="massAssignForm.shift_offset_minutes" min="0">
+                            <div class="ts-mass-tiny" style="font-size:11px;color:#9ca3af;margin-top:2px;">
+                                <strong>0</strong> = tugas muncul tepat saat shift mulai. <br>
+                                <strong>30</strong> = waiter punya 30 menit untuk siap-siap dulu, baru tugas muncul.
+                            </div>
                         </div>
                         <div class="ts-mass-field">
-                            <label>Deadline sebelum akhir (menit)</label>
+                            <label>Deadline sebelum shift selesai (menit)</label>
                             <input type="number" x-model="massAssignForm.deadline_before_end_minutes" min="0">
+                            <div class="ts-mass-tiny" style="font-size:11px;color:#9ca3af;margin-top:2px;">
+                                Tugas harus selesai <strong>N menit sebelum</strong> shift berakhir. Misal 60 = harus done 1 jam sebelum pulang.
+                            </div>
                         </div>
+                    </div>
+                    <div class="ts-mass-warn"
+                         x-show="massAssignForm.schedule_mode === 'fixed' && isScheduleAlreadyPassedToday()"
+                         style="font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #fbbf24;padding:8px 12px;border-radius:6px;margin-bottom:8px;">
+                        ⚠️ <strong>Jadwal sudah lewat hari ini.</strong> Task untuk hari ini akan dilewati
+                        otomatis (mencegah langsung overdue). Template tetap aktif — besok pagi akan generate normal.
                     </div>
                     <div class="ts-mass-field">
                         <label>Filter shift (opsional)</label>
@@ -1900,6 +1935,21 @@ function taskStudio() {
                 const w = this.waiters.find(x => x.id === id);
                 return w && roles.includes(w.role);
             });
+        },
+
+        // Cek: kalau user pilih schedule_time yang sudah lewat hari ini, kasih warning.
+        // Mirror logic backend yang akan skip generate task hari ini.
+        isScheduleAlreadyPassedToday() {
+            const f = this.massAssignForm;
+            if (f.schedule_mode !== 'fixed') return false;
+            if (!f.schedule_time || !/^\d{2}:\d{2}$/.test(f.schedule_time)) return false;
+            const today = new Date().toISOString().slice(0, 10);
+            if ((f.rolling_anchor_date || today) > today) return false;
+            const [hh, mm] = f.schedule_time.split(':').map(n => parseInt(n, 10));
+            const tlim = parseInt(f.time_limit_minutes) || 0;
+            const deadline = new Date();
+            deadline.setHours(hh, mm + tlim, 0, 0);
+            return deadline.getTime() <= Date.now();
         },
 
         // Preview distribusi 3 hari pertama
