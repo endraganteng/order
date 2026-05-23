@@ -1,0 +1,90 @@
+name: Deploy to VPS
+
+# Trigger:
+#   - Push ke main      → auto deploy ke production
+#   - Manual dispatch   → deploy on-demand (untuk hotfix tanpa push)
+#
+# Prerequisite (set di GitHub repo Settings → Secrets and variables → Actions):
+#   Secrets:
+#     SSH_HOST           IP atau hostname VPS Anda
+#     SSH_USER           SSH user (biasanya non-root, sudah di group `docker`)
+#     SSH_PORT           SSH port (default 22)
+#     SSH_PRIVATE_KEY    Private key SSH (paste full content)
+#
+#   (Opsional) Variables:
+#     DEPLOY_PATH        Path di VPS (default /var/www/order)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Hindari 2 deploy paralel ke server yang sama
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Jangan deploy kalau pipeline CI gagal — tunggu dulu
+    needs: []
+
+    steps:
+      - name: Wait for CI
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: PHPUnit
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            DEPLOY_PATH="${{ vars.DEPLOY_PATH || '/var/www/order' }}"
+            cd "$DEPLOY_PATH"
+
+            echo "▸ Pulling latest code..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "▸ Building & starting containers..."
+            docker compose pull --ignore-buildable || true
+            docker compose build app
+            docker compose up -d --remove-orphans
+
+            echo "▸ Waiting for app-init to complete..."
+            # app-init harus exit 0 sebelum app fully ready
+            timeout 120 sh -c 'until [ "$(docker inspect -f "{{.State.Status}}" order-app-init 2>/dev/null)" = "exited" ]; do sleep 2; done'
+
+            EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' order-app-init)
+            if [ "$EXIT_CODE" != "0" ]; then
+                echo "❌ app-init failed (exit $EXIT_CODE)"
+                docker logs order-app-init --tail 100
+                exit 1
+            fi
+
+            echo "▸ Cleaning up old images..."
+            docker image prune -f
+
+            echo "✅ Deploy complete"
+            docker compose ps
+
+      - name: Notify success
+        if: success()
+        run: echo "::notice::Deploy ke ${{ vars.DEPLOY_PATH || '/var/www/order' }} berhasil"
+
+      - name: Notify failure
+        if: failure()
+        run: echo "::error::Deploy gagal — cek logs di atas"

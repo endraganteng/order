@@ -1,0 +1,150 @@
+# Order app — production stack
+# 3 service: app (php-fpm), nginx (web), scheduler (cron)
+# Tergantung 2 service eksternal yang Anda jalankan di VPS:
+#   - traefik     (reverse proxy + Let's Encrypt) → network: web
+#   - mysql       (shared database)               → network: db
+#
+# Sebelum `docker compose up -d`, pastikan kedua network sudah ada:
+#   docker network create web
+#   docker network create db
+
+name: order
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: order-app:latest
+    container_name: order-app
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - app-storage:/var/www/html/storage
+      - bootstrap-cache:/var/www/html/bootstrap/cache
+      # Firebase credentials JSON di-mount dari host. Path host & container
+      # disesuaikan via env vars di .env (FIREBASE_CREDENTIALS_HOST_PATH etc).
+      - ${FIREBASE_CREDENTIALS_HOST_PATH:-./storage/firebase-credentials.json}:/var/www/html/storage/firebase-credentials.json:ro
+    networks:
+      - app-internal   # app ↔ nginx ↔ scheduler
+      - db             # app ↔ mysql shared
+    depends_on:
+      - app-init
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(0);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Sekali-jalan migrate + cache + storage:link saat startup.
+  # Pakai container terpisah supaya app container start clean tanpa side-effect.
+  app-init:
+    image: order-app:latest
+    container_name: order-app-init
+    restart: "no"
+    env_file: .env
+    command: ["/usr/local/bin/entrypoint.sh", "init"]
+    volumes:
+      - app-storage:/var/www/html/storage
+      - bootstrap-cache:/var/www/html/bootstrap/cache
+      - ${FIREBASE_CREDENTIALS_HOST_PATH:-./storage/firebase-credentials.json}:/var/www/html/storage/firebase-credentials.json:ro
+    networks:
+      - db
+    depends_on:
+      - app-build-check
+
+  # Stub service yang force `docker compose up` rebuild image kalau Dockerfile berubah.
+  # Tanpa ini, image stale bisa kepakai oleh app-init.
+  app-build-check:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: order-app:latest
+    container_name: order-app-build-check
+    command: ["true"]
+    restart: "no"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: order-nginx
+    restart: unless-stopped
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - app-storage:/var/www/html/storage:ro
+      # Vite build assets sudah di-bake ke image app, tapi nginx perlu serve dari
+      # public/. Mount volume bersama supaya nginx bisa baca asset langsung.
+      - public-assets:/var/www/html/public:ro
+    networks:
+      - app-internal
+      - web   # diakses dari Traefik
+    depends_on:
+      - app
+    labels:
+      # === Traefik routing labels ===
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.order-http.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.order-http.entrypoints=web"
+      - "traefik.http.routers.order-http.middlewares=order-redirect"
+      - "traefik.http.middlewares.order-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.order-redirect.redirectscheme.permanent=true"
+      # HTTPS
+      - "traefik.http.routers.order.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.order.entrypoints=websecure"
+      - "traefik.http.routers.order.tls=true"
+      - "traefik.http.routers.order.tls.certresolver=letsencrypt"
+      - "traefik.http.services.order.loadbalancer.server.port=80"
+      # Security headers (defense-in-depth)
+      - "traefik.http.middlewares.order-headers.headers.framedeny=true"
+      - "traefik.http.middlewares.order-headers.headers.contenttypenosniff=true"
+      - "traefik.http.middlewares.order-headers.headers.referrerpolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.order-headers.headers.stsseconds=31536000"
+      - "traefik.http.middlewares.order-headers.headers.stsincludesubdomains=true"
+      - "traefik.http.routers.order.middlewares=order-headers"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Laravel scheduler — jalankan `schedule:work` yang akan eksekusi task scheduling
+  # setiap menit (8 cron Anda di routes/console.php).
+  scheduler:
+    image: order-app:latest
+    container_name: order-scheduler
+    restart: unless-stopped
+    env_file: .env
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - app-storage:/var/www/html/storage
+      - bootstrap-cache:/var/www/html/bootstrap/cache
+      - ${FIREBASE_CREDENTIALS_HOST_PATH:-./storage/firebase-credentials.json}:/var/www/html/storage/firebase-credentials.json:ro
+    networks:
+      - db
+    depends_on:
+      app:
+        condition: service_started
+      app-init:
+        condition: service_completed_successfully
+
+volumes:
+  app-storage:
+    name: order_app_storage
+  bootstrap-cache:
+    name: order_bootstrap_cache
+  public-assets:
+    name: order_public_assets
+
+networks:
+  # Network internal untuk komunikasi app ↔ nginx ↔ scheduler
+  app-internal:
+    name: order_internal
+  # Network bridge ke Traefik (didaftar manual via `docker network create web`)
+  web:
+    name: web
+    external: true
+  # Network bridge ke MySQL shared (didaftar manual via `docker network create db`)
+  db:
+    name: db
+    external: true

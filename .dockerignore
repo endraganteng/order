@@ -1,0 +1,72 @@
+# Files yang TIDAK ikut ke Docker image build context.
+# Mengurangi build time + image size.
+
+# Git
+.git
+.gitignore
+.gitattributes
+.github
+
+# Dependencies (akan re-install di image)
+vendor/
+node_modules/
+
+# Local dev artifacts
+.env
+.env.*
+!.env.example
+.phpunit.result.cache
+.phpunit.cache/
+storage/logs/*
+!storage/logs/.gitkeep
+storage/framework/cache/*
+!storage/framework/cache/.gitkeep
+storage/framework/sessions/*
+!storage/framework/sessions/.gitkeep
+storage/framework/views/*
+!storage/framework/views/.gitkeep
+storage/framework/testing/*
+!storage/framework/testing/.gitkeep
+storage/app/public/*
+!storage/app/public/.gitkeep
+public/build/
+public/hot
+public/storage
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Tests (tidak dibutuhkan production)
+tests/
+phpunit.xml
+
+# Docs
+*.md
+!README.md
+
+# Build artifacts
+*.zip
+*.tar.gz
+*.log
+*.sqlite
+database.sqlite
+
+# Diagnostic / temp scripts
+_diag_*.php
+_cleanup_*.php
+wave*.png
+*.original.md
+
+# CI/CD
+.github/
+
+# WAMP/local-only
+order.zip
+composer-setup.php
+cacert.pem
+*.xlsx

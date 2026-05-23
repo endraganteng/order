@@ -1,0 +1,72 @@
+name: CI
+
+# Run tests pada setiap PR + push ke main.
+# Build Docker image juga di-test di sini supaya kita yakin Dockerfile-nya valid
+# sebelum pipeline deploy nanti pull image yang sama.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: PHPUnit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, gd, zip, bcmath, pdo_sqlite, exif
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install composer deps
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Copy .env
+        run: cp .env.example .env && php artisan key:generate
+
+      - name: Run unit tests
+        run: vendor/bin/phpunit --testsuite Unit
+
+  docker-build:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: order-app:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image works (smoke test)
+        run: |
+          docker run --rm order-app:ci php --version
+          docker run --rm order-app:ci php artisan --version
