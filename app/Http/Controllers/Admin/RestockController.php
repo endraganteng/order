@@ -294,6 +294,106 @@ class RestockController extends Controller
     }
 
     /**
+     * Get live stock summary untuk satu produk (untuk modal manual PO).
+     */
+    public function productStock(string $productId)
+    {
+        $product = $this->firebase->getProductById($productId);
+        if (! $product) {
+            return response()->json(['success' => false, 'message' => 'Produk tidak ditemukan.'], 404);
+        }
+
+        $summary = $this->firebase->getProductStockSummary($productId);
+
+        return response()->json([
+            'success' => true,
+            'product' => [
+                'id' => $productId,
+                'name' => $product['name'] ?? '',
+                'unit' => $product['unit'] ?? 'pcs',
+                'standard_qty' => (int) ($product['standard_qty'] ?? 0),
+                'category_id' => $product['category_id'] ?? null,
+            ],
+            'stock' => $summary,
+        ]);
+    }
+
+    // ===== PURCHASE ORDER DRAFTS =====
+
+    public function listDrafts(Request $request)
+    {
+        $createdBy = (string) session('admin_id', '');
+        $drafts = $this->firebase->getPurchaseOrderDrafts($createdBy ?: null);
+
+        return response()->json([
+            'success' => true,
+            'drafts' => array_map(fn ($d) => [
+                'id' => $d['id'],
+                'supplier_name' => $d['supplier_name'] ?? '',
+                'item_count' => is_array($d['items'] ?? null) ? count($d['items']) : 0,
+                'updated_at' => isset($d['updated_at']) ? date('Y-m-d H:i', (int) $d['updated_at']) : '',
+                'created_by_name' => $d['created_by_name'] ?? '',
+                'notes' => $d['notes'] ?? '',
+            ], $drafts),
+        ]);
+    }
+
+    public function getDraft(string $draftId)
+    {
+        $draft = $this->firebase->getPurchaseOrderDraft($draftId);
+        if (! $draft) {
+            return response()->json(['success' => false, 'message' => 'Draft tidak ditemukan.'], 404);
+        }
+
+        return response()->json(['success' => true, 'draft' => $draft]);
+    }
+
+    public function saveDraft(Request $request)
+    {
+        $data = $request->validate([
+            'draft_id' => 'nullable|string|max:120',
+            'supplier_id' => 'nullable|string|max:60',
+            'supplier_name' => 'nullable|string|max:120',
+            'rack_id' => 'nullable|string|max:60',
+            'notes' => 'nullable|string|max:500',
+            'items' => 'nullable|array',
+            'items.*.product_id' => 'required_with:items|string|max:60',
+            'items.*.product_name' => 'nullable|string|max:200',
+            'items.*.qty' => 'required_with:items|integer|min:1',
+            'items.*.note' => 'nullable|string|max:200',
+        ]);
+
+        $createdBy = (string) session('admin_id', 'admin');
+        $createdByName = (string) session('admin_name', 'Admin');
+
+        $draftId = $this->firebase->savePurchaseOrderDraft([
+            'supplier_id' => $data['supplier_id'] ?? null,
+            'supplier_name' => $data['supplier_name'] ?? '',
+            'rack_id' => $data['rack_id'] ?? '',
+            'notes' => $data['notes'] ?? '',
+            'items' => $data['items'] ?? [],
+            'created_by' => $createdBy,
+            'created_by_name' => $createdByName,
+        ], $data['draft_id'] ?? null);
+
+        return response()->json([
+            'success' => true,
+            'draft_id' => $draftId,
+            'message' => 'Draft tersimpan.',
+        ]);
+    }
+
+    public function deleteDraft(string $draftId)
+    {
+        $ok = $this->firebase->deletePurchaseOrderDraft($draftId);
+
+        return response()->json([
+            'success' => $ok,
+            'message' => $ok ? 'Draft dihapus.' : 'Gagal hapus draft.',
+        ], $ok ? 200 : 400);
+    }
+
+    /**
      * List all Purchase Orders
      */
     public function orders(Request $request)

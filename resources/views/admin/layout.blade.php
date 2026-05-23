@@ -1285,7 +1285,7 @@
                     $grpRingkasan  = request()->routeIs(['admin.dashboard','admin.current_order.*','admin.test_order']);
                     $grpTim        = request()->routeIs(['admin.waiters.*','admin.racks.*','admin.products.*','admin.product_categories.*','admin.shifts.*','admin.schedules.*']);
                     $grpOps        = request()->routeIs(['admin.tasks.live','admin.tasks.index','admin.tasks.rack.*','admin.restock.*','admin.suppliers.*','admin.attendance.*','admin.cleanup','admin.reconciliation.*']);
-                    $grpBonus      = request()->routeIs(['admin.bonus.config','admin.bonus.daily_scoring','admin.bonus.penalties','admin.bonus.sales_targets','admin.bonus.monthly_summary','admin.bonus.leaderboard']);
+                    $grpBonus      = request()->routeIs(['admin.bonus.config','admin.bonus.daily_scoring','admin.bonus.penalties','admin.bonus.manual_bonus','admin.bonus.sales_targets','admin.bonus.monthly_summary','admin.bonus.leaderboard']);
                     $grpPayroll    = request()->routeIs(['admin.payroll.index','admin.payroll.show','admin.payroll.withdrawals']);
                     $grpFinance    = request()->routeIs('admin.finance.*') || $grpPayroll;
                     $grpSistem     = request()->routeIs(['admin.audit_log.*','admin.settings']);
@@ -1343,6 +1343,7 @@
                         <a class="{{ request()->routeIs('admin.bonus.config') ? 'is-active' : '' }}" href="{{ route('admin.bonus.config') }}">⚙️ Konfigurasi</a>
                         <a class="{{ request()->routeIs('admin.bonus.daily_scoring') ? 'is-active' : '' }}" href="{{ route('admin.bonus.daily_scoring') }}">📊 Penilaian Harian</a>
                         <a class="{{ request()->routeIs('admin.bonus.penalties') ? 'is-active' : '' }}" href="{{ route('admin.bonus.penalties') }}">⚠️ Penalti</a>
+                        <a class="{{ request()->routeIs('admin.bonus.manual_bonus') ? 'is-active' : '' }}" href="{{ route('admin.bonus.manual_bonus') }}">🎁 Bonus Manual</a>
                         <div class="dropdown-divider"></div>
                         <a class="{{ request()->routeIs('admin.bonus.sales_targets') ? 'is-active' : '' }}" href="{{ route('admin.bonus.sales_targets') }}">💰 Target Penjualan</a>
                         <a class="{{ request()->routeIs('admin.bonus.monthly_summary') ? 'is-active' : '' }}" href="{{ route('admin.bonus.monthly_summary') }}">📋 Rekap Bulanan</a>

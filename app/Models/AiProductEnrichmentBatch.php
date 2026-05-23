@@ -26,6 +26,9 @@ class AiProductEnrichmentBatch extends Model
         'started_at',
         'finished_at',
         'heartbeat_at',
+        'log_file',
+        'spawn_error',
+        'artisan_command',
     ];
 
     protected function casts(): array

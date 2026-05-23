@@ -380,6 +380,9 @@ class AiProductEnrichmentController extends Controller
                 'is_stale' => $stale,
                 'summary' => $batch->summary,
                 'is_terminal' => in_array($batch->status, ['completed', 'failed', 'cancelled'], true),
+                'log_file' => $batch->log_file,
+                'spawn_error' => $batch->spawn_error,
+                'has_log' => $batch->log_file && is_readable($batch->log_file),
             ],
         ]);
     }
@@ -416,6 +419,45 @@ class AiProductEnrichmentController extends Controller
         ]);
 
         return response()->json(['success' => true, 'batches' => $batches]);
+    }
+
+    /**
+     * GET: fetch isi log file batch (untuk debug).
+     */
+    public function batchLog(int $id): JsonResponse
+    {
+        $batch = AiProductEnrichmentBatch::find($id);
+        if (! $batch) {
+            return response()->json(['success' => false, 'message' => 'Batch tidak ditemukan.'], 404);
+        }
+
+        $logFile = $batch->log_file;
+        $exists = $logFile && is_readable($logFile);
+        $content = '';
+        $size = 0;
+        if ($exists) {
+            $size = filesize($logFile);
+            // Tail max 200KB supaya tidak overload UI
+            $maxRead = min($size, 200 * 1024);
+            $f = @fopen($logFile, 'rb');
+            if ($f) {
+                fseek($f, -$maxRead, SEEK_END);
+                $content = (string) fread($f, $maxRead);
+                fclose($f);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'batch_id' => $batch->id,
+            'log_file' => $logFile,
+            'exists' => $exists,
+            'size' => $size,
+            'truncated' => $size > 200 * 1024,
+            'content' => $content,
+            'spawn_error' => $batch->spawn_error,
+            'artisan_command' => $batch->artisan_command,
+        ]);
     }
 
     protected function adminIdentifier(): string

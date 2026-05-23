@@ -157,6 +157,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('restock/create-po', [RestockController::class, 'createPO'])->name('restock.create_po');
         Route::post('restock/create-batch-po', [RestockController::class, 'createBatchPO'])->name('restock.create_batch_po');
         Route::post('restock/create-manual-po', [RestockController::class, 'createManualPO'])->name('restock.create_manual_po');
+
+        // Manual PO support endpoints
+        Route::get('restock/product-stock/{id}', [RestockController::class, 'productStock'])
+            ->where('id', '[A-Za-z0-9_\-]+')->name('restock.product_stock');
+        Route::get('restock/drafts', [RestockController::class, 'listDrafts'])->name('restock.drafts.list');
+        Route::get('restock/drafts/{id}', [RestockController::class, 'getDraft'])
+            ->where('id', '[A-Za-z0-9_\-]+')->name('restock.drafts.get');
+        Route::post('restock/drafts', [RestockController::class, 'saveDraft'])
+            ->middleware('throttle:60,1')->name('restock.drafts.save');
+        Route::delete('restock/drafts/{id}', [RestockController::class, 'deleteDraft'])
+            ->where('id', '[A-Za-z0-9_\-]+')->name('restock.drafts.delete');
         Route::get('restock/orders', [RestockController::class, 'orders'])->name('restock.orders');
         Route::get('restock/orders/{id}', [RestockController::class, 'orderDetail'])->name('restock.order_detail');
         Route::delete('restock/orders/{id}', [RestockController::class, 'cancelOrder'])->name('restock.cancel_order');
@@ -167,6 +178,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('suppliers/create', [SupplierController::class, 'create'])->name('suppliers.create');
         Route::post('suppliers', [SupplierController::class, 'store'])->name('suppliers.store');
         Route::post('suppliers/ajax-store', [SupplierController::class, 'storeAjax'])->name('suppliers.ajax_store');
+        Route::get('suppliers/search', [SupplierController::class, 'searchAjax'])->name('suppliers.search');
         Route::get('suppliers/{id}/edit', [SupplierController::class, 'edit'])->name('suppliers.edit');
         Route::put('suppliers/{id}', [SupplierController::class, 'update'])->name('suppliers.update');
         Route::delete('suppliers/{id}', [SupplierController::class, 'destroy'])->name('suppliers.destroy');
@@ -197,6 +209,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('bonus/penalties', [BonusController::class, 'penalties'])->name('bonus.penalties');
         Route::post('bonus/penalties', [BonusController::class, 'storePenalty'])->name('bonus.penalties.store');
         Route::delete('bonus/penalties/{id}', [BonusController::class, 'destroyPenalty'])->name('bonus.penalties.destroy');
+
+        // Manual Bonus Points (supervisor bulk adjustment)
+        Route::get('bonus/manual-bonus', [BonusController::class, 'manualBonus'])->name('bonus.manual_bonus');
+        Route::post('bonus/manual-bonus', [BonusController::class, 'storeManualBonus'])
+            ->middleware('throttle:30,1')->name('bonus.manual_bonus.store');
+        Route::delete('bonus/manual-bonus/{id}', [BonusController::class, 'destroyManualBonus'])->name('bonus.manual_bonus.destroy');
         Route::get('bonus/sales-targets', [BonusController::class, 'salesTargets'])->name('bonus.sales_targets');
         Route::post('bonus/sales-targets', [BonusController::class, 'storeSalesTarget'])->name('bonus.sales_targets.store');
         Route::post('bonus/sales-record', [BonusController::class, 'recordSales'])->name('bonus.sales_record');
@@ -334,6 +352,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('batch/list', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchList'])->name('batch.list');
             Route::get('batch/{id}/status', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchStatus'])
                 ->whereNumber('id')->name('batch.status');
+            Route::get('batch/{id}/log', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchLog'])
+                ->whereNumber('id')->name('batch.log');
             Route::post('batch/{id}/cancel', [\App\Http\Controllers\Admin\AiProductEnrichmentController::class, 'batchCancel'])
                 ->whereNumber('id')->name('batch.cancel');
 

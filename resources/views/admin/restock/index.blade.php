@@ -94,16 +94,87 @@
 </div>
 
 <div id="modal-manual-po" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;">
-    <div style="background:white;border-radius:var(--radius-md);width:100%;max-width:760px;padding:20px;max-height:90vh;overflow-y:auto;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;">Buat PO Manual</h3><button type="button" class="btn-close-manual-po" style="background:none;border:none;font-size:20px;">&times;</button></div>
+    <div style="background:white;border-radius:var(--radius-md);width:100%;max-width:880px;padding:20px;max-height:92vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap;">
+            <h3 style="margin:0;">📦 Buat PO Manual <span id="manual-po-draft-badge" style="display:none;font-size:11px;background:#fef3c7;color:#a16207;padding:2px 8px;border-radius:4px;font-weight:normal;margin-left:6px;">Draft #<span id="manual-po-draft-id-label">-</span></span></h3>
+            <div style="display:flex;gap:8px;">
+                <button type="button" class="btn" id="btn-show-drafts" style="background:#f1f5f9;color:#334155;font-size:12px;padding:6px 10px;">📋 Daftar Draft</button>
+                <button type="button" class="btn-close-manual-po" style="background:none;border:none;font-size:22px;cursor:pointer;">&times;</button>
+            </div>
+        </div>
+
         <form id="form-manual-po">
-            <div style="margin-bottom:10px;"><label>Nama Supplier *</label><input id="manual-po-supplier" required maxlength="120" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></div>
-            <div style="margin-bottom:10px;"><label>ID Rak (opsional)</label><input id="manual-po-rack" maxlength="60" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></div>
-            <table style="width:100%;border-collapse:collapse;"><thead><tr><th style="border:1px solid #e2e8f0;padding:8px;text-align:left;">Product ID</th><th style="border:1px solid #e2e8f0;padding:8px;text-align:left;">Qty</th><th style="border:1px solid #e2e8f0;padding:8px;text-align:left;">Note</th><th style="border:1px solid #e2e8f0;padding:8px;">Aksi</th></tr></thead><tbody id="manual-po-items"></tbody></table>
-            <button type="button" class="btn" id="btn-add-manual-item" style="margin-top:10px;background:#e2e8f0;color:#334155;">+ Tambah produk</button>
-            <div style="margin-top:10px;"><label>Catatan PO</label><textarea id="manual-po-notes" maxlength="500" rows="3" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></textarea></div>
-            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:12px;"><button type="button" class="btn btn-close-manual-po" style="background:#e2e8f0;color:#475569;">Batal</button><button type="submit" class="btn" id="btn-submit-manual-po" style="background:var(--color-primary);color:white;">Simpan PO Manual</button></div>
+            <input type="hidden" id="manual-po-draft-id">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+                <div style="position:relative;">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Nama Supplier *</label>
+                    <input type="hidden" id="manual-po-supplier-id">
+                    <input id="manual-po-supplier" required maxlength="120" placeholder="Ketik nama supplier..." autocomplete="off" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;">
+                    <div id="manual-po-supplier-results" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #cbd5e1;border-radius:4px;max-height:240px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.08);margin-top:2px;"></div>
+                    <div style="margin-top:4px;font-size:11px;">
+                        <span id="manual-po-supplier-status" style="color:#94a3b8;">Pilih dari daftar atau ketik nama baru</span>
+                        <button type="button" id="btn-add-new-supplier" style="display:none;background:none;border:none;color:#0284c7;text-decoration:underline;cursor:pointer;font-size:11px;padding:0;">+ Tambah supplier baru</button>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Rak default <span style="color:#94a3b8;font-weight:normal;">(opsional, waiter bisa override saat terima)</span></label>
+                    <input id="manual-po-rack" maxlength="60" placeholder="ID rak (kosongkan kalau waiter pilih sendiri)" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;">
+                </div>
+            </div>
+
+            <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-end;">
+                <label style="font-size:12px;font-weight:600;">Item Produk</label>
+                <div style="font-size:12px;color:#64748b;">
+                    Total Qty: <strong id="manual-po-total-qty" style="color:#0f172a;">0</strong>
+                    · Item: <strong id="manual-po-item-count" style="color:#0f172a;">0</strong>
+                </div>
+            </div>
+
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead>
+                    <tr style="background:#f8fafc;">
+                        <th style="border:1px solid #e2e8f0;padding:8px;text-align:left;width:38%;">Produk</th>
+                        <th style="border:1px solid #e2e8f0;padding:8px;text-align:left;width:12%;">Qty</th>
+                        <th style="border:1px solid #e2e8f0;padding:8px;text-align:left;width:12%;">Satuan</th>
+                        <th style="border:1px solid #e2e8f0;padding:8px;text-align:left;width:12%;">Stok Saat Ini</th>
+                        <th style="border:1px solid #e2e8f0;padding:8px;text-align:left;width:18%;">Note</th>
+                        <th style="border:1px solid #e2e8f0;padding:8px;text-align:center;width:8%;">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="manual-po-items"></tbody>
+            </table>
+
+            <button type="button" class="btn" id="btn-add-manual-item" style="margin-top:10px;background:#e2e8f0;color:#334155;font-size:12px;">+ Tambah produk</button>
+
+            <div style="margin-top:12px;">
+                <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Catatan PO</label>
+                <textarea id="manual-po-notes" maxlength="500" rows="2" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:4px;"></textarea>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap;">
+                <div style="font-size:11px;color:#64748b;">
+                    💡 Auto-save lokal aktif. Tutup tab tidak menghilangkan input.
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-close-manual-po" style="background:#e2e8f0;color:#475569;">Batal</button>
+                    <button type="button" id="btn-save-draft-manual-po" class="btn" style="background:#fef3c7;color:#a16207;">💾 Simpan Draft</button>
+                    <button type="submit" class="btn" id="btn-submit-manual-po" style="background:var(--color-primary);color:white;">✓ Simpan PO Manual</button>
+                </div>
+            </div>
         </form>
+    </div>
+</div>
+
+{{-- Modal: Drafts list --}}
+<div id="modal-drafts-list" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1001;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:var(--radius-md);width:100%;max-width:560px;padding:20px;max-height:80vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <h3 style="margin:0;">📋 Daftar Draft PO Manual</h3>
+            <button type="button" id="btn-close-drafts" style="background:none;border:none;font-size:22px;cursor:pointer;">&times;</button>
+        </div>
+        <div id="drafts-list-container" style="font-size:13px;">
+            <div style="text-align:center;padding:30px;color:#94a3b8;">Loading...</div>
+        </div>
     </div>
 </div>
 
@@ -846,18 +917,493 @@
         return div.innerHTML;
     }
 
-    function addManualItemRow() {
+    function addManualItemRow(prefill) {
         const tb = document.getElementById('manual-po-items');
         if (!tb) return;
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td style="border:1px solid #e2e8f0;padding:8px;"><input class="manual-product-id" required style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td><td style="border:1px solid #e2e8f0;padding:8px;"><input type="number" min="1" value="1" class="manual-product-qty" required style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td><td style="border:1px solid #e2e8f0;padding:8px;"><input class="manual-product-note" maxlength="200" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td><td style="border:1px solid #e2e8f0;padding:8px;text-align:center;"><button type="button" class="rm-manual" style="background:none;border:none;color:#ef4444;">✕</button></td>';
-        tr.querySelector('.rm-manual').addEventListener('click', function() { tr.remove(); if (!tb.querySelector('tr')) addManualItemRow(); });
+        tr.className = 'manual-row';
+        tr.dataset.productId = prefill && prefill.product_id ? prefill.product_id : '';
+        tr.innerHTML = ''
+          + '<td style="border:1px solid #e2e8f0;padding:6px;position:relative;">'
+          +   '<input type="hidden" class="manual-product-id" value="' + (prefill && prefill.product_id ? escapeAttr(prefill.product_id) : '') + '">'
+          +   '<input class="manual-product-search" placeholder="Ketik nama produk..." autocomplete="off" required'
+          +     ' style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:13px;"'
+          +     ' value="' + (prefill && prefill.product_name ? escapeAttr(prefill.product_name) : '') + '">'
+          +   '<div class="manual-search-results" style="display:none;position:absolute;left:6px;right:6px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;max-height:240px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.08);"></div>'
+          + '</td>'
+          + '<td style="border:1px solid #e2e8f0;padding:6px;"><input type="number" min="1" value="' + (prefill && prefill.qty ? prefill.qty : 1) + '" class="manual-product-qty" required style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td>'
+          + '<td style="border:1px solid #e2e8f0;padding:6px;color:#64748b;font-size:12px;text-align:center;" class="manual-product-unit">-</td>'
+          + '<td style="border:1px solid #e2e8f0;padding:6px;font-size:12px;text-align:center;" class="manual-product-stock">-</td>'
+          + '<td style="border:1px solid #e2e8f0;padding:6px;"><input class="manual-product-note" maxlength="200" value="' + (prefill && prefill.note ? escapeAttr(prefill.note) : '') + '" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;"></td>'
+          + '<td style="border:1px solid #e2e8f0;padding:6px;text-align:center;"><button type="button" class="rm-manual" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;">✕</button></td>';
+        tr.querySelector('.rm-manual').addEventListener('click', function() {
+            tr.remove();
+            if (!tb.querySelector('tr')) addManualItemRow();
+            updateManualTotals();
+            scheduleAutoSave();
+        });
+        const searchInput = tr.querySelector('.manual-product-search');
+        searchInput.addEventListener('input', function() { handleProductSearch(tr, this.value); });
+        searchInput.addEventListener('blur', function() {
+            setTimeout(function() {
+                tr.querySelector('.manual-search-results').style.display = 'none';
+            }, 200);
+        });
+        searchInput.addEventListener('focus', function() {
+            const box = tr.querySelector('.manual-search-results');
+            if (box.children.length > 0) box.style.display = 'block';
+        });
+        tr.querySelector('.manual-product-qty').addEventListener('input', function() {
+            updateManualTotals();
+            scheduleAutoSave();
+        });
+        tr.querySelector('.manual-product-note').addEventListener('input', scheduleAutoSave);
         tb.appendChild(tr);
+
+        // Kalau ada prefill product_id, langsung fetch unit + stock
+        if (prefill && prefill.product_id) {
+            fetchProductStock(tr, prefill.product_id);
+        }
     }
 
-    if (manualPoBtn) manualPoBtn.addEventListener('click', function() { manualPoModal.style.display = 'flex'; document.getElementById('manual-po-items').innerHTML = ''; addManualItemRow(); });
-    document.querySelectorAll('.btn-close-manual-po').forEach(function(btn) { btn.addEventListener('click', function() { manualPoModal.style.display = 'none'; }); });
-    document.getElementById('btn-add-manual-item').addEventListener('click', addManualItemRow);
+    function escapeAttr(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+
+    let searchTimers = new WeakMap();
+    function handleProductSearch(tr, keyword) {
+        const idInput = tr.querySelector('.manual-product-id');
+        idInput.value = ''; // reset id sampai user pilih
+        tr.querySelector('.manual-product-unit').textContent = '-';
+        tr.querySelector('.manual-product-stock').textContent = '-';
+
+        const existingTimer = searchTimers.get(tr);
+        if (existingTimer) clearTimeout(existingTimer);
+
+        if (!keyword || keyword.trim().length < 2) {
+            tr.querySelector('.manual-search-results').style.display = 'none';
+            return;
+        }
+
+        const timer = setTimeout(function() {
+            fetch('{{ route("admin.products.search") }}?search=' + encodeURIComponent(keyword) + '&per_page=15', {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) { renderSearchResults(tr, data.products || []); })
+            .catch(function() { /* swallow */ });
+        }, 250);
+        searchTimers.set(tr, timer);
+    }
+
+    function renderSearchResults(tr, products) {
+        const box = tr.querySelector('.manual-search-results');
+        if (products.length === 0) {
+            box.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;font-size:12px;">Tidak ada produk yang cocok.</div>';
+        } else {
+            box.innerHTML = products.map(function(p) {
+                return '<div class="search-result-item" data-id="' + escapeAttr(p.id) + '" data-name="' + escapeAttr(p.name) + '" data-unit="' + escapeAttr(p.unit || 'pcs') + '" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;">'
+                  + '<div style="font-weight:600;font-size:13px;">' + escapeAttr(p.name) + '</div>'
+                  + '<div style="font-size:11px;color:#64748b;">' + escapeAttr(p.category_name || '-') + ' · satuan: ' + escapeAttr(p.unit || 'pcs') + ' · standar: ' + (p.standard_qty || 0) + '</div>'
+                  + '</div>';
+            }).join('');
+            box.querySelectorAll('.search-result-item').forEach(function(item) {
+                item.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    selectProduct(tr, this.dataset.id, this.dataset.name, this.dataset.unit);
+                });
+                item.addEventListener('mouseover', function() { this.style.background = '#f8fafc'; });
+                item.addEventListener('mouseout', function() { this.style.background = ''; });
+            });
+        }
+        box.style.display = 'block';
+    }
+
+    function selectProduct(tr, productId, productName, unit) {
+        tr.querySelector('.manual-product-id').value = productId;
+        tr.querySelector('.manual-product-search').value = productName;
+        tr.querySelector('.manual-product-unit').textContent = unit || 'pcs';
+        tr.querySelector('.manual-search-results').style.display = 'none';
+        tr.dataset.productId = productId;
+        fetchProductStock(tr, productId);
+        scheduleAutoSave();
+    }
+
+    function fetchProductStock(tr, productId) {
+        const stockCell = tr.querySelector('.manual-product-stock');
+        stockCell.innerHTML = '<span style="color:#94a3b8;">⏳</span>';
+        fetch('{{ url("admin/restock/product-stock") }}/' + encodeURIComponent(productId), {
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                stockCell.textContent = '?';
+                return;
+            }
+            // Tampilkan total + breakdown gudang
+            const totalAll = data.stock.total_all;
+            const totalStorage = data.stock.total_storage;
+            const totalDisplay = data.stock.total_display;
+            const tooltip = data.stock.by_rack.map(function(r) {
+                return r.rack_name + ' (' + r.rack_type + '): ' + r.current_qty;
+            }).join('\n') || '(belum ada di rak manapun)';
+            const color = totalAll === 0 ? '#dc2626' : (totalAll < 5 ? '#d97706' : '#16a34a');
+            stockCell.innerHTML = '<span title="' + escapeAttr(tooltip) + '" style="color:' + color + ';font-weight:600;cursor:help;">'
+              + totalAll + ' ' + (data.product.unit || 'pcs')
+              + '</span>'
+              + (totalStorage > 0 || totalDisplay > 0 ? '<div style="font-size:10px;color:#94a3b8;">G:' + totalStorage + ' D:' + totalDisplay + '</div>' : '');
+            // Update unit kalau belum ada
+            if (tr.querySelector('.manual-product-unit').textContent === '-') {
+                tr.querySelector('.manual-product-unit').textContent = data.product.unit || 'pcs';
+            }
+        })
+        .catch(function() { stockCell.textContent = '?'; });
+    }
+
+    function updateManualTotals() {
+        const rows = document.querySelectorAll('#manual-po-items tr');
+        let totalQty = 0;
+        let count = 0;
+        rows.forEach(function(tr) {
+            const qty = parseInt(tr.querySelector('.manual-product-qty').value || '0', 10);
+            const id = tr.querySelector('.manual-product-id').value;
+            if (id && qty > 0) {
+                totalQty += qty;
+                count++;
+            }
+        });
+        document.getElementById('manual-po-total-qty').textContent = totalQty;
+        document.getElementById('manual-po-item-count').textContent = count;
+    }
+
+    // === DRAFT AUTOSAVE (localStorage + server) ===
+    const DRAFT_LOCAL_KEY = 'manual_po_draft_local';
+    const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+    let autoSaveTimer = null;
+
+    function collectDraftPayload() {
+        const items = [];
+        document.querySelectorAll('#manual-po-items tr').forEach(function(tr) {
+            const product_id = tr.querySelector('.manual-product-id').value.trim();
+            const product_name = tr.querySelector('.manual-product-search').value.trim();
+            const qty = parseInt(tr.querySelector('.manual-product-qty').value || '0', 10);
+            const note = tr.querySelector('.manual-product-note').value.trim();
+            if (product_id && qty > 0) items.push({ product_id: product_id, product_name: product_name, qty: qty, note: note });
+        });
+        return {
+            supplier_id: document.getElementById('manual-po-supplier-id').value.trim(),
+            supplier_name: document.getElementById('manual-po-supplier').value.trim(),
+            rack_id: document.getElementById('manual-po-rack').value.trim(),
+            notes: document.getElementById('manual-po-notes').value.trim(),
+            items: items
+        };
+    }
+
+    function saveDraftLocal() {
+        const payload = collectDraftPayload();
+        const wrapper = { saved_at: Date.now(), data: payload };
+        try { localStorage.setItem(DRAFT_LOCAL_KEY, JSON.stringify(wrapper)); } catch (e) {}
+    }
+
+    function loadDraftLocal() {
+        try {
+            const raw = localStorage.getItem(DRAFT_LOCAL_KEY);
+            if (!raw) return null;
+            const wrapper = JSON.parse(raw);
+            if (Date.now() - wrapper.saved_at > DRAFT_TTL_MS) {
+                localStorage.removeItem(DRAFT_LOCAL_KEY);
+                return null;
+            }
+            return wrapper.data;
+        } catch (e) { return null; }
+    }
+
+    function clearDraftLocal() { try { localStorage.removeItem(DRAFT_LOCAL_KEY); } catch (e) {} }
+
+    function scheduleAutoSave() {
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(saveDraftLocal, 500);
+    }
+
+    function loadDraftDataIntoModal(data, draftId) {
+        document.getElementById('manual-po-supplier').value = data.supplier_name || '';
+        document.getElementById('manual-po-supplier-id').value = data.supplier_id || '';
+        if (data.supplier_id) {
+            supplierStatus.style.color = '#16a34a';
+            supplierStatus.textContent = '✓ Supplier dari draft';
+        } else {
+            supplierStatus.style.color = '#94a3b8';
+            supplierStatus.textContent = 'Pilih dari daftar atau ketik nama baru';
+        }
+        btnAddNewSupplier.style.display = 'none';
+        document.getElementById('manual-po-rack').value = data.rack_id || '';
+        document.getElementById('manual-po-notes').value = data.notes || '';
+        document.getElementById('manual-po-items').innerHTML = '';
+        if (data.items && data.items.length) {
+            data.items.forEach(function(item) { addManualItemRow(item); });
+        } else {
+            addManualItemRow();
+        }
+        if (draftId) {
+            document.getElementById('manual-po-draft-id').value = draftId;
+            document.getElementById('manual-po-draft-id-label').textContent = draftId.substring(0, 8);
+            document.getElementById('manual-po-draft-badge').style.display = '';
+        } else {
+            document.getElementById('manual-po-draft-id').value = '';
+            document.getElementById('manual-po-draft-badge').style.display = 'none';
+        }
+        updateManualTotals();
+    }
+
+    function resetManualModal() {
+        document.getElementById('manual-po-supplier').value = '';
+        document.getElementById('manual-po-supplier-id').value = '';
+        supplierStatus.style.color = '#94a3b8';
+        supplierStatus.textContent = 'Pilih dari daftar atau ketik nama baru';
+        btnAddNewSupplier.style.display = 'none';
+        document.getElementById('manual-po-rack').value = '';
+        document.getElementById('manual-po-notes').value = '';
+        document.getElementById('manual-po-items').innerHTML = '';
+        document.getElementById('manual-po-draft-id').value = '';
+        document.getElementById('manual-po-draft-badge').style.display = 'none';
+        addManualItemRow();
+        updateManualTotals();
+    }
+
+    if (manualPoBtn) manualPoBtn.addEventListener('click', function() {
+        manualPoModal.style.display = 'flex';
+        const local = loadDraftLocal();
+        if (local && (local.items.length > 0 || local.supplier_name)) {
+            if (confirm('Ada draft tersimpan dari sesi sebelumnya. Lanjutkan draft?')) {
+                loadDraftDataIntoModal(local, null);
+                return;
+            } else {
+                clearDraftLocal();
+            }
+        }
+        resetManualModal();
+    });
+
+    document.querySelectorAll('.btn-close-manual-po').forEach(function(btn) {
+        btn.addEventListener('click', function() { manualPoModal.style.display = 'none'; });
+    });
+    document.getElementById('btn-add-manual-item').addEventListener('click', function() {
+        addManualItemRow();
+        updateManualTotals();
+    });
+
+    // === DRAFT SAVE BUTTON ===
+    document.getElementById('btn-save-draft-manual-po').addEventListener('click', function() {
+        const btn = this;
+        const payload = collectDraftPayload();
+        if (!payload.supplier_name && payload.items.length === 0) {
+            alert('Tidak ada yang bisa disimpan. Isi minimal supplier atau 1 produk.');
+            return;
+        }
+        payload.draft_id = document.getElementById('manual-po-draft-id').value || null;
+        btn.disabled = true; btn.textContent = '⏳ Menyimpan...';
+        fetch('{{ route("admin.restock.drafts.save") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            btn.disabled = false; btn.textContent = '💾 Simpan Draft';
+            if (data.success) {
+                document.getElementById('manual-po-draft-id').value = data.draft_id;
+                document.getElementById('manual-po-draft-id-label').textContent = data.draft_id.substring(0, 8);
+                document.getElementById('manual-po-draft-badge').style.display = '';
+                clearDraftLocal();
+                alert('✅ Draft tersimpan ke server.');
+            } else {
+                alert('❌ ' + (data.message || 'Gagal simpan draft'));
+            }
+        })
+        .catch(function() { btn.disabled = false; btn.textContent = '💾 Simpan Draft'; alert('❌ Error koneksi'); });
+    });
+
+    // === DRAFTS LIST MODAL ===
+    document.getElementById('btn-show-drafts').addEventListener('click', function() {
+        const modal = document.getElementById('modal-drafts-list');
+        modal.style.display = 'flex';
+        const container = document.getElementById('drafts-list-container');
+        container.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;">Loading...</div>';
+        fetch('{{ route("admin.restock.drafts.list") }}', { headers: { 'Accept': 'application/json' } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success || data.drafts.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;">Belum ada draft tersimpan.</div>';
+                return;
+            }
+            container.innerHTML = data.drafts.map(function(d) {
+                return '<div class="draft-card" style="padding:12px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:8px;">'
+                  + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+                  +   '<div style="flex:1;min-width:0;">'
+                  +     '<div style="font-weight:600;">' + escapeAttr(d.supplier_name || '(tanpa supplier)') + '</div>'
+                  +     '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + d.item_count + ' item · update ' + escapeAttr(d.updated_at) + '</div>'
+                  +     (d.notes ? '<div style="font-size:11px;color:#64748b;margin-top:4px;">📝 ' + escapeAttr(d.notes) + '</div>' : '')
+                  +   '</div>'
+                  +   '<div style="display:flex;gap:6px;flex-shrink:0;">'
+                  +     '<button type="button" class="draft-load" data-id="' + escapeAttr(d.id) + '" style="background:#0284c7;color:#fff;border:none;padding:6px 10px;border-radius:4px;font-size:11px;cursor:pointer;">Lanjutkan</button>'
+                  +     '<button type="button" class="draft-delete" data-id="' + escapeAttr(d.id) + '" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:6px 10px;border-radius:4px;font-size:11px;cursor:pointer;">✕</button>'
+                  +   '</div>'
+                  + '</div>'
+                  + '</div>';
+            }).join('');
+            container.querySelectorAll('.draft-load').forEach(function(btn) {
+                btn.addEventListener('click', function() { loadDraftFromServer(this.dataset.id); });
+            });
+            container.querySelectorAll('.draft-delete').forEach(function(btn) {
+                btn.addEventListener('click', function() { deleteDraftFromServer(this.dataset.id, this); });
+            });
+        });
+    });
+    document.getElementById('btn-close-drafts').addEventListener('click', function() {
+        document.getElementById('modal-drafts-list').style.display = 'none';
+    });
+
+    function loadDraftFromServer(draftId) {
+        fetch('{{ url("admin/restock/drafts") }}/' + encodeURIComponent(draftId), { headers: { 'Accept': 'application/json' } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.success) { alert('❌ Draft tidak ditemukan'); return; }
+            loadDraftDataIntoModal(data.draft, draftId);
+            document.getElementById('modal-drafts-list').style.display = 'none';
+        });
+    }
+
+    function deleteDraftFromServer(draftId, btn) {
+        if (!confirm('Hapus draft ini?')) return;
+        fetch('{{ url("admin/restock/drafts") }}/' + encodeURIComponent(draftId), {
+            method: 'DELETE',
+            headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) btn.closest('.draft-card').remove();
+            else alert('❌ ' + (data.message || 'Gagal hapus'));
+        });
+    }
+
+    // Auto-save on supplier/rack/notes change
+    ['manual-po-supplier', 'manual-po-rack', 'manual-po-notes'].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', scheduleAutoSave);
+    });
+
+    // === SUPPLIER AUTOCOMPLETE + CREATE-ON-THE-FLY ===
+    let supplierSearchTimer = null;
+    const supplierInput = document.getElementById('manual-po-supplier');
+    const supplierIdInput = document.getElementById('manual-po-supplier-id');
+    const supplierResults = document.getElementById('manual-po-supplier-results');
+    const supplierStatus = document.getElementById('manual-po-supplier-status');
+    const btnAddNewSupplier = document.getElementById('btn-add-new-supplier');
+
+    supplierInput.addEventListener('input', function() {
+        // Reset hidden ID kalau user ngetik (jadi tidak terikat ke supplier lama)
+        supplierIdInput.value = '';
+        supplierStatus.style.color = '#94a3b8';
+        supplierStatus.textContent = 'Pilih dari daftar atau ketik nama baru';
+        btnAddNewSupplier.style.display = 'none';
+
+        const q = this.value.trim();
+        if (supplierSearchTimer) clearTimeout(supplierSearchTimer);
+        if (q.length < 2) {
+            supplierResults.style.display = 'none';
+            return;
+        }
+        supplierSearchTimer = setTimeout(function() {
+            fetch('{{ route("admin.suppliers.search") }}?q=' + encodeURIComponent(q) + '&limit=15', {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) { renderSupplierResults(q, data.suppliers || []); })
+            .catch(function() {});
+        }, 250);
+    });
+
+    supplierInput.addEventListener('focus', function() {
+        if (supplierResults.children.length > 0 && this.value.trim().length >= 2) {
+            supplierResults.style.display = 'block';
+        }
+    });
+    supplierInput.addEventListener('blur', function() {
+        setTimeout(function() { supplierResults.style.display = 'none'; }, 200);
+    });
+
+    function renderSupplierResults(q, suppliers) {
+        if (suppliers.length === 0) {
+            supplierResults.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;font-size:12px;">Supplier tidak ditemukan.</div>';
+            supplierStatus.style.color = '#a16207';
+            supplierStatus.textContent = '⚠️ "' + q + '" belum terdaftar.';
+            btnAddNewSupplier.style.display = 'inline-block';
+        } else {
+            supplierResults.innerHTML = suppliers.map(function(s) {
+                return '<div class="supplier-result-item" data-id="' + escapeAttr(s.id) + '" data-name="' + escapeAttr(s.name) + '" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;">'
+                  + '<div style="font-weight:600;font-size:13px;">' + escapeAttr(s.name) + '</div>'
+                  + '<div style="font-size:11px;color:#64748b;">📞 ' + escapeAttr(s.phone || '-') + (s.contact_person ? ' · ' + escapeAttr(s.contact_person) : '') + '</div>'
+                  + '</div>';
+            }).join('') + '<div style="padding:8px 12px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#64748b;">Tidak ada yang cocok? <button type="button" class="add-new-from-list" style="background:none;border:none;color:#0284c7;text-decoration:underline;cursor:pointer;font-size:11px;padding:0;">+ Tambah baru</button></div>';
+
+            supplierResults.querySelectorAll('.supplier-result-item').forEach(function(item) {
+                item.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    selectSupplier(this.dataset.id, this.dataset.name);
+                });
+                item.addEventListener('mouseover', function() { this.style.background = '#f8fafc'; });
+                item.addEventListener('mouseout', function() { this.style.background = ''; });
+            });
+            const addNewBtn = supplierResults.querySelector('.add-new-from-list');
+            if (addNewBtn) {
+                addNewBtn.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    promptCreateNewSupplier(q);
+                });
+            }
+        }
+        supplierResults.style.display = 'block';
+    }
+
+    function selectSupplier(id, name) {
+        supplierIdInput.value = id;
+        supplierInput.value = name;
+        supplierResults.style.display = 'none';
+        supplierStatus.style.color = '#16a34a';
+        supplierStatus.textContent = '✓ Supplier terdaftar dipilih';
+        btnAddNewSupplier.style.display = 'none';
+        scheduleAutoSave();
+    }
+
+    btnAddNewSupplier.addEventListener('click', function() {
+        const name = supplierInput.value.trim();
+        if (name) promptCreateNewSupplier(name);
+    });
+
+    function promptCreateNewSupplier(suggestedName) {
+        const name = prompt('Nama supplier baru:', suggestedName || '');
+        if (!name || !name.trim()) return;
+        const phone = prompt('Nomor telepon supplier (wajib):', '');
+        if (!phone || !phone.trim()) {
+            alert('Nomor telepon wajib diisi.');
+            return;
+        }
+        fetch('{{ route("admin.suppliers.ajax_store") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' },
+            body: JSON.stringify({ name: name.trim(), phone: phone.trim() })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success && data.data) {
+                selectSupplier(data.data.id, data.data.name);
+                alert('✅ Supplier "' + data.data.name + '" berhasil ditambahkan.');
+            } else {
+                alert('❌ ' + (data.message || 'Gagal tambah supplier'));
+            }
+        })
+        .catch(function() { alert('❌ Error koneksi'); });
+    }
 
     if (manualPoForm) manualPoForm.addEventListener('submit', function(e) {
         e.preventDefault();
@@ -869,15 +1415,29 @@
             const note = tr.querySelector('.manual-product-note').value.trim();
             if (product_id && qty > 0) items.push({ product_id: product_id, qty: qty, note: note });
         });
-        if (!supplierName || !items.length) return alert('Isi supplier dan minimal 1 produk.');
-        const payload = { supplier_name: supplierName, rack_id: document.getElementById('manual-po-rack').value.trim(), notes: document.getElementById('manual-po-notes').value.trim(), items: items, force_duplicate: 0 };
+        if (!supplierName || !items.length) return alert('Isi supplier dan minimal 1 produk (pilih dari hasil pencarian).');
+        const payload = { supplier_id: document.getElementById('manual-po-supplier-id').value.trim(), supplier_name: supplierName, rack_id: document.getElementById('manual-po-rack').value.trim(), notes: document.getElementById('manual-po-notes').value.trim(), items: items, force_duplicate: 0 };
+        const draftId = document.getElementById('manual-po-draft-id').value;
         const btn = document.getElementById('btn-submit-manual-po');
         const submit = function(forceDuplicate) {
             payload.force_duplicate = forceDuplicate ? 1 : 0;
             btn.disabled = true; btn.textContent = '⏳ Menyimpan...';
             return fetch('{{ route("admin.restock.create_manual_po") }}', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' }, body: JSON.stringify(payload) }).then(function(r){ return r.json().then(function(d){ return {status:r.status,data:d}; }); });
         };
-        submit(false).then(function(res){ if (res.status === 409 && res.data && res.data.code === 'po_duplicate' && showDuplicateConfirm(res.data.conflicts || [])) return submit(true); return res; }).then(function(res){ btn.disabled = false; btn.textContent = 'Simpan PO Manual'; if (res && res.data && res.data.success) { alert('✅ PO manual berhasil dibuat.'); window.location.reload(); } else if (res && res.status === 409) { } else { alert('❌ ' + ((res && res.data && res.data.message) || 'Gagal membuat PO manual')); } }).catch(function(){ btn.disabled = false; btn.textContent = 'Simpan PO Manual'; alert('❌ Terjadi kesalahan sistem'); });
+        submit(false).then(function(res){ if (res.status === 409 && res.data && res.data.code === 'po_duplicate' && showDuplicateConfirm(res.data.conflicts || [])) return submit(true); return res; }).then(function(res){
+            btn.disabled = false; btn.textContent = '✓ Simpan PO Manual';
+            if (res && res.data && res.data.success) {
+                clearDraftLocal();
+                if (draftId) {
+                    fetch('{{ url("admin/restock/drafts") }}/' + encodeURIComponent(draftId), {
+                        method: 'DELETE',
+                        headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content }
+                    });
+                }
+                alert('✅ PO manual berhasil dibuat.');
+                window.location.reload();
+            } else if (res && res.status === 409) { } else { alert('❌ ' + ((res && res.data && res.data.message) || 'Gagal membuat PO manual')); }
+        }).catch(function(){ btn.disabled = false; btn.textContent = '✓ Simpan PO Manual'; alert('❌ Terjadi kesalahan sistem'); });
     });
 
 })();

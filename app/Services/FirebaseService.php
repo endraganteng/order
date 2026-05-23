@@ -2091,6 +2091,78 @@ class FirebaseService
     }
 
     /**
+     * Get detailed stock summary untuk produk: total per type + breakdown per rak.
+     *
+     * @return array{
+     *   total_storage: int,        // Stok di gudang
+     *   total_display: int,        // Stok di rak jualan
+     *   total_all: int,            // Total keseluruhan
+     *   by_rack: array<int, array{rack_id: string, rack_name: string, rack_type: string, current_qty: int, standard_qty: int}>,
+     * }
+     */
+    public function getProductStockSummary(string $productId): array
+    {
+        $productId = trim($productId);
+        $result = [
+            'total_storage' => 0,
+            'total_display' => 0,
+            'total_all' => 0,
+            'by_rack' => [],
+        ];
+        if ($productId === '') {
+            return $result;
+        }
+
+        foreach ($this->getActiveRacks() as $rack) {
+            $rackId = trim((string) ($rack['id'] ?? ''));
+            if ($rackId === '') {
+                continue;
+            }
+            $rackType = (string) ($rack['rack_type'] ?? 'storage');
+            $rackName = (string) ($rack['name'] ?? '-');
+
+            $rackProducts = $rack['products'] ?? [];
+            if (! is_array($rackProducts) || ! array_key_exists($productId, $rackProducts)) {
+                continue;
+            }
+
+            $rp = (array) $rackProducts[$productId];
+            $currentQty = max(0, (int) ($rp['current_qty'] ?? 0));
+            $standardQty = max(0, (int) ($rp['standard_qty'] ?? 0));
+
+            if ($currentQty === 0 && $standardQty === 0) {
+                continue;
+            }
+
+            $result['by_rack'][] = [
+                'rack_id' => $rackId,
+                'rack_name' => $rackName,
+                'rack_type' => $rackType,
+                'current_qty' => $currentQty,
+                'standard_qty' => $standardQty,
+            ];
+
+            if ($rackType === 'storage') {
+                $result['total_storage'] += $currentQty;
+            } else {
+                $result['total_display'] += $currentQty;
+            }
+            $result['total_all'] += $currentQty;
+        }
+
+        // Sort: storage racks dulu, lalu display, alphabetic dalam grup
+        usort($result['by_rack'], function ($a, $b) {
+            if ($a['rack_type'] !== $b['rack_type']) {
+                return $a['rack_type'] === 'storage' ? -1 : 1;
+            }
+
+            return strcasecmp($a['rack_name'], $b['rack_name']);
+        });
+
+        return $result;
+    }
+
+    /**
      * Get app settings
      */
     public function getSettings()
@@ -7751,6 +7823,121 @@ class FirebaseService
         return $conflicts;
     }
 
+    // ========================================================================
+    // PURCHASE ORDER DRAFTS (server-side persistence untuk PO Manual)
+    // Path Firebase: purchase_order_drafts/{push_id}
+    // Schema: { id, supplier_id, supplier_name, rack_id, notes, items: [{product_id, product_name, qty, note}], created_by, created_by_name, created_at, updated_at }
+    // ========================================================================
+
+    public function savePurchaseOrderDraft(array $data, ?string $draftId = null): string
+    {
+        $payload = [
+            'supplier_id' => trim((string) ($data['supplier_id'] ?? '')),
+            'supplier_name' => trim((string) ($data['supplier_name'] ?? '')),
+            'rack_id' => trim((string) ($data['rack_id'] ?? '')),
+            'notes' => trim((string) ($data['notes'] ?? '')),
+            'items' => $this->normalizeDraftItems($data['items'] ?? []),
+            'created_by' => trim((string) ($data['created_by'] ?? '')),
+            'created_by_name' => trim((string) ($data['created_by_name'] ?? '')),
+            'updated_at' => time(),
+        ];
+
+        if ($draftId !== null && trim($draftId) !== '') {
+            $existing = $this->database->getReference('purchase_order_drafts/'.$draftId)->getSnapshot();
+            if ($existing->exists()) {
+                $current = (array) $existing->getValue();
+                $payload['created_at'] = (int) ($current['created_at'] ?? time());
+                $this->database->getReference('purchase_order_drafts/'.$draftId)->update($payload);
+
+                return $draftId;
+            }
+        }
+
+        $payload['created_at'] = time();
+        $ref = $this->database->getReference('purchase_order_drafts')->push($payload);
+
+        return $ref->getKey();
+    }
+
+    public function getPurchaseOrderDraft(string $draftId): ?array
+    {
+        $draftId = trim($draftId);
+        if ($draftId === '') {
+            return null;
+        }
+        $snapshot = $this->database->getReference('purchase_order_drafts/'.$draftId)->getSnapshot();
+        if (! $snapshot->exists()) {
+            return null;
+        }
+        $row = (array) $snapshot->getValue();
+        $row['id'] = $draftId;
+
+        return $row;
+    }
+
+    public function getPurchaseOrderDrafts(?string $createdBy = null): array
+    {
+        $snapshot = $this->database->getReference('purchase_order_drafts')->getSnapshot();
+        if (! $snapshot->exists()) {
+            return [];
+        }
+
+        $drafts = [];
+        foreach ((array) $snapshot->getValue() as $id => $row) {
+            $row = (array) $row;
+            if ($createdBy !== null && (string) ($row['created_by'] ?? '') !== $createdBy) {
+                continue;
+            }
+            $row['id'] = $id;
+            $drafts[] = $row;
+        }
+
+        usort($drafts, fn ($a, $b) => ((int) ($b['updated_at'] ?? 0)) <=> ((int) ($a['updated_at'] ?? 0)));
+
+        return $drafts;
+    }
+
+    public function deletePurchaseOrderDraft(string $draftId): bool
+    {
+        $draftId = trim($draftId);
+        if ($draftId === '') {
+            return false;
+        }
+        try {
+            $this->database->getReference('purchase_order_drafts/'.$draftId)->remove();
+
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Normalize draft items: pastikan setiap item punya {product_id, product_name, qty, note}.
+     */
+    protected function normalizeDraftItems(array $items): array
+    {
+        $clean = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $pid = trim((string) ($item['product_id'] ?? ''));
+            $qty = (int) ($item['qty'] ?? 0);
+            if ($pid === '' || $qty < 1) {
+                continue;
+            }
+            $clean[] = [
+                'product_id' => $pid,
+                'product_name' => trim((string) ($item['product_name'] ?? '')),
+                'qty' => $qty,
+                'note' => trim((string) ($item['note'] ?? '')),
+            ];
+        }
+
+        return array_values($clean);
+    }
+
     /**
      * Create a Purchase Order from selected restock requests
      */
@@ -7859,7 +8046,7 @@ class FirebaseService
     /**
      * Receive an item in a PO (partial receive with qty)
      */
-    public function receivePoItem(string $poId, string $restockId, int $receivedQty, string $receivedBy, string $receivedByName, ?string $idempotencyKey = null): array
+    public function receivePoItem(string $poId, string $restockId, int $receivedQty, string $receivedBy, string $receivedByName, ?string $idempotencyKey = null, ?string $overrideRackId = null): array
     {
         $idempotencyKey = trim((string) $idempotencyKey);
         if ($idempotencyKey !== '') {
@@ -7872,8 +8059,22 @@ class FirebaseService
             }
         }
 
+        // Validasi qty: harus bilangan positif
+        if ($receivedQty <= 0) {
+            return ['success' => false, 'message' => 'Qty terima harus lebih dari 0.'];
+        }
+
         $po = $this->getPurchaseOrder($poId);
         if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
+
+        // Guard status PO: tidak boleh receive pada PO cancelled/completed
+        $poCurrentStatus = (string) ($po['status'] ?? '');
+        if ($poCurrentStatus === 'cancelled') {
+            return ['success' => false, 'message' => 'PO sudah dibatalkan, tidak bisa terima barang.'];
+        }
+        if ($poCurrentStatus === 'completed') {
+            return ['success' => false, 'message' => 'PO sudah selesai, tidak bisa terima barang lagi.'];
+        }
 
         $items = $po['items'] ?? [];
         if (!isset($items[$restockId])) return ['success' => false, 'message' => 'Item tidak ditemukan di PO'];
@@ -7881,7 +8082,38 @@ class FirebaseService
         $item = $items[$restockId];
         $qtyOrdered = (int) ($item['qty_ordered'] ?? 0);
         $currentReceived = (int) ($item['received_qty'] ?? 0);
+
+        // Guard item-level: cegah over-receive dan terima pada item yang sudah closed
+        if (!empty($item['closed_reason']) || ($item['accepted_as_is'] ?? false) === true) {
+            return ['success' => false, 'message' => 'Item sudah ditutup, tidak bisa terima lagi.'];
+        }
+        $remaining = max(0, $qtyOrdered - $currentReceived);
+        if ($remaining <= 0) {
+            return ['success' => false, 'message' => 'Item sudah lengkap diterima.'];
+        }
+        if ($receivedQty > $remaining) {
+            return ['success' => false, 'message' => "Qty terima ({$receivedQty}) melebihi sisa ordered ({$remaining})."];
+        }
+
         $newReceived = $currentReceived + $receivedQty;
+
+        // Resolve rack: override dari waiter > rack di item PO > kosong
+        $resolvedRackId = trim((string) ($overrideRackId ?? ''));
+        if ($resolvedRackId === '') {
+            $resolvedRackId = trim((string) ($item['rack_id'] ?? ''));
+        } else {
+            // Validasi: rack ada dan aktif
+            $rack = $this->getRackById($resolvedRackId);
+            if (! $rack || ($rack['is_active'] ?? true) === false) {
+                return ['success' => false, 'message' => 'Rak tujuan tidak valid atau tidak aktif.'];
+            }
+        }
+
+        $resolvedRackName = '';
+        if ($resolvedRackId !== '') {
+            $rack = $this->getRackById($resolvedRackId);
+            $resolvedRackName = (string) ($rack['name'] ?? '');
+        }
 
         // Update PO item
         $itemUpdates = [
@@ -7891,6 +8123,12 @@ class FirebaseService
             "items/{$restockId}/last_received_by" => $receivedBy,
             "items/{$restockId}/last_received_by_name" => $receivedByName,
         ];
+
+        // Catat actual rack tujuan kalau berbeda dari rack PO awal
+        if ($resolvedRackId !== '' && $resolvedRackId !== trim((string) ($item['rack_id'] ?? ''))) {
+            $itemUpdates["items/{$restockId}/actual_rack_id"] = $resolvedRackId;
+            $itemUpdates["items/{$restockId}/actual_rack_name"] = $resolvedRackName;
+        }
 
         $this->database->getReference("purchase_orders/{$poId}")->update($itemUpdates);
 
@@ -7929,7 +8167,7 @@ class FirebaseService
         }
         $this->database->getReference("restock_requests/{$restockId}")->update($restockUpdates);
 
-        $rackId = trim((string) ($item['rack_id'] ?? ''));
+        $rackId = $resolvedRackId;
         $productId = trim((string) ($item['product_id'] ?? ''));
         if ($rackId !== '' && $productId !== '') {
             $previousQty = null;
@@ -7995,10 +8233,18 @@ class FirebaseService
         $po = $this->getPurchaseOrder($poId);
         if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
 
+        $poStatusNow = (string) ($po['status'] ?? '');
+        if ($poStatusNow === 'cancelled') {
+            return ['success' => false, 'message' => 'PO sudah dibatalkan.'];
+        }
+
         $items = $po['items'] ?? [];
         if (!isset($items[$restockId])) return ['success' => false, 'message' => 'Item tidak ditemukan di PO'];
 
         $item = $items[$restockId];
+        if (($item['accepted_as_is'] ?? false) === true || !empty($item['closed_reason'])) {
+            return ['success' => false, 'message' => 'Item sudah ditutup.'];
+        }
         $receivedQty = (int) ($item['received_qty'] ?? 0);
 
         // Mark item as completed regardless of qty
@@ -8064,8 +8310,17 @@ class FirebaseService
         $po = $this->getPurchaseOrder($poId);
         if (!$po) return ['success' => false, 'message' => 'PO tidak ditemukan'];
 
+        if ((string) ($po['status'] ?? '') === 'cancelled') {
+            return ['success' => false, 'message' => 'PO sudah dibatalkan.'];
+        }
+
         $items = $po['items'] ?? [];
         if (!isset($items[$restockId])) return ['success' => false, 'message' => 'Item tidak ditemukan di PO'];
+
+        $itemNow = $items[$restockId];
+        if (!empty($itemNow['closed_reason']) || ($itemNow['accepted_as_is'] ?? false) === true) {
+            return ['success' => false, 'message' => 'Item sudah ditutup.'];
+        }
 
         // Store issue
         $issueData = [
@@ -8164,16 +8419,37 @@ class FirebaseService
         $po = $this->getPurchaseOrder($poId);
         if (!$po) return false;
 
-        $this->database->getReference("purchase_orders/{$poId}/status")->set('cancelled');
+        // Guard: tidak boleh cancel PO yang sudah cancelled atau completed
+        $currentStatus = (string) ($po['status'] ?? '');
+        if ($currentStatus === 'cancelled' || $currentStatus === 'completed') {
+            return false;
+        }
 
-        // Revert restock requests back to pending
+        $this->database->getReference("purchase_orders/{$poId}/status")->set('cancelled');
+        $this->database->getReference("purchase_orders/{$poId}/cancelled_at")->set(time());
+
+        // Revert HANYA restock requests yang belum punya received_qty.
+        // Yang sudah ada penerimaan parsial dibiarkan agar stoknya tidak hilang
+        // dan tidak ke-reorder ganda.
         $items = $po['items'] ?? [];
-        foreach (array_keys($items) as $restockId) {
-            $this->database->getReference("restock_requests/{$restockId}")->update([
-                'status' => 'pending',
-                'po_id' => null,
-                'updated_at' => time(),
-            ]);
+        foreach ($items as $restockId => $item) {
+            $receivedQty = (int) ($item['received_qty'] ?? 0);
+
+            if ($receivedQty > 0) {
+                // Tutup di restock_requests sebagai partial agar tidak masuk lagi ke daftar pending.
+                $this->database->getReference("restock_requests/{$restockId}")->update([
+                    'status' => 'partial_cancelled',
+                    'updated_at' => time(),
+                    'po_cancelled_at' => time(),
+                ]);
+            } else {
+                // Belum ada penerimaan -> aman direvert ke pending agar bisa dimasukkan PO baru.
+                $this->database->getReference("restock_requests/{$restockId}")->update([
+                    'status' => 'pending',
+                    'po_id' => null,
+                    'updated_at' => time(),
+                ]);
+            }
         }
 
         return true;

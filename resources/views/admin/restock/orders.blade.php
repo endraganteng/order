@@ -90,7 +90,7 @@
                     this.textContent = '...';
                     this.disabled = true;
                     
-                    fetch('{{ route("admin.restock.index") }}/' + id + '/cancel', {
+                    fetch('{{ url("admin/restock/orders") }}/' + id, {
                         method: 'DELETE',
                         headers: {
                             'Content-Type': 'application/json',

@@ -35,23 +35,36 @@ class BatchProcessService
             'heartbeat_at' => now(),
         ]);
 
+        $logFile = storage_path('logs/ai-batch-'.$batch->id.'-'.date('Ymd-His').'.log');
         $command = $this->buildArtisanCommand($batch);
         $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
-        $pid = $this->spawnDetached($command);
 
-        if ($pid !== null) {
-            $batch->update(['pid' => $pid]);
-        } elseif (! $isWindows) {
-            // Linux/Mac: PID null = spawn benar-benar gagal.
+        // Save command + log path SEBELUM spawn supaya bisa di-debug nanti
+        $batch->update([
+            'log_file' => $logFile,
+            'artisan_command' => $command,
+        ]);
+
+        $spawn = $this->spawnDetached($command, $logFile);
+
+        if ($spawn['success']) {
+            $batch->update(['pid' => $spawn['pid']]);
+        } else {
+            // Spawn benar-benar gagal (Windows: popen returned false; Linux: PID 0/negatif)
+            $errorMsg = $spawn['error'] ?? 'Spawn gagal tanpa error spesifik. Cek '.$logFile.' kalau ada.';
             $batch->update([
                 'status' => 'failed',
-                'last_message' => 'Gagal spawn background process. Cek server logs.',
+                'last_message' => 'Gagal spawn background process. '.$errorMsg,
+                'spawn_error' => $errorMsg,
                 'finished_at' => now(),
             ]);
-            Log::error('BatchProcess: failed to spawn', ['batch_id' => $batch->id, 'cmd' => $command]);
+            Log::error('BatchProcess: failed to spawn', [
+                'batch_id' => $batch->id,
+                'cmd' => $command,
+                'error' => $errorMsg,
+                'log_file' => $logFile,
+            ]);
         }
-        // Windows: PID null adalah normal (cmd /C start /B tidak mudah expose PID).
-        // Worker akan update status sendiri via handle().
 
         return $batch;
     }
@@ -75,58 +88,97 @@ class BatchProcessService
         }
 
         $args = ['--batch-id='.$batch->id];
-        if ($batch->auto_approve) {
-            $args[] = '--auto-approve';
-        }
-        if ($batch->auto_sync) {
-            $args[] = '--auto-sync';
-        }
         $opt = $batch->options ?? [];
-        if (! empty($opt['limit'])) {
-            $args[] = '--limit='.(int) $opt['limit'];
-        }
-        if (! empty($opt['only_missing'])) {
-            $args[] = '--only-missing';
-        }
-        if (! empty($opt['category_id'])) {
-            $args[] = '--category-id='.escapeshellarg($opt['category_id']);
+
+        if (in_array($batch->mode, ['enrichment', 'full_pipeline'], true)) {
+            // Enrichment-specific options
+            if ($batch->auto_approve) {
+                $args[] = '--auto-approve';
+            }
+            if ($batch->auto_sync) {
+                $args[] = '--auto-sync';
+            }
+            if (! empty($opt['only_missing'])) {
+                $args[] = '--only-missing';
+            }
+            if (! empty($opt['category_id'])) {
+                $args[] = '--category-id='.escapeshellarg($opt['category_id']);
+            }
+            if (! empty($opt['limit'])) {
+                $args[] = '--limit='.(int) $opt['limit'];
+            }
+        } elseif ($batch->mode === 'vector_sync') {
+            // Vector sync only supports: --limit, --include-all
+            if (! empty($opt['limit'])) {
+                $args[] = '--limit='.(int) $opt['limit'];
+            }
+            if (! empty($opt['include_all'])) {
+                $args[] = '--include-all';
+            }
         }
 
         return sprintf('%s %s %s %s', escapeshellarg($phpBin), escapeshellarg($artisan), $cmd, implode(' ', $args));
     }
 
     /**
-     * Spawn process di background, return PID kalau bisa diketahui.
-     * Tidak block parent.
+     * Spawn process di background.
+     * Cross-platform: Windows pakai `cmd /C start /B`, Linux pakai `nohup ... &`.
+     *
+     * @return array{success: bool, pid: ?int, error: ?string}
      */
-    protected function spawnDetached(string $command): ?int
+    protected function spawnDetached(string $command, string $logPath): array
     {
         $isWindows = strncasecmp(PHP_OS, 'WIN', 3) === 0;
-        $logPath = storage_path('logs/ai-batch-'.date('Y-m-d').'.log');
+
+        // Pre-flight: pastikan dependencies tersedia
+        $disabledFns = array_map('trim', explode(',', (string) ini_get('disable_functions')));
+        if ($isWindows) {
+            if (! function_exists('popen') || in_array('popen', $disabledFns, true)) {
+                return ['success' => false, 'pid' => null, 'error' => 'popen() disabled di php.ini. Tidak bisa spawn process di Windows.'];
+            }
+        } else {
+            if (! function_exists('shell_exec') || in_array('shell_exec', $disabledFns, true)) {
+                return ['success' => false, 'pid' => null, 'error' => 'shell_exec() disabled di php.ini. Tidak bisa spawn nohup process di Linux. Hapus shell_exec dari disable_functions atau gunakan systemd/supervisor.'];
+            }
+        }
+
+        // Pastikan directory log writable
+        $logDir = dirname($logPath);
+        if (! is_dir($logDir)) {
+            @mkdir($logDir, 0755, true);
+        }
+        if (! is_writable($logDir)) {
+            return ['success' => false, 'pid' => null, 'error' => 'Direktori log tidak writable: '.$logDir];
+        }
+
+        // Tulis header marker ke log SUPAYA bisa verifikasi spawn berhasil mulai
+        @file_put_contents($logPath, sprintf("[%s] === SPAWN START ===\nCommand: %s\nOS: %s\n", date('Y-m-d H:i:s'), $command, PHP_OS), FILE_APPEND);
 
         try {
             if ($isWindows) {
-                // Windows: pakai popen di mode 'r' untuk start child detached.
-                // Cara reliable: pakai 'start /B' via shell.
                 $full = sprintf('cmd /C start /B "" %s >> %s 2>&1', $command, escapeshellarg($logPath));
                 $proc = popen($full, 'r');
-                if ($proc !== false) {
-                    pclose($proc);
+                if ($proc === false) {
+                    return ['success' => false, 'pid' => null, 'error' => 'popen() returned false. Cek izin akses cmd.exe.'];
                 }
-                // Windows tidak gampang ambil PID dari shell start. Return null tapi proses jalan.
-                return null;
+                pclose($proc);
+                // Windows tidak gampang ambil PID. Anggap success kalau popen tidak error.
+                return ['success' => true, 'pid' => null, 'error' => null];
             }
 
-            // Linux/Mac: nohup ... &
+            // Linux/Mac
             $full = sprintf('nohup %s >> %s 2>&1 & echo $!', $command, escapeshellarg($logPath));
             $output = shell_exec($full);
-            $pid = $output ? (int) trim($output) : null;
+            $pid = $output ? (int) trim($output) : 0;
+            if ($pid <= 0) {
+                return ['success' => false, 'pid' => null, 'error' => 'shell_exec() returned no PID. Output: '.json_encode($output)];
+            }
 
-            return $pid > 0 ? $pid : null;
+            return ['success' => true, 'pid' => $pid, 'error' => null];
         } catch (\Throwable $e) {
             Log::error('BatchProcess spawn exception: '.$e->getMessage());
 
-            return null;
+            return ['success' => false, 'pid' => null, 'error' => 'Exception: '.$e->getMessage()];
         }
     }
 

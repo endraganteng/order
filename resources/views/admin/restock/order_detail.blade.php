@@ -213,7 +213,7 @@
                     this.textContent = 'Membatalkan...';
                     this.disabled = true;
                     
-                    fetch('{{ route("admin.restock.index") }}/{{ $order["id"] }}/cancel', {
+                    fetch('{{ route("admin.restock.cancel_order", $order["id"]) }}', {
                         method: 'DELETE',
                         headers: {
                             'Content-Type': 'application/json',

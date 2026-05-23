@@ -1020,8 +1020,9 @@ class WaiterController extends Controller
         $orders = $this->firebase->getPurchaseOrders();
         // Filter to only active POs (ordered or partial)
         $activeOrders = array_filter($orders, fn($o) => in_array($o['status'] ?? '', ['ordered', 'partial']));
+        $activeRacks = $this->firebase->getActiveRacks();
 
-        return view('waiter.restock', compact('activeOrders'));
+        return view('waiter.restock', compact('activeOrders', 'activeRacks'));
     }
 
     /**
@@ -1032,6 +1033,7 @@ class WaiterController extends Controller
         $request->validate([
             'restock_id' => 'required|string',
             'received_qty' => 'required|integer|min:1',
+            'rack_id' => 'nullable|string|max:60',
             'idempotency_key' => 'nullable|string|max:120',
         ]);
 
@@ -1044,7 +1046,8 @@ class WaiterController extends Controller
             (int) $request->input('received_qty'),
             $waiterId,
             $waiterName,
-            $request->input('idempotency_key')
+            $request->input('idempotency_key'),
+            $request->input('rack_id')
         );
 
         return response()->json($result);

@@ -267,6 +267,71 @@ class BonusController extends Controller
         return response()->json(['success' => true, 'message' => 'Penalti berhasil dihapus']);
     }
 
+    // ===== MANUAL BONUS POINTS (supervisor adjustment, single + bulk) =====
+
+    public function manualBonus(Request $request)
+    {
+        $month = $request->get('month', date('Y-m'));
+        $waiterId = $request->get('waiter_id');
+        $waiters = $this->firebase->getAllowedEmails();
+        $bonuses = $this->bonus->getManualBonusesByMonth($month, $waiterId);
+
+        // Group total per karyawan untuk kolom ringkasan
+        $totalsByWaiter = [];
+        foreach ($bonuses as $b) {
+            $wid = $b['waiter_id'] ?? '';
+            $totalsByWaiter[$wid] = ($totalsByWaiter[$wid] ?? 0) + (int) ($b['points'] ?? 0);
+        }
+
+        return view('admin.bonus.manual_bonus', compact('month', 'bonuses', 'waiters', 'waiterId', 'totalsByWaiter'));
+    }
+
+    public function storeManualBonus(Request $request)
+    {
+        $data = $request->validate([
+            'waiter_ids' => 'required|array|min:1',
+            'waiter_ids.*' => 'string',
+            'points' => 'required|integer|not_in:0',
+            'reason' => 'required|string|max:500',
+            'date' => 'required|date_format:Y-m-d',
+        ]);
+
+        $createdBy = (string) (session('admin_email') ?? session('admin_id') ?? 'supervisor');
+        $waiterIds = array_values(array_filter(array_map('trim', $data['waiter_ids']), fn ($x) => $x !== ''));
+
+        if (count($waiterIds) === 0) {
+            return response()->json(['success' => false, 'message' => 'Minimal pilih 1 karyawan.'], 422);
+        }
+
+        $result = $this->bonus->applyManualBonusBulk(
+            $waiterIds,
+            (int) $data['points'],
+            (string) $data['reason'],
+            (string) $data['date'],
+            $createdBy
+        );
+
+        return response()->json([
+            'success' => $result['success'],
+            'applied' => $result['applied'],
+            'failed' => $result['failed'],
+            'message' => $result['success']
+                ? "Berhasil tambah ke {$result['applied']} karyawan."
+                : 'Tidak ada bonus yang berhasil ditambahkan.',
+            'results' => $result['results'],
+        ]);
+    }
+
+    public function destroyManualBonus(string $id)
+    {
+        $ok = $this->bonus->deleteManualBonus($id);
+
+        return response()->json([
+            'success' => $ok,
+            'message' => $ok ? 'Bonus manual dihapus.' : 'Gagal hapus bonus manual.',
+        ]);
+    }
+
     // ===== SALES TARGETS =====
     public function salesTargets(Request $request)
     {

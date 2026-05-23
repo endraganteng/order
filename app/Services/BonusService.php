@@ -699,6 +699,215 @@ class BonusService
         $this->database->getReference('waiter_penalties/' . $penaltyId)->remove();
     }
 
+    // ========================================================================
+    // MANUAL BONUS POINTS (supervisor adjustment, additive ke daily/monthly)
+    // ========================================================================
+    //
+    // Schema Firebase: waiter_manual_bonuses/{bonusId} = {
+    //   waiter_id: string,
+    //   waiter_name: string,
+    //   month: 'YYYY-MM',
+    //   date: 'YYYY-MM-DD',
+    //   points: int (boleh + atau -),
+    //   reason: string,
+    //   category: 'manual_bonus' | 'manual_deduction',
+    //   created_by: string (admin email/id),
+    //   created_at: timestamp,
+    // }
+    //
+    // Bedanya dengan penalty: penalty terikat dedup key (per task), manual bonus
+    // adalah adjustment bebas oleh supervisor. Tidak dedup, bisa ada banyak per
+    // hari per karyawan (akumulatif).
+
+    /**
+     * Apply 1 manual bonus untuk 1 karyawan.
+     *
+     * @param  array{waiter_id:string, waiter_name?:string, points:int, reason:string, date?:string, created_by?:string}  $data
+     * @return array{success:bool, bonus_id?:string, message?:string, points?:int}
+     */
+    public function applyManualBonus(array $data): array
+    {
+        $waiterId = trim((string) ($data['waiter_id'] ?? ''));
+        $points = (int) ($data['points'] ?? 0);
+        $reason = trim((string) ($data['reason'] ?? ''));
+        $date = (string) ($data['date'] ?? date('Y-m-d'));
+        $createdBy = (string) ($data['created_by'] ?? 'supervisor');
+
+        if ($waiterId === '') {
+            return ['success' => false, 'message' => 'waiter_id wajib.'];
+        }
+        if ($points === 0) {
+            return ['success' => false, 'message' => 'Poin tidak boleh 0.'];
+        }
+        if ($reason === '') {
+            return ['success' => false, 'message' => 'Alasan wajib diisi.'];
+        }
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date = date('Y-m-d');
+        }
+
+        $waiterName = trim((string) ($data['waiter_name'] ?? ''));
+        if ($waiterName === '') {
+            $w = $this->firebase->getWaiterById($waiterId);
+            $waiterName = (string) ($w['name'] ?? '');
+        }
+
+        $month = substr($date, 0, 7);
+        $ref = $this->database->getReference('waiter_manual_bonuses')->push();
+        $bonusId = $ref->getKey();
+        $record = [
+            'bonus_id' => $bonusId,
+            'waiter_id' => $waiterId,
+            'waiter_name' => $waiterName,
+            'month' => $month,
+            'date' => $date,
+            'points' => $points,
+            'reason' => $reason,
+            'category' => $points >= 0 ? 'manual_bonus' : 'manual_deduction',
+            'created_by' => $createdBy,
+            'created_at' => time(),
+        ];
+        $ref->set($record);
+
+        return [
+            'success' => true,
+            'bonus_id' => $bonusId,
+            'points' => $points,
+            'message' => 'Manual bonus tersimpan.',
+        ];
+    }
+
+    /**
+     * Apply manual bonus ke banyak karyawan sekaligus.
+     *
+     * @param  array<int, string>  $waiterIds
+     * @return array{success:bool, applied:int, failed:int, results:array<int, array>}
+     */
+    public function applyManualBonusBulk(array $waiterIds, int $points, string $reason, string $date, string $createdBy = 'supervisor'): array
+    {
+        $applied = 0;
+        $failed = 0;
+        $results = [];
+
+        // Pre-fetch waiter names supaya hemat read.
+        $allWaiters = $this->firebase->getAllowedEmails();
+        $waiterMap = [];
+        foreach ($allWaiters as $w) {
+            $wid = (string) ($w['id'] ?? '');
+            if ($wid !== '') {
+                $waiterMap[$wid] = (string) ($w['name'] ?? '');
+            }
+        }
+
+        foreach ($waiterIds as $wid) {
+            $wid = trim((string) $wid);
+            if ($wid === '') {
+                continue;
+            }
+            $r = $this->applyManualBonus([
+                'waiter_id' => $wid,
+                'waiter_name' => $waiterMap[$wid] ?? '',
+                'points' => $points,
+                'reason' => $reason,
+                'date' => $date,
+                'created_by' => $createdBy,
+            ]);
+            if ($r['success']) {
+                $applied++;
+            } else {
+                $failed++;
+            }
+            $results[] = [
+                'waiter_id' => $wid,
+                'waiter_name' => $waiterMap[$wid] ?? '',
+                'success' => $r['success'],
+                'message' => $r['message'] ?? '',
+                'bonus_id' => $r['bonus_id'] ?? null,
+            ];
+        }
+
+        return [
+            'success' => $applied > 0,
+            'applied' => $applied,
+            'failed' => $failed,
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * Get manual bonuses untuk satu bulan.
+     *
+     * Catatan: TIDAK pakai orderByChild('month') untuk hindari Firebase index requirement.
+     * Read full node + filter PHP-side. Aman karena volume rendah (manual entry, ratusan per bulan max).
+     *
+     * @return array<int, array>  list of bonus records, sorted by date desc
+     */
+    public function getManualBonusesByMonth(string $month, ?string $waiterId = null): array
+    {
+        $snapshot = $this->database->getReference('waiter_manual_bonuses')->getSnapshot();
+
+        if (! $snapshot->exists()) {
+            return [];
+        }
+
+        $items = [];
+        foreach ((array) $snapshot->getValue() as $id => $row) {
+            $row = (array) $row;
+            if (($row['month'] ?? '') !== $month) {
+                continue;
+            }
+            if ($waiterId !== null && ($row['waiter_id'] ?? '') !== $waiterId) {
+                continue;
+            }
+            $row['bonus_id'] = $id;
+            $items[] = $row;
+        }
+
+        // Sort by date desc, fallback ke created_at
+        usort($items, function ($a, $b) {
+            $dateCmp = strcmp((string) ($b['date'] ?? ''), (string) ($a['date'] ?? ''));
+            if ($dateCmp !== 0) {
+                return $dateCmp;
+            }
+
+            return ((int) ($b['created_at'] ?? 0)) <=> ((int) ($a['created_at'] ?? 0));
+        });
+
+        return $items;
+    }
+
+    /**
+     * Sum total manual bonus poin untuk waiter di bulan tertentu.
+     */
+    public function sumManualBonusForMonth(string $waiterId, string $month): int
+    {
+        $items = $this->getManualBonusesByMonth($month, $waiterId);
+        $total = 0;
+        foreach ($items as $b) {
+            $total += (int) ($b['points'] ?? 0);
+        }
+
+        return $total;
+    }
+
+    /**
+     * Hapus manual bonus by ID.
+     */
+    public function deleteManualBonus(string $bonusId): bool
+    {
+        if (trim($bonusId) === '') {
+            return false;
+        }
+        try {
+            $this->database->getReference('waiter_manual_bonuses/' . $bonusId)->remove();
+
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+
     /**
      * Wipe ALL bonus-related historical data: daily points, penalties, monthly summaries,
      * leaderboards, sales targets. Used when supervisor wants to mark a fresh SOP launch.
@@ -1028,9 +1237,17 @@ class BonusService
             $totalPenalties += (int) ($penalty['points_deducted'] ?? 0);
         }
 
+        // --- Manual bonus (supervisor adjustment) ---
+        $manualBonuses = $this->getManualBonusesByMonth($month, $waiterId);
+        $totalManualBonus = 0;
+        $manualBonusCount = count($manualBonuses);
+        foreach ($manualBonuses as $mb) {
+            $totalManualBonus += (int) ($mb['points'] ?? 0);
+        }
+
         // --- Net points & percentage ---
-        // Net = daily auto points + monthly service/sales points + penalties (negative)
-        $netPoints = $totalEarned + $servicePoints + $salesPoints + $totalPenalties;
+        // Net = daily auto points + monthly service/sales points + penalties (negative) + manual bonus
+        $netPoints = $totalEarned + $servicePoints + $salesPoints + $totalPenalties + $totalManualBonus;
         $netPoints = max(0, $netPoints);
         $pointsPercentage = $theoreticalMax > 0
             ? round(($netPoints / $theoreticalMax) * 100, 2)
@@ -1080,6 +1297,8 @@ class BonusService
             'perfect_days'           => $perfectDays,
             'penalty_count'          => $penaltyCount,
             'total_penalties'        => $totalPenalties,
+            'manual_bonus_count'     => $manualBonusCount,
+            'total_manual_bonus'     => $totalManualBonus,
 
             // Monthly scoring percentages
             'monthly_service_percentage' => $monthlyServicePercentage,

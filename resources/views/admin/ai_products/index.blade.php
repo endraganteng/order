@@ -44,6 +44,63 @@
         <div id="batchCurrentProduct">-</div>
         <div id="batchLastMessage" style="color:var(--color-text-muted); margin-top:2px;">-</div>
     </div>
+    <div id="batchSpawnError" style="display:none; margin-top:8px; padding:8px 12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; font-size:12px; color:#dc2626;">
+        <strong>⚠️ Spawn Error:</strong> <span id="batchSpawnErrorText"></span>
+    </div>
+    <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
+        <button type="button" id="batchLogBtn" style="display:none; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:5px 12px; font-size:11px; border-radius:6px; cursor:pointer;" onclick="showBatchLog()">📋 Lihat Log Lengkap</button>
+        <a href="#" id="batchDiagnoseBtn" style="display:none; background:#fef3c7; color:#a16207; border:1px solid #fde68a; padding:5px 12px; font-size:11px; border-radius:6px; text-decoration:none; cursor:pointer;" onclick="showDiagnoseInfo(); return false;">🔧 Cara Debug</a>
+    </div>
+</div>
+
+{{-- Modal log viewer --}}
+<div id="logModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#0f172a; color:#f1f5f9; border-radius:10px; padding:18px; width:95%; max-width:900px; max-height:85vh; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div>
+                <h3 style="margin:0; color:#fff; font-size:15px;">📋 Log Batch <span id="logBatchId">-</span></h3>
+                <div id="logFilePath" style="font-size:11px; color:#94a3b8; margin-top:2px; font-family:monospace;">-</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+                <button onclick="copyLogContent()" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:11px;">📋 Copy</button>
+                <button onclick="closeLogModal()" style="background:#dc2626; color:#fff; border:none; padding:5px 14px; border-radius:4px; cursor:pointer;">Tutup</button>
+            </div>
+        </div>
+        <div id="logContent" style="flex:1; overflow:auto; background:#1e293b; padding:12px; border-radius:6px; font-family:'Consolas', monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; line-height:1.5; min-height:200px;">Loading...</div>
+    </div>
+</div>
+
+{{-- Modal diagnose info --}}
+<div id="diagnoseModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:10px; padding:20px; width:95%; max-width:680px;">
+        <h3 style="margin:0 0 12px;">🔧 Cara Debug Production Batch Error</h3>
+        <p style="font-size:13px; color:#475569; margin-bottom:14px;">Kalau batch gagal di production, jalankan di terminal server:</p>
+
+        <div style="background:#0f172a; color:#a5f3fc; padding:12px; border-radius:6px; font-family:monospace; font-size:13px; margin-bottom:12px; overflow-x:auto;">
+<span style="color:#94a3b8;"># 1. Cek environment + spawn capability</span><br>
+php artisan ai:product:diagnose<br><br>
+<span style="color:#94a3b8;"># 2. Cek lengkap dengan test koneksi real (recommended pertama kali)</span><br>
+php artisan ai:product:diagnose --test-firebase --test-gemini --test-supabase --test-spawn<br><br>
+<span style="color:#94a3b8;"># 3. Test enrichment manual 1 produk</span><br>
+php artisan ai:product-enrichment:generate --limit=1<br><br>
+<span style="color:#94a3b8;"># 4. Lihat log Laravel</span><br>
+tail -n 100 storage/logs/laravel.log
+        </div>
+
+        <div style="background:#fef3c7; border:1px solid #fde68a; padding:12px; border-radius:6px; font-size:12px; margin-bottom:14px;">
+            <strong style="color:#a16207;">Tips Production:</strong>
+            <ul style="margin:6px 0 0 18px; color:#78350f;">
+                <li><strong>shell_exec disabled</strong>: Buka php.ini, hapus <code>shell_exec</code> dari <code>disable_functions</code>, restart php-fpm/apache.</li>
+                <li><strong>Permission log</strong>: <code>chmod -R 775 storage/logs</code> + own ke www-data.</li>
+                <li><strong>nohup tidak ada</strong>: Install GNU coreutils: <code>apt install coreutils</code>.</li>
+                <li><strong>Process spawn tidak persist</strong>: Pakai supervisor untuk dependable background worker.</li>
+            </ul>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end;">
+            <button onclick="closeDiagnoseModal()" class="btn btn-primary">Mengerti</button>
+        </div>
+    </div>
 </div>
 
 {{-- Stats --}}
@@ -363,13 +420,33 @@ async function pollOnce() {
         const initiatorEl = document.getElementById('batchInitiator');
         if (b.started_at) initiatorEl.textContent = `Mulai: ${b.started_at}` + (b.auto_approve ? ' · auto-approve' : '') + (b.auto_sync ? ' · auto-sync' : '');
 
+        // Spawn error
+        if (b.spawn_error) {
+            document.getElementById('batchSpawnError').style.display = 'block';
+            document.getElementById('batchSpawnErrorText').textContent = b.spawn_error;
+        } else {
+            document.getElementById('batchSpawnError').style.display = 'none';
+        }
+
+        // Tombol Lihat Log + Diagnose visible kalau ada log file atau status problematik
+        const logBtn = document.getElementById('batchLogBtn');
+        const diagBtn = document.getElementById('batchDiagnoseBtn');
+        if (b.has_log) logBtn.style.display = ''; else logBtn.style.display = 'none';
+        if (b.status === 'failed' || b.is_stale || (b.status === 'queued' && b.processed_items === 0)) {
+            diagBtn.style.display = '';
+        } else {
+            diagBtn.style.display = 'none';
+        }
+
         if (b.is_terminal) {
             clearInterval(pollTimer);
             pollTimer = null;
             document.getElementById('batchCancelBtn').style.display = 'none';
             document.getElementById('batchCloseBtn').style.display = '';
-            // Reload table once terminal
-            setTimeout(() => location.reload(), 1500);
+            // Reload table HANYA kalau success, kalau failed biarkan supaya user bisa baca log
+            if (b.status === 'completed') {
+                setTimeout(() => location.reload(), 1500);
+            }
         }
     } catch (err) {
         console.warn('poll error', err);
@@ -395,6 +472,53 @@ function closeBatchPanel() {
     document.getElementById('batchPanel').style.display = 'none';
     activeBatchId = null;
 }
+
+// === Log viewer ===
+async function showBatchLog() {
+    if (!activeBatchId) return;
+    document.getElementById('logModal').style.display = 'flex';
+    document.getElementById('logBatchId').textContent = '#' + activeBatchId;
+    document.getElementById('logContent').textContent = 'Loading...';
+    try {
+        const res = await fetch(`{{ url('admin/ai-products/batch') }}/${activeBatchId}/log`, {
+            headers: {'Accept':'application/json'}
+        });
+        const data = await res.json();
+        if (!data.success) {
+            document.getElementById('logContent').textContent = 'Error: ' + (data.message || '');
+            return;
+        }
+        document.getElementById('logFilePath').textContent = data.log_file || '(tidak ada path log)';
+        let display = '';
+        if (data.spawn_error) {
+            display += '════════ SPAWN ERROR ════════\n' + data.spawn_error + '\n\n';
+        }
+        if (data.artisan_command) {
+            display += '════════ COMMAND ════════\n' + data.artisan_command + '\n\n';
+        }
+        if (!data.exists) {
+            display += '════════ LOG FILE ════════\n(File log tidak ditemukan: ' + (data.log_file || '-') + ')\n\nKemungkinan penyebab:\n- Spawn process belum sempat menulis ke file (gagal di tahap awal)\n- Permission storage/logs tidak writable\n- Path log salah';
+        } else {
+            display += '════════ LOG FILE (' + (data.size || 0) + ' bytes' + (data.truncated ? ', tail 200KB' : '') + ') ════════\n';
+            display += data.content || '(kosong)';
+        }
+        document.getElementById('logContent').textContent = display;
+        // Scroll ke bawah supaya lihat tail terakhir
+        document.getElementById('logContent').scrollTop = document.getElementById('logContent').scrollHeight;
+    } catch (err) {
+        document.getElementById('logContent').textContent = 'Error: ' + err.message;
+    }
+}
+
+function closeLogModal() { document.getElementById('logModal').style.display = 'none'; }
+
+function copyLogContent() {
+    const text = document.getElementById('logContent').textContent;
+    navigator.clipboard.writeText(text).then(() => alert('Log disalin ke clipboard.'));
+}
+
+function showDiagnoseInfo() { document.getElementById('diagnoseModal').style.display = 'flex'; }
+function closeDiagnoseModal() { document.getElementById('diagnoseModal').style.display = 'none'; }
 
 // On page load, attach polling jika ada batch yang masih running.
 (async function attachActiveBatch() {

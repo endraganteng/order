@@ -127,4 +127,33 @@ class SupplierController extends Controller
             'data' => $supplier,
         ]);
     }
+
+    /**
+     * Search suppliers by name (AJAX endpoint untuk autocomplete).
+     */
+    public function searchAjax(Request $request)
+    {
+        $q = trim((string) $request->query('q', ''));
+        $limit = (int) max(5, min(50, (int) $request->query('limit', 20)));
+
+        $all = $this->firebase->getSuppliers();
+        $rows = [];
+        foreach ($all as $s) {
+            $name = (string) ($s['name'] ?? '');
+            if ($q !== '' && stripos($name, $q) === false) {
+                continue;
+            }
+            $rows[] = [
+                'id' => (string) ($s['id'] ?? ''),
+                'name' => $name,
+                'phone' => (string) ($s['phone'] ?? ''),
+                'contact_person' => (string) ($s['contact_person'] ?? ''),
+            ];
+            if (count($rows) >= $limit) {
+                break;
+            }
+        }
+
+        return response()->json(['success' => true, 'suppliers' => $rows]);
+    }
 }

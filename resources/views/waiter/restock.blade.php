@@ -274,6 +274,25 @@
                             @if($isCompleted)
                                 <div class="completed-msg">✅ Item sudah diterima penuh</div>
                             @else
+                                <div style="margin-top:8px; margin-bottom:8px;">
+                                    <label style="font-size:11px; color:#64748b; display:block; margin-bottom:3px;">📦 Simpan ke rak:</label>
+                                    <select class="rack-picker" id="rack-{{ $itemRestockId }}" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#fff;">
+                                        @php $defaultRackId = (string) ($item['rack_id'] ?? ''); @endphp
+                                        @foreach(($activeRacks ?? []) as $rack)
+                                            <option value="{{ $rack['id'] }}" @selected($defaultRackId === ($rack['id'] ?? ''))>
+                                                {{ $rack['name'] ?? '-' }}
+                                                @if(($rack['rack_type'] ?? 'storage') === 'storage')
+                                                    🏬
+                                                @else
+                                                    🛒
+                                                @endif
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @if($defaultRackId !== '' && !empty($item['rack_name']))
+                                        <div style="font-size:10px; color:#94a3b8; margin-top:2px;">PO awal: {{ $item['rack_name'] }} (bisa diubah jika perlu)</div>
+                                    @endif
+                                </div>
                                 <div class="receive-action">
                                     <input type="number" class="qty-input" value="{{ $remaining }}" min="1" max="{{ $remaining }}" id="input-{{ $itemRestockId }}">
                                     <button class="btn-receive" onclick="receiveItem('{{ $order['id'] }}', '{{ $itemRestockId }}', {{ $remaining }})">
@@ -438,6 +457,7 @@
             body: JSON.stringify({
                 restock_id: restockId,
                 received_qty: qty,
+                rack_id: (document.getElementById('rack-' + restockId)?.value || ''),
                 idempotency_key: `po-receive:${poId}:${poReceiveFormInstanceByPo.get(poKey) || newFormInstanceId()}`
             })
         })
