@@ -17,7 +17,9 @@
     .chat-shell .msg { max-width:80%; padding:12px 14px; border-radius:14px; font-size:14px; line-height:1.5; white-space:pre-wrap; }
     .chat-shell .msg.user { align-self:flex-end; background:var(--color-primary); color:#fff; border-bottom-right-radius:4px; }
     .chat-shell .msg.assistant { align-self:flex-start; background:#f1f5f9; color:var(--color-text); border-bottom-left-radius:4px; }
-    .chat-shell .msg.assistant .recommend { margin-top:8px; padding-top:8px; border-top:1px dashed #cbd5e1; font-size:12px; }
+    .chat-shell .msg.assistant .recommend { margin-bottom:12px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:14px; color:#166534; }
+    .chat-shell .msg.assistant .recommend strong { color:#065f46; display:block; margin-bottom:6px; font-size:13px; }
+    .chat-shell .msg.assistant .recommend .prod-name { font-weight:600; font-size:15px; color:#1e293b; padding:2px 0; }
     .chat-shell .msg.assistant .recommend a { color:var(--color-primary); text-decoration:none; }
     .chat-shell .msg .feedback-bar { margin-top:6px; display:flex; gap:6px; font-size:11px; }
     .chat-shell .msg .feedback-bar button { background:transparent; border:1px solid var(--color-border); padding:2px 8px; border-radius:4px; cursor:pointer; }
@@ -93,7 +95,7 @@
                         <div class="recommend">
                             <strong>📦 Produk yang dirujuk:</strong>
                             @foreach($meta['recommended'] as $r)
-                                <div>· {{ $r['name'] ?? '-' }} <span style="color:var(--color-text-muted);">(score {{ number_format((float)($r['score'] ?? 0), 1) }})</span></div>
+                                <div class="prod-name">• {{ $r['name'] ?? '-' }} <span style="color:var(--color-text-muted);font-size:12px;font-weight:400;">(score {{ number_format((float)($r['score'] ?? 0), 1) }})</span></div>
                             @endforeach
                         </div>
                     @endif
@@ -132,12 +134,20 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;'
 
 function formatMarkdown(text) {
     let s = escapeHtml(text);
+    // ***bold italic***
     s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    // **bold**
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // *italic* (tapi bukan lone asterisk)
+    s = s.replace(/\*([^\s*][^*]*?)\*/g, '<em>$1</em>');
+    // hapus sisa asterisk yang orphan
+    s = s.replace(/\*+/g, '');
+    // bullet points: lines starting with - or •
     s = s.replace(/^[\-•]\s+(.+)/gm, '<li>$1</li>');
     s = s.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+    // cleanup nested ul
     s = s.replace(/<\/ul>\s*<ul>/g, '');
+    // newlines
     s = s.replace(/\n/g, '<br>');
     return s;
 }
@@ -149,7 +159,7 @@ function appendMsg(role, text, recommended, msgId) {
     if (role === 'assistant' && Array.isArray(recommended) && recommended.length) {
         const rec = document.createElement('div');
         rec.className = 'recommend';
-        rec.innerHTML = '<strong>📦 Produk yang dirujuk:</strong>' + recommended.map(r => `<div>· ${escapeHtml(r.name||'-')} <span style="color:#64748b;">(score ${(r.score||0).toFixed(1)})</span></div>`).join('');
+        rec.innerHTML = '<strong>📦 Produk yang dirujuk:</strong>' + recommended.map(r => `<div class="prod-name">• ${escapeHtml(r.name||'-')} <span style="color:#64748b;font-size:12px;font-weight:400;">(score ${(r.score||0).toFixed(1)})</span></div>`).join('');
         div.appendChild(rec);
     }
     const content = document.createElement('div');

@@ -100,13 +100,16 @@
             box-shadow: 0 1px 6px rgba(0,0,0,0.05);
         }
         .msg.assistant .recommend {
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px dashed #e5e7eb;
-            font-size: 12px;
-            color: #4b5563;
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #166534;
         }
-        .msg.assistant .recommend strong { color:#1f2937; display:block; margin-bottom:4px; }
+        .msg.assistant .recommend strong { color:#065f46; display:block; margin-bottom:6px; font-size:13px; }
+        .msg.assistant .recommend .prod-name { font-weight:600; font-size:15px; color:#1e293b; padding:2px 0; }
         .msg .feedback-bar {
             margin-top: 8px;
             display: flex;
@@ -258,7 +261,7 @@
                     <div class="recommend">
                         <strong>📦 Produk yang dirujuk:</strong>
                         @foreach($meta['recommended'] as $r)
-                            <div>· {{ $r['name'] ?? '-' }}</div>
+                            <div class="prod-name">• {{ $r['name'] ?? '-' }}</div>
                         @endforeach
                     </div>
                 @endif
@@ -298,12 +301,14 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;'
 
 function formatMarkdown(text) {
     let s = escapeHtml(text);
-    // ***bold italic*** or ___bold italic___
+    // ***bold italic***
     s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
     // **bold**
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // *italic*
-    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // *italic* (tapi bukan lone asterisk)
+    s = s.replace(/\*([^\s*][^*]*?)\*/g, '<em>$1</em>');
+    // hapus sisa asterisk yang orphan
+    s = s.replace(/\*+/g, '');
     // bullet points: lines starting with - or •
     s = s.replace(/^[\-•]\s+(.+)/gm, '<li>$1</li>');
     s = s.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
@@ -321,7 +326,7 @@ function appendMsg(role, text, recommended, msgId) {
     if (role === 'assistant' && Array.isArray(recommended) && recommended.length) {
         const rec = document.createElement('div');
         rec.className = 'recommend';
-        rec.innerHTML = '<strong>📦 Produk yang dirujuk:</strong>' + recommended.map(r => `<div>· ${escapeHtml(r.name||'-')}</div>`).join('');
+        rec.innerHTML = '<strong>📦 Produk yang dirujuk:</strong>' + recommended.map(r => `<div class="prod-name">• ${escapeHtml(r.name||'-')}</div>`).join('');
         div.appendChild(rec);
     }
     const content = document.createElement('div');
