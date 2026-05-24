@@ -50,6 +50,7 @@ return [
     // === Limits ===
 
     'chat_max_products' => (int) env('AI_PRODUCT_CHAT_MAX_PRODUCTS', 5),
+    'chat_min_score' => (float) env('AI_PRODUCT_CHAT_MIN_SCORE', 160),
     'vector_top_k' => (int) env('AI_PRODUCT_VECTOR_TOP_K', 10),
     'enrichment_batch_limit' => (int) env('AI_PRODUCT_ENRICHMENT_BATCH_LIMIT', 20),
     'vector_sync_batch_limit' => (int) env('AI_PRODUCT_VECTOR_SYNC_BATCH_LIMIT', 50),

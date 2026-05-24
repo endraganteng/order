@@ -113,6 +113,26 @@ class AiProductChatService
         // 4. Rerank
         $reranked = $this->rerank($matches, $question);
 
+        // 4b. Filter: hanya tampilkan produk dengan score >= threshold
+        $minScore = (float) config('ai_product_assistant.chat_min_score', 160);
+        $reranked = array_values(array_filter($reranked, fn ($p) => $p['score'] >= $minScore));
+
+        if (count($reranked) === 0) {
+            $assistantMsg = $this->saveAssistant(
+                $session->id,
+                'Maaf, saya tidak menemukan produk yang cukup relevan untuk pertanyaan tersebut. Coba lebih spesifik, misalnya sebutkan jenis hewan, gejala, atau nama produk yang dicari.',
+                []
+            );
+
+            return [
+                'session_id' => $session->id,
+                'user_message_id' => $userMsg->id,
+                'assistant_message_id' => $assistantMsg->id,
+                'answer' => $assistantMsg->message,
+                'recommended_products' => [],
+            ];
+        }
+
         // 5. Take top-N
         $topN = (int) config('ai_product_assistant.chat_max_products', 5);
         $top = array_slice($reranked, 0, $topN);
