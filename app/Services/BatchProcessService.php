@@ -184,9 +184,16 @@ class BatchProcessService
 
     protected function resolvePhpBinary(): string
     {
-        // Coba env PHP_BINARY (paling reliable di CLI), fallback 'php' di PATH.
-        if (defined('PHP_BINARY') && PHP_BINARY !== '') {
-            return PHP_BINARY;
+        // PHP_BINARY di FPM context mengarah ke php-fpm, bukan php CLI.
+        // Selalu gunakan /usr/local/bin/php jika ada, fallback ke 'php' di PATH.
+        if (is_executable('/usr/local/bin/php')) {
+            return '/usr/local/bin/php';
+        }
+
+        // Fallback: cari php di PATH
+        $which = trim((string) shell_exec('which php 2>/dev/null'));
+        if ($which !== '' && is_executable($which) && !str_contains($which, 'fpm')) {
+            return $which;
         }
 
         return 'php';
