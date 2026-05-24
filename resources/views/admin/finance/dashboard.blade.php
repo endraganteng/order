@@ -39,9 +39,19 @@
 
     {{-- Saldo Kas per Akun (Cards - paling atas) --}}
     @if(count($accounts) > 0)
+    @php $totalSemuaKas = collect($accounts)->sum('balance'); @endphp
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <h3 style="font-size:15px;font-weight:700;">💰 Saldo Kas per Akun</h3>
         <button class="fm-btn fm-btn-sm fm-btn-outline" onclick="openAddAccount()">+ Tambah Akun</button>
+    </div>
+    <div style="background:linear-gradient(135deg,#1e40af,#3b82f6);border-radius:12px;padding:20px 24px;margin-bottom:16px;color:white;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+            <div style="font-size:13px;opacity:0.85;">Total Semua Akun Kas</div>
+            <div style="font-size:28px;font-weight:800;margin-top:4px;">Rp {{ number_format($totalSemuaKas, 0, ',', '.') }}</div>
+        </div>
+        <div style="font-size:13px;opacity:0.85;text-align:right;">
+            <div>{{ count($accounts) }} akun aktif</div>
+        </div>
     </div>
     <div class="fm-cards">
         @foreach($accounts as $acc)
