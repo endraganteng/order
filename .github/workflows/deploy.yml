@@ -6,19 +6,19 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            cd ~/projects/order
-            git pull origin main
-            sudo docker compose up --build -d
-            sudo docker exec order-app php artisan migrate --force
-            sudo docker exec order-app php artisan config:cache
-            sudo docker exec order-app php artisan route:cache
-            sudo docker exec order-app php artisan view:cache
+      - name: Pull latest code
+        run: cd ~/projects/order && git pull origin main
+
+      - name: Build and restart containers
+        run: cd ~/projects/order && sudo docker compose up --build -d
+
+      - name: Run migrations
+        run: sudo docker exec order-app php artisan migrate --force
+
+      - name: Cache config
+        run: |
+          sudo docker exec order-app php artisan config:cache
+          sudo docker exec order-app php artisan route:cache
+          sudo docker exec order-app php artisan view:cache
