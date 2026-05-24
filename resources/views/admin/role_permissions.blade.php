@@ -13,7 +13,7 @@
         <h3>ℹ️ Informasi</h3>
     </div>
     <div class="fm-card-body">
-        <p style="margin:0; color: #94a3b8; font-size: 0.9rem;">
+        <p style="margin:0; color: #475569; font-size: 0.9rem;">
             <strong>Supervisor</strong> selalu memiliki akses penuh ke semua fitur (tidak bisa dibatasi).<br>
             Pengaturan di bawah hanya berlaku untuk role selain supervisor.
         </p>
@@ -65,14 +65,20 @@
 
 .permission-item {
     padding: 0.75rem 1rem;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
     border-radius: 8px;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s;
 }
 
 .permission-item:hover {
-    background: rgba(255,255,255,0.06);
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.permission-item.is-active {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
 }
 
 .permission-toggle {
@@ -92,7 +98,7 @@
     width: 44px;
     min-width: 44px;
     height: 24px;
-    background: #374151;
+    background: #cbd5e1;
     border-radius: 12px;
     transition: background 0.3s;
 }
@@ -104,9 +110,10 @@
     left: 3px;
     width: 18px;
     height: 18px;
-    background: #9ca3af;
+    background: #fff;
     border-radius: 50%;
     transition: transform 0.3s, background 0.3s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .permission-toggle input:checked + .toggle-slider {
@@ -120,8 +127,14 @@
 
 .permission-label {
     font-size: 0.875rem;
-    color: #e2e8f0;
-    line-height: 1.3;
+    color: #1e293b;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.permission-toggle input:checked ~ .permission-label {
+    color: #065f46;
+    font-weight: 600;
 }
 
 .btn-save-permissions {
@@ -135,7 +148,7 @@
     font-size: 0.875rem;
     margin-bottom: 0.5rem;
     animation: slideIn 0.3s ease;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .toast-success { background: #059669; }
@@ -149,6 +162,23 @@
 
 @push('scripts')
 <script>
+// Toggle active state on permission items
+function updateActiveStates() {
+    document.querySelectorAll('.permission-checkbox').forEach(function(cb) {
+        const item = cb.closest('.permission-item');
+        if (cb.checked) {
+            item.classList.add('is-active');
+        } else {
+            item.classList.remove('is-active');
+        }
+    });
+}
+updateActiveStates();
+
+document.querySelectorAll('.permission-checkbox').forEach(function(cb) {
+    cb.addEventListener('change', updateActiveStates);
+});
+
 document.querySelectorAll('.btn-save-permissions').forEach(function(btn) {
     btn.addEventListener('click', function() {
         const role = this.dataset.role;
