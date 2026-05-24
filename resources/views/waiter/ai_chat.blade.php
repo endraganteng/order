@@ -254,7 +254,7 @@
         @foreach($messages as $m)
             @php $meta = is_array($m->metadata) ? $m->metadata : (json_decode($m->metadata ?? '{}', true) ?: []); @endphp
             <div class="msg {{ $m->role }}" data-msg-id="{{ $m->id }}">
-                {!! nl2br(e($m->message)) !!}
+                {!! $m->role === 'assistant' ? \App\Helpers\MarkdownHelper::toHtml($m->message) : nl2br(e($m->message)) !!}
                 @if($m->role === 'assistant' && !empty($meta['recommended']))
                     <div class="recommend">
                         <strong>Produk yang dirujuk:</strong>
@@ -296,11 +296,29 @@ function setMsg(t) { document.getElementById('msgInput').value = t; document.get
 
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+function formatMarkdown(text) {
+    let s = escapeHtml(text);
+    // ***bold italic*** or ___bold italic___
+    s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    // **bold**
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // *italic*
+    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // bullet points: lines starting with - or •
+    s = s.replace(/^[\-•]\s+(.+)/gm, '<li>$1</li>');
+    s = s.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+    // cleanup nested ul
+    s = s.replace(/<\/ul>\s*<ul>/g, '');
+    // newlines
+    s = s.replace(/\n/g, '<br>');
+    return s;
+}
+
 function appendMsg(role, text, recommended, msgId) {
     const div = document.createElement('div');
     div.className = 'msg ' + role;
     if (msgId) div.dataset.msgId = msgId;
-    div.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+    div.innerHTML = role === 'assistant' ? formatMarkdown(text) : escapeHtml(text).replace(/\n/g, '<br>');
     if (role === 'assistant' && Array.isArray(recommended) && recommended.length) {
         const rec = document.createElement('div');
         rec.className = 'recommend';
