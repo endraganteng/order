@@ -17,6 +17,10 @@ cd /var/www/html
 run_init() {
     echo "[entrypoint] Running init phase..."
 
+    # 0. Copy public assets ke shared volume (supaya nginx bisa serve)
+    echo "[entrypoint] Syncing public assets..."
+    cp -a /var/www/html/public/. /shared-public/
+
     # 1. Storage symlink (idempotent: kalau sudah ada akan force re-create)
     php artisan storage:link --force || true
 

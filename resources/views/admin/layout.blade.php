@@ -1254,6 +1254,10 @@
 
 <body>
     @php $adminRole = session('admin_role', 'supervisor'); @endphp
+    @php
+        $permService = app(\App\Services\RolePermissionService::class);
+        $allowedGroups = $permService->getAllowedGroups($adminRole);
+    @endphp
     <header class="navbar">
         <div class="navbar-container">
             <a class="navbar-brand" href="{{ $adminRole === 'finance' ? route('admin.finance.dashboard') : route('admin.dashboard') }}">
@@ -1291,7 +1295,7 @@
                     $grpSistem     = request()->routeIs(['admin.audit_log.*','admin.settings']);
                     $grpAi         = request()->routeIs(['admin.ai_products.*','admin.ai_chat.*']);
                 @endphp
-                @if($adminRole !== 'finance')
+                @if(in_array('ringkasan', $allowedGroups))
                 {{-- Ringkasan --}}
                 <li class="{{ $grpRingkasan ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ $grpRingkasan ? 'is-active-group' : '' }}">Ringkasan <span class="caret">▾</span></button>
@@ -1301,7 +1305,9 @@
                         <a class="{{ request()->routeIs('admin.test_order') ? 'is-active' : '' }}" href="{{ route('admin.test_order') }}">🧪 Test Order</a>
                     </div>
                 </li>
+                @endif
 
+                @if(in_array('tim_area', $allowedGroups))
                 {{-- Tim & Area --}}
                 <li class="{{ $grpTim ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ $grpTim ? 'is-active-group' : '' }}">Tim & Area <span class="caret">▾</span></button>
@@ -1317,7 +1323,9 @@
                         <a href="{{ route('waiter.login') }}" target="_blank" rel="noopener">🧑‍🍳 Portal Waiter ↗</a>
                     </div>
                 </li>
+                @endif
 
+                @if(in_array('operasional', $allowedGroups))
                 {{-- Operasional --}}
                 <li class="{{ $grpOps ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ $grpOps ? 'is-active-group' : '' }}">Operasional <span class="caret">▾</span></button>
@@ -1335,7 +1343,9 @@
                         <a class="{{ request()->routeIs('admin.cleanup') ? 'is-active' : '' }}" href="{{ route('admin.cleanup') }}">🧹 Cleanup</a>
                     </div>
                 </li>
+                @endif
 
+                @if(in_array('bonus', $allowedGroups))
                 {{-- Bonus & Performa --}}
                 <li class="{{ $grpBonus ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ $grpBonus ? 'is-active-group' : '' }}">Bonus <span class="caret">▾</span></button>
@@ -1352,8 +1362,8 @@
                 </li>
                 @endif
 
-                @if($adminRole === 'finance')
-                {{-- Menu Finance --}}
+                @if(in_array('keuangan', $allowedGroups) && $adminRole === 'finance')
+                {{-- Menu Finance (finance role layout) --}}
                 <li class="{{ request()->routeIs('admin.finance_dashboard') || request()->routeIs('admin.finance.dashboard') ? 'is-active-group' : '' }}">
                     <a href="{{ route('admin.finance.dashboard') }}" class="nav-link-direct {{ request()->routeIs('admin.finance.dashboard') ? 'is-active-group' : '' }}">🏠 Dashboard</a>
                 </li>
@@ -1374,6 +1384,7 @@
                         <a class="{{ request()->routeIs('admin.dana_payments.*') ? 'is-active' : '' }}" href="{{ route('admin.dana_payments.index') }}">💰 DANA Masuk</a>
                     </div>
                 </li>
+                @if(in_array('laporan_keuangan', $allowedGroups))
                 <li class="{{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log']) ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log']) ? 'is-active-group' : '' }}">📈 Laporan <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
@@ -1385,6 +1396,8 @@
                         <a class="{{ request()->routeIs('admin.finance.audit_log') ? 'is-active' : '' }}" href="{{ route('admin.finance.audit_log') }}">📜 Audit Log</a>
                     </div>
                 </li>
+                @endif
+                @if(in_array('setting_keuangan', $allowedGroups))
                 <li class="{{ request()->routeIs(['admin.finance.sync','admin.finance.settings','admin.finance.sync_logs','admin.finance.mappings.*','admin.finance.categories','admin.finance.allocations']) ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ request()->routeIs(['admin.finance.sync','admin.finance.settings','admin.finance.sync_logs','admin.finance.mappings.*','admin.finance.categories','admin.finance.allocations']) ? 'is-active-group' : '' }}">⚙️ Setting <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
@@ -1399,10 +1412,11 @@
                         <a class="{{ request()->routeIs('admin.finance.allocations') ? 'is-active' : '' }}" href="{{ route('admin.finance.allocations') }}">📊 Alokasi Dana</a>
                     </div>
                 </li>
+                @endif
                 <li>
                     <a href="{{ route('admin.logout') }}" onclick="return confirm('Yakin mau logout?')" class="nav-link-direct" style="color:#fca5a5;">🚪 Logout</a>
                 </li>
-                @else
+                @elseif(in_array('keuangan', $allowedGroups))
                 {{-- Menu Supervisor: Akuntansi --}}
                 <li class="{{ $grpFinance ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ $grpFinance ? 'is-active-group' : '' }}">Akuntansi <span class="caret">▾</span></button>
@@ -1453,6 +1467,9 @@
                     </div>
                 </li>
 
+                @endif
+
+                @if(in_array('ai', $allowedGroups))
                 {{-- AI --}}
                 <li class="{{ $grpAi ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ $grpAi ? 'is-active-group' : '' }}">AI <span class="caret">▾</span></button>
@@ -1461,7 +1478,9 @@
                         <a class="{{ request()->routeIs('admin.ai_products.*') ? 'is-active' : '' }}" href="{{ route('admin.ai_products.index') }}">🧠 Knowledge Produk</a>
                     </div>
                 </li>
+                @endif
 
+                @if(in_array('sistem', $allowedGroups))
                 {{-- Sistem --}}
                 <li class="{{ $grpSistem ? 'is-active-group' : '' }}">
                     <button class="dropdown-toggle {{ $grpSistem ? 'is-active-group' : '' }}">Sistem <span class="caret">▾</span></button>

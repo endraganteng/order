@@ -101,6 +101,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('settings', [SettingsController::class, 'update'])->name('settings.update');
         Route::post('settings/test-fonnte', [SettingsController::class, 'testFonnte'])->name('settings.test_fonnte');
 
+        // Role Permissions Management (supervisor only)
+        Route::get('settings/permissions', [\App\Http\Controllers\Admin\RolePermissionController::class, 'index'])->name('permissions.index');
+        Route::post('settings/permissions', [\App\Http\Controllers\Admin\RolePermissionController::class, 'save'])->name('permissions.save');
+
         // Test Order
         Route::get('test-order', [OrderController::class, 'showTestOrder'])->name('test_order');
         Route::post('test-order', [OrderController::class, 'createTestOrder'])->name('test_order.create');

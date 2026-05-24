@@ -42,11 +42,13 @@ services:
     image: order-app:latest
     container_name: order-app-init
     restart: "no"
+    user: root
     env_file: .env
     command: ["/usr/local/bin/entrypoint.sh", "init"]
     volumes:
       - app-storage:/var/www/html/storage
       - bootstrap-cache:/var/www/html/bootstrap/cache
+      - public-assets:/shared-public
       - ${FIREBASE_CREDENTIALS_HOST_PATH:-./storage/firebase-credentials.json}:/var/www/html/storage/firebase-credentials.json:ro
     networks:
       - db
@@ -103,7 +105,7 @@ services:
       - "traefik.http.middlewares.order-headers.headers.stsincludesubdomains=true"
       - "traefik.http.routers.order.middlewares=order-headers"
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 5s
       retries: 3

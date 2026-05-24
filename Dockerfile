@@ -23,7 +23,8 @@ RUN composer install \
     --no-progress \
     --no-interaction \
     --prefer-dist \
-    --optimize-autoloader
+    --optimize-autoloader \
+    --ignore-platform-reqs
 
 # ---------- Stage 2: node (Vite assets) ----------
 FROM node:20-alpine AS node-build
@@ -50,6 +51,15 @@ FROM php:8.3-fpm-alpine AS runtime
 RUN apk add --no-cache \
         git \
         curl \
+        libzip \
+        libpng \
+        libjpeg-turbo \
+        freetype \
+        icu-libs \
+        oniguruma \
+        sqlite-libs \
+        tini \
+    && apk add --no-cache --virtual .build-deps \
         libzip-dev \
         libpng-dev \
         libjpeg-turbo-dev \
@@ -57,7 +67,6 @@ RUN apk add --no-cache \
         icu-dev \
         oniguruma-dev \
         sqlite-dev \
-        tini \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         pdo_mysql \
@@ -68,14 +77,7 @@ RUN apk add --no-cache \
         bcmath \
         exif \
         opcache \
-    && apk del --no-network \
-        libzip-dev \
-        libpng-dev \
-        libjpeg-turbo-dev \
-        freetype-dev \
-        icu-dev \
-        oniguruma-dev \
-        sqlite-dev
+    && apk del --no-network .build-deps
 
 # Create non-root user yang sama UID/GID di semua container (app + scheduler)
 ARG WWW_USER=www-data
