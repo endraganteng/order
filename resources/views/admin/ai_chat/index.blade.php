@@ -89,15 +89,15 @@
             @foreach($messages as $m)
                 @php $meta = is_array($m->metadata) ? $m->metadata : (json_decode($m->metadata ?? '{}', true) ?: []); @endphp
                 <div class="msg {{ $m->role }}" data-msg-id="{{ $m->id }}">
-                    {!! $m->role === 'assistant' ? \App\Helpers\MarkdownHelper::toHtml($m->message) : nl2br(e($m->message)) !!}
                     @if($m->role === 'assistant' && !empty($meta['recommended']))
                         <div class="recommend">
-                            <strong>Produk yang dirujuk:</strong>
+                            <strong>📦 Produk yang dirujuk:</strong>
                             @foreach($meta['recommended'] as $r)
                                 <div>· {{ $r['name'] ?? '-' }} <span style="color:var(--color-text-muted);">(score {{ number_format((float)($r['score'] ?? 0), 1) }})</span></div>
                             @endforeach
                         </div>
                     @endif
+                    {!! $m->role === 'assistant' ? \App\Helpers\MarkdownHelper::toHtml($m->message) : nl2br(e($m->message)) !!}
                     @if($m->role === 'assistant')
                         <div class="feedback-bar">
                             <button class="up" onclick="rate({{ $m->id }}, 'up')">👍 Membantu</button>
@@ -146,13 +146,15 @@ function appendMsg(role, text, recommended, msgId) {
     const div = document.createElement('div');
     div.className = 'msg ' + role;
     if (msgId) div.dataset.msgId = msgId;
-    div.innerHTML = role === 'assistant' ? formatMarkdown(text) : escapeHtml(text).replace(/\n/g, '<br>');
     if (role === 'assistant' && Array.isArray(recommended) && recommended.length) {
         const rec = document.createElement('div');
         rec.className = 'recommend';
-        rec.innerHTML = '<strong>Produk yang dirujuk:</strong>' + recommended.map(r => `<div>· ${escapeHtml(r.name||'-')} <span style="color:#64748b;">(score ${(r.score||0).toFixed(1)})</span></div>`).join('');
+        rec.innerHTML = '<strong>📦 Produk yang dirujuk:</strong>' + recommended.map(r => `<div>· ${escapeHtml(r.name||'-')} <span style="color:#64748b;">(score ${(r.score||0).toFixed(1)})</span></div>`).join('');
         div.appendChild(rec);
     }
+    const content = document.createElement('div');
+    content.innerHTML = role === 'assistant' ? formatMarkdown(text) : escapeHtml(text).replace(/\n/g, '<br>');
+    div.appendChild(content);
     if (role === 'assistant' && msgId) {
         const fb = document.createElement('div');
         fb.className = 'feedback-bar';
