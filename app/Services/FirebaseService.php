@@ -3825,25 +3825,55 @@ class FirebaseService
             $maxDays = 14;
             $period = new \DatePeriod($startDate, new \DateInterval('P1D'), $endDate->modify('+1 day'));
             $count = 0;
+            $totalMissedDays = 0;
             foreach ($period as $date) {
+                $totalMissedDays++;
                 $datesToProcess[] = $date->format('Y-m-d');
                 $count++;
                 if ($count >= $maxDays) {
                     break;
                 }
             }
+
+            // Log audit jika ada hari yang terlewat melebihi cap
+            if ($totalMissedDays > $maxDays || $count >= $maxDays) {
+                $skippedDays = $totalMissedDays - $count;
+                if ($skippedDays > 0) {
+                    $this->logAuditAction('catch_up_cap_exceeded', 'system', null, [
+                        'last_run_at' => $lastRunAt,
+                        'today' => $todayDate,
+                        'total_missed_days' => $totalMissedDays,
+                        'processed_days' => $count,
+                        'skipped_days' => $skippedDays,
+                        'message' => "Sistem tidak aktif {$totalMissedDays} hari. Hanya {$count} hari terakhir diproses, {$skippedDays} hari lebih lama dilewati.",
+                    ]);
+                }
+            }
         }
 
         $generatedCount = 0;
+        $processedDates = [];
         foreach ($datesToProcess as $targetDate) {
-            $generatedCount += $this->generateRecurringTasksForDate($targetDate, $targetDate !== $todayDate, $force);
+            try {
+                $generatedCount += $this->generateRecurringTasksForDate($targetDate, $targetDate !== $todayDate, $force);
+                $processedDates[] = $targetDate;
+            } catch (\Throwable $e) {
+                report($e);
+                // Stop processing further dates — don't update last_run_at
+                // so next run will retry from this date onwards.
+                break;
+            }
         }
 
-        $lastRunRef->set($todayDate);
+        // Hanya update last_run_at ke tanggal terakhir yang berhasil diproses
+        if (! empty($processedDates)) {
+            $lastProcessedDate = end($processedDates);
+            $lastRunRef->set($lastProcessedDate);
+        }
 
         return [
             'generated' => $generatedCount,
-            'dates' => $datesToProcess,
+            'dates' => $processedDates,
             'today' => $todayDate,
         ];
     }
@@ -3993,6 +4023,43 @@ class FirebaseService
                         }
                     }
                     if ($pickedWaiter) {
+                        // Cek apakah picked waiter libur hari ini
+                        $pickedWaiterId = (string) ($pickedWaiter['id'] ?? '');
+                        if ($pickedWaiterId !== '' && ! $this->isWorkingDay($pickedWaiterId, $effectiveTargetDate)) {
+                            // Fallback: cari waiter berikutnya dalam daftar rolling yang masuk hari ini
+                            $fallbackWaiter = null;
+                            $rollingCount = count($rollingIds);
+                            for ($fallbackIdx = 1; $fallbackIdx < $rollingCount; $fallbackIdx++) {
+                                $nextIdx = ($offset + $fallbackIdx) % $rollingCount;
+                                $nextId = $rollingIds[$nextIdx];
+                                // Cek apakah waiter ini masuk hari ini
+                                if ($this->isWorkingDay($nextId, $effectiveTargetDate)) {
+                                    foreach ($targetWaiters as $w) {
+                                        if ((string) ($w['id'] ?? '') === $nextId) {
+                                            $fallbackWaiter = $w;
+                                            break 2;
+                                        }
+                                    }
+                                    // Coba fetch langsung
+                                    try {
+                                        $maybeW = $this->getWaiterById($nextId);
+                                        if ($maybeW && ($maybeW['is_active'] ?? true)) {
+                                            $fallbackWaiter = $maybeW;
+                                            break;
+                                        }
+                                    } catch (\Throwable $e) {
+                                        // skip
+                                    }
+                                }
+                            }
+                            if ($fallbackWaiter) {
+                                $pickedWaiter = $fallbackWaiter;
+                                $pickedWaiter['is_rolling_fallback'] = true;
+                                $pickedWaiter['original_rolling_waiter_id'] = $pickedWaiterId;
+                            }
+                            // Kalau tidak ada fallback sama sekali, tetap assign ke picked waiter
+                            // dengan flag off-day (perilaku lama sebagai last resort)
+                        }
                         $targetWaiters = [$pickedWaiter];
                     } else {
                         // Invalid rolling waiter ID, skip this template for today
@@ -4056,7 +4123,8 @@ class FirebaseService
                         }));
 
                         if (! empty($peerCandidates)) {
-                            $targetWaiters = $peerCandidates;
+                            // Untuk single assignment, pilih hanya 1 peer (yang pertama tersedia)
+                            $targetWaiters = [$peerCandidates[0]];
                             $peerFallbackUsed = true;
                             $rescheduledFromDate = null;
 
@@ -4271,11 +4339,19 @@ class FirebaseService
                 }
 
                 if ($isCatchUp) {
-                    $taskData['is_overdue'] = true;
+                    // Catch-up tasks: jangan buat sebagai pending+overdue karena akan
+                    // langsung kena penalti padahal bukan salah waiter.
+                    // Buat sebagai 'skipped' (cancelled) dengan catatan informatif.
+                    $taskData['status'] = 'cancelled';
+                    $taskData['is_catch_up'] = true;
                     $taskData['original_scheduled_date'] = $effectiveTargetDate;
+                    $taskData['cancel_reason'] = 'auto_catch_up';
                     $existingNote = trim((string) ($taskData['note'] ?? ''));
-                    $prefix = '(Tertunda dari '.$effectiveTargetDate.') ';
+                    $prefix = '(Terlewat dari '.$effectiveTargetDate.' - sistem tidak aktif) ';
                     $taskData['note'] = $prefix.$existingNote;
+                    // Hapus deadline supaya tidak di-mark overdue oleh markOverdueWaiterTasks()
+                    $taskData['deadline_at'] = null;
+                    $taskData['is_overdue'] = false;
                 }
 
                 $taskReference->set($taskData);
@@ -4909,32 +4985,46 @@ class FirebaseService
      */
     protected function resolveRotationOffsetForPeriod(string $date, string $period, ?string $anchor = null): int
     {
-        $targetTs = strtotime($date.' 00:00:00');
-        if ($targetTs === false) {
+        try {
+            $targetDt = new \DateTimeImmutable($date);
+        } catch (\Throwable $e) {
             return 0;
         }
 
-        $anchorTs = $anchor ? strtotime($anchor.' 00:00:00') : false;
-        if ($anchorTs === false || $anchorTs > $targetTs) {
+        $anchorDt = null;
+        if ($anchor) {
+            try {
+                $anchorDt = new \DateTimeImmutable($anchor);
+            } catch (\Throwable $e) {
+                $anchorDt = null;
+            }
+        }
+
+        if ($anchorDt === null || $anchorDt > $targetDt) {
             // No anchor / anchor in future → fall back to absolute period bucket
             $period = strtolower($period);
             if ($period === 'monthly') {
-                return ((int) date('Y', $targetTs)) * 12 + ((int) date('n', $targetTs)) - 1;
+                return ((int) $targetDt->format('Y')) * 12 + ((int) $targetDt->format('n')) - 1;
             }
-            $diffDays = (int) floor($targetTs / 86400);
-
-            return $period === 'weekly' ? (int) floor($diffDays / 7) : $diffDays;
+            // Use ISO week number for weekly to align with Monday-based weeks
+            if ($period === 'weekly') {
+                return ((int) $targetDt->format('o')) * 52 + ((int) $targetDt->format('W'));
+            }
+            // Daily: days since epoch using date_diff for DST safety
+            $epoch = new \DateTimeImmutable('1970-01-01');
+            return (int) $epoch->diff($targetDt)->days;
         }
 
         $period = strtolower($period);
         if ($period === 'monthly') {
-            $monthsTarget = ((int) date('Y', $targetTs)) * 12 + ((int) date('n', $targetTs));
-            $monthsAnchor = ((int) date('Y', $anchorTs)) * 12 + ((int) date('n', $anchorTs));
+            $monthsTarget = ((int) $targetDt->format('Y')) * 12 + ((int) $targetDt->format('n'));
+            $monthsAnchor = ((int) $anchorDt->format('Y')) * 12 + ((int) $anchorDt->format('n'));
 
             return max(0, $monthsTarget - $monthsAnchor);
         }
 
-        $diffDays = (int) floor(($targetTs - $anchorTs) / 86400);
+        // DST-safe day difference
+        $diffDays = (int) $anchorDt->diff($targetDt)->days;
         if ($period === 'weekly') {
             return (int) floor($diffDays / 7);
         }
@@ -5655,13 +5745,14 @@ class FirebaseService
                 return true;
             }
 
-            $anchorTimestamp = strtotime($anchorDate.' 00:00:00');
-            $dateTimestamp = strtotime($date.' 00:00:00');
-            if ($anchorTimestamp === false || $dateTimestamp === false || $dateTimestamp < $anchorTimestamp) {
+            // Use DateTimeImmutable for DST-safe day difference calculation
+            $anchorDt = new \DateTimeImmutable($anchorDate);
+            $dateDt = new \DateTimeImmutable($date);
+            if ($dateDt < $anchorDt) {
                 return false;
             }
 
-            $diffDays = (int) floor(($dateTimestamp - $anchorTimestamp) / 86400);
+            $diffDays = (int) $anchorDt->diff($dateDt)->days;
 
             return $diffDays % $intervalDays === 0;
         }

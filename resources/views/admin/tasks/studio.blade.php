@@ -1206,6 +1206,12 @@
                 <div class="ts-hint">Minimal 2. Untuk interval 1, gunakan frekuensi "Harian".</div>
             </div>
 
+            <div class="ts-field" x-show="form.recurrence_type === 'every_n_days'">
+                <label>Mulai dari tanggal</label>
+                <input type="date" x-model="form.recurrence_start_date">
+                <div class="ts-hint">Task pertama kali generate di tanggal ini. Sebelum tanggal ini, task tidak akan muncul.</div>
+            </div>
+
             <div class="ts-field">
                 <label>Mode Jadwal</label>
                 <select x-model="form.schedule_mode" @change="onScheduleModeChange()">
@@ -1757,6 +1763,7 @@ function taskStudio() {
                 recurrence_type: 'daily',
                 weekly_day: '1',
                 interval_days: 3,
+                recurrence_start_date: today,
                 schedule_mode: 'fixed',
                 schedule_time: '09:00',
                 shift_offset_minutes: 30,
@@ -2189,6 +2196,7 @@ function taskStudio() {
                 this.form = Object.assign(this.emptyForm(), template, {
                     weekly_day: String(template.weekly_day || '1'),
                     interval_days: template.interval_days || 3,
+                    recurrence_start_date: template.recurrence_anchor_date || new Date().toISOString().slice(0, 10),
                     rolling_waiter_ids: Array.isArray(template.rolling_waiter_ids)
                         ? [...template.rolling_waiter_ids]
                         : (template.rolling_waiter_ids ? Object.values(template.rolling_waiter_ids) : []),
@@ -2385,6 +2393,9 @@ function taskStudio() {
             if (f.recurrence_type === 'weekly' && !f.weekly_day) e.push('Pilih hari mingguan');
             if (f.recurrence_type === 'every_n_days' && (!f.interval_days || f.interval_days < 1)) {
                 e.push('Interval hari minimal 1');
+            }
+            if (f.recurrence_type === 'every_n_days' && !f.recurrence_start_date) {
+                e.push('Tanggal mulai wajib diisi untuk mode setiap N hari');
             }
             if (f.schedule_mode === 'fixed' && !f.schedule_time) {
                 e.push('Jam mulai wajib diisi pada mode jadwal tetap');
@@ -2703,7 +2714,12 @@ function taskStudio() {
             fd.append('is_recurring', '1');
             fd.append('recurrence_type', f.recurrence_type);
             if (f.recurrence_type === 'weekly') fd.append('weekly_day', f.weekly_day);
-            if (f.recurrence_type === 'every_n_days') fd.append('interval_days', String(f.interval_days));
+            if (f.recurrence_type === 'every_n_days') {
+                fd.append('interval_days', String(f.interval_days));
+                // Pakai recurrence_start_date sebagai anchor untuk menentukan kapan task mulai generate
+                const anchor = f.recurrence_start_date || f.rolling_anchor_date || '';
+                fd.append('recurrence_anchor_date', anchor);
+            }
             fd.append('schedule_mode', f.schedule_mode);
             if (f.schedule_mode === 'fixed') {
                 fd.append('schedule_time', f.schedule_time);
@@ -2760,7 +2776,11 @@ function taskStudio() {
             fd.append('category_name', this.form.category_name || '');
             fd.append('recurrence_type', this.form.recurrence_type);
             if (this.form.recurrence_type === 'weekly') fd.append('weekly_day', this.form.weekly_day);
-            if (this.form.recurrence_type === 'every_n_days') fd.append('interval_days', String(this.form.interval_days));
+            if (this.form.recurrence_type === 'every_n_days') {
+                fd.append('interval_days', String(this.form.interval_days));
+                const anchor = this.form.recurrence_start_date || this.form.rolling_anchor_date || '';
+                fd.append('recurrence_anchor_date', anchor);
+            }
             fd.append('schedule_mode', this.form.schedule_mode);
             if (this.form.schedule_mode === 'fixed') {
                 fd.append('schedule_time', this.form.schedule_time);
@@ -2770,7 +2790,11 @@ function taskStudio() {
                 fd.append('shift_offset_minutes', String(this.form.shift_offset_minutes));
                 fd.append('deadline_mode', 'before_shift_end');
                 fd.append('deadline_before_end_minutes', String(this.form.deadline_before_end_minutes));
+                fd.append('schedule_time', this.form.schedule_time || '00:00');
+                fd.append('time_limit_minutes', String(this.form.time_limit_minutes));
             }
+            if (this.form.requires_photo_proof) fd.append('requires_photo_proof', '1');
+            if (this.form.requires_photo_before) fd.append('requires_photo_before', '1');
             if (this.form.is_active) fd.append('is_active', '1');
             this.appendRollingFields(fd);
 
@@ -2795,12 +2819,15 @@ function taskStudio() {
                         recurrence_type: this.form.recurrence_type,
                         weekly_day: this.form.recurrence_type === 'weekly' ? parseInt(this.form.weekly_day) : null,
                         interval_days: this.form.recurrence_type === 'every_n_days' ? parseInt(this.form.interval_days) : null,
+                        recurrence_anchor_date: this.form.recurrence_type === 'every_n_days' ? (this.form.recurrence_start_date || this.form.rolling_anchor_date || '') : (t.recurrence_anchor_date || ''),
                         schedule_mode: this.form.schedule_mode,
                         schedule_time: this.form.schedule_time,
                         shift_offset_minutes: parseInt(this.form.shift_offset_minutes) || 0,
                         time_limit_minutes: parseInt(this.form.time_limit_minutes) || 0,
                         deadline_before_end_minutes: parseInt(this.form.deadline_before_end_minutes) || 0,
                         is_active: !!this.form.is_active,
+                        requires_photo_proof: !!this.form.requires_photo_proof,
+                        requires_photo_before: !!this.form.requires_photo_before,
                         rolling_enabled: !!this.form.rolling_enabled,
                         rolling_period: this.form.rolling_period,
                         rolling_waiter_ids: (this.form.rolling_waiter_ids || []).filter(id => id),

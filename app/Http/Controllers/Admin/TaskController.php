@@ -309,7 +309,7 @@ class TaskController extends Controller
                             ? max(1, min(7, (int) ($entry['weekly_day'] ?? 1)))
                             : null,
                         'interval_days' => $entryType === 'every_n_days'
-                            ? max(1, (int) ($entry['interval_days'] ?? 1))
+                            ? max(2, (int) ($entry['interval_days'] ?? 2))
                             : null,
                     ];
                 }
@@ -346,8 +346,13 @@ class TaskController extends Controller
             }
         }
 
+        // Legacy rolling via role_assignment_mode='rolling' tidak didukung untuk general tasks.
+        // Studio pakai rolling_enabled=true (general-style). Downgrade legacy mode tapi
+        // jangan clear rolling_enabled/rolling_waiter_ids karena itu jalur terpisah.
         if ($assignmentType === 'role' && $taskType !== 'rack_check' && $roleAssignmentMode === 'rolling') {
             $roleAssignmentMode = 'all';
+            // Pastikan request tidak kirim rolling config via legacy path
+            $request->merge(['role_assignment_mode' => 'all']);
         }
 
         if ($taskType !== 'rack_check' && $taskTitle === '') {
@@ -564,6 +569,12 @@ class TaskController extends Controller
                         ->withInput();
                 }
 
+                if ($roleAssignmentMode === 'rolling' && count($selectedWaiterIds) < 2) {
+                    return back()
+                        ->withErrors(['selected_waiter_ids' => 'Mode rotasi membutuhkan minimal 2 waiter.'])
+                        ->withInput();
+                }
+
                 $roleWaiterMap = [];
                 foreach ($roleWaiters as $roleWaiter) {
                     $roleWaiterId = trim((string) ($roleWaiter['id'] ?? ''));
@@ -731,6 +742,14 @@ class TaskController extends Controller
         $task = collect($this->firebase->getWaiterTasks())->first(function ($candidate) use ($id) {
             return (string) ($candidate['id'] ?? '') === (string) $id;
         });
+
+        if (! $task) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'Task tidak ditemukan.'], 404);
+            }
+
+            return redirect()->route('admin.tasks.index')->with('error', 'Task tidak ditemukan atau sudah dihapus.');
+        }
 
         $this->firebase->deleteWaiterTask($id);
         $this->firebase->logAuditAction('delete', 'task', $id, ['title' => $task['title'] ?? '']);
@@ -1420,7 +1439,7 @@ class TaskController extends Controller
             if ($recurrenceType === 'weekly' && $rollingPeriod === 'daily') {
                 $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas mingguan. Pilih "mingguan" atau "bulanan".';
             } elseif ($recurrenceType === 'every_n_days' && $rollingPeriod === 'daily') {
-                $intervalDays = max(1, (int) $request->input('interval_days', 1));
+                $intervalDays = max(2, (int) $request->input('interval_days', 2));
                 if ($intervalDays > 1) {
                     $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas tiap '.$intervalDays.' hari. Pilih periode mingguan/bulanan.';
                 }
@@ -1509,7 +1528,7 @@ class TaskController extends Controller
             if ($recurrenceType === 'weekly' && $rollingPeriod === 'daily') {
                 $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas mingguan. Pilih "mingguan" atau "bulanan".';
             } elseif ($recurrenceType === 'every_n_days' && $rollingPeriod === 'daily') {
-                $intervalDays = max(1, (int) ($merged['interval_days'] ?? 1));
+                $intervalDays = max(2, (int) ($merged['interval_days'] ?? 2));
                 if ($intervalDays > 1) {
                     $errors['rolling_period'] = 'Periode rotasi "harian" tidak masuk akal untuk tugas tiap '.$intervalDays.' hari.';
                 }
@@ -1723,7 +1742,7 @@ class TaskController extends Controller
         }
 
         if ($request->has('interval_days')) {
-            $patch['interval_days'] = max(1, (int) $request->input('interval_days'));
+            $patch['interval_days'] = max(2, (int) $request->input('interval_days'));
         }
 
         if ($request->has('schedule_time')) {
@@ -1771,6 +1790,28 @@ class TaskController extends Controller
         $existingTemplate = $this->firebase->getRecurringWaiterTaskTemplateById($id);
         if ($existingTemplate) {
             $merged = array_merge($existingTemplate, $patch);
+
+            // Validate recurrence completeness after merge
+            $mergedRecurrenceType = (string) ($merged['recurrence_type'] ?? 'daily');
+            if ($mergedRecurrenceType === 'weekly') {
+                $mergedWeeklyDay = (int) ($merged['weekly_day'] ?? 0);
+                if ($mergedWeeklyDay < 1 || $mergedWeeklyDay > 7) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Recurrence type weekly membutuhkan weekly_day (1-7).',
+                    ], 422);
+                }
+            }
+            if ($mergedRecurrenceType === 'every_n_days') {
+                $mergedInterval = (int) ($merged['interval_days'] ?? 0);
+                if ($mergedInterval < 2) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Recurrence type every_n_days membutuhkan interval_days minimal 2.',
+                    ], 422);
+                }
+            }
+
             $patchConflict = $this->validatePatchConflict($merged);
             if (! empty($patchConflict)) {
                 return response()->json([
@@ -2162,7 +2203,7 @@ class TaskController extends Controller
                         ? max(1, min(7, (int) ($perRackRec['weekly_day'] ?? 1)))
                         : null;
                     $effectiveIntervalDays = $effectiveRecurrenceType === 'every_n_days'
-                        ? max(1, (int) ($perRackRec['interval_days'] ?? 1))
+                        ? max(2, (int) ($perRackRec['interval_days'] ?? 2))
                         : null;
                 }
             }
@@ -2490,6 +2531,24 @@ class TaskController extends Controller
         // Process: for each waiter → for each assigned task index → create task
         $createdCount = 0;
         $allCreatedEntries = [];
+
+        // Validate all waiter IDs are active before creating tasks
+        $invalidWaiters = [];
+        foreach ($assignments as $waiterId => $taskIndices) {
+            $waiterId = trim((string) $waiterId);
+            if ($waiterId === '' || ! is_array($taskIndices)) {
+                continue;
+            }
+            $waiter = $this->firebase->getWaiterById($waiterId);
+            if (! $waiter || (($waiter['is_active'] ?? true) === false)) {
+                $invalidWaiters[] = $waiter['name'] ?? $waiterId;
+            }
+        }
+        if (count($invalidWaiters) > 0) {
+            return back()
+                ->withErrors(['batch_tasks_json' => 'Waiter berikut tidak valid atau nonaktif: ' . implode(', ', $invalidWaiters) . '. Refresh halaman dan coba lagi.'])
+                ->withInput();
+        }
 
         foreach ($assignments as $waiterId => $taskIndices) {
             $waiterId = trim((string) $waiterId);
