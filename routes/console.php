@@ -495,7 +495,7 @@ Artisan::command('bonus:reconcile-pending', function () {
     return $failed > 0 ? 1 : 0;
 })->purpose('Retry auto-score for tasks/events that failed bonus computation');
 
-Schedule::command('waiter:process-tasks')->everyMinute()->withoutOverlapping();
+Schedule::command('waiter:process-tasks')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('waiter:audit-attendance')->hourly()->withoutOverlapping();
 Schedule::command('waiter:send-weekly-report')->weeklyOn(1, '07:00')->withoutOverlapping();
