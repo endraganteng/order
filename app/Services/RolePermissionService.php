@@ -16,6 +16,7 @@ class RolePermissionService
         'operasional' => 'Operasional (Tasks, Cek Rak, Restock, Supplier, Absensi, dll)',
         'bonus' => 'Bonus (Konfigurasi, Penilaian, Penalti, Target, Rekap, Leaderboard)',
         'keuangan' => 'Keuangan (Dashboard, Payroll, Mutasi Kas, Pengeluaran, Hutang)',
+        'kasbon' => 'Kasbon (Pinjaman Gaji Karyawan)',
         'laporan_keuangan' => 'Laporan Keuangan (Budget, Laporan Bulanan, Saldo, Laba Rugi)',
         'setting_keuangan' => 'Setting Keuangan (Sync, Mapping, Kategori, Alokasi Dana)',
         'sistem' => 'Sistem (Audit Log, Settings)',
@@ -27,6 +28,7 @@ class RolePermissionService
      */
     public const FINANCE_DEFAULTS = [
         'keuangan',
+        'kasbon',
         'laporan_keuangan',
         'setting_keuangan',
     ];
@@ -40,6 +42,7 @@ class RolePermissionService
         'operasional' => ['admin.tasks.*', 'admin.restock.*', 'admin.suppliers.*', 'admin.attendance.*', 'admin.reconciliation.*', 'admin.dana_payments.*', 'admin.cleanup'],
         'bonus' => ['admin.bonus.*'],
         'keuangan' => ['admin.finance.dashboard', 'admin.finance_dashboard', 'admin.payroll.*', 'admin.finance.mutations', 'admin.finance.expenses', 'admin.finance.debts', 'admin.finance.shifts', 'admin.finance.transfers', 'admin.finance.cash_accounts', 'admin.finance.need_review', 'admin.finance.deposit', 'admin.finance.correct_balance', 'admin.finance.check_budget'],
+        'kasbon' => ['admin.kasbon.*'],
         'laporan_keuangan' => ['admin.finance.budget', 'admin.finance.report.*', 'admin.finance.laba_rugi', 'admin.finance.tutup_buku', 'admin.finance.tutup_buku.*', 'admin.finance.audit_log'],
         'setting_keuangan' => ['admin.finance.sync', 'admin.finance.sync.*', 'admin.finance.settings', 'admin.finance.settings.*', 'admin.finance.sync_logs', 'admin.finance.mappings.*', 'admin.finance.categories', 'admin.finance.categories.*', 'admin.finance.allocations', 'admin.finance.allocations.*', 'admin.finance.test_connection'],
         'sistem' => ['admin.audit_log.*', 'admin.settings', 'admin.settings.*'],

@@ -126,6 +126,14 @@ class PayrollService
         return (int) (DB::table('payroll_balances')->where('waiter_id', $waiterId)->value('balance') ?? 0);
     }
 
+    /**
+     * Public wrapper for KasbonService access.
+     */
+    public function adjustBalancePublic(string $waiterId, int $delta): int
+    {
+        return $this->adjustBalance($waiterId, $delta);
+    }
+
     protected function adjustBalance(string $waiterId, int $delta): int
     {
         return DB::transaction(function () use ($waiterId, $delta) {
@@ -211,6 +219,14 @@ class PayrollService
             );
 
             $this->triggerWaiterFlag($waiterId);
+
+            // Auto-deduct kasbon dari credit yang baru masuk
+            try {
+                $kasbonService = app(KasbonService::class);
+                $kasbonService->autoDeductFromCredit($waiterId, $amount);
+            } catch (\Throwable $e) {
+                report($e);
+            }
 
             return ['tx_id' => $txId, 'balance_after' => $newBalance, 'created' => true];
         });

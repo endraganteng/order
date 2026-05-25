@@ -147,6 +147,60 @@
             </div>
         @endif
 
+        {{-- Section Kasbon (read-only) --}}
+        @if($kasbonData)
+        <div class="card">
+            <h3 class="section-title">💰 Kasbon</h3>
+            @php
+                $activeKasbons = array_filter($kasbonData['items'], fn($k) => $k['status'] === 'active');
+                $totalRemaining = array_sum(array_column($activeKasbons, 'remaining'));
+            @endphp
+            @if(count($activeKasbons) > 0)
+                <div style="background: #fef9c3; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                    <div style="font-size: 12px; color: #854d0e; font-weight: 600; text-transform: uppercase;">Sisa Hutang Kasbon</div>
+                    <div style="font-size: 22px; font-weight: 700; color: #92400e; margin-top: 2px;">Rp {{ number_format($totalRemaining, 0, ',', '.') }}</div>
+                    @php
+                        $totalAmount = array_sum(array_column($activeKasbons, 'amount'));
+                        $paid = $totalAmount - $totalRemaining;
+                        $pct = $totalAmount > 0 ? round($paid / $totalAmount * 100) : 0;
+                    @endphp
+                    <div style="background: #fde68a; border-radius: 4px; height: 6px; margin-top: 8px; overflow: hidden;">
+                        <div style="background: #16a34a; height: 100%; width: {{ $pct }}%; border-radius: 4px;"></div>
+                    </div>
+                    <div style="font-size: 11px; color: #854d0e; margin-top: 4px;">Terbayar {{ $pct }}% — otomatis dipotong dari gaji/bonus</div>
+                </div>
+            @else
+                <div style="color: #64748b; font-size: 13px; padding: 8px 0;">Tidak ada kasbon aktif.</div>
+            @endif
+
+            @if(count($kasbonData['items']) > 0)
+                <div style="font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 6px;">Riwayat Kasbon</div>
+                @foreach($kasbonData['items'] as $k)
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9;">
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600;">Rp {{ number_format($k['amount'], 0, ',', '.') }}</div>
+                        <div style="font-size: 11px; color: #64748b;">{{ \Carbon\Carbon::parse($k['created_at'])->format('d M Y') }}{{ $k['reason'] ? ' • ' . $k['reason'] : '' }}</div>
+                    </div>
+                    <div>
+                        @php
+                            $wStatusStyles = [
+                                'active' => 'background:#fef9c3;color:#854d0e;',
+                                'paid_off' => 'background:#d1fae5;color:#065f46;',
+                                'cancelled' => 'background:#f1f5f9;color:#475569;',
+                                'written_off' => 'background:#fee2e2;color:#991b1b;',
+                            ];
+                            $wStatusLabels = ['active' => 'Aktif', 'paid_off' => 'Lunas', 'cancelled' => 'Batal', 'written_off' => 'Dihapus'];
+                        @endphp
+                        <span style="border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 600; {{ $wStatusStyles[$k['status']] ?? '' }}">
+                            {{ $wStatusLabels[$k['status']] ?? $k['status'] }}
+                        </span>
+                    </div>
+                </div>
+                @endforeach
+            @endif
+        </div>
+        @endif
+
         <div class="card">
             <h3 class="section-title"><span class="live-dot"></span> 📋 Riwayat Transaksi</h3>
             <div id="txContainer">

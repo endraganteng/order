@@ -43,8 +43,18 @@ class WaiterPayrollController extends Controller
             }
         }
 
+        // Kasbon data (jika fitur diaktifkan)
+        $kasbonData = null;
+        if (! empty($waiter['kasbon_enabled'])) {
+            $kasbonService = app(\App\Services\KasbonService::class);
+            $kasbonData = [
+                'items' => $kasbonService->listByWaiter($waiterId),
+                'limit_info' => $kasbonService->calculateAvailableLimit($waiterId),
+            ];
+        }
+
         return view('waiter.payroll', compact(
-            'waiterId', 'waiterName', 'waiter', 'settings', 'balance', 'transactions', 'nextPayday'
+            'waiterId', 'waiterName', 'waiter', 'settings', 'balance', 'transactions', 'nextPayday', 'kasbonData'
         ));
     }
 

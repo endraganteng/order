@@ -1372,6 +1372,9 @@
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.payroll.index') ? 'is-active' : '' }}" href="{{ route('admin.payroll.index') }}">👥 Karyawan & Saldo</a>
                         <a class="{{ request()->routeIs('admin.payroll.withdrawals') ? 'is-active' : '' }}" href="{{ route('admin.payroll.withdrawals') }}">📋 Penarikan Gaji</a>
+                        @if(in_array('kasbon', $allowedGroups))
+                        <a class="{{ request()->routeIs('admin.kasbon.*') ? 'is-active' : '' }}" href="{{ route('admin.kasbon.index') }}">🏦 Kasbon</a>
+                        @endif
                     </div>
                 </li>
                 <li class="{{ request()->routeIs(['admin.finance.mutations','admin.finance.expenses','admin.finance.debts','admin.finance.shifts']) ? 'is-active-group' : '' }}">
@@ -1428,6 +1431,9 @@
                             <div class="submenu-panel">
                                 <a class="{{ request()->routeIs('admin.payroll.index') ? 'is-active' : '' }}" href="{{ route('admin.payroll.index') }}">👥 Karyawan & Saldo</a>
                                 <a class="{{ request()->routeIs('admin.payroll.withdrawals') ? 'is-active' : '' }}" href="{{ route('admin.payroll.withdrawals') }}">📋 Penarikan Gaji</a>
+                                @if(in_array('kasbon', $allowedGroups))
+                                <a class="{{ request()->routeIs('admin.kasbon.*') ? 'is-active' : '' }}" href="{{ route('admin.kasbon.index') }}">🏦 Kasbon</a>
+                                @endif
                             </div>
                         </div>
                         <div class="has-submenu {{ request()->routeIs(['admin.finance.mutations','admin.finance.expenses','admin.finance.debts','admin.finance.shifts']) ? 'is-active-sub' : '' }}">

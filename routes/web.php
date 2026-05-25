@@ -242,6 +242,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('payroll/{waiterId}/settings', [PayrollController::class, 'updateSettings'])->name('payroll.settings_update');
         Route::post('payroll/{waiterId}/credit', [PayrollController::class, 'manualCredit'])->name('payroll.manual_credit');
 
+        // Kasbon Management
+        Route::get('kasbon', [\App\Http\Controllers\Admin\KasbonController::class, 'index'])->name('kasbon.index');
+        Route::get('kasbon/settings', [\App\Http\Controllers\Admin\KasbonController::class, 'settings'])->name('kasbon.settings');
+        Route::post('kasbon/settings', [\App\Http\Controllers\Admin\KasbonController::class, 'updateSettings'])->name('kasbon.settings_update');
+        Route::post('kasbon', [\App\Http\Controllers\Admin\KasbonController::class, 'store'])->name('kasbon.store');
+        Route::get('kasbon/{id}', [\App\Http\Controllers\Admin\KasbonController::class, 'show'])->name('kasbon.show');
+        Route::post('kasbon/{id}/cancel', [\App\Http\Controllers\Admin\KasbonController::class, 'cancel'])->name('kasbon.cancel');
+        Route::post('kasbon/{id}/write-off', [\App\Http\Controllers\Admin\KasbonController::class, 'writeOff'])->name('kasbon.write_off');
+        Route::patch('kasbon/waiter/{waiterId}/settings', [\App\Http\Controllers\Admin\KasbonController::class, 'updateWaiterSettings'])->name('kasbon.waiter_settings');
+        Route::get('kasbon/waiter/{waiterId}/limit', [\App\Http\Controllers\Admin\KasbonController::class, 'getLimitInfo'])->name('kasbon.limit_info');
+
         // Audit Log
         Route::get('audit-log', [AuditLogController::class, 'index'])->name('audit_log.index');
 

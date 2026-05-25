@@ -183,76 +183,103 @@ class FinanceService
 
             foreach ($dailyRows as $row) {
                 $tunaiAccountId = $this->resolveAccountMapping('penjualan_tunai');
-
-                // Modal awal shift pertama hari itu → catat sebagai saldo bawaan
-                // Ini mewakili uang yang sudah ada di laci sebelum penjualan dimulai
-                if ($tunaiAccountId) {
-                    $modalAwal = (int) DB::table('finance_shifts')
-                        ->where('tanggal', $row->tanggal)
-                        ->orderBy('shift_number')
-                        ->value('modal_awal');
-
-                    if ($modalAwal > 0) {
-                        // Cek apakah sudah pernah dicatat untuk hari ini
-                        $exists = DB::table('cash_mutations')
-                            ->where('cash_account_id', $tunaiAccountId)
-                            ->where('reference_type', 'sync_modal')
-                            ->where('transaction_date', $row->tanggal)
-                            ->exists();
-
-                        if (! $exists) {
-                            // Cek apakah modal ini sudah tercermin di saldo (dari hari sebelumnya)
-                            // Jika saldo sebelum sync hari ini < modal, berarti perlu dicatat
-                            $saldoSebelum = (int) DB::table('cash_accounts')->where('id', $tunaiAccountId)->value('balance');
-                            $mutasiHariIni = (int) DB::table('cash_mutations')
-                                ->where('cash_account_id', $tunaiAccountId)
-                                ->where('transaction_date', $row->tanggal)
-                                ->where('type', 'income')
-                                ->sum('amount');
-                            $saldoSebelumSync = $saldoSebelum - $mutasiHariIni + (int) DB::table('cash_mutations')
-                                ->where('cash_account_id', $tunaiAccountId)
-                                ->where('transaction_date', $row->tanggal)
-                                ->where('type', 'expense')
-                                ->sum('amount');
-
-                            if ($saldoSebelumSync < $modalAwal) {
-                                $selisihModal = $modalAwal - max(0, $saldoSebelumSync);
-                                $this->upsertMutation($tunaiAccountId, 'income', $selisihModal, 'Modal awal laci ' . $row->tanggal, $row->tanggal, 'sync_modal', $row->id);
-                            }
-                        }
-                    }
-                }
-
-                // Penjualan Tunai → income ke akun yang di-mapping
-                if ($tunaiAccountId && $row->penjualan_tunai > 0) {
-                    $this->upsertMutation($tunaiAccountId, 'income', $row->penjualan_tunai, 'Penjualan tunai ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
-                }
-
-                // Penjualan QRIS → income ke akun yang di-mapping
                 $qrisAccountId = $this->resolveAccountMapping('penjualan_qris');
-                if ($qrisAccountId && $row->penjualan_qris > 0) {
-                    $this->upsertMutation($qrisAccountId, 'income', $row->penjualan_qris, 'Penjualan QRIS ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
-                }
-
-                // Pengeluaran Shift → expense dari akun yang di-mapping (termasuk retur, karena fisik uang keluar)
                 $expAccountId = $this->resolveAccountMapping('pengeluaran_shift');
-                if ($expAccountId && ($row->total_pengeluaran_shift ?? $row->total_pengeluaran) > 0) {
-                    $this->upsertMutation($expAccountId, 'expense', (int) ($row->total_pengeluaran_shift ?? $row->total_pengeluaran), 'Pengeluaran shift ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
+
+                // === STEP 1: Hapus mutasi lama dari sync untuk tanggal ini ===
+                // Ini memastikan resubmit shift tidak menyebabkan double-entry atau orphan records
+                $this->deleteSyncMutationsForDate($row->tanggal, $tunaiAccountId, $qrisAccountId, $expAccountId);
+
+                // === STEP 2: Buat ulang mutasi dari data terbaru ===
+
+                // Penjualan Tunai → income
+                if ($tunaiAccountId && $row->penjualan_tunai > 0) {
+                    $this->insertMutation($tunaiAccountId, 'income', $row->penjualan_tunai, 'Penjualan tunai ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
                 }
 
-                // Selisih kas (jika ada) → koreksi saldo Kas Laci
-                $totalSelisih = (int) DB::table('finance_shifts')->where('tanggal', $row->tanggal)->sum('selisih');
+                // Penjualan QRIS → income
+                if ($qrisAccountId && $row->penjualan_qris > 0) {
+                    $this->insertMutation($qrisAccountId, 'income', $row->penjualan_qris, 'Penjualan QRIS ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
+                }
+
+                // Pengeluaran Shift → expense
+                if ($expAccountId && ($row->total_pengeluaran_shift ?? $row->total_pengeluaran) > 0) {
+                    $this->insertMutation($expAccountId, 'expense', (int) ($row->total_pengeluaran_shift ?? $row->total_pengeluaran), 'Pengeluaran shift ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
+                }
+
+                // Selisih kas — hanya dari shift terakhir hari itu
+                // Selisih shift sebelumnya sudah ter-absorb ke modal awal shift berikutnya
+                $totalSelisih = (int) DB::table('finance_shifts')->where('tanggal', $row->tanggal)
+                    ->orderByDesc('shift_number')->value('selisih');
                 if ($totalSelisih != 0 && $tunaiAccountId) {
                     if ($totalSelisih < 0) {
-                        // Uang kurang → expense (selisih negatif = uang hilang)
-                        $this->upsertMutation($tunaiAccountId, 'expense', abs($totalSelisih), 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id);
+                        $this->insertMutation($tunaiAccountId, 'expense', abs($totalSelisih), 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id);
                     } else {
-                        // Uang lebih → income (selisih positif = uang lebih)
-                        $this->upsertMutation($tunaiAccountId, 'income', $totalSelisih, 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id);
+                        $this->insertMutation($tunaiAccountId, 'income', $totalSelisih, 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id);
                     }
                 }
             }
         });
+    }
+
+    /**
+     * Hapus semua mutasi dari sync untuk tanggal tertentu dan rollback saldo akun.
+     */
+    protected function deleteSyncMutationsForDate(string $tanggal, ?int $tunaiAccountId, ?int $qrisAccountId, ?int $expAccountId): void
+    {
+        $accountIds = array_filter([$tunaiAccountId, $qrisAccountId, $expAccountId]);
+        if (empty($accountIds)) {
+            return;
+        }
+
+        $syncMutations = DB::table('cash_mutations')
+            ->whereIn('cash_account_id', $accountIds)
+            ->whereIn('reference_type', ['sync', 'sync_modal', 'sync_selisih'])
+            ->where('transaction_date', $tanggal)
+            ->get();
+
+        // Rollback saldo akun untuk setiap mutasi yang akan dihapus
+        foreach ($syncMutations as $mutation) {
+            if ($mutation->type === 'income' || $mutation->type === 'transfer_in') {
+                DB::table('cash_accounts')->where('id', $mutation->cash_account_id)->decrement('balance', $mutation->amount);
+            } else {
+                DB::table('cash_accounts')->where('id', $mutation->cash_account_id)->increment('balance', $mutation->amount);
+            }
+        }
+
+        // Hapus semua mutasi sync untuk tanggal ini
+        DB::table('cash_mutations')
+            ->whereIn('cash_account_id', $accountIds)
+            ->whereIn('reference_type', ['sync', 'sync_modal', 'sync_selisih'])
+            ->where('transaction_date', $tanggal)
+            ->delete();
+    }
+
+    /**
+     * Insert mutasi baru dan update saldo akun.
+     */
+    protected function insertMutation(int $accountId, string $type, int $amount, string $description, string $date, string $refType, int $refId): void
+    {
+        if ($type === 'income' || $type === 'transfer_in') {
+            DB::table('cash_accounts')->where('id', $accountId)->increment('balance', $amount);
+        } else {
+            DB::table('cash_accounts')->where('id', $accountId)->decrement('balance', $amount);
+        }
+
+        $newBalance = (int) DB::table('cash_accounts')->where('id', $accountId)->value('balance');
+
+        DB::table('cash_mutations')->insert([
+            'cash_account_id' => $accountId,
+            'type' => $type,
+            'amount' => $amount,
+            'balance_after' => $newBalance,
+            'description' => $description,
+            'reference_type' => $refType,
+            'reference_id' => $refId,
+            'transaction_date' => $date,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     /**
