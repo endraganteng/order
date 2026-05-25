@@ -211,12 +211,17 @@
         {{-- Left: Product Pool with Category Accordion --}}
         <div class="rs-pool" id="rs-product-pool">
             <div class="rs-pool-header">📦 Produk Restock ({{ count($groupedItems) }})</div>
+            {{-- Search Box --}}
+            <div style="margin-bottom: 10px;">
+                <input type="text" id="rs-pool-search" placeholder="🔍 Cari produk..." style="width: 100%; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--color-primary)'" onblur="this.style.borderColor='#e2e8f0'">
+            </div>
             @foreach($grouped as $catId => $catGroup)
             <details open class="rs-category-group" data-category-id="{{ $catId }}" style="margin-bottom: 8px;">
                 <summary style="font-weight: 600; font-size: 14px; color: #334155; cursor: pointer; padding: 8px 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; user-select: none; list-style: none; display: flex; align-items: center; gap: 8px;">
                     <span style="transition: transform 0.2s;">▶</span>
                     <span style="flex: 1;">{{ $catGroup['name'] }}</span>
                     <span style="font-size: 12px; color: #64748b; background: #e2e8f0; padding: 2px 8px; border-radius: 10px;">{{ count($catGroup['items']) }}</span>
+                    <button type="button" class="rs-move-category-btn" data-category-id="{{ $catId }}" title="Pindahkan semua produk kategori ini ke board" style="background: var(--color-primary); color: white; border: none; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; font-weight: 600;" onclick="event.stopPropagation(); event.preventDefault(); moveCategoryToBoard('{{ $catId }}');">➡️ Semua</button>
                 </summary>
                 <div style="padding: 8px 0;">
                     @foreach($catGroup['items'] as $item)
@@ -560,6 +565,7 @@
 
         addItemToLane(lane, draggedCard);
         draggedCard.style.display = 'none';
+        draggedCard.setAttribute('data-in-lane', '1');
         draggedCard = null;
         updateSubmitBar();
     }
@@ -630,6 +636,7 @@
                     if (!lane.querySelector('.rs-lane-item[data-product-id="' + productId + '"]')) {
                         addItemToLane(lane, draggedCard);
                         draggedCard.style.display = 'none';
+                        draggedCard.setAttribute('data-in-lane', '1');
                     }
                 }
             }
@@ -667,7 +674,10 @@
     function returnItemToPool(item) {
         const productId = item.getAttribute('data-product-id');
         const poolCard = pool.querySelector('[data-product-id="' + productId + '"]');
-        if (poolCard) poolCard.style.display = '';
+        if (poolCard) {
+            poolCard.style.display = '';
+            poolCard.removeAttribute('data-in-lane');
+        }
         const lane = item.closest('.rs-lane');
         item.remove();
         if (lane) updateLaneCount(lane);
@@ -693,6 +703,79 @@
             }
         }
     }
+
+    // Search functionality
+    const searchInput = document.getElementById('rs-pool-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            const categories = pool.querySelectorAll('.rs-category-group');
+
+            categories.forEach(function(cat) {
+                const cards = cat.querySelectorAll('.rs-pool-card');
+                let visibleCount = 0;
+
+                cards.forEach(function(card) {
+                    const name = (card.getAttribute('data-product-name') || '').toLowerCase();
+                    const catName = (card.getAttribute('data-category') || '').toLowerCase();
+                    const match = !query || name.includes(query) || catName.includes(query);
+                    const isInLane = card.style.display === 'none' && card.getAttribute('data-in-lane');
+
+                    if (match && !isInLane) {
+                        card.style.display = '';
+                        visibleCount++;
+                    } else if (!match) {
+                        card.style.display = 'none';
+                    } else if (isInLane) {
+                        // already in lane, keep hidden
+                    }
+                });
+
+                // Hide category if no visible cards
+                if (query) {
+                    cat.style.display = visibleCount > 0 ? '' : 'none';
+                    if (visibleCount > 0) cat.open = true;
+                } else {
+                    cat.style.display = '';
+                }
+            });
+        });
+    }
+
+    // Move entire category to board
+    window.moveCategoryToBoard = function(catId) {
+        const lanes = lanesContainer.querySelectorAll('.rs-lane');
+        if (lanes.length === 0) {
+            alert('Tambahkan supplier lane dulu sebelum memindahkan kategori.');
+            return;
+        }
+
+        // Use the last lane (or first if only one)
+        const targetLane = lanes[lanes.length - 1];
+        const category = pool.querySelector('.rs-category-group[data-category-id="' + catId + '"]');
+        if (!category) return;
+
+        const cards = category.querySelectorAll('.rs-pool-card');
+        let movedCount = 0;
+
+        cards.forEach(function(card) {
+            if (card.style.display === 'none') return; // already in a lane
+            const productId = card.getAttribute('data-product-id');
+            // Check if already in target lane
+            if (targetLane.querySelector('.rs-lane-item[data-product-id="' + productId + '"]')) return;
+
+            addItemToLane(targetLane, card);
+            card.style.display = 'none';
+            card.setAttribute('data-in-lane', '1');
+            movedCount++;
+        });
+
+        if (movedCount > 0) {
+            updateSubmitBar();
+        } else {
+            alert('Semua produk di kategori ini sudah ada di board.');
+        }
+    };
 
     // Submit
     if (submitBtn) {
