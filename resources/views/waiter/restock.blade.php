@@ -300,7 +300,7 @@
                                     </button>
                                 </div>
                                 <div style="margin-top: 8px;">
-                                    <button style="background:none;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:500;" onclick="reportIssue('{{ $order['id'] }}', '{{ $itemRestockId }}', '{{ addslashes($item['product_name'] ?? '') }}')">
+                                    <button style="background:none;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:500;" onclick="reportIssue('{{ $order['id'] }}', '{{ $itemRestockId }}', '{{ e($item['product_name'] ?? '') }}')">
                                         ⚠️ Laporkan Masalah
                                     </button>
                                 </div>
@@ -320,7 +320,11 @@
         if (!window.RTDB_READY || !window.firebaseDB) return;
         const debounceMs = 1500; // longer debounce: PO update lebih jarang
         let pending = false;
+        let _firstSnapshot = true; // skip initial snapshot
         const trigger = () => {
+            if (_firstSnapshot) { _firstSnapshot = false; return; }
+            // Guard: don't reload if user has unsaved form data
+            if (typeof poReceiveFormInstanceByPo !== 'undefined' && poReceiveFormInstanceByPo.size > 0) return;
             if (pending) return;
             pending = true;
             setTimeout(() => {

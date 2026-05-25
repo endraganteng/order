@@ -1892,12 +1892,14 @@
             if (draft.product_checklist && typeof draft.product_checklist === 'object') {
                 productChecklistByTask.set(taskId, draft.product_checklist);
             }
+            if (draft.stock_report) stockReportItemsByTask.set(taskId, draft.stock_report);
         }
         function collectTaskDraft(taskId) {
             const note = noteDraftByTask.get(taskId) || '';
             const scanned_barcode = scannedBarcodeByTask.get(taskId) || '';
             const product_checklist = productChecklistByTask.get(taskId) || {};
-            return { note, scanned_barcode, product_checklist };
+            const stock_report = stockReportItemsByTask.get(taskId) || '';
+            return { note, scanned_barcode, product_checklist, stock_report };
         }
         let activeScannerTaskId = '';
         let activeScannerTaskLabel = '';
@@ -2320,11 +2322,29 @@
             const sizeBytes = estimateDataUrlBytes(outputDataUrl);
             const maxOutputSize = 3 * 1024 * 1024;
             if (sizeBytes > maxOutputSize) {
+                canvas.width = 0;
+                canvas.height = 0;
                 throw new Error('Ukuran foto setelah kompresi masih terlalu besar (maks 3MB).');
             }
 
+            // Create object URL for preview (avoids embedding base64 in DOM)
+            let objectUrl = '';
+            try {
+                const blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.82);
+                });
+                objectUrl = URL.createObjectURL(blob);
+            } catch (e) {
+                // Fallback: no objectUrl, will use dataUrl for preview
+            }
+
+            // Cleanup canvas memory
+            canvas.width = 0;
+            canvas.height = 0;
+
             return {
                 dataUrl: outputDataUrl,
+                objectUrl,
                 sizeBytes,
                 mimeType: 'image/jpeg',
                 fileName: String(file.name || 'bukti-foto.jpg'),
@@ -2332,7 +2352,7 @@
         }
 
         function setActiveTab(tab) {
-            const allowedTabs = ['rack', 'tasks', 'reports', 'bonus', 'recheck'];
+            const allowedTabs = ['rack', 'tasks', 'reports', 'bonus', 'recheck', 'stocktake'];
             const targetTab = allowedTabs.includes(tab) ? tab : 'rack';
 
             panelRack.classList.toggle('active', targetTab === 'rack');
@@ -2437,12 +2457,13 @@
 
         function showFlash(type, message) {
             const isSuccess = type === 'success';
-            const target = isSuccess ? successEl : errorEl;
-            const other = isSuccess ? errorEl : successEl;
+            const isInfo = type === 'info';
+            const target = isSuccess || isInfo ? successEl : errorEl;
+            const other = isSuccess || isInfo ? errorEl : successEl;
 
             other.textContent = '';
             other.classList.add('hidden');
-            target.textContent = (isSuccess ? '✅ ' : '❌ ') + message;
+            target.textContent = (isSuccess ? '✅ ' : isInfo ? 'ℹ️ ' : '❌ ') + message;
             target.classList.remove('hidden');
         }
 
@@ -2464,7 +2485,7 @@
                 return false;
             }
 
-            return active.matches('.js-stock-report, .js-complete-form input[name="note"], .js-photo-proof, .js-rack-search, .js-product-qty');
+            return active.matches('.js-stock-report, .js-complete-form input[name="note"], .js-photo-proof, .js-photo-before, .js-rack-search, .js-product-qty');
         }
 
         function normalizeSearchKeyword(value) {
@@ -2720,7 +2741,7 @@
             const existingStockReport = String(stockReportItemsByTask.get(task.id) || '');
             const existingNoteDraft = String(noteDraftByTask.get(task.id) || '');
             const existingPhotoProof = photoProofByTask.get(task.id) || null;
-            const existingPhotoDataUrl = String(existingPhotoProof?.dataUrl || '');
+            const existingPhotoDataUrl = String(existingPhotoProof?.objectUrl || existingPhotoProof?.dataUrl || '');
             const rackTargetScope = String(task.rack_target_scope || 'single');
             const rackId = String(task.rack_id || '');
             const rackProducts = rackId && rackProductsMap[rackId] ? rackProductsMap[rackId] : [];
@@ -2794,9 +2815,6 @@
                 if (habisCount > 0) {
                     summaryText += ` • ${habisCount} habis`;
                 }
-                if (habisCount > 0) {
-                    summaryText += ` \u2022 ${habisCount} habis`;
-                }
 
                 productChecklistBlock = `<div class="product-checklist" data-task-id="${escapeAttr(task.id)}">
                     <div class="product-checklist-header">\ud83d\udccb Checklist Produk Rak (${rackProducts.length} produk)</div>
@@ -2819,7 +2837,7 @@
                 : `<div class="meta" style="font-size:12px; color:#9a3412; margin-top: 8px;">🔒 Form barang menipis/habis muncul setelah QR code rak berhasil di-scan.</div>`;
             const requiresPhotoBefore = Boolean(task?.requires_photo_before);
             const existingPhotoBefore = photoBeforeByTask.get(task.id) || null;
-            const existingPhotoBeforeDataUrl = String(existingPhotoBefore?.dataUrl || '');
+            const existingPhotoBeforeDataUrl = String(existingPhotoBefore?.objectUrl || existingPhotoBefore?.dataUrl || '');
             const photoBeforeBlock = requiresPhotoBefore
                 ? `<div class="photo-proof-wrap" style="border-color: #fbbf24; background: #fffbeb;">
                         <div class="photo-proof-head" style="color: #92400e;">
@@ -2832,7 +2850,7 @@
                             class="input js-photo-before"
                             type="file"
                             accept="image/*"
-                            capture="environment"
+
                             data-task-id="${escapeAttr(task.id)}"
                             style="margin-bottom: 6px;"
                         >
@@ -2855,7 +2873,7 @@
                             class="input js-photo-proof"
                             type="file"
                             accept="image/*"
-                            capture="environment"
+
                             data-task-id="${escapeAttr(task.id)}"
                             style="margin-bottom: 6px;"
                         >
@@ -4320,6 +4338,7 @@
                     }
 
                     stockReportItemsByTask.set(taskId, String(reportField.value || ''));
+                    debounceSaveDraft(taskId);
                     return;
                 }
 
@@ -5103,6 +5122,9 @@
                 pollIntervalId = null;
                 syncIntervalId = null;
             } else {
+                // Guard against duplicate intervals if visibilitychange fires multiple times
+                if (pollIntervalId) clearInterval(pollIntervalId);
+                if (syncIntervalId) clearInterval(syncIntervalId);
                 // Immediately poll on return, then resume intervals
                 pollTasks();
                 syncDueTasks();
@@ -5199,7 +5221,7 @@
                     recheckPendingTasks = recheckPendingTasks.filter(t => t.id !== recheckSelectedId);
                     renderRecheckPending();
                     closeRecheckModal();
-                    showFlash('Review tersimpan: ' + points + ' poin', 'success');
+                    showFlash('success', 'Review tersimpan: ' + points + ' poin');
                 } else {
                     alert(data.message || 'Gagal menyimpan review.');
                 }
@@ -5211,9 +5233,6 @@
             }
         }
 
-        function escapeHtml(s) {
-            return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-        }
 
         function formatTaskTime(ts) {
             if (!ts) return '?';
@@ -5221,7 +5240,7 @@
             return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
         }
 
-        function showFlash(msg, type) {
+        function showFlash(type, msg) {
             const id = type === 'success' ? 'flash-success' : 'flash-error';
             const el = document.getElementById(id);
             if (!el) return;

@@ -16,6 +16,10 @@ class WaiterAuthMiddleware
     public function handle(Request $request, Closure $next): Response
     {
         if (! session()->has('waiter_authenticated') || ! session('waiter_id')) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json(['error' => 'Sesi habis, silakan login ulang.'], 401);
+            }
+
             return redirect()->to(route('waiter.login', [], false));
         }
 

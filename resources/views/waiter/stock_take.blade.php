@@ -846,6 +846,49 @@
         applyFilter();
     }
 
+    // ─── Event listeners (attached once) ───
+    let _stockTakeListenersAttached = false;
+    function attachStockTakeListenersOnce() {
+        if (_stockTakeListenersAttached) return;
+        _stockTakeListenersAttached = true;
+        [productsBody, cardList].forEach(container => {
+            container.addEventListener('click', (e) => {
+                const btn = e.target.closest('.js-plus, .js-minus');
+                if (!btn || btn.disabled) return;
+                const idx = btn.dataset.index;
+                const inputs = document.querySelectorAll(`.js-take-qty[data-index="${idx}"]`);
+                inputs.forEach(inp => {
+                    if (inp.disabled) return;
+                    const maxAttr = parseInt(inp.getAttribute('max') || '', 10);
+                    const ceiling = Number.isFinite(maxAttr) && maxAttr > 0 ? maxAttr : Number.POSITIVE_INFINITY;
+                    let val = parseInt(inp.value || 0, 10);
+                    if (btn.classList.contains('js-plus')) val = Math.min(ceiling, Math.max(0, val + 1));
+                    else val = Math.max(0, val - 1);
+                    inp.value = val;
+                    updateFilledState(inp);
+                    syncTwinInputs(idx, val);
+                });
+                debounceSaveDraft(getDraftKey(), collectDraftData);
+            });
+            container.addEventListener('input', (e) => {
+                const inp = e.target.closest('.js-take-qty');
+                if (!inp || inp.disabled) return;
+                const idx = inp.dataset.index;
+                const maxAttr = parseInt(inp.getAttribute('max') || '', 10);
+                const ceiling = Number.isFinite(maxAttr) && maxAttr > 0 ? maxAttr : Number.POSITIVE_INFINITY;
+                let val = Math.max(0, parseInt(inp.value || 0, 10));
+                if (val > ceiling) {
+                    val = ceiling;
+                    showFeedback('err', `Qty maksimal ${ceiling} sesuai stok tersedia.`);
+                }
+                inp.value = val;
+                updateFilledState(inp);
+                syncTwinInputs(idx, val, inp);
+                debounceSaveDraft(getDraftKey(), collectDraftData);
+            });
+        });
+    }
+
     // ─── Render products ───
     function renderProducts(products) {
         productsBody.innerHTML = '';
@@ -942,43 +985,8 @@
             cardList.appendChild(card);
         });
 
-        // Delegate stepper clicks on productsBody and cardList
-        [productsBody, cardList].forEach(container => {
-            container.addEventListener('click', (e) => {
-                const btn = e.target.closest('.js-plus, .js-minus');
-                if (!btn || btn.disabled) return;
-                const idx = btn.dataset.index;
-                const inputs = document.querySelectorAll(`.js-take-qty[data-index="${idx}"]`);
-                inputs.forEach(inp => {
-                    if (inp.disabled) return;
-                    const maxAttr = parseInt(inp.getAttribute('max') || '', 10);
-                    const ceiling = Number.isFinite(maxAttr) && maxAttr > 0 ? maxAttr : Number.POSITIVE_INFINITY;
-                    let val = parseInt(inp.value || 0, 10);
-                    if (btn.classList.contains('js-plus')) val = Math.min(ceiling, Math.max(0, val + 1));
-                    else val = Math.max(0, val - 1);
-                    inp.value = val;
-                    updateFilledState(inp);
-                    syncTwinInputs(idx, val);
-                });
-                debounceSaveDraft(getDraftKey(), collectDraftData);
-            });
-            container.addEventListener('input', (e) => {
-                const inp = e.target.closest('.js-take-qty');
-                if (!inp || inp.disabled) return;
-                const idx = inp.dataset.index;
-                const maxAttr = parseInt(inp.getAttribute('max') || '', 10);
-                const ceiling = Number.isFinite(maxAttr) && maxAttr > 0 ? maxAttr : Number.POSITIVE_INFINITY;
-                let val = Math.max(0, parseInt(inp.value || 0, 10));
-                if (val > ceiling) {
-                    val = ceiling;
-                    showFeedback('err', `Qty maksimal ${ceiling} sesuai stok tersedia.`);
-                }
-                inp.value = val;
-                updateFilledState(inp);
-                syncTwinInputs(idx, val, inp);
-                debounceSaveDraft(getDraftKey(), collectDraftData);
-            });
-        });
+        // Delegate stepper clicks on productsBody and cardList (attached ONCE outside renderProducts)
+        attachStockTakeListenersOnce();
 
         applyFilter();
         refreshFilledCounter();
