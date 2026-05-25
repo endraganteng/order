@@ -7730,6 +7730,7 @@ class FirebaseService
     public function getPendingRestockGroupedByProduct(): array
     {
         $pending = $this->getPendingRestockRequests();
+        $productCategories = $this->getProductCategoriesMap();
 
         // Group by product_id, aggregate qty_needed across racks
         $grouped = [];
@@ -7738,11 +7739,27 @@ class FirebaseService
             if (!$productId) continue;
 
             if (!isset($grouped[$productId])) {
+                // Try to get fresh category from product master
+                $catId = $item['product_category_id'] ?? null;
+                $catName = $item['product_category_name'] ?? null;
+
+                // If category missing, lookup from product master
+                if (!$catId || !$catName || $catName === 'Tanpa Kategori') {
+                    $productMaster = $this->getProductById($productId);
+                    if ($productMaster) {
+                        $masterCatId = $productMaster['category_id'] ?? null;
+                        if ($masterCatId && isset($productCategories[$masterCatId])) {
+                            $catId = $masterCatId;
+                            $catName = $productCategories[$masterCatId]['name'] ?? 'Tanpa Kategori';
+                        }
+                    }
+                }
+
                 $grouped[$productId] = [
                     'product_id' => $productId,
                     'product_name' => $item['product_name'] ?? '',
-                    'product_category_id' => $item['product_category_id'] ?? null,
-                    'product_category_name' => $item['product_category_name'] ?? 'Tanpa Kategori',
+                    'product_category_id' => $catId,
+                    'product_category_name' => $catName ?: 'Tanpa Kategori',
                     'total_qty_needed' => 0,
                     'racks' => [],
                     'restock_ids' => [],
