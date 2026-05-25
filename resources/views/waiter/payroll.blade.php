@@ -502,8 +502,17 @@
                 credentials: 'same-origin',
                 headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
             })
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (r.status === 401) {
+                    // Session expired — stop polling and redirect to login
+                    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                    window.location.href = '{{ route("waiter.login", [], false) }}';
+                    return null;
+                }
+                return r.json();
+            })
             .then(function (body) {
+                if (!body) return;
                 if (body && body.success) {
                     var nextBalance = parseInt(body.balance || 0, 10);
                     renderBalance(nextBalance);

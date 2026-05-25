@@ -114,13 +114,13 @@
         import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
         const firebaseConfig = {
-            apiKey: "{{ env('FIREBASE_API_KEY') }}",
-            authDomain: "{{ env('FIREBASE_AUTH_DOMAIN') }}",
-            databaseURL: "{{ env('FIREBASE_DATABASE_URL') }}",
-            projectId: "{{ env('FIREBASE_PROJECT_ID') }}",
-            storageBucket: "{{ env('FIREBASE_STORAGE_BUCKET') }}",
-            messagingSenderId: "{{ env('FIREBASE_MESSAGING_SENDER_ID') }}",
-            appId: "{{ env('FIREBASE_APP_ID') }}"
+            apiKey: "{{ config('firebase.web.api_key') }}",
+            authDomain: "{{ config('firebase.web.auth_domain') }}",
+            databaseURL: "{{ config('firebase.web.database_url') }}",
+            projectId: "{{ config('firebase.web.project_id') }}",
+            storageBucket: "{{ config('firebase.web.storage_bucket') }}",
+            messagingSenderId: "{{ config('firebase.web.messaging_sender_id') }}",
+            appId: "{{ config('firebase.web.app_id') }}" 
         };
 
         const app = initializeApp(firebaseConfig);

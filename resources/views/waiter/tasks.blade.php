@@ -1506,7 +1506,7 @@
                 <a href="{{ route('waiter.payroll', [], false) }}" class="top-dropdown-item">💰 Gaji Saya</a>
                 <a href="{{ route('waiter.ai_chat.index', [], false) }}" class="top-dropdown-item">🤖 AI Chat Produk</a>
                 <div class="top-dropdown-divider"></div>
-                <a href="{{ route('waiter.logout', [], false) }}" class="top-dropdown-item danger" onclick="return confirm('Yakin mau logout?')">🚪 Logout</a>
+                <form method="POST" action="{{ route('waiter.logout', [], false) }}" style="display:inline;" onsubmit="return confirm('Yakin mau logout?')">@csrf<button type="submit" class="top-dropdown-item danger" style="background:none;border:none;cursor:pointer;width:100%;text-align:left;padding:10px 16px;font-size:inherit;">🚪 Logout</button></form>
             </div>
         </div>
 
@@ -1849,6 +1849,15 @@
         const noteDraftByTask = new Map();
         const photoProofByTask = new Map();
         const photoBeforeByTask = new Map();
+
+        // Helper: revoke objectURL before removing photo from map
+        function revokeAndDeletePhoto(map, taskId) {
+            const entry = map.get(taskId);
+            if (entry && entry.objectUrl) {
+                try { URL.revokeObjectURL(entry.objectUrl); } catch (e) {}
+            }
+            map.delete(taskId);
+        }
         const productChecklistByTask = new Map();
         const refillStepByTask = new Map(); // tracks display rack tasks in refill mode
         const taskCompleteFormInstanceByTask = new Map();
@@ -3108,12 +3117,12 @@
             }
             for (const taskId of Array.from(photoProofByTask.keys())) {
                 if (!pendingTaskIds.has(taskId)) {
-                    photoProofByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoProofByTask, taskId);
                 }
             }
             for (const taskId of Array.from(photoBeforeByTask.keys())) {
                 if (!pendingTaskIds.has(taskId)) {
-                    photoBeforeByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoBeforeByTask, taskId);
                 }
             }
             for (const taskId of Array.from(productChecklistByTask.keys())) {
@@ -3487,10 +3496,17 @@
                     pollTasks().catch(() => {});
                 }, debounceMs);
             };
+            const onError = (err) => {
+                console.warn('[RTDB] tasks listener error, falling back to fast poll:', err?.message || err);
+                window.RTDB_READY = false;
+                // Switch to fast polling since RTDB is down
+                if (typeof pollIntervalId !== 'undefined' && pollIntervalId) clearInterval(pollIntervalId);
+                pollIntervalId = setInterval(pollTasks, FAST_POLL);
+            };
             try {
                 // limitToLast(50) untuk batasi initial download. Push-id RTDB
                 // chronological, jadi task terbaru dijamin masuk.
-                window.firebaseDB.ref('waiter_tasks').limitToLast(50).on('value', trigger);
+                window.firebaseDB.ref('waiter_tasks').limitToLast(50).on('value', trigger, onError);
             } catch (e) {
                 console.warn('[RTDB] tasks listener failed:', e);
             }
@@ -3890,8 +3906,8 @@
                 if (payload?.partial) {
                     // Partial completion — clear note/photo drafts but keep task in list
                     noteDraftByTask.delete(taskId);
-                    photoProofByTask.delete(taskId);
-                    photoBeforeByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoProofByTask, taskId);
+                    revokeAndDeletePhoto(photoBeforeByTask, taskId);
                     clearDraftLocal(taskDraftKey(taskId));
                     const reward = payload?.reward || {
                         points_earned: 0,
@@ -3908,8 +3924,8 @@
                     scannedBarcodeByTask.delete(taskId);
                     stockReportItemsByTask.delete(taskId);
                     noteDraftByTask.delete(taskId);
-                    photoProofByTask.delete(taskId);
-                    photoBeforeByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoProofByTask, taskId);
+                    revokeAndDeletePhoto(photoBeforeByTask, taskId);
                     productChecklistByTask.delete(taskId);
                     refillStepByTask.delete(taskId);
                     taskCompleteFormInstanceByTask.delete(taskId);
@@ -4320,7 +4336,8 @@
                 }
 
                 await completeTask(taskId, note, submitButton, stockReportItems, photoProofDataUrl, photoBeforeDataUrl);
-                await pollTasks();
+                // Delay poll to allow RTDB eventual consistency propagation
+                setTimeout(() => pollTasks().catch(() => {}), 1500);
             });
 
             container.addEventListener('input', (event) => {
@@ -4338,7 +4355,7 @@
                     }
 
                     stockReportItemsByTask.set(taskId, String(reportField.value || ''));
-                    debounceSaveDraft(taskId);
+                    debounceSaveDraft(taskDraftKey(taskId), () => collectTaskDraft(taskId));
                     return;
                 }
 
@@ -4427,7 +4444,7 @@
                         : null;
 
                     if (!selectedFile) {
-                        photoBeforeByTask.delete(taskId);
+                        revokeAndDeletePhoto(photoBeforeByTask, taskId);
                         renderAllTasks();
                         return;
                     }
@@ -4437,7 +4454,7 @@
                         photoBeforeByTask.set(taskId, compressed);
                         showFlash('success', `Foto sebelum siap (${formatBytes(compressed.sizeBytes)}).`);
                     } catch (error) {
-                        photoBeforeByTask.delete(taskId);
+                        revokeAndDeletePhoto(photoBeforeByTask, taskId);
                         showFlash('error', error?.message || 'Gagal memproses foto sebelum.');
                     }
 
@@ -4460,7 +4477,7 @@
                     : null;
 
                 if (!selectedFile) {
-                    photoProofByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoProofByTask, taskId);
                     renderAllTasks();
                     return;
                 }
@@ -4470,7 +4487,7 @@
                     photoProofByTask.set(taskId, compressed);
                     showFlash('success', `Foto bukti siap dikirim (${formatBytes(compressed.sizeBytes)}).`);
                 } catch (error) {
-                    photoProofByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoProofByTask, taskId);
                     showFlash('error', error?.message || 'Gagal memproses foto bukti.');
                 }
 
@@ -4503,7 +4520,7 @@
                         return;
                     }
 
-                    photoProofByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoProofByTask, taskId);
                     renderAllTasks();
                     showFlash('success', 'Foto bukti dihapus dari draft task ini.');
                     return;
@@ -4516,7 +4533,7 @@
                         return;
                     }
 
-                    photoBeforeByTask.delete(taskId);
+                    revokeAndDeletePhoto(photoBeforeByTask, taskId);
                     renderAllTasks();
                     showFlash('success', 'Foto sebelum dihapus dari draft task ini.');
                     return;
@@ -4942,11 +4959,11 @@
                     penalties.forEach(p => {
                         penaltiesHtml += `<div class="penalty-item">
                             <div class="penalty-header">
-                                <span class="penalty-type">${p.type || p.penalty_type || 'Pelanggaran'}</span>
+                                <span class="penalty-type">${escapeHtml(p.type || p.penalty_type || 'Pelanggaran')}</span>
                                 <span class="penalty-points">-${Math.abs(Number(p.points_deducted || 0))} poin</span>
                             </div>
-                            <div class="penalty-reason">${p.reason || p.notes || '-'}</div>
-                            <div class="penalty-date">${p.date || p.created_at || ''}</div>
+                            <div class="penalty-reason">${escapeHtml(p.reason || p.notes || '-')}</div>
+                            <div class="penalty-date">${escapeHtml(p.date || p.created_at || '')}</div>
                         </div>`;
                     });
                     penaltiesHtml += '</div>';
@@ -4977,7 +4994,7 @@
                         const isMe = (entry.waiter_id || '') === waiterId;
                         leaderboardHtml += `<div class="leaderboard-item ${isMe ? 'is-me' : ''}">
                             <div class="leaderboard-rank ${rankClass}">${rankNum}</div>
-                            <div class="leaderboard-name">${entry.waiter_name || 'Waiter'}${isMe ? ' (Anda)' : ''}</div>
+                            <div class="leaderboard-name">${escapeHtml(entry.waiter_name || 'Waiter')}${isMe ? ' (Anda)' : ''}</div>
                             <div class="leaderboard-points">${entry.total_points || entry.net_points || 0} pts</div>
                         </div>`;
                     });
@@ -5238,15 +5255,6 @@
             if (!ts) return '?';
             const d = new Date(parseInt(ts) * 1000);
             return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        }
-
-        function showFlash(type, msg) {
-            const id = type === 'success' ? 'flash-success' : 'flash-error';
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.textContent = (type === 'success' ? '✅ ' : '❌ ') + msg;
-            el.classList.remove('hidden');
-            setTimeout(() => el.classList.add('hidden'), 3500);
         }
 
         document.addEventListener('DOMContentLoaded', renderRecheckPending);

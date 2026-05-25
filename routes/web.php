@@ -428,7 +428,7 @@ Route::post('cashier/tasks/{id}/status', [CashierController::class, 'updateTaskS
 // Waiter routes
 Route::prefix('waiter')->name('waiter.')->group(function () {
     Route::get('login', [WaiterController::class, 'showLogin'])->name('login');
-    Route::post('login', [WaiterController::class, 'login'])->name('login.post');
+    Route::post('login', [WaiterController::class, 'login'])->middleware('throttle:5,1')->name('login.post');
 
     // Dev-only: testing helper to login as a waiter by id (no password needed).
     // Disable in production via env check.
@@ -485,8 +485,8 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         // Payroll Portal
         Route::get('payroll', [\App\Http\Controllers\WaiterPayrollController::class, 'index'])->name('payroll');
         Route::get('payroll/api', [\App\Http\Controllers\WaiterPayrollController::class, 'apiSnapshot'])->name('payroll.api');
-        Route::post('payroll/withdraw', [\App\Http\Controllers\WaiterPayrollController::class, 'requestWithdrawal'])->name('payroll.withdraw');
-        Route::post('payroll/bank', [\App\Http\Controllers\WaiterPayrollController::class, 'updateBankAccount'])->name('payroll.bank_update');
+        Route::post('payroll/withdraw', [\App\Http\Controllers\WaiterPayrollController::class, 'requestWithdrawal'])->middleware('throttle:3,1')->name('payroll.withdraw');
+        Route::post('payroll/bank', [\App\Http\Controllers\WaiterPayrollController::class, 'updateBankAccount'])->middleware('throttle:5,1')->name('payroll.bank_update');
 
         // Restock / Penerimaan Barang
         Route::get('restock', [WaiterController::class, 'restockList'])->name('restock');
@@ -504,6 +504,6 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
                 ->middleware('throttle:60,1')->name('feedback');
         });
 
-        Route::get('logout', [WaiterController::class, 'logout'])->name('logout');
+        Route::post('logout', [WaiterController::class, 'logout'])->name('logout');
     });
 });

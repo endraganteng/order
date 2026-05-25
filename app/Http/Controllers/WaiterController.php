@@ -100,23 +100,41 @@ class WaiterController extends Controller
         $waiterName = (string) session('waiter_name', 'Waiter');
         $reportDate = date('Y-m-d');
 
-        $taskBuckets = $this->buildWaiterTaskBuckets($waiterId);
-        $activityReports = $this->buildWaiterActivityReports($waiterId, $reportDate);
-        $rackProductsMap = $this->firebase->getAllRackProductsMap();
-        $rackTypesMap = $this->firebase->getRackTypesMap();
-        $todayAttendance = $this->firebase->getAttendanceByDate($waiterId, date('Y-m-d'));
-        $waiterShift = $this->firebase->getWaiterShift($waiterId);
-        $settings = $this->firebase->getSettings();
-        $clockOutEnabled = !empty($settings['clock_out_enabled']);
+        try {
+            $taskBuckets = $this->buildWaiterTaskBuckets($waiterId);
+            $activityReports = $this->buildWaiterActivityReports($waiterId, $reportDate);
+            $rackProductsMap = $this->firebase->getAllRackProductsMap();
+            $rackTypesMap = $this->firebase->getRackTypesMap();
+            $todayAttendance = $this->firebase->getAttendanceByDate($waiterId, date('Y-m-d'));
+            $waiterShift = $this->firebase->getWaiterShift($waiterId);
+            $settings = $this->firebase->getSettings();
+            $clockOutEnabled = !empty($settings['clock_out_enabled']);
 
-        // Finance recheck inbox: kalau waiter login ini role finance,
-        // tampilkan list task rack_check yang done & menunggu review.
-        $waiterRecord = $this->firebase->getWaiterById($waiterId);
-        $waiterRole = strtolower((string) ($waiterRecord['waiter_role'] ?? ''));
-        $isFinance = $waiterRole === 'finance';
-        $rackCheckPendingReview = $isFinance
-            ? $this->firebase->getRackCheckPendingReview($reportDate)
-            : [];
+            // Finance recheck inbox: kalau waiter login ini role finance,
+            // tampilkan list task rack_check yang done & menunggu review.
+            $waiterRecord = $this->firebase->getWaiterById($waiterId);
+            $waiterRole = strtolower((string) ($waiterRecord['waiter_role'] ?? ''));
+            $isFinance = $waiterRole === 'finance';
+            $rackCheckPendingReview = $isFinance
+                ? $this->firebase->getRackCheckPendingReview($reportDate)
+                : [];
+        } catch (\Throwable $e) {
+            report($e);
+
+            // Graceful fallback with empty data
+            $taskBuckets = ['pending_tasks' => [], 'task_history' => []];
+            $activityReports = [];
+            $rackProductsMap = [];
+            $rackTypesMap = [];
+            $todayAttendance = null;
+            $waiterShift = null;
+            $settings = [];
+            $clockOutEnabled = false;
+            $waiterRecord = null;
+            $waiterRole = '';
+            $isFinance = false;
+            $rackCheckPendingReview = [];
+        }
 
         return view('waiter.tasks', [
             'waiterId' => $waiterId,
@@ -749,6 +767,10 @@ class WaiterController extends Controller
      */
     public function clockIn(Request $request)
     {
+        $request->validate([
+            'scanned_value' => 'required|string|max:500',
+        ]);
+
         $waiterId = (string) session('waiter_id');
         $scannedValue = $request->input('scanned_value');
         
@@ -835,7 +857,7 @@ class WaiterController extends Controller
             }
         }
 
-        return response()->json($result);
+        return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
     }
 
     /**
@@ -847,6 +869,10 @@ class WaiterController extends Controller
         if (empty($settings['clock_out_enabled'])) {
             return response()->json(['success' => false, 'message' => 'Fitur absen pulang tidak aktif'], 403);
         }
+
+        $request->validate([
+            'scanned_value' => 'required|string|max:500',
+        ]);
 
         $waiterId = (string) session('waiter_id');
         $scannedValue = $request->input('scanned_value');
@@ -862,7 +888,7 @@ class WaiterController extends Controller
             $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_out', (string) $scannedValue, 'qr_scan');
         }
 
-        return response()->json($result);
+        return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
     }
 
     /**
