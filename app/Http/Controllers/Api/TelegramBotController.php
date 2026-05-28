@@ -298,7 +298,11 @@ class TelegramBotController extends Controller
             $amount = (float) ($order['total_amount'] ?? 0);
             $totalOmzet += $amount;
 
-            $paymentType = $order['payment_type_name'] ?? 'Lainnya';
+            $paymentType = match ($order['payment_type_name'] ?? '') {
+                'Kartu Debit' => 'QRIS',
+                '' => 'Lainnya',
+                default => $order['payment_type_name'],
+            };
             if (!isset($paymentBreakdown[$paymentType])) {
                 $paymentBreakdown[$paymentType] = 0;
             }
