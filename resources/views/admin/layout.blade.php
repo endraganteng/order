@@ -1588,6 +1588,10 @@
         })();
     </script>
     @stack('scripts')
+    @stack('overlays')
+    @if(request()->is('admin/finance*'))
+        @include('admin.finance._chat_overlay')
+    @endif
 </body>
 
 </html>

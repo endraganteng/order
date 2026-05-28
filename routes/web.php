@@ -350,6 +350,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::post('tutup-buku/close', [\App\Http\Controllers\Admin\FinanceController::class, 'closeMonth'])->name('tutup_buku.close');
             Route::post('tutup-buku/reopen', [\App\Http\Controllers\Admin\FinanceController::class, 'reopenMonth'])->name('tutup_buku.reopen');
             Route::get('laba-rugi', [\App\Http\Controllers\Admin\FinanceController::class, 'labaRugi'])->name('laba_rugi');
+
+            // Finance AI Chat
+            Route::prefix('ai-chat')->name('ai_chat.')->group(function () {
+                Route::post('send', [\App\Http\Controllers\FinanceChatController::class, 'send'])
+                    ->middleware('throttle:30,1')->name('send');
+                Route::get('sessions', [\App\Http\Controllers\FinanceChatController::class, 'sessions'])->name('sessions');
+                Route::get('sessions/{id}/messages', [\App\Http\Controllers\FinanceChatController::class, 'messages'])
+                    ->whereNumber('id')->name('messages');
+                Route::delete('sessions/{id}', [\App\Http\Controllers\FinanceChatController::class, 'deleteSession'])
+                    ->whereNumber('id')->name('sessions.delete');
+            });
         });
 
         // AI Product Knowledge Enrichment (admin only)
