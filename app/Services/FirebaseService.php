@@ -36,6 +36,11 @@ class FirebaseService
         $this->auth = $auth;
     }
 
+    public function getDatabase(): Database
+    {
+        return $this->database;
+    }
+
     /**
      * Bust per-request cache. Call setelah write yang invalidate cache.
      */
@@ -2404,6 +2409,19 @@ class FirebaseService
         $selectedWaiterIds = $data['selected_waiter_ids'] ?? [];
         $taskTypeForResolve = (string) ($data['task_type'] ?? 'general');
         $targetWaiters = $this->resolveTargetWaiters($assignmentType, $assignedWaiterId, $assignedWaiterRole, $selectedWaiterIds, $taskTypeForResolve);
+
+        // Filter out waiters who are off today (skip for single assignment — intentional direct assign)
+        $scheduledDate = $data['scheduled_for_date'] ?? date('Y-m-d');
+        if ($assignmentType !== 'single') {
+            $targetWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($scheduledDate) {
+                $wId = (string) ($waiter['id'] ?? '');
+                if ($wId === '') {
+                    return true;
+                }
+                return $this->isWorkingDay($wId, $scheduledDate);
+            }));
+        }
+
         $count = 0;
         $createdEntries = [];
 
@@ -4104,6 +4122,15 @@ class FirebaseService
             }
 
             if (! $isGeneralRolling && empty($targetWaiters)) {
+                // IDEMPOTENCY GUARD: Cek apakah template ini sudah pernah di-reschedule dari tanggal ini.
+                // Mencegah spam reschedule setiap 5 menit untuk shift_relative templates.
+                $rescheduleMarkerRef = $this->database->getReference(
+                    'reschedule_markers/' . $template['id'] . '/' . str_replace('-', '', $targetDate)
+                );
+                if ($rescheduleMarkerRef->getValue() !== null) {
+                    continue; // Already rescheduled for this template+date, skip
+                }
+
                 // PRIORITY 1: Peer fallback (Opsi E)
                 // Kalau template assignment_type=single dan single-assignee libur,
                 // coba cari peer dgn role sama yang masuk hari cycle asli.
@@ -4127,6 +4154,13 @@ class FirebaseService
                             $targetWaiters = [$peerCandidates[0]];
                             $peerFallbackUsed = true;
                             $rescheduledFromDate = null;
+
+                            // Write reschedule marker to prevent repeated processing
+                            $rescheduleMarkerRef->set([
+                                'type' => 'peer_fallback',
+                                'peer_waiter_id' => $peerCandidates[0]['id'] ?? '',
+                                'created_at' => time(),
+                            ]);
 
                             // Notify admin singkat: peer fallback (bukan reschedule, hari sama)
                             try {
@@ -4157,8 +4191,20 @@ class FirebaseService
 
                     if (! ($rescheduleResult['rescheduled'] ?? false)) {
                         // PRIORITY 3: Failed (sudah handled di tryReschedule: log audit + WA URGENT)
+                        // Write marker so we don't retry every 5 minutes
+                        $rescheduleMarkerRef->set([
+                            'type' => 'reschedule_failed',
+                            'created_at' => time(),
+                        ]);
                         continue;
                     }
+
+                    // Write reschedule marker to prevent repeated processing
+                    $rescheduleMarkerRef->set([
+                        'type' => 'rescheduled',
+                        'new_date' => $rescheduleResult['new_date'] ?? '',
+                        'created_at' => time(),
+                    ]);
 
                     $effectiveTargetDate = (string) ($rescheduleResult['new_date'] ?? $effectiveTargetDate);
                     $targetWaiters = $rescheduleResult['waiters'] ?? [];

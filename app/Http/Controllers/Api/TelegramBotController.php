@@ -52,6 +52,7 @@ class TelegramBotController extends Controller
                 '/kas' => $this->sendResponse($chatId, $threadId, $this->commandKas()),
                 '/omzet' => $this->sendResponse($chatId, $threadId, $this->commandOmzet()),
                 '/hutang' => $this->sendResponse($chatId, $threadId, $this->commandHutang()),
+                '/tugas' => $this->sendHrdTaskMenu($chatId, $threadId),
                 '/help' => $this->sendMenu($chatId, $threadId),
                 default => null,
             };
@@ -75,6 +76,12 @@ class TelegramBotController extends Controller
         }
 
         try {
+            // Handle HRD task callbacks
+            if (str_starts_with($data, 'hrd_')) {
+                $this->handleHrdCallback($callbackId, $chatId, $threadId, $data);
+                return;
+            }
+
             $response = match ($data) {
                 'kas' => $this->commandKas(),
                 'omzet' => $this->commandOmzet(),
@@ -371,5 +378,294 @@ class TelegramBotController extends Controller
         $lines[] = "🕐 Update: " . now()->format('d/m/Y H:i');
 
         return implode("\n", $lines);
+    }
+
+    // ─── HRD TASK BOT METHODS ───────────────────────────────────────────
+
+    protected function sendHrdTaskMenu(int|string $chatId, ?int $threadId): void
+    {
+        $text = "📋 *MENU TUGAS HRD*\n\nPilih kategori:";
+
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => '🗄️ Task Cek Rak', 'callback_data' => 'hrd_rack'],
+                    ['text' => '📝 Task Umum', 'callback_data' => 'hrd_general'],
+                ],
+                [
+                    ['text' => '⚡ Tugas Aktif Hari Ini', 'callback_data' => 'hrd_active'],
+                ],
+            ],
+        ];
+
+        $this->sendTelegramMessage($chatId, $text, $threadId, $keyboard);
+    }
+
+    protected function handleHrdCallback(string $callbackId, int|string $chatId, ?int $threadId, string $data): void
+    {
+        if ($data === 'hrd_menu') {
+            $this->answerCallback($callbackId);
+            $this->sendHrdTaskMenu($chatId, $threadId);
+            return;
+        }
+
+        if ($data === 'hrd_rack') {
+            $this->answerCallback($callbackId);
+            $this->sendResponse($chatId, $threadId, $this->commandHrdRackTasks(), withBackButton: false);
+            $this->sendHrdBackButton($chatId, $threadId);
+            return;
+        }
+
+        if ($data === 'hrd_general') {
+            $this->answerCallback($callbackId);
+            $this->sendHrdGeneralTasks($chatId, $threadId);
+            return;
+        }
+
+        if ($data === 'hrd_active') {
+            $this->answerCallback($callbackId);
+            $this->sendResponse($chatId, $threadId, $this->commandHrdActiveTasks(), withBackButton: false);
+            $this->sendHrdBackButton($chatId, $threadId);
+            return;
+        }
+
+        // Handle deactivate: hrd_deact_TEMPLATEID
+        if (str_starts_with($data, 'hrd_deact_')) {
+            $templateId = substr($data, 10);
+            $this->answerCallback($callbackId);
+            $result = $this->deactivateGeneralTemplate($templateId);
+            $this->sendResponse($chatId, $threadId, $result, withBackButton: false);
+            $this->sendHrdBackButton($chatId, $threadId);
+            return;
+        }
+
+        $this->answerCallback($callbackId, '⚠️ Menu tidak dikenali');
+    }
+
+    protected function sendHrdBackButton(int|string $chatId, ?int $threadId): void
+    {
+        $keyboard = [
+            'inline_keyboard' => [
+                [
+                    ['text' => '◀️ Menu Tugas', 'callback_data' => 'hrd_menu'],
+                ],
+            ],
+        ];
+        $this->sendTelegramMessage($chatId, '─', $threadId, $keyboard);
+    }
+
+    protected function commandHrdRackTasks(): string
+    {
+        $firebase = app(\App\Services\FirebaseService::class);
+        $templates = $firebase->getRecurringWaiterTaskTemplates();
+
+        $rackTemplates = array_filter($templates, function ($tpl) {
+            return ($tpl['task_type'] ?? 'general') === 'rack_check';
+        });
+
+        if (empty($rackTemplates)) {
+            return "🗄️ *TASK CEK RAK*\n━━━━━━━━━━━━━━━━━━━━━\n\nBelum ada template cek rak.";
+        }
+
+        $lines = ["🗄️ *TASK CEK RAK*", "━━━━━━━━━━━━━━━━━━━━━", ""];
+
+        $active = 0;
+        $inactive = 0;
+        foreach ($rackTemplates as $tpl) {
+            $isActive = !empty($tpl['is_active']);
+            $status = $isActive ? '✅' : '⏸️';
+            $title = $tpl['title'] ?? 'Tanpa judul';
+            $time = $tpl['schedule_time'] ?? '-';
+            $lines[] = "{$status} *{$title}*";
+            $lines[] = "   Jam: {$time}";
+            $isActive ? $active++ : $inactive++;
+        }
+
+        $lines[] = "";
+        $lines[] = "━━━━━━━━━━━━━━━━━━━━━";
+        $lines[] = "Total: " . count($rackTemplates) . " (✅ {$active} aktif, ⏸️ {$inactive} nonaktif)";
+        $lines[] = "";
+        $lines[] = "🕐 Update: " . now()->format('d/m/Y H:i');
+
+        return implode("\n", $lines);
+    }
+
+    protected function sendHrdGeneralTasks(int|string $chatId, ?int $threadId): void
+    {
+        $firebase = app(\App\Services\FirebaseService::class);
+        $templates = $firebase->getRecurringWaiterTaskTemplates();
+
+        $generalTemplates = array_values(array_filter($templates, function ($tpl) {
+            return ($tpl['task_type'] ?? 'general') === 'general' && !empty($tpl['is_active']);
+        }));
+
+        if (empty($generalTemplates)) {
+            $this->sendResponse($chatId, $threadId, "📝 *TASK UMUM AKTIF*\n━━━━━━━━━━━━━━━━━━━━━\n\nTidak ada task umum yang aktif.");
+            $this->sendHrdBackButton($chatId, $threadId);
+            return;
+        }
+
+        $lines = ["📝 *TASK UMUM AKTIF*", "━━━━━━━━━━━━━━━━━━━━━", ""];
+        $buttons = [];
+
+        foreach ($generalTemplates as $i => $tpl) {
+            $title = $tpl['title'] ?? 'Tanpa judul';
+            $time = $tpl['schedule_time'] ?? '-';
+            $num = $i + 1;
+            $lines[] = "{$num}. *{$title}*";
+            $lines[] = "   Jam: {$time}";
+
+            // Telegram callback_data max 64 bytes, truncate template ID if needed
+            $tplId = $tpl['id'] ?? '';
+            if (strlen("hrd_deact_{$tplId}") <= 64) {
+                $buttons[] = ['text' => "⏸️ {$num}. " . mb_substr($title, 0, 20), 'callback_data' => "hrd_deact_{$tplId}"];
+            }
+        }
+
+        $lines[] = "";
+        $lines[] = "━━━━━━━━━━━━━━━━━━━━━";
+        $lines[] = "Total: " . count($generalTemplates) . " task aktif";
+        $lines[] = "";
+        $lines[] = "🕐 Update: " . now()->format('d/m/Y H:i');
+
+        $this->sendTelegramMessage($chatId, implode("\n", $lines), $threadId);
+
+        // Send deactivate buttons (max 2 per row)
+        if (!empty($buttons)) {
+            $rows = array_chunk($buttons, 2);
+            $rows[] = [['text' => '◀️ Menu Tugas', 'callback_data' => 'hrd_menu']];
+            $keyboard = ['inline_keyboard' => $rows];
+            $this->sendTelegramMessage($chatId, "Tekan tombol untuk *nonaktifkan* task:", $threadId, $keyboard);
+        } else {
+            $this->sendHrdBackButton($chatId, $threadId);
+        }
+    }
+
+    protected function commandHrdActiveTasks(): string
+    {
+        $firebase = app(\App\Services\FirebaseService::class);
+        $today = date('Y-m-d');
+        $tasks = $firebase->getWaiterTasksByDate($today);
+
+        // Filter only pending/in_progress
+        $activeTasks = array_filter($tasks, function ($task) {
+            return in_array($task['status'] ?? '', ['pending', 'in_progress'], true);
+        });
+
+        if (empty($activeTasks)) {
+            return "⚡ *TUGAS AKTIF HARI INI*\n📅 " . date('d/m/Y') . "\n━━━━━━━━━━━━━━━━━━━━━\n\nTidak ada tugas aktif.";
+        }
+
+        $lines = ["⚡ *TUGAS AKTIF HARI INI*", "📅 " . date('d/m/Y'), "━━━━━━━━━━━━━━━━━━━━━", ""];
+
+        $grouped = [];
+        foreach ($activeTasks as $task) {
+            $type = ($task['task_type'] ?? 'general') === 'rack_check' ? 'Cek Rak' : 'Umum';
+            $grouped[$type][] = $task;
+        }
+
+        foreach ($grouped as $type => $typeTasks) {
+            $lines[] = "*{$type}:* (" . count($typeTasks) . ")";
+            foreach (array_slice($typeTasks, 0, 10) as $task) {
+                $title = $task['title'] ?? 'Tanpa judul';
+                $status = ($task['status'] ?? '') === 'in_progress' ? '🔄' : '⏳';
+                $waiter = $task['assigned_waiter_name'] ?? '-';
+                $lines[] = "  {$status} {$title}";
+                $lines[] = "     👤 {$waiter}";
+            }
+            if (count($typeTasks) > 10) {
+                $lines[] = "  ... +" . (count($typeTasks) - 10) . " lainnya";
+            }
+            $lines[] = "";
+        }
+
+        $lines[] = "━━━━━━━━━━━━━━━━━━━━━";
+        $lines[] = "Total aktif: " . count($activeTasks);
+        $lines[] = "";
+        $lines[] = "🕐 Update: " . now()->format('d/m/Y H:i');
+
+        return implode("\n", $lines);
+    }
+
+    protected function deactivateGeneralTemplate(string $templateId): string
+    {
+        $firebase = app(\App\Services\FirebaseService::class);
+
+        $template = $firebase->getRecurringWaiterTaskTemplateById($templateId);
+        if (!$template) {
+            return "❌ Template tidak ditemukan.";
+        }
+
+        if (($template['task_type'] ?? 'general') !== 'general') {
+            return "❌ Hanya task umum yang bisa dinonaktifkan dari sini.";
+        }
+
+        if (empty($template['is_active'])) {
+            return "⏸️ Template *{$template['title']}* sudah nonaktif.";
+        }
+
+        // Deactivate template
+        $firebase->updateRecurringWaiterTaskTemplate($templateId, array_merge($template, [
+            'is_active' => false,
+        ]));
+
+        // Cancel pending tasks linked to this template
+        $cancelledCount = $this->cancelPendingTasksByTemplate($firebase, $templateId);
+
+        $title = $template['title'] ?? 'Tanpa judul';
+        $lines = [
+            "✅ *Template dinonaktifkan*",
+            "━━━━━━━━━━━━━━━━━━━━━",
+            "",
+            "📝 *{$title}*",
+            "⏸️ Status: Nonaktif",
+            "🗑️ Task pending dibatalkan: {$cancelledCount}",
+            "",
+            "Template tidak akan generate task baru.",
+            "Task yang sudah selesai/dikerjakan tetap utuh.",
+            "",
+            "🕐 " . now()->format('d/m/Y H:i'),
+        ];
+
+        return implode("\n", $lines);
+    }
+
+    protected function cancelPendingTasksByTemplate(\App\Services\FirebaseService $firebase, string $templateId): int
+    {
+        $database = $firebase->getDatabase();
+        $reference = $database->getReference('waiter_tasks')
+            ->orderByChild('source_template_id')
+            ->equalTo($templateId);
+        $snapshot = $reference->getSnapshot();
+
+        if (!$snapshot->exists()) {
+            return 0;
+        }
+
+        $cancelledCount = 0;
+        $now = time();
+        $updates = [];
+
+        foreach ((array) $snapshot->getValue() as $taskId => $task) {
+            $status = (string) ($task['status'] ?? 'pending');
+            if (!in_array($status, ['pending', 'in_progress'], true)) {
+                continue;
+            }
+            $updates[$taskId . '/status'] = 'cancelled';
+            $updates[$taskId . '/cancelled_at'] = $now;
+            $updates[$taskId . '/cancelled_by_template_deactivate'] = true;
+            $existingNote = (string) ($task['completed_note'] ?? '');
+            $cancelNote = 'Dinonaktifkan via bot HRD';
+            $updates[$taskId . '/completed_note'] = $existingNote !== ''
+                ? $existingNote . ' | ' . $cancelNote
+                : $cancelNote;
+            $cancelledCount++;
+        }
+
+        if (!empty($updates)) {
+            $database->getReference('waiter_tasks')->update($updates);
+        }
+
+        return $cancelledCount;
     }
 }
