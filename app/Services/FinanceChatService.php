@@ -126,7 +126,7 @@ class FinanceChatService
         // 2. Mutasi hari ini
         $today = now()->toDateString();
         $todayMutations = DB::table('cash_mutations')
-            ->where('tanggal', $today)
+            ->where('transaction_date', $today)
             ->orderBy('id')
             ->get();
 
@@ -137,15 +137,15 @@ class FinanceChatService
             foreach ($todayMutations as $m) {
                 $status = $m->settlement_status ?? 'settled';
                 $statusLabel = $status === 'pending' ? ' [PENDING]' : '';
-                $parts[] = "- #{$m->id} | {$m->type} | Rp " . number_format($m->nominal, 0, ',', '.') .
-                    " | {$m->keterangan} | akun #{$m->akun_id}{$statusLabel}";
+                $parts[] = "- #{$m->id} | {$m->type} | Rp " . number_format($m->amount, 0, ',', '.') .
+                    " | {$m->description} | akun #{$m->cash_account_id}{$statusLabel}";
             }
         }
 
         // 3. Pending settlement
         $pendingQris = DB::table('cash_mutations')
             ->where('settlement_status', 'pending')
-            ->sum('nominal');
+            ->sum('amount');
         if ($pendingQris > 0) {
             $parts[] = "\n=== PENDING SETTLEMENT (QRIS belum cair) ===";
             $parts[] = "Total: Rp " . number_format($pendingQris, 0, ',', '.');
@@ -154,38 +154,38 @@ class FinanceChatService
         // 4. Ringkasan 7 hari terakhir
         $weekAgo = now()->subDays(7)->toDateString();
         $weekSummary = DB::table('cash_mutations')
-            ->where('tanggal', '>=', $weekAgo)
+            ->where('transaction_date', '>=', $weekAgo)
             ->where('settlement_status', 'settled')
             ->selectRaw("
-                tanggal,
-                SUM(CASE WHEN type='income' THEN nominal ELSE 0 END) as total_income,
-                SUM(CASE WHEN type='expense' THEN nominal ELSE 0 END) as total_expense
+                transaction_date,
+                SUM(CASE WHEN type='income' THEN amount ELSE 0 END) as total_income,
+                SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) as total_expense
             ")
-            ->groupBy('tanggal')
-            ->orderBy('tanggal')
+            ->groupBy('transaction_date')
+            ->orderBy('transaction_date')
             ->get();
 
         $parts[] = "\n=== RINGKASAN 7 HARI TERAKHIR ===";
         foreach ($weekSummary as $day) {
             $net = $day->total_income - $day->total_expense;
-            $parts[] = "- {$day->tanggal}: Income Rp " . number_format($day->total_income, 0, ',', '.') .
+            $parts[] = "- {$day->transaction_date}: Income Rp " . number_format($day->total_income, 0, ',', '.') .
                 " | Expense Rp " . number_format($day->total_expense, 0, ',', '.') .
                 " | Net Rp " . number_format($net, 0, ',', '.');
         }
 
         // 5. Top pengeluaran minggu ini
         $topExpenses = DB::table('cash_mutations')
-            ->where('tanggal', '>=', $weekAgo)
+            ->where('transaction_date', '>=', $weekAgo)
             ->where('type', 'expense')
             ->where('settlement_status', 'settled')
-            ->orderByDesc('nominal')
+            ->orderByDesc('amount')
             ->limit(10)
             ->get();
 
         if ($topExpenses->isNotEmpty()) {
             $parts[] = "\n=== TOP PENGELUARAN MINGGU INI ===";
             foreach ($topExpenses as $e) {
-                $parts[] = "- {$e->tanggal} | Rp " . number_format($e->nominal, 0, ',', '.') . " | {$e->keterangan}";
+                $parts[] = "- {$e->transaction_date} | Rp " . number_format($e->amount, 0, ',', '.') . " | {$e->description}";
             }
         }
 
