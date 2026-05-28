@@ -3,6 +3,7 @@
 use App\Services\BonusService;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
+use App\Services\TelegramService;
 use App\Services\PayrollService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -349,22 +350,16 @@ Artisan::command('firebase:cleanup-idempotency {--days=7 : Hapus cache yang lebi
 
 Artisan::command('waiter:check-stale-po', function () {
     $firebase = app(FirebaseService::class);
-    $fonnte = app(FonnteService::class);
+    $telegram = app(TelegramService::class);
 
-    if (!$fonnte->isAutoReportEnabled()) {
-        $this->info('Auto report disabled, skipping stale PO check.');
+    if (!$telegram->isConfigured()) {
+        $this->info('Telegram not configured, skipping stale PO check.');
         return;
     }
 
     $staleOrders = $firebase->getStalePurchaseOrders(3);
     if (empty($staleOrders)) {
         $this->info('No stale POs found.');
-        return;
-    }
-
-    $reportPhone = $fonnte->getReportPhone();
-    if (!$reportPhone) {
-        $this->info('No report phone configured.');
         return;
     }
 
@@ -378,13 +373,13 @@ Artisan::command('waiter:check-stale-po', function () {
     }
     $lines[] = "\nSegera follow up ke supplier.";
 
-    $fonnte->sendMessage($reportPhone, implode("\n", $lines));
+    $telegram->sendToGudang(implode("\n", $lines));
     $this->info('Stale PO reminder sent for ' . count($staleOrders) . ' PO(s).');
-})->purpose('Send WhatsApp reminder for POs not received after 3 days');
+})->purpose('Send Telegram reminder for POs not received after 3 days');
 
 Artisan::command('firebase:reconcile-stock {--days=7 : Window dalam hari}', function () {
     $firebase = app(FirebaseService::class);
-    $fonnte = app(FonnteService::class);
+    $telegram = app(TelegramService::class);
     $days = max(1, (int) $this->option('days'));
 
     $result = $firebase->runWeeklyReconciliation($days);
@@ -406,28 +401,25 @@ Artisan::command('firebase:reconcile-stock {--days=7 : Window dalam hari}', func
         ));
     }
 
-    if (count($anomalies) > 0 && $fonnte->isAutoReportEnabled()) {
-        $reportPhone = $fonnte->getReportPhone();
-        if ($reportPhone) {
-            $lines = [];
-            foreach (array_slice($anomalies, 0, 5) as $anomaly) {
-                $lines[] = sprintf(
-                    '- %s/%s: %.2f%% (%+d)',
-                    (string) ($anomaly['rack_name'] ?? $anomaly['rack_id'] ?? '-'),
-                    (string) ($anomaly['product_name'] ?? $anomaly['product_id'] ?? '-'),
-                    (float) ($anomaly['drift_pct'] ?? 0),
-                    (int) ($anomaly['drift_qty'] ?? 0)
-                );
-            }
-
-            $body = "🚨 *Reconciliation Mingguan*\n"
-                .'Minggu: '.(string) ($result['iso_year_week'] ?? date('o_W'))."\n"
-                .'Drift terdeteksi: '.count($anomalies)."\n\n"
-                ."Top 5:\n".implode("\n", $lines)."\n\n"
-                .'Lihat detail: /admin/reconciliation';
-
-            $fonnte->sendMessage($reportPhone, $body);
+    if (count($anomalies) > 0 && $telegram->isConfigured()) {
+        $lines = [];
+        foreach (array_slice($anomalies, 0, 5) as $anomaly) {
+            $lines[] = sprintf(
+                '- %s/%s: %.2f%% (%+d)',
+                (string) ($anomaly['rack_name'] ?? $anomaly['rack_id'] ?? '-'),
+                (string) ($anomaly['product_name'] ?? $anomaly['product_id'] ?? '-'),
+                (float) ($anomaly['drift_pct'] ?? 0),
+                (int) ($anomaly['drift_qty'] ?? 0)
+            );
         }
+
+        $body = "🚨 *Reconciliation Mingguan*\n"
+            .'Minggu: '.(string) ($result['iso_year_week'] ?? date('o_W'))."\n"
+            .'Drift terdeteksi: '.count($anomalies)."\n\n"
+            ."Top 5:\n".implode("\n", $lines)."\n\n"
+            .'Lihat detail: /admin/reconciliation';
+
+        $telegram->sendToGudang($body);
     }
 })->purpose('Rekonsiliasi stok mingguan dari ledger vs snapshot rak');
 
@@ -495,6 +487,88 @@ Artisan::command('bonus:reconcile-pending', function () {
     return $failed > 0 ? 1 : 0;
 })->purpose('Retry auto-score for tasks/events that failed bonus computation');
 
+Artisan::command('waiter:send-daily-task-recap {--date= : Tanggal (Y-m-d), default hari ini}', function () {
+    $firebase = app(FirebaseService::class);
+    $telegram = app(TelegramService::class);
+    $db = (new \ReflectionProperty($firebase, 'database'))->getValue($firebase);
+
+    if (!$telegram->isConfigured()) {
+        $this->info('Telegram not configured, skip.');
+        return;
+    }
+
+    $date = $this->option('date') ?: date('Y-m-d');
+    $tasks = $db->getReference('waiter_tasks')
+        ->orderByChild('scheduled_for_date')
+        ->equalTo($date)
+        ->getValue() ?? [];
+
+    if (empty($tasks)) {
+        $this->info("No tasks for {$date}.");
+        return;
+    }
+
+    // Group by waiter
+    $byWaiter = [];
+    foreach ($tasks as $task) {
+        $name = $task['assigned_waiter_name'] ?? 'Unknown';
+        $byWaiter[$name][] = $task;
+    }
+    ksort($byWaiter);
+
+    $fmt = fn($d) => date('d/m/Y', strtotime($d));
+    $lines = ["📋 *REKAP TASK HARIAN*\n📅 Tanggal: {$fmt($date)}\n"];
+
+    $totalAll = 0;
+    $doneAll = 0;
+
+    foreach ($byWaiter as $waiterName => $waiterTasks) {
+        $done = array_filter($waiterTasks, fn($t) => ($t['status'] ?? '') === 'done');
+        $pending = array_filter($waiterTasks, fn($t) => ($t['status'] ?? '') === 'pending');
+        $overdue = array_filter($waiterTasks, fn($t) => !empty($t['is_overdue']) && ($t['status'] ?? '') !== 'done');
+        $inProgress = array_filter($waiterTasks, fn($t) => ($t['status'] ?? '') === 'in_progress');
+
+        $total = count($waiterTasks);
+        $totalAll += $total;
+        $doneAll += count($done);
+
+        $lines[] = "\n👤 *" . ucfirst($waiterName) . "* ({$total} task)";
+
+        if (!empty($done)) {
+            $lines[] = "✅ Selesai: " . count($done);
+            foreach ($done as $t) {
+                $lines[] = "   • " . ($t['title'] ?? '-');
+            }
+        }
+        if (!empty($inProgress)) {
+            $lines[] = "🔄 Sedang dikerjakan: " . count($inProgress);
+            foreach ($inProgress as $t) {
+                $lines[] = "   • " . ($t['title'] ?? '-');
+            }
+        }
+        if (!empty($pending)) {
+            $lines[] = "⏳ Belum dikerjakan: " . count($pending);
+            foreach ($pending as $t) {
+                $lines[] = "   • " . ($t['title'] ?? '-');
+            }
+        }
+        if (!empty($overdue)) {
+            $lines[] = "🚨 Overdue: " . count($overdue);
+            foreach ($overdue as $t) {
+                $lines[] = "   • " . ($t['title'] ?? '-');
+            }
+        }
+    }
+
+    $rate = $totalAll > 0 ? round(($doneAll / $totalAll) * 100) : 0;
+    $lines[] = "\n━━━━━━━━━━━━━━━━━━━━━";
+    $lines[] = "📈 Total: {$doneAll}/{$totalAll} selesai ({$rate}%)";
+
+    $message = implode("\n", $lines);
+    $telegram->sendToHrd($message);
+    $this->info("Daily task recap sent for {$date}.");
+})->purpose('Kirim rekap task harian per karyawan ke Telegram HRD (21:00 WIB)');
+
 Schedule::command('waiter:process-tasks')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('waiter:audit-attendance')->hourly()->withoutOverlapping();
@@ -505,6 +579,7 @@ Schedule::command('bonus:reconcile-pending')->everyFiveMinutes()->withoutOverlap
 Schedule::command('waiter:send-monthly-report')->monthlyOn(1, '07:00')->withoutOverlapping();
 Schedule::command('waiter:check-stale-po')->dailyAt('08:00')->withoutOverlapping();
 Schedule::command('firebase:cleanup-idempotency')->dailyAt('03:00')->withoutOverlapping();
+Schedule::command('waiter:send-daily-task-recap')->dailyAt('21:00')->withoutOverlapping();
 
 Artisan::command('payroll:auto-credit-salary {--catchup=7 : Catchup window dalam hari}', function () {
     $payroll = app(PayrollService::class);
@@ -570,3 +645,67 @@ Artisan::command('finance:auto-sync', function () {
 
 // Schedule finance auto sync setiap jam (command sendiri yang cek apakah enabled + jam yang tepat)
 Schedule::command('finance:auto-sync')->hourly()->withoutOverlapping();
+
+Artisan::command('finance:debt-due-alert', function () {
+    $today = now()->format('Y-m-d');
+    $threeDaysLater = now()->addDays(3)->format('Y-m-d');
+
+    // Hutang yang sudah lewat jatuh tempo
+    $overdue = DB::table('finance_debts')
+        ->whereIn('status', ['unpaid', 'partial'])
+        ->whereNotNull('due_date')
+        ->where('due_date', '<', $today)
+        ->orderBy('due_date')
+        ->get();
+
+    // Hutang yang jatuh tempo dalam 3 hari ke depan (termasuk hari ini)
+    $upcoming = DB::table('finance_debts')
+        ->whereIn('status', ['unpaid', 'partial'])
+        ->whereNotNull('due_date')
+        ->whereBetween('due_date', [$today, $threeDaysLater])
+        ->orderBy('due_date')
+        ->get();
+
+    if ($overdue->isEmpty() && $upcoming->isEmpty()) {
+        $this->info('No debt alerts to send.');
+        return;
+    }
+
+    $lines = ["⏰ *ALERT HUTANG JATUH TEMPO*", "📅 " . now()->format('d/m/Y'), "━━━━━━━━━━━━━━━━━━━━━"];
+
+    if ($overdue->isNotEmpty()) {
+        $lines[] = "";
+        $lines[] = "🚨 *SUDAH LEWAT:*";
+        foreach ($overdue as $d) {
+            $outstanding = (float) $d->amount - (float) $d->paid;
+            $daysLate = (int) now()->diffInDays(\Carbon\Carbon::parse($d->due_date));
+            $lines[] = "• *{$d->supplier_name}*: Rp " . number_format($outstanding, 0, ',', '.') . " (telat {$daysLate} hari)";
+        }
+    }
+
+    if ($upcoming->isNotEmpty()) {
+        $lines[] = "";
+        $lines[] = "⚠️ *SEGERA JATUH TEMPO:*";
+        foreach ($upcoming as $d) {
+            $outstanding = (float) $d->amount - (float) $d->paid;
+            $dueDate = date('d/m/Y', strtotime($d->due_date));
+            $lines[] = "• *{$d->supplier_name}*: Rp " . number_format($outstanding, 0, ',', '.') . " (due: {$dueDate})";
+        }
+    }
+
+    $totalOverdue = $overdue->sum(fn($d) => (float) $d->amount - (float) $d->paid);
+    $totalUpcoming = $upcoming->sum(fn($d) => (float) $d->amount - (float) $d->paid);
+    $lines[] = "";
+    $lines[] = "━━━━━━━━━━━━━━━━━━━━━";
+    $lines[] = "💸 Overdue: Rp " . number_format($totalOverdue, 0, ',', '.');
+    $lines[] = "📋 Upcoming: Rp " . number_format($totalUpcoming, 0, ',', '.');
+
+    $message = implode("\n", $lines);
+    app(\App\Services\TelegramService::class)->sendToFinance($message);
+    $this->info('Debt alert sent to Telegram Finance.');
+})->purpose('Alert hutang jatuh tempo ke Telegram Finance');
+
+Schedule::command('finance:debt-due-alert')->dailyAt('08:00')->withoutOverlapping();
+
+// Settle QRIS pending mutations setiap jam 22:00 (QRIS cair malam)
+Schedule::command('finance:settle-qris')->dailyAt('22:00')->withoutOverlapping();

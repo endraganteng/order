@@ -39,15 +39,22 @@
 
     {{-- Saldo Kas per Akun (Cards - paling atas) --}}
     @if(count($accounts) > 0)
-    @php $totalSemuaKas = collect($accounts)->sum('balance'); @endphp
+    @php
+        $totalSemuaKas = collect($accounts)->sum('balance');
+        $totalPendingSettlement = (int) ($today['pending_settlement'] ?? 0);
+        $kastersedia = $totalSemuaKas;
+    @endphp
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <h3 style="font-size:15px;font-weight:700;">💰 Saldo Kas per Akun</h3>
         <button class="fm-btn fm-btn-sm fm-btn-outline" onclick="openAddAccount()">+ Tambah Akun</button>
     </div>
     <div style="background:linear-gradient(135deg,#1e40af,#3b82f6);border-radius:12px;padding:20px 24px;margin-bottom:16px;color:white;display:flex;justify-content:space-between;align-items:center;">
         <div>
-            <div style="font-size:13px;opacity:0.85;">Total Semua Akun Kas</div>
-            <div style="font-size:28px;font-weight:800;margin-top:4px;">Rp {{ number_format($totalSemuaKas, 0, ',', '.') }}</div>
+            <div style="font-size:13px;opacity:0.85;">Kas Tersedia</div>
+            <div style="font-size:28px;font-weight:800;margin-top:4px;">Rp {{ number_format($kastersedia, 0, ',', '.') }}</div>
+            @if($totalPendingSettlement > 0)
+            <div style="font-size:12px;opacity:0.8;margin-top:4px;">⏳ + Rp {{ number_format($totalPendingSettlement, 0, ',', '.') }} QRIS pending (cair jam 22:00)</div>
+            @endif
         </div>
         <div style="font-size:13px;opacity:0.85;text-align:right;">
             <div>{{ count($accounts) }} akun aktif</div>
@@ -357,6 +364,12 @@
                     <td style="padding:10px 16px; color:#64748b;">QRIS</td>
                     <td style="padding:10px 16px; text-align:right; font-weight:600;" class="fm-money income" id="todayQris">Rp {{ number_format($today['penjualan_qris'] ?? 0, 0, ',', '.') }}</td>
                 </tr>
+                @if(($today['pending_settlement'] ?? 0) > 0)
+                <tr style="border-bottom:1px solid #f1f5f9; background:#fffbeb;">
+                    <td style="padding:10px 16px; color:#d97706;">⏳ QRIS Pending</td>
+                    <td style="padding:10px 16px; text-align:right; font-weight:600; color:#d97706;" id="todayPending">Rp {{ number_format($today['pending_settlement'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+                @endif
                 <tr style="border-bottom:1px solid #f1f5f9;">
                     <td style="padding:10px 16px; color:#64748b;">Total Pendapatan</td>
                     <td style="padding:10px 16px; text-align:right; font-weight:700; color:#059669;" id="todayPendapatan">Rp {{ number_format($today['total_pendapatan'] ?? 0, 0, ',', '.') }}</td>

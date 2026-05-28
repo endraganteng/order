@@ -128,6 +128,21 @@ class FinanceService
                         'updated_at' => now(),
                     ]
                 );
+
+                // Simpan breakdown pengeluaran per kategori
+                if (!empty($row['pengeluaran_breakdown'])) {
+                    DB::table('finance_daily_expense_breakdown')->where('tanggal', $row['tanggal'])->delete();
+                    foreach ($row['pengeluaran_breakdown'] as $item) {
+                        DB::table('finance_daily_expense_breakdown')->insert([
+                            'tanggal' => $row['tanggal'],
+                            'kategori' => $item['kategori'],
+                            'total' => $item['total'] ?? 0,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+
                 $synced++;
             } catch (\Exception $e) {
                 $failed++;
@@ -153,6 +168,7 @@ class FinanceService
                             'total_pengeluaran' => $shift['total_pengeluaran'] ?? 0,
                             'selisih' => $shift['selisih'] ?? 0,
                             'status' => $shift['status'] ?? null,
+                            'closed_at' => $shift['closed_at'] ?? null,
                             'updated_at' => now(),
                         ]
                     );
@@ -167,7 +183,19 @@ class FinanceService
         $status = $failed === 0 ? 'success' : ($synced > 0 ? 'partial_success' : 'failed');
 
         // Auto-create cash mutations from daily data based on account mappings
-        $this->createMutationsFromSync($from, $to);
+        // Hanya untuk hari >= tanggal mulai tracking kas (opening_balance)
+        $trackingStart = DB::table('cash_mutations')
+            ->where('reference_type', 'opening_balance')
+            ->orderBy('transaction_date')
+            ->value('transaction_date') ?? $from;
+        $mutationFrom = max($from, $trackingStart);
+
+        if ($mutationFrom <= $to) {
+            $this->createMutationsFromSync($mutationFrom, $to);
+
+            // Recalculate balance_after chain untuk akun yang terdampak sync
+            $this->recalculateBalanceAfter($mutationFrom, $to);
+        }
 
         return $this->logSync('manual', $from, $to, $status, $synced, $failed, implode('; ', $errors) ?: null, $triggeredBy, $start);
     }
@@ -179,47 +207,106 @@ class FinanceService
     protected function createMutationsFromSync(string $from, string $to): void
     {
         DB::transaction(function () use ($from, $to) {
-            $dailyRows = DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->get();
+            $dailyRows = DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->orderBy('tanggal')->get();
 
             foreach ($dailyRows as $row) {
                 $tunaiAccountId = $this->resolveAccountMapping('penjualan_tunai');
                 $qrisAccountId = $this->resolveAccountMapping('penjualan_qris');
                 $expAccountId = $this->resolveAccountMapping('pengeluaran_shift');
 
+                // Ambil jam tutup shift terakhir hari itu untuk transaction_time
+                $lastShiftTime = DB::table('finance_shifts')->where('tanggal', $row->tanggal)
+                    ->orderByDesc('shift_number')->value('closed_at');
+
                 // === STEP 1: Hapus mutasi lama dari sync untuk tanggal ini ===
-                // Ini memastikan resubmit shift tidak menyebabkan double-entry atau orphan records
                 $this->deleteSyncMutationsForDate($row->tanggal, $tunaiAccountId, $qrisAccountId, $expAccountId);
 
-                // === STEP 2: Buat ulang mutasi dari data terbaru ===
+                // === STEP 2: Anchor saldo ke modal awal fisik ===
+                // Ini memastikan saldo finance selalu sinkron dengan fisik,
+                // tanpa carry-over error dari hari sebelumnya.
+                if ($tunaiAccountId) {
+                    $modalAwal = (int) DB::table('finance_shifts')->where('tanggal', $row->tanggal)
+                        ->orderBy('shift_number')->value('modal_awal');
+
+                    // Ambil jam buka shift pertama untuk mutasi modal
+                    $firstShiftTime = DB::table('finance_shifts')->where('tanggal', $row->tanggal)
+                        ->orderBy('shift_number')->value('closed_at');
+
+                    if ($modalAwal > 0) {
+                        $currentBalance = (int) DB::table('cash_accounts')->where('id', $tunaiAccountId)->value('balance');
+                        $diff = $currentBalance - $modalAwal;
+
+                        if ($diff > 0) {
+                            $this->insertMutation($tunaiAccountId, 'expense', $diff, 'Setor kas (adjust ke modal awal) ' . $row->tanggal, $row->tanggal, 'sync_modal', $row->id, $firstShiftTime);
+                        } elseif ($diff < 0) {
+                            $this->insertMutation($tunaiAccountId, 'income', abs($diff), 'Tambahan kas (adjust ke modal awal) ' . $row->tanggal, $row->tanggal, 'sync_modal', $row->id, $firstShiftTime);
+                        }
+                    }
+                }
+
+                // === STEP 3: Buat mutasi dari data harian ===
 
                 // Penjualan Tunai → income
                 if ($tunaiAccountId && $row->penjualan_tunai > 0) {
-                    $this->insertMutation($tunaiAccountId, 'income', $row->penjualan_tunai, 'Penjualan tunai ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
+                    $this->insertMutation($tunaiAccountId, 'income', $row->penjualan_tunai, 'Penjualan tunai ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime);
                 }
 
-                // Penjualan QRIS → income
+                // Penjualan QRIS → income (pending settlement, cair jam 22:00)
                 if ($qrisAccountId && $row->penjualan_qris > 0) {
-                    $this->insertMutation($qrisAccountId, 'income', $row->penjualan_qris, 'Penjualan QRIS ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
+                    $this->insertMutation($qrisAccountId, 'income', $row->penjualan_qris, 'Penjualan QRIS ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime, 'pending');
                 }
 
                 // Pengeluaran Shift → expense
                 if ($expAccountId && ($row->total_pengeluaran_shift ?? $row->total_pengeluaran) > 0) {
-                    $this->insertMutation($expAccountId, 'expense', (int) ($row->total_pengeluaran_shift ?? $row->total_pengeluaran), 'Pengeluaran shift ' . $row->tanggal, $row->tanggal, 'sync', $row->id);
+                    $this->insertMutation($expAccountId, 'expense', (int) ($row->total_pengeluaran_shift ?? $row->total_pengeluaran), 'Pengeluaran shift ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime);
                 }
 
-                // Selisih kas — hanya dari shift terakhir hari itu
-                // Selisih shift sebelumnya sudah ter-absorb ke modal awal shift berikutnya
-                $totalSelisih = (int) DB::table('finance_shifts')->where('tanggal', $row->tanggal)
-                    ->orderByDesc('shift_number')->value('selisih');
+                // === STEP 4: Selisih kas — koreksi supaya saldo = uang fisik akhir ===
+                // Sum semua selisih per hari (karena sudah anchor ke modal awal, semua selisih harus dicatat)
+                $totalSelisih = (int) DB::table('finance_shifts')->where('tanggal', $row->tanggal)->sum('selisih');
                 if ($totalSelisih != 0 && $tunaiAccountId) {
                     if ($totalSelisih < 0) {
-                        $this->insertMutation($tunaiAccountId, 'expense', abs($totalSelisih), 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id);
+                        $this->insertMutation($tunaiAccountId, 'expense', abs($totalSelisih), 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id, $lastShiftTime);
                     } else {
-                        $this->insertMutation($tunaiAccountId, 'income', $totalSelisih, 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id);
+                        $this->insertMutation($tunaiAccountId, 'income', $totalSelisih, 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id, $lastShiftTime);
                     }
                 }
             }
         });
+    }
+
+    /**
+     * Recalculate balance_after untuk semua mutasi di akun yang terdampak sync.
+     * Ini memperbaiki chain yang broken akibat delete-reinsert saat sync.
+     */
+    protected function recalculateBalanceAfter(string $from, string $to): void
+    {
+        $accountIds = array_filter([
+            $this->resolveAccountMapping('penjualan_tunai'),
+            $this->resolveAccountMapping('penjualan_qris'),
+            $this->resolveAccountMapping('pengeluaran_shift'),
+        ]);
+
+        foreach ($accountIds as $accountId) {
+            $mutations = DB::table('cash_mutations')
+                ->where('cash_account_id', $accountId)
+                ->orderBy('transaction_date')
+                ->orderBy('id')
+                ->get(['id', 'type', 'amount']);
+
+            $balance = 0;
+            foreach ($mutations as $m) {
+                if ($m->type === 'income' || $m->type === 'transfer_in') {
+                    $balance += (int) $m->amount;
+                } else {
+                    $balance -= (int) $m->amount;
+                }
+                DB::table('cash_mutations')->where('id', $m->id)->update(['balance_after' => $balance]);
+            }
+
+            // Sync saldo akun ke balance terakhir
+            DB::table('cash_accounts')->where('id', $accountId)->update(['balance' => $balance, 'updated_at' => now()]);
+        }
     }
 
     /**
@@ -257,13 +344,17 @@ class FinanceService
 
     /**
      * Insert mutasi baru dan update saldo akun.
+     * Jika settlement_status = 'pending', saldo akun TIDAK diupdate sampai di-settle.
      */
-    protected function insertMutation(int $accountId, string $type, int $amount, string $description, string $date, string $refType, int $refId): void
+    protected function insertMutation(int $accountId, string $type, int $amount, string $description, string $date, string $refType, int $refId, ?string $time = null, string $settlementStatus = 'settled'): void
     {
-        if ($type === 'income' || $type === 'transfer_in') {
-            DB::table('cash_accounts')->where('id', $accountId)->increment('balance', $amount);
-        } else {
-            DB::table('cash_accounts')->where('id', $accountId)->decrement('balance', $amount);
+        // Hanya update saldo akun jika sudah settled
+        if ($settlementStatus === 'settled') {
+            if ($type === 'income' || $type === 'transfer_in') {
+                DB::table('cash_accounts')->where('id', $accountId)->increment('balance', $amount);
+            } else {
+                DB::table('cash_accounts')->where('id', $accountId)->decrement('balance', $amount);
+            }
         }
 
         $newBalance = (int) DB::table('cash_accounts')->where('id', $accountId)->value('balance');
@@ -277,6 +368,9 @@ class FinanceService
             'reference_type' => $refType,
             'reference_id' => $refId,
             'transaction_date' => $date,
+            'transaction_time' => $time ?? now()->format('H:i:s'),
+            'settlement_status' => $settlementStatus,
+            'settled_at' => $settlementStatus === 'settled' ? now() : null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -329,6 +423,7 @@ class FinanceService
             'reference_type' => $refType,
             'reference_id' => $refId,
             'transaction_date' => $date,
+            'transaction_time' => now()->format('H:i:s'),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -387,10 +482,19 @@ class FinanceService
         $row = DB::table('finance_daily_data')->where('tanggal', $date)->first();
 
         if (!$row) {
-            return ['penjualan_tunai' => 0, 'penjualan_qris' => 0, 'total_pendapatan' => 0, 'total_pengeluaran' => 0, 'pendapatan_bersih' => 0, 'jumlah_shift' => 0];
+            return ['penjualan_tunai' => 0, 'penjualan_qris' => 0, 'total_pendapatan' => 0, 'total_pengeluaran' => 0, 'pendapatan_bersih' => 0, 'jumlah_shift' => 0, 'pending_settlement' => 0];
         }
 
-        return (array) $row;
+        // Hitung total pending settlement (QRIS belum cair)
+        $pendingSettlement = (int) DB::table('cash_mutations')
+            ->where('settlement_status', 'pending')
+            ->where('transaction_date', $date)
+            ->sum('amount');
+
+        $data = (array) $row;
+        $data['pending_settlement'] = $pendingSettlement;
+
+        return $data;
     }
 
     public function getMonthSummary(string $month): array
@@ -613,13 +717,13 @@ class FinanceService
             $toBalanceAfter = DB::table('cash_accounts')->where('id', $transfer->to_account_id)->value('balance');
 
             $mutations = [
-                ['cash_account_id' => $transfer->from_account_id, 'type' => 'transfer_out', 'amount' => $transfer->amount, 'balance_after' => $fromBalance - $transfer->amount, 'description' => 'Transfer keluar', 'reference_type' => 'transfer', 'reference_id' => $id, 'transaction_date' => now()->toDateString(), 'created_at' => now(), 'updated_at' => now()],
-                ['cash_account_id' => $transfer->to_account_id, 'type' => 'transfer_in', 'amount' => $transfer->amount, 'balance_after' => $toBalanceAfter, 'description' => 'Transfer masuk', 'reference_type' => 'transfer', 'reference_id' => $id, 'transaction_date' => now()->toDateString(), 'created_at' => now(), 'updated_at' => now()],
+                ['cash_account_id' => $transfer->from_account_id, 'type' => 'transfer_out', 'amount' => $transfer->amount, 'balance_after' => $fromBalance - $transfer->amount, 'description' => 'Transfer keluar', 'reference_type' => 'transfer', 'reference_id' => $id, 'transaction_date' => now()->toDateString(), 'transaction_time' => now()->format('H:i:s'), 'created_at' => now(), 'updated_at' => now()],
+                ['cash_account_id' => $transfer->to_account_id, 'type' => 'transfer_in', 'amount' => $transfer->amount, 'balance_after' => $toBalanceAfter, 'description' => 'Transfer masuk', 'reference_type' => 'transfer', 'reference_id' => $id, 'transaction_date' => now()->toDateString(), 'transaction_time' => now()->format('H:i:s'), 'created_at' => now(), 'updated_at' => now()],
             ];
 
             // Fee dicatat sebagai expense terpisah
             if ($transfer->fee > 0) {
-                $mutations[] = ['cash_account_id' => $transfer->from_account_id, 'type' => 'expense', 'amount' => $transfer->fee, 'balance_after' => $fromBalanceAfter, 'description' => 'Biaya transfer', 'reference_type' => 'transfer_fee', 'reference_id' => $id, 'transaction_date' => now()->toDateString(), 'created_at' => now(), 'updated_at' => now()];
+                $mutations[] = ['cash_account_id' => $transfer->from_account_id, 'type' => 'expense', 'amount' => $transfer->fee, 'balance_after' => $fromBalanceAfter, 'description' => 'Biaya transfer', 'reference_type' => 'transfer_fee', 'reference_id' => $id, 'transaction_date' => now()->toDateString(), 'transaction_time' => now()->format('H:i:s'), 'created_at' => now(), 'updated_at' => now()];
             }
 
             DB::table('cash_mutations')->insert($mutations);
@@ -821,7 +925,8 @@ class FinanceService
 
             DB::table('cash_mutations')->insert([
                 'cash_account_id' => $accountId,
-                'finance_category_id' => $debt->finance_category_id ?? null,
+                // Default ke "Restok / Modal Barang" (ID 3) jika debt tidak punya kategori
+                'finance_category_id' => $debt->finance_category_id ?? 3,
                 'type' => 'expense',
                 'amount' => $amount,
                 'balance_after' => $newBalance,
@@ -829,6 +934,7 @@ class FinanceService
                 'reference_type' => 'debt_payment',
                 'reference_id' => $debtId,
                 'transaction_date' => $date,
+                'transaction_time' => now()->format('H:i:s'),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -882,6 +988,7 @@ class FinanceService
                 'description' => $description,
                 'reference_type' => 'manual',
                 'transaction_date' => $date,
+                'transaction_time' => now()->format('H:i:s'),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -1045,8 +1152,11 @@ class FinanceService
         $from = $month . '-01';
         $to = date('Y-m-t', strtotime($from));
 
-        $income = (int) DB::table('cash_mutations')->whereIn('type', ['income'])->whereBetween('transaction_date', [$from, $to])->sum('amount');
-        $expense = (int) DB::table('cash_mutations')->whereIn('type', ['expense'])->whereBetween('transaction_date', [$from, $to])->sum('amount');
+        // Exclude non-operational reference types (sama seperti getLabaRugi)
+        $excludeRefTypes = ['sync', 'sync_modal', 'sync_selisih', 'opening_balance', 'correction', 'transfer', 'transfer_fee', 'manual_deposit'];
+
+        $income = (int) DB::table('cash_mutations')->where('type', 'income')->whereNotIn('reference_type', $excludeRefTypes)->whereBetween('transaction_date', [$from, $to])->sum('amount');
+        $expense = (int) DB::table('cash_mutations')->where('type', 'expense')->whereNotIn('reference_type', $excludeRefTypes)->whereBetween('transaction_date', [$from, $to])->sum('amount');
 
         // Breakdown expense by category
         $expenseByCategory = DB::table('cash_mutations')
@@ -1104,24 +1214,63 @@ class FinanceService
         $from = $month . '-01';
         $to = date('Y-m-t', strtotime($from));
 
-        // Pendapatan
+        // Pendapatan — dari data harian (source of truth penjualan)
         $penjualanTunai = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('penjualan_tunai');
         $penjualanQris = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('penjualan_qris');
+
+        // Pendapatan lain — hanya income manual yang benar-benar pendapatan bisnis
+        // Exclude: sync, sync_modal, sync_selisih, opening_balance, correction, transfer
+        $excludeRefTypes = ['sync', 'sync_modal', 'sync_selisih', 'opening_balance', 'correction', 'transfer', 'transfer_fee', 'manual_deposit'];
         $pendapatanLain = (int) DB::table('cash_mutations')
             ->where('type', 'income')
-            ->where('reference_type', '!=', 'sync')
+            ->whereNotIn('reference_type', $excludeRefTypes)
             ->whereBetween('transaction_date', [$from, $to])
             ->sum('amount');
         $totalPendapatan = $penjualanTunai + $penjualanQris + $pendapatanLain;
 
-        // Retur
-        $totalRetur = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('total_retur');
+        // Pengeluaran — dari breakdown per kategori (dari ShifKasir API)
+        // Untuk hari yang punya breakdown → pakai breakdown
+        // Untuk hari yang belum punya breakdown → fallback ke total_pengeluaran
+        $shiftBreakdown = DB::table('finance_daily_expense_breakdown')
+            ->whereBetween('tanggal', [$from, $to])
+            ->selectRaw('kategori as category, SUM(total) as total')
+            ->groupBy('kategori')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn($r) => ['category' => $r->category, 'total' => (int) $r->total])
+            ->toArray();
+
+        $breakdownTotal = array_sum(array_column($shiftBreakdown, 'total'));
+
+        // Hari yang sudah punya breakdown
+        $daysWithBreakdown = DB::table('finance_daily_expense_breakdown')
+            ->whereBetween('tanggal', [$from, $to])
+            ->distinct()->pluck('tanggal')->toArray();
+
+        // Retur — hanya dari hari yang punya breakdown (karena breakdown sudah exclude retur)
+        // Hari dengan breakdown: retur di-exclude dari pengeluaran, jadi perlu dikurangi dari pendapatan
+        // Hari tanpa breakdown: retur sudah dikurangi di total_pengeluaran, JANGAN kurangi lagi
+        $totalRetur = (int) DB::table('finance_daily_data')
+            ->whereBetween('tanggal', [$from, $to])
+            ->whereIn('tanggal', $daysWithBreakdown)
+            ->sum('total_retur');
         $pendapatanBersih = $totalPendapatan - $totalRetur;
 
-        // Pengeluaran by category
-        $expenses = DB::table('cash_mutations')
+        // Pengeluaran shift dari hari yang BELUM punya breakdown (fallback)
+        // Pakai total_pengeluaran (sudah minus retur) karena breakdown juga exclude retur
+        $fallbackShift = (int) DB::table('finance_daily_data')
+            ->whereBetween('tanggal', [$from, $to])
+            ->whereNotIn('tanggal', $daysWithBreakdown)
+            ->sum('total_pengeluaran');
+
+        // Total pengeluaran shift = breakdown + fallback
+        $pengeluaranShift = $breakdownTotal + $fallbackShift;
+
+        // Pengeluaran lain — hanya expense manual yang benar-benar biaya operasional
+        $pengeluaranLain = DB::table('cash_mutations')
             ->leftJoin('finance_categories', 'cash_mutations.finance_category_id', '=', 'finance_categories.id')
             ->where('cash_mutations.type', 'expense')
+            ->whereNotIn('cash_mutations.reference_type', $excludeRefTypes)
             ->whereBetween('cash_mutations.transaction_date', [$from, $to])
             ->selectRaw('COALESCE(finance_categories.name, "Lain-lain") as category, SUM(cash_mutations.amount) as total')
             ->groupBy('category')
@@ -1130,7 +1279,8 @@ class FinanceService
             ->map(fn($r) => (array) $r)
             ->toArray();
 
-        $totalExpense = array_sum(array_column($expenses, 'total'));
+        $totalPengeluaranLain = array_sum(array_column($pengeluaranLain, 'total'));
+        $totalExpense = $pengeluaranShift + $totalPengeluaranLain;
         $labaBersih = $pendapatanBersih - $totalExpense;
 
         return [
@@ -1143,7 +1293,15 @@ class FinanceService
             'total_pendapatan' => $totalPendapatan,
             'retur' => $totalRetur,
             'pendapatan_bersih' => $pendapatanBersih,
-            'pengeluaran' => $expenses,
+            'pengeluaran' => array_merge(
+                !empty($shiftBreakdown)
+                    ? array_map(fn($b) => ['category' => 'Shift: ' . $b['category'], 'total' => $b['total']], $shiftBreakdown)
+                    : [],
+                $fallbackShift > 0
+                    ? [['category' => 'Pengeluaran Shift (lainnya)', 'total' => $fallbackShift]]
+                    : [],
+                $pengeluaranLain
+            ),
             'total_pengeluaran' => $totalExpense,
             'laba_bersih' => $labaBersih,
             'margin' => $totalPendapatan > 0 ? round(($labaBersih / $totalPendapatan) * 100, 1) : 0,
