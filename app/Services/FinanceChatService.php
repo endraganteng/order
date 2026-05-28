@@ -189,7 +189,67 @@ class FinanceChatService
             }
         }
 
-        // 6. Info loket
+        // 6. Breakdown per loket (kemarin + hari ini)
+        $yesterday = now()->subDay()->toDateString();
+        $perLoket = DB::table('cash_mutations')
+            ->whereIn('transaction_date', [$yesterday, $today])
+            ->where('settlement_status', 'settled')
+            ->selectRaw("
+                transaction_date,
+                cash_account_id,
+                SUM(CASE WHEN type='income' THEN amount ELSE 0 END) as income,
+                SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) as expense
+            ")
+            ->groupBy('transaction_date', 'cash_account_id')
+            ->orderBy('transaction_date')
+            ->get();
+
+        if ($perLoket->isNotEmpty()) {
+            $accountNames = $accounts->pluck('name', 'id')->toArray();
+            $parts[] = "\n=== BREAKDOWN PER AKUN (KEMARIN + HARI INI) ===";
+            foreach ($perLoket as $row) {
+                $accName = $accountNames[$row->cash_account_id] ?? "Akun #{$row->cash_account_id}";
+                $parts[] = "- {$row->transaction_date} | {$accName}: Income Rp " . number_format($row->income, 0, ',', '.') .
+                    " | Expense Rp " . number_format($row->expense, 0, ',', '.');
+            }
+        }
+
+        // 7. Mutasi kemarin (detail untuk trace saldo)
+        $yesterdayMutations = DB::table('cash_mutations')
+            ->where('transaction_date', $yesterday)
+            ->orderBy('id')
+            ->get();
+
+        if ($yesterdayMutations->isNotEmpty()) {
+            $parts[] = "\n=== MUTASI KEMARIN ({$yesterday}) ===";
+            foreach ($yesterdayMutations as $m) {
+                $status = $m->settlement_status ?? 'settled';
+                $statusLabel = $status === 'pending' ? ' [PENDING]' : '';
+                $parts[] = "- #{$m->id} | {$m->type} | Rp " . number_format($m->amount, 0, ',', '.') .
+                    " | {$m->description} | akun #{$m->cash_account_id}{$statusLabel}";
+            }
+        }
+
+        // 8. Hutang supplier aktif
+        $debts = DB::table('finance_debts')
+            ->where('status', 'active')
+            ->orderBy('due_date')
+            ->get();
+
+        if ($debts->isNotEmpty()) {
+            $parts[] = "\n=== HUTANG SUPPLIER AKTIF ===";
+            foreach ($debts as $d) {
+                $sisa = $d->amount - $d->paid;
+                $dueLabel = $d->due_date ? " | Jatuh tempo: {$d->due_date}" : '';
+                $parts[] = "- {$d->supplier_name}: Total Rp " . number_format($d->amount, 0, ',', '.') .
+                    " | Dibayar Rp " . number_format($d->paid, 0, ',', '.') .
+                    " | Sisa Rp " . number_format($sisa, 0, ',', '.') . $dueLabel;
+            }
+            $totalSisa = $debts->sum(fn ($d) => $d->amount - $d->paid);
+            $parts[] = "TOTAL SISA HUTANG: Rp " . number_format($totalSisa, 0, ',', '.');
+        }
+
+        // 9. Info loket
         $parts[] = "\n=== INFO SISTEM ===";
         $parts[] = "- Kas Laci 1 (akun #1): loket utama";
         $parts[] = "- Kas Laci 2 (akun #11): loket kedua";
