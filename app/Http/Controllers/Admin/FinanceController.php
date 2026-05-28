@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\VerifiesSupervisorPin;
 use App\Services\FinanceService;
+use App\Services\TelegramService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -230,9 +231,21 @@ class FinanceController extends Controller
 
     public function approveTransfer(int $id)
     {
+        $transfer = DB::table('cash_transfers')->find($id);
         $result = $this->finance->approveTransfer($id, session('admin_name', 'admin'));
         if (!$result) return response()->json(['success' => false, 'message' => 'Saldo tidak cukup atau status tidak valid.'], 422);
         $this->finance->logAudit('approve', 'transfer', $id);
+
+        // Notifikasi ke Telegram Finance
+        if ($transfer) {
+            $from = DB::table('cash_accounts')->where('id', $transfer->from_account_id)->value('name');
+            $to = DB::table('cash_accounts')->where('id', $transfer->to_account_id)->value('name');
+            $fmt = number_format($transfer->amount, 0, ',', '.');
+            $msg = "💸 *TRANSFER DISETUJUI*\n━━━━━━━━━━━━━━━━━━━━━\n📤 Dari: {$from}\n📥 Ke: {$to}\n💰 Jumlah: Rp {$fmt}\n👤 Oleh: " . session('admin_name', 'admin') . "\n📅 " . now()->format('d/m/Y H:i');
+            if ($transfer->notes) $msg .= "\n📝 {$transfer->notes}";
+            try { app(TelegramService::class)->sendToFinance($msg); } catch (\Exception $e) {}
+        }
+
         return response()->json(['success' => true]);
     }
 
@@ -437,11 +450,18 @@ class FinanceController extends Controller
             'description' => $request->description,
             'reference_type' => 'manual_deposit',
             'transaction_date' => $request->transaction_date ?? date('Y-m-d'),
+            'transaction_time' => now()->format('H:i:s'),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
         $this->finance->logAudit('deposit', 'cash_account', $accountId, null, ['amount' => $amount, 'description' => $request->description]);
+
+        // Notifikasi ke Telegram Finance
+        $accName = DB::table('cash_accounts')->where('id', $accountId)->value('name');
+        $fmt = number_format($amount, 0, ',', '.');
+        $msg = "🟢 *SETORAN/DEPOSIT*\n━━━━━━━━━━━━━━━━━━━━━\n📝 {$request->description}\n💰 Rp {$fmt}\n🏦 Akun: {$accName}\n👤 Oleh: " . session('admin_name', 'admin') . "\n📅 " . now()->format('d/m/Y H:i');
+        try { app(TelegramService::class)->sendToFinance($msg); } catch (\Exception $e) {}
 
         return response()->json(['success' => true]);
     }
@@ -485,11 +505,21 @@ class FinanceController extends Controller
             'description' => $desc,
             'reference_type' => 'correction',
             'transaction_date' => date('Y-m-d'),
+            'transaction_time' => now()->format('H:i:s'),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
         $this->finance->logAudit('correction', 'cash_account', $accountId, ['balance' => $currentBalance], ['balance' => $actualBalance, 'diff' => $diff]);
+
+        // Notifikasi ke Telegram Finance
+        $accName = DB::table('cash_accounts')->where('id', $accountId)->value('name');
+        $fmtOld = number_format($currentBalance, 0, ',', '.');
+        $fmtNew = number_format($actualBalance, 0, ',', '.');
+        $fmtDiff = ($diff > 0 ? '+' : '') . number_format($diff, 0, ',', '.');
+        $msg = "⚖️ *KOREKSI SALDO*\n━━━━━━━━━━━━━━━━━━━━━\n🏦 Akun: {$accName}\n📊 Sebelum: Rp {$fmtOld}\n📊 Sesudah: Rp {$fmtNew}\n📈 Selisih: Rp {$fmtDiff}\n👤 Oleh: " . session('admin_name', 'admin') . "\n📅 " . now()->format('d/m/Y H:i');
+        if ($request->description) $msg .= "\n📝 {$request->description}";
+        try { app(TelegramService::class)->sendToFinance($msg); } catch (\Exception $e) {}
 
         return response()->json(['success' => true, 'old_balance' => $currentBalance, 'new_balance' => $actualBalance, 'diff' => $diff]);
     }
@@ -553,6 +583,14 @@ class FinanceController extends Controller
         $this->finance->logAudit('create', 'expense', $id, null, [
             'total' => $totalAmount, 'cash' => $cashAmount, 'debt' => $debtAmount, 'description' => $request->description,
         ]);
+
+        // Notifikasi ke Telegram Finance
+        $accName = DB::table('cash_accounts')->where('id', $request->cash_account_id)->value('name');
+        $catName = DB::table('finance_categories')->where('id', $request->finance_category_id)->value('name');
+        $fmt = number_format($totalAmount, 0, ',', '.');
+        $msg = "🔴 *PENGELUARAN*\n━━━━━━━━━━━━━━━━━━━━━\n📝 {$request->description}\n💰 Rp {$fmt}\n🏦 Akun: {$accName}\n📂 Kategori: {$catName}\n👤 Oleh: " . session('admin_name', 'admin') . "\n📅 {$request->transaction_date}";
+        if ($debtAmount > 0) $msg .= "\n⚠️ Hutang: Rp " . number_format($debtAmount, 0, ',', '.');
+        try { app(TelegramService::class)->sendToFinance($msg); } catch (\Exception $e) {}
 
         return response()->json(['success' => true, 'id' => $id]);
     }

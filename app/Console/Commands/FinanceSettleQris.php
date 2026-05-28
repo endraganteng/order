@@ -57,6 +57,14 @@ class FinanceSettleQris extends Command
         $this->info("✅ Settled {$totalSettled} mutasi QRIS untuk {$date} (total: Rp {$formattedAmount})");
         Log::info("QRIS settlement: {$totalSettled} mutations settled for {$date}, total: {$totalAmount}");
 
+        // Notifikasi ke Telegram Finance
+        try {
+            $msg = "✅ *QRIS SETTLED*\n━━━━━━━━━━━━━━━━━━━━━\n📅 Tanggal: {$date}\n💰 Total: Rp {$formattedAmount}\n📊 Jumlah transaksi: {$totalSettled}\n⏰ Dana sudah masuk ke saldo";
+            app(\App\Services\TelegramService::class)->sendToFinance($msg);
+        } catch (\Exception $e) {
+            Log::warning('QRIS settle telegram notification failed: ' . $e->getMessage());
+        }
+
         return self::SUCCESS;
     }
 }
