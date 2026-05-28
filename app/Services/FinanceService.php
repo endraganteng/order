@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class FinanceService
 {
@@ -197,6 +198,11 @@ class FinanceService
             $this->recalculateBalanceAfter($mutationFrom, $to);
         }
 
+        // Kirim laporan shift ke Telegram topic LAPORAN SHIFT
+        if ($status !== 'failed') {
+            $this->sendShiftReport($from, $to);
+        }
+
         return $this->logSync('manual', $from, $to, $status, $synced, $failed, implode('; ', $errors) ?: null, $triggeredBy, $start);
     }
 
@@ -210,66 +216,98 @@ class FinanceService
             $dailyRows = DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->orderBy('tanggal')->get();
 
             foreach ($dailyRows as $row) {
-                $tunaiAccountId = $this->resolveAccountMapping('penjualan_tunai');
                 $qrisAccountId = $this->resolveAccountMapping('penjualan_qris');
-                $expAccountId = $this->resolveAccountMapping('pengeluaran_shift');
+
+                // Resolve akun per loket
+                $loket1AccountId = $this->resolveAccountMapping('penjualan_tunai'); // Kas Laci 1
+                $loket2AccountId = $this->resolveAccountMapping('penjualan_tunai_loket_2'); // Kas Laci 2
+                $exp1AccountId = $this->resolveAccountMapping('pengeluaran_shift'); // Kas Laci 1
+                $exp2AccountId = $this->resolveAccountMapping('pengeluaran_shift_loket_2'); // Kas Laci 2
+
+                // Kumpulkan semua account IDs untuk delete
+                $allAccountIds = array_filter([$loket1AccountId, $loket2AccountId, $exp1AccountId, $exp2AccountId, $qrisAccountId]);
 
                 // Ambil jam tutup shift terakhir hari itu untuk transaction_time
                 $lastShiftTime = DB::table('finance_shifts')->where('tanggal', $row->tanggal)
                     ->orderByDesc('shift_number')->value('closed_at');
 
                 // === STEP 1: Hapus mutasi lama dari sync untuk tanggal ini ===
-                $this->deleteSyncMutationsForDate($row->tanggal, $tunaiAccountId, $qrisAccountId, $expAccountId);
+                $this->deleteSyncMutationsForDate($row->tanggal, $loket1AccountId, $qrisAccountId, $exp1AccountId, $loket2AccountId, $exp2AccountId);
 
-                // === STEP 2: Anchor saldo ke modal awal fisik ===
-                // Ini memastikan saldo finance selalu sinkron dengan fisik,
-                // tanpa carry-over error dari hari sebelumnya.
-                if ($tunaiAccountId) {
-                    $modalAwal = (int) DB::table('finance_shifts')->where('tanggal', $row->tanggal)
-                        ->orderBy('shift_number')->value('modal_awal');
+                // === STEP 2: Anchor + Mutasi per loket ===
+                $shifts = DB::table('finance_shifts')->where('tanggal', $row->tanggal)->orderBy('shift_number')->orderBy('loket')->get();
 
-                    // Ambil jam buka shift pertama untuk mutasi modal
-                    $firstShiftTime = DB::table('finance_shifts')->where('tanggal', $row->tanggal)
-                        ->orderBy('shift_number')->value('closed_at');
+                // Group shifts per loket
+                $perLoket = [];
+                foreach ($shifts as $shift) {
+                    $loketKey = $shift->loket;
+                    if (!isset($perLoket[$loketKey])) {
+                        $perLoket[$loketKey] = ['shifts' => [], 'modal_awal' => 0, 'tunai' => 0, 'pengeluaran' => 0, 'selisih' => 0];
+                    }
+                    $perLoket[$loketKey]['shifts'][] = $shift;
+                    $perLoket[$loketKey]['tunai'] += (int) $shift->penjualan_tunai;
+                    $perLoket[$loketKey]['pengeluaran'] += (int) $shift->total_pengeluaran;
+                    $perLoket[$loketKey]['selisih'] += (int) $shift->selisih;
+                }
+                // Modal awal = dari shift pertama per loket
+                foreach ($perLoket as $loketKey => &$data) {
+                    $firstShift = $data['shifts'][0] ?? null;
+                    $data['modal_awal'] = $firstShift ? (int) $firstShift->modal_awal : 0;
+                    $data['first_shift_time'] = $firstShift ? $firstShift->closed_at : null;
+                }
+                unset($data);
 
-                    if ($modalAwal > 0) {
-                        $currentBalance = (int) DB::table('cash_accounts')->where('id', $tunaiAccountId)->value('balance');
-                        $diff = $currentBalance - $modalAwal;
+                // Process per loket
+                foreach ($perLoket as $loketKey => $data) {
+                    $isLoket2 = str_contains($loketKey, 'Loket 2');
+                    $accountId = $isLoket2 ? $loket2AccountId : $loket1AccountId;
+                    $expAccountId = $isLoket2 ? $exp2AccountId : $exp1AccountId;
+                    $loketLabel = $isLoket2 ? 'Loket 2' : 'Loket 1';
+
+                    if (!$accountId) continue;
+
+                    // Anchor modal awal per loket
+                    // SKIP jika ada mutasi non-sync di hari yang sama (transfer, manual, dll)
+                    $hasNonSyncMutations = DB::table('cash_mutations')
+                        ->where('cash_account_id', $accountId)
+                        ->where('transaction_date', $row->tanggal)
+                        ->whereNotIn('reference_type', ['sync', 'sync_modal', 'sync_selisih'])
+                        ->exists();
+
+                    if (!$hasNonSyncMutations && $data['modal_awal'] > 0) {
+                        $currentBalance = (int) DB::table('cash_accounts')->where('id', $accountId)->value('balance');
+                        $diff = $currentBalance - $data['modal_awal'];
 
                         if ($diff > 0) {
-                            $this->insertMutation($tunaiAccountId, 'expense', $diff, 'Setor kas (adjust ke modal awal) ' . $row->tanggal, $row->tanggal, 'sync_modal', $row->id, $firstShiftTime);
+                            $this->insertMutation($accountId, 'expense', $diff, "Setor kas {$loketLabel} (adjust ke modal awal) " . $row->tanggal, $row->tanggal, 'sync_modal', $row->id, $data['first_shift_time']);
                         } elseif ($diff < 0) {
-                            $this->insertMutation($tunaiAccountId, 'income', abs($diff), 'Tambahan kas (adjust ke modal awal) ' . $row->tanggal, $row->tanggal, 'sync_modal', $row->id, $firstShiftTime);
+                            $this->insertMutation($accountId, 'income', abs($diff), "Tambahan kas {$loketLabel} (adjust ke modal awal) " . $row->tanggal, $row->tanggal, 'sync_modal', $row->id, $data['first_shift_time']);
+                        }
+                    }
+
+                    // Penjualan Tunai per loket
+                    if ($data['tunai'] > 0) {
+                        $this->insertMutation($accountId, 'income', $data['tunai'], "Penjualan tunai {$loketLabel} " . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime);
+                    }
+
+                    // Pengeluaran per loket
+                    if ($expAccountId && $data['pengeluaran'] > 0) {
+                        $this->insertMutation($expAccountId, 'expense', $data['pengeluaran'], "Pengeluaran shift {$loketLabel} " . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime);
+                    }
+
+                    // Selisih kas per loket
+                    if ($data['selisih'] != 0) {
+                        if ($data['selisih'] < 0) {
+                            $this->insertMutation($accountId, 'expense', abs($data['selisih']), "Selisih kas {$loketLabel} " . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id, $lastShiftTime);
+                        } else {
+                            $this->insertMutation($accountId, 'income', $data['selisih'], "Selisih kas {$loketLabel} " . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id, $lastShiftTime);
                         }
                     }
                 }
 
-                // === STEP 3: Buat mutasi dari data harian ===
-
-                // Penjualan Tunai → income
-                if ($tunaiAccountId && $row->penjualan_tunai > 0) {
-                    $this->insertMutation($tunaiAccountId, 'income', $row->penjualan_tunai, 'Penjualan tunai ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime);
-                }
-
-                // Penjualan QRIS → income (pending settlement, cair jam 22:00)
+                // === STEP 3: QRIS tetap 1 akun (gabungan semua loket) ===
                 if ($qrisAccountId && $row->penjualan_qris > 0) {
                     $this->insertMutation($qrisAccountId, 'income', $row->penjualan_qris, 'Penjualan QRIS ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime, 'pending');
-                }
-
-                // Pengeluaran Shift → expense
-                if ($expAccountId && ($row->total_pengeluaran_shift ?? $row->total_pengeluaran) > 0) {
-                    $this->insertMutation($expAccountId, 'expense', (int) ($row->total_pengeluaran_shift ?? $row->total_pengeluaran), 'Pengeluaran shift ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime);
-                }
-
-                // === STEP 4: Selisih kas — koreksi supaya saldo = uang fisik akhir ===
-                // Sum semua selisih per hari (karena sudah anchor ke modal awal, semua selisih harus dicatat)
-                $totalSelisih = (int) DB::table('finance_shifts')->where('tanggal', $row->tanggal)->sum('selisih');
-                if ($totalSelisih != 0 && $tunaiAccountId) {
-                    if ($totalSelisih < 0) {
-                        $this->insertMutation($tunaiAccountId, 'expense', abs($totalSelisih), 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id, $lastShiftTime);
-                    } else {
-                        $this->insertMutation($tunaiAccountId, 'income', $totalSelisih, 'Selisih kas ' . $row->tanggal, $row->tanggal, 'sync_selisih', $row->id, $lastShiftTime);
-                    }
                 }
             }
         });
@@ -283,8 +321,10 @@ class FinanceService
     {
         $accountIds = array_filter([
             $this->resolveAccountMapping('penjualan_tunai'),
+            $this->resolveAccountMapping('penjualan_tunai_loket_2'),
             $this->resolveAccountMapping('penjualan_qris'),
             $this->resolveAccountMapping('pengeluaran_shift'),
+            $this->resolveAccountMapping('pengeluaran_shift_loket_2'),
         ]);
 
         foreach ($accountIds as $accountId) {
@@ -312,9 +352,9 @@ class FinanceService
     /**
      * Hapus semua mutasi dari sync untuk tanggal tertentu dan rollback saldo akun.
      */
-    protected function deleteSyncMutationsForDate(string $tanggal, ?int $tunaiAccountId, ?int $qrisAccountId, ?int $expAccountId): void
+    protected function deleteSyncMutationsForDate(string $tanggal, ?int ...$accountIdArgs): void
     {
-        $accountIds = array_filter([$tunaiAccountId, $qrisAccountId, $expAccountId]);
+        $accountIds = array_filter($accountIdArgs);
         if (empty($accountIds)) {
             return;
         }
@@ -326,7 +366,11 @@ class FinanceService
             ->get();
 
         // Rollback saldo akun untuk setiap mutasi yang akan dihapus
+        // SKIP rollback untuk mutasi pending (saldo tidak pernah diupdate saat insert)
         foreach ($syncMutations as $mutation) {
+            if ($mutation->settlement_status === 'pending') {
+                continue;
+            }
             if ($mutation->type === 'income' || $mutation->type === 'transfer_in') {
                 DB::table('cash_accounts')->where('id', $mutation->cash_account_id)->decrement('balance', $mutation->amount);
             } else {
@@ -1306,5 +1350,65 @@ class FinanceService
             'laba_bersih' => $labaBersih,
             'margin' => $totalPendapatan > 0 ? round(($labaBersih / $totalPendapatan) * 100, 1) : 0,
         ];
+    }
+
+    /**
+     * Kirim laporan shift ke Telegram topic LAPORAN SHIFT
+     */
+    protected function sendShiftReport(string $from, string $to): void
+    {
+        try {
+            $shifts = DB::table('finance_shifts')
+                ->whereBetween('tanggal', [$from, $to])
+                ->orderBy('tanggal')
+                ->orderBy('shift_number')
+                ->orderBy('loket')
+                ->get();
+
+            if ($shifts->isEmpty()) return;
+
+            $daily = DB::table('finance_daily_data')
+                ->whereBetween('tanggal', [$from, $to])
+                ->first();
+
+            $message = "📊 *LAPORAN SHIFT*\n";
+            $message .= "📅 " . $from . ($from !== $to ? " s/d {$to}" : "") . "\n\n";
+
+            $totalTunai = 0;
+            $totalQris = 0;
+            $totalPengeluaran = 0;
+
+            foreach ($shifts as $shift) {
+                $sisaLaci = $shift->modal_awal + $shift->penjualan_tunai - $shift->total_pengeluaran + $shift->selisih;
+                $totalTunai += $shift->penjualan_tunai;
+                $totalQris += $shift->penjualan_qris;
+                $totalPengeluaran += $shift->total_pengeluaran;
+
+                $message .= "🏪 *{$shift->loket} - Shift {$shift->shift_number}*\n";
+                $message .= "👤 Kasir: {$shift->kasir}\n";
+                $message .= "💰 Modal: Rp " . number_format($shift->modal_awal) . "\n";
+                $message .= "🟢 Tunai: Rp " . number_format($shift->penjualan_tunai) . "\n";
+                $message .= "🔵 QRIS: Rp " . number_format($shift->penjualan_qris) . "\n";
+                $message .= "🔴 Pengeluaran: Rp " . number_format($shift->total_pengeluaran) . "\n";
+                $message .= "📦 Sisa laci: Rp " . number_format($sisaLaci) . "\n";
+                if ($shift->selisih != 0) {
+                    $message .= "⚠️ Selisih: Rp " . number_format($shift->selisih) . "\n";
+                }
+                $message .= "⏰ Tutup: {$shift->closed_at}\n\n";
+            }
+
+            $totalPendapatan = $totalTunai + $totalQris;
+            $message .= "━━━━━━━━━━━━━━━━━━━━━\n";
+            $message .= "📈 *TOTAL HARI INI*\n";
+            $message .= "💵 Tunai: Rp " . number_format($totalTunai) . "\n";
+            $message .= "💳 QRIS: Rp " . number_format($totalQris) . " _(pending)_\n";
+            $message .= "📊 Total Pendapatan: Rp " . number_format($totalPendapatan) . "\n";
+            $message .= "🔴 Total Pengeluaran: Rp " . number_format($totalPengeluaran) . "\n";
+            $message .= "✅ Bersih: Rp " . number_format($totalPendapatan - $totalPengeluaran) . "\n";
+
+            app(TelegramService::class)->sendToLaporanShift($message);
+        } catch (\Throwable $e) {
+            Log::warning('FinanceService: Gagal kirim laporan shift', ['error' => $e->getMessage()]);
+        }
     }
 }
