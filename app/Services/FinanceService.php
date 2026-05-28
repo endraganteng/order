@@ -231,6 +231,15 @@ class FinanceService
                 $lastShiftTime = DB::table('finance_shifts')->where('tanggal', $row->tanggal)
                     ->orderByDesc('shift_number')->value('closed_at');
 
+                // Cek apakah QRIS hari ini sudah di-settle SEBELUM delete (karena delete akan hapus mutasi)
+                $qrisAlreadySettled = $qrisAccountId ? DB::table('cash_mutations')
+                    ->where('cash_account_id', $qrisAccountId)
+                    ->where('transaction_date', $row->tanggal)
+                    ->where('reference_type', 'sync')
+                    ->where('settlement_status', 'settled')
+                    ->where('description', 'like', 'Penjualan QRIS%')
+                    ->exists() : false;
+
                 // === STEP 1: Hapus mutasi lama dari sync untuk tanggal ini ===
                 $this->deleteSyncMutationsForDate($row->tanggal, $loket1AccountId, $qrisAccountId, $exp1AccountId, $loket2AccountId, $exp2AccountId);
 
@@ -307,7 +316,8 @@ class FinanceService
 
                 // === STEP 3: QRIS tetap 1 akun (gabungan semua loket) ===
                 if ($qrisAccountId && $row->penjualan_qris > 0) {
-                    $this->insertMutation($qrisAccountId, 'income', $row->penjualan_qris, 'Penjualan QRIS ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime, 'pending');
+                    $qrisStatus = $qrisAlreadySettled ? 'settled' : 'pending';
+                    $this->insertMutation($qrisAccountId, 'income', $row->penjualan_qris, 'Penjualan QRIS ' . $row->tanggal, $row->tanggal, 'sync', $row->id, $lastShiftTime, $qrisStatus);
                 }
             }
         });
