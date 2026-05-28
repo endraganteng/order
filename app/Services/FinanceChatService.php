@@ -249,7 +249,93 @@ class FinanceChatService
             $parts[] = "TOTAL SISA HUTANG: Rp " . number_format($totalSisa, 0, ',', '.');
         }
 
-        // 9. Info loket
+        // 9. Alokasi dana (budget allocation)
+        $allocations = DB::table('finance_allocations')
+            ->where('is_active', true)
+            ->get();
+
+        if ($allocations->isNotEmpty()) {
+            $categoryNames = DB::table('finance_categories')
+                ->pluck('name', 'id')
+                ->toArray();
+            $parts[] = "\n=== ALOKASI DANA (% dari pendapatan bersih) ===";
+            foreach ($allocations as $a) {
+                $catName = $categoryNames[$a->finance_category_id] ?? '?';
+                $parts[] = "- {$a->percentage}% → {$catName}";
+            }
+        }
+
+        // 10. Kategori finance
+        $categories = DB::table('finance_categories')
+            ->where('is_active', true)
+            ->orderBy('type')
+            ->orderBy('sort_order')
+            ->get();
+
+        if ($categories->isNotEmpty()) {
+            $parts[] = "\n=== KATEGORI FINANCE ===";
+            foreach ($categories as $c) {
+                $parts[] = "- [{$c->type}] {$c->name} (#{$c->id})";
+            }
+        }
+
+        // 11. Data harian (finance_daily_data) — 7 hari terakhir
+        $dailyData = DB::table('finance_daily_data')
+            ->where('tanggal', '>=', $weekAgo)
+            ->orderBy('tanggal')
+            ->get();
+
+        if ($dailyData->isNotEmpty()) {
+            $parts[] = "\n=== DATA HARIAN (RINGKASAN SHIFT) ===";
+            foreach ($dailyData as $dd) {
+                $parts[] = "- {$dd->tanggal}: Tunai Rp " . number_format($dd->penjualan_tunai, 0, ',', '.') .
+                    " | QRIS Rp " . number_format($dd->penjualan_qris, 0, ',', '.') .
+                    " | Pengeluaran Shift Rp " . number_format($dd->total_pengeluaran, 0, ',', '.') .
+                    " | Retur Rp " . number_format($dd->total_retur ?? 0, 0, ',', '.') .
+                    " | Net Rp " . number_format($dd->pendapatan_bersih, 0, ',', '.') .
+                    " | Jumlah Shift: {$dd->jumlah_shift}";
+            }
+        }
+
+        // 12. Detail shift (3 hari terakhir) — per kasir, per loket, selisih
+        $recentShifts = DB::table('finance_shifts')
+            ->where('tanggal', '>=', now()->subDays(3)->toDateString())
+            ->orderBy('tanggal')
+            ->orderBy('shift_number')
+            ->get();
+
+        if ($recentShifts->isNotEmpty()) {
+            $parts[] = "\n=== DETAIL SHIFT (3 HARI TERAKHIR) ===";
+            foreach ($recentShifts as $s) {
+                $selisihLabel = $s->selisih != 0 ? " | SELISIH: Rp " . number_format($s->selisih, 0, ',', '.') : '';
+                $parts[] = "- {$s->tanggal} Shift {$s->shift_number} {$s->loket} | Kasir: {$s->kasir}" .
+                    " | Tunai Rp " . number_format($s->penjualan_tunai, 0, ',', '.') .
+                    " | QRIS Rp " . number_format($s->penjualan_qris, 0, ',', '.') .
+                    " | Pengeluaran Rp " . number_format($s->total_pengeluaran, 0, ',', '.') .
+                    $selisihLabel;
+            }
+        }
+
+        // 13. Transfer antar akun (7 hari terakhir)
+        $transfers = DB::table('cash_transfers')
+            ->where('created_at', '>=', now()->subDays(7))
+            ->orderByDesc('id')
+            ->limit(15)
+            ->get();
+
+        if ($transfers->isNotEmpty()) {
+            $accountNames = $accounts->pluck('name', 'id')->toArray();
+            $parts[] = "\n=== TRANSFER ANTAR AKUN (7 HARI TERAKHIR) ===";
+            foreach ($transfers as $t) {
+                $from = $accountNames[$t->from_account_id] ?? "#{$t->from_account_id}";
+                $to = $accountNames[$t->to_account_id] ?? "#{$t->to_account_id}";
+                $notes = $t->notes ? " ({$t->notes})" : '';
+                $parts[] = "- #{$t->id} | {$from} → {$to} | Rp " . number_format($t->amount, 0, ',', '.') .
+                    " | Status: {$t->status}{$notes}";
+            }
+        }
+
+        // 14. Info loket
         $parts[] = "\n=== INFO SISTEM ===";
         $parts[] = "- Kas Laci 1 (akun #1): loket utama";
         $parts[] = "- Kas Laci 2 (akun #11): loket kedua";
@@ -259,6 +345,8 @@ class FinanceChatService
         $parts[] = "- SUPERBANK (akun #3): rekening bank";
         $parts[] = "- Settlement QRIS: otomatis jam 22:00, sebelumnya status 'pending'";
         $parts[] = "- Sistem cash basis: expense dicatat saat uang keluar";
+        $parts[] = "- Alokasi dana dihitung dari pendapatan bersih harian";
+        $parts[] = "- Selisih kas = perbedaan antara kas fisik vs yang tercatat di sistem";
 
         return implode("\n", $parts);
     }
