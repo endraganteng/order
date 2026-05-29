@@ -107,6 +107,7 @@ Action types:
 - {"type": "create_task", "title": "...", "task_type": "rack_check|general", "assigned_to": "waiter_id", "scheduled_for_date": "YYYY-MM-DD", "schedule_time": "HH:MM", "priority": "normal|high"}
 - {"type": "cancel_task", "task_ids": ["id1", "id2"], "reason": "..."}
 - {"type": "reassign_task", "task_id": "...", "from_waiter": "id", "to_waiter": "id"}
+  (PENTING: reassign SATU task per action. Jika user minta reassign multiple, buat array actions terpisah atau minta user specify task mana)
 - {"type": "create_template", "title": "...", "task_type": "rack_check|general", "frequency": "daily|every_n_days", "every_n_days": 2, "schedule_time": "HH:MM"}
 - {"type": "deactivate_template", "template_id": "..."}
 - {"type": "bulk_cancel", "waiter_id": "...", "date": "YYYY-MM-DD", "reason": "..."}
