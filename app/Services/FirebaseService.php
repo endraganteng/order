@@ -4217,19 +4217,54 @@ class FirebaseService
             }
 
             if ($isRackRollingTemplate) {
-                usort($targetWaiters, function ($a, $b) {
+                // Fair distribution: pick waiter with least rack_check tasks today
+                // Uses $rackCheckAssignmentCount (tracked across all templates in this run)
+                if (! isset($rackCheckAssignmentCount)) {
+                    // Initialize from already-generated rack_check tasks today
+                    $rackCheckAssignmentCount = [];
+                    try {
+                        $todayTasks = $this->database->getReference('waiter_tasks')
+                            ->orderByChild('scheduled_for_date')
+                            ->equalTo($effectiveTargetDate)
+                            ->getSnapshot()->getValue();
+                        if (is_array($todayTasks)) {
+                            foreach ($todayTasks as $existingTask) {
+                                if (($existingTask['task_type'] ?? '') === 'rack_check'
+                                    && ($existingTask['status'] ?? '') !== 'cancelled') {
+                                    $ewId = (string) ($existingTask['assigned_waiter_id'] ?? '');
+                                    if ($ewId !== '') {
+                                        $rackCheckAssignmentCount[$ewId] = ($rackCheckAssignmentCount[$ewId] ?? 0) + 1;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        // Fallback: empty counts, distribute evenly from scratch
+                    }
+                }
+
+                // Sort by least assigned, then alphabetical for deterministic tie-breaking
+                usort($targetWaiters, function ($a, $b) use ($rackCheckAssignmentCount) {
+                    $countA = $rackCheckAssignmentCount[(string) ($a['id'] ?? '')] ?? 0;
+                    $countB = $rackCheckAssignmentCount[(string) ($b['id'] ?? '')] ?? 0;
+                    if ($countA !== $countB) {
+                        return $countA - $countB; // Least assigned first
+                    }
                     $nameCompare = strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
                     if ($nameCompare !== 0) {
                         return $nameCompare;
                     }
-
                     return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
                 });
 
-                $rotationOffset = $this->resolveDailyRotationOffset($effectiveTargetDate);
-                $slotIndex = $this->resolveRollingSlotIndex($template);
-                $selectedWaiterIndex = ($slotIndex + $rotationOffset) % count($targetWaiters);
-                $targetWaiters = [$targetWaiters[$selectedWaiterIndex]];
+                // Pick the first (least assigned)
+                $targetWaiters = [$targetWaiters[0]];
+
+                // Track this assignment
+                $pickedWaiterId = (string) ($targetWaiters[0]['id'] ?? '');
+                if ($pickedWaiterId !== '') {
+                    $rackCheckAssignmentCount[$pickedWaiterId] = ($rackCheckAssignmentCount[$pickedWaiterId] ?? 0) + 1;
+                }
 
                 $templateUpdates = [];
                 if ((string) ($template['assignment_type'] ?? '') !== 'role') {
@@ -4237,10 +4272,6 @@ class FirebaseService
                     $templateUpdates['assigned_waiter_id'] = null;
                     $templateUpdates['assigned_waiter_name'] = null;
                     $templateUpdates['assigned_waiter_email'] = null;
-                }
-
-                if (! isset($template['rolling_slot_index']) || $template['rolling_slot_index'] === null || $template['rolling_slot_index'] === '') {
-                    $templateUpdates['rolling_slot_index'] = $slotIndex;
                 }
 
                 if (! empty($templateUpdates)) {
