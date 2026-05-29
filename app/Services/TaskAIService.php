@@ -654,11 +654,11 @@ SYSTEM;
                 ->post($url, [
                     'model' => $this->model,
                     'messages' => [
-                        ['role' => 'system', 'content' => 'You are a task management AI. Always respond in valid JSON format.'],
+                        ['role' => 'system', 'content' => 'You are a task management AI. Always respond in valid JSON format with keys: reply, action, needs_confirmation.'],
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'temperature' => $this->temperature,
-                    'response_format' => ['type' => 'json_object'],
+                    'stream' => false,
                 ]);
 
             if (! $response->successful()) {
