@@ -5,22 +5,43 @@ namespace App\Services;
 use App\Models\AiChatMessage;
 use App\Models\AiChatSession;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
  * FinanceChatService
  *
  * AI assistant untuk diskusi keuangan toko.
- * Mengambil data real-time dari cash_mutations, cash_accounts, finance_daily_data
- * lalu kirim ke Gemini sebagai context untuk menjawab pertanyaan user.
+ * Support 2 provider:
+ *   - 'gemini'     : Google Gemini API langsung (free tier)
+ *   - 'openrouter' : OpenRouter (semua model: Gemini, Claude, GPT, DeepSeek, dll)
+ *
+ * Config: config/finance_chat.php
  */
 class FinanceChatService
 {
-    protected GeminiService $gemini;
+    protected string $provider;
+    protected string $model;
+    protected float $temperature;
+    protected int $maxTokens;
+    protected int $timeout;
 
-    public function __construct(GeminiService $gemini)
+    public function __construct()
     {
-        $this->gemini = $gemini;
+        $this->provider = (string) config('finance_chat.provider', 'gemini');
+        $this->model = (string) config('finance_chat.model', 'gemini-2.5-flash');
+        $this->temperature = (float) config('finance_chat.temperature', 0.3);
+        $this->maxTokens = (int) config('finance_chat.max_tokens', 2048);
+        $this->timeout = (int) config('finance_chat.timeout_seconds', 60);
+    }
+
+    public function isConfigured(): bool
+    {
+        if ($this->provider === 'openrouter') {
+            return (string) config('finance_chat.openrouter_api_key') !== '';
+        }
+
+        return (string) config('finance_chat.gemini_api_key') !== '';
     }
 
     /**
@@ -39,8 +60,8 @@ class FinanceChatService
             return $this->errorResult('Pertanyaan kosong.');
         }
 
-        if (! $this->gemini->isConfigured()) {
-            return $this->errorResult('AI belum dikonfigurasi.');
+        if (! $this->isConfigured()) {
+            return $this->errorResult('AI belum dikonfigurasi. Set FINANCE_AI_GEMINI_KEY atau FINANCE_AI_OPENROUTER_KEY di .env');
         }
 
         // Resolve or create session
@@ -82,8 +103,8 @@ class FinanceChatService
         // Build full prompt
         $prompt = $this->buildPrompt($question, $financeContext, $history);
 
-        // Call Gemini
-        $answer = $this->gemini->chat($prompt, 0.3);
+        // Call AI provider
+        $answer = $this->callAI($prompt);
         if (! $answer) {
             $answer = 'Maaf, sistem AI sedang tidak tersedia. Coba lagi sebentar.';
         }
@@ -93,7 +114,7 @@ class FinanceChatService
             'session_id' => $session->id,
             'role' => 'assistant',
             'message' => $answer,
-            'metadata' => ['type' => 'finance'],
+            'metadata' => ['type' => 'finance', 'provider' => $this->provider, 'model' => $this->model],
         ]);
 
         $session->update(['title' => mb_substr($question, 0, 100)]);
@@ -104,6 +125,107 @@ class FinanceChatService
             'assistant_message_id' => $assistantMsg->id,
             'answer' => $answer,
         ];
+    }
+
+    /**
+     * Call AI berdasarkan provider yang dikonfigurasi.
+     */
+    protected function callAI(string $prompt): ?string
+    {
+        return match ($this->provider) {
+            'openrouter' => $this->callOpenRouter($prompt),
+            default => $this->callGemini($prompt),
+        };
+    }
+
+    /**
+     * Call Gemini API langsung.
+     */
+    protected function callGemini(string $prompt): ?string
+    {
+        $apiKey = (string) config('finance_chat.gemini_api_key');
+        $baseUrl = rtrim((string) config('finance_chat.gemini_base_url'), '/');
+        $url = "{$baseUrl}/models/{$this->model}:generateContent?key={$apiKey}";
+
+        try {
+            $response = Http::timeout($this->timeout)
+                ->acceptJson()
+                ->asJson()
+                ->post($url, [
+                    'contents' => [[
+                        'parts' => [['text' => $prompt]],
+                    ]],
+                    'generationConfig' => [
+                        'temperature' => $this->temperature,
+                        'maxOutputTokens' => $this->maxTokens,
+                    ],
+                ]);
+
+            if (! $response->successful()) {
+                Log::warning('FinanceChat Gemini failed', [
+                    'status' => $response->status(),
+                    'body' => mb_substr($response->body(), 0, 500),
+                ]);
+                return null;
+            }
+
+            return $response->json('candidates.0.content.parts.0.text');
+        } catch (\Throwable $e) {
+            Log::error('FinanceChat Gemini exception: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Call OpenRouter API (OpenAI-compatible format).
+     * Support semua model: Gemini, Claude, GPT, DeepSeek, Llama, dll.
+     */
+    protected function callOpenRouter(string $prompt): ?string
+    {
+        $apiKey = (string) config('finance_chat.openrouter_api_key');
+        $baseUrl = rtrim((string) config('finance_chat.openrouter_base_url'), '/');
+        $url = "{$baseUrl}/chat/completions";
+
+        $headers = [
+            'Authorization' => "Bearer {$apiKey}",
+            'Content-Type' => 'application/json',
+        ];
+
+        $siteName = config('finance_chat.openrouter_site_name');
+        $siteUrl = config('finance_chat.openrouter_site_url');
+        if ($siteName) {
+            $headers['X-Title'] = $siteName;
+        }
+        if ($siteUrl) {
+            $headers['HTTP-Referer'] = $siteUrl;
+        }
+
+        try {
+            $response = Http::timeout($this->timeout)
+                ->withHeaders($headers)
+                ->post($url, [
+                    'model' => $this->model,
+                    'messages' => [
+                        ['role' => 'user', 'content' => $prompt],
+                    ],
+                    'temperature' => $this->temperature,
+                    'max_tokens' => $this->maxTokens,
+                ]);
+
+            if (! $response->successful()) {
+                Log::warning('FinanceChat OpenRouter failed', [
+                    'status' => $response->status(),
+                    'body' => mb_substr($response->body(), 0, 500),
+                    'model' => $this->model,
+                ]);
+                return null;
+            }
+
+            return $response->json('choices.0.message.content');
+        } catch (\Throwable $e) {
+            Log::error('FinanceChat OpenRouter exception: ' . $e->getMessage());
+            return null;
+        }
     }
 
     /**
