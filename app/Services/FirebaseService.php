@@ -4243,21 +4243,32 @@ class FirebaseService
                     }
                 }
 
-                // Sort by least assigned, then alphabetical for deterministic tie-breaking
-                usort($targetWaiters, function ($a, $b) use ($rackCheckAssignmentCount) {
+                // AI Balancing: sort by weighted score (balance 50%, quality 30%, speed 10%, recent 10%)
+                // Higher score = higher priority to receive this task
+                usort($targetWaiters, function ($a, $b) use ($rackCheckAssignmentCount, $effectiveTargetDate) {
+                    $scoreA = $this->calculateRackBalancingScore(
+                        (string) ($a['id'] ?? ''),
+                        $effectiveTargetDate,
+                        $rackCheckAssignmentCount
+                    );
+                    $scoreB = $this->calculateRackBalancingScore(
+                        (string) ($b['id'] ?? ''),
+                        $effectiveTargetDate,
+                        $rackCheckAssignmentCount
+                    );
+                    if (abs($scoreA - $scoreB) > 0.01) {
+                        return $scoreB <=> $scoreA; // Highest score first
+                    }
+                    // Tie-break: least assigned today, then alphabetical
                     $countA = $rackCheckAssignmentCount[(string) ($a['id'] ?? '')] ?? 0;
                     $countB = $rackCheckAssignmentCount[(string) ($b['id'] ?? '')] ?? 0;
                     if ($countA !== $countB) {
-                        return $countA - $countB; // Least assigned first
+                        return $countA - $countB;
                     }
-                    $nameCompare = strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
-                    if ($nameCompare !== 0) {
-                        return $nameCompare;
-                    }
-                    return strcmp((string) ($a['id'] ?? ''), (string) ($b['id'] ?? ''));
+                    return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
                 });
 
-                // Pick the first (least assigned)
+                // Pick the highest scored waiter
                 $targetWaiters = [$targetWaiters[0]];
 
                 // Track this assignment
@@ -9760,6 +9771,158 @@ class FirebaseService
             'counts' => $counts,
             'total' => $total,
         ];
+    }
+
+    // ========================================================================
+    // AI BALANCING: Weighted scoring for rack_check assignment
+    // Weights: balance=50%, quality=30%, speed=10%, recent=10%
+    // ========================================================================
+
+    /**
+     * Cache for historical balancing data (per scanner run).
+     */
+    private ?array $rackBalancingCache = null;
+
+    /**
+     * Get historical data for AI balancing scoring.
+     * Cached per run to avoid repeated Firebase queries.
+     */
+    private function getRackBalancingHistoricalData(string $targetDate): array
+    {
+        if ($this->rackBalancingCache !== null
+            && ($this->rackBalancingCache['target_date'] ?? '') === $targetDate) {
+            return $this->rackBalancingCache;
+        }
+
+        $allTasks = $this->database->getReference('waiter_tasks')->getValue();
+        $today = new \DateTimeImmutable($targetDate);
+        $weekStart = $today->modify('-6 days');
+        $yesterday = $today->modify('-1 day')->format('Y-m-d');
+
+        $weeklyRackCount = [];
+        $yesterdayCount = [];
+        $completionTimes = [];
+        $recheckScores = [];
+
+        foreach ($allTasks ?? [] as $task) {
+            if (($task['task_type'] ?? '') !== 'rack_check') {
+                continue;
+            }
+            $wid = (string) ($task['assigned_waiter_id'] ?? '');
+            if ($wid === '') {
+                continue;
+            }
+
+            $schedDate = $task['scheduled_for_date'] ?? '';
+            if ($schedDate === '') {
+                continue;
+            }
+
+            try {
+                $sched = new \DateTimeImmutable($schedDate);
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            // Weekly count (last 6 days, not including target date)
+            if ($sched >= $weekStart && $sched < $today) {
+                $weeklyRackCount[$wid] = ($weeklyRackCount[$wid] ?? 0) + 1;
+            }
+
+            // Yesterday count
+            if ($schedDate === $yesterday) {
+                $yesterdayCount[$wid] = ($yesterdayCount[$wid] ?? 0) + 1;
+            }
+
+            // Completion time (all historical done tasks)
+            if (in_array($task['status'] ?? '', ['done', 'completed'], true)) {
+                $createdAt = (int) ($task['created_at'] ?? 0);
+                $completedAt = (int) ($task['completed_at'] ?? 0);
+                if ($createdAt > 0 && $completedAt > $createdAt) {
+                    $minutes = ($completedAt - $createdAt) / 60;
+                    if ($minutes > 0 && $minutes < 1440) {
+                        $completionTimes[$wid][] = $minutes;
+                    }
+                }
+            }
+
+            // Recheck scores
+            $pts = $task['recheck_points'] ?? null;
+            if ($pts !== null) {
+                $recheckScores[$wid][] = (int) $pts;
+            }
+        }
+
+        $this->rackBalancingCache = [
+            'target_date' => $targetDate,
+            'weekly_rack_count' => $weeklyRackCount,
+            'yesterday_count' => $yesterdayCount,
+            'completion_times' => $completionTimes,
+            'recheck_scores' => $recheckScores,
+        ];
+
+        return $this->rackBalancingCache;
+    }
+
+    /**
+     * Calculate AI balancing score for a waiter.
+     * Higher score = higher priority to receive next rack_check task.
+     *
+     * Weights: balance=50%, quality=30%, speed=10%, recent=10%
+     */
+    private function calculateRackBalancingScore(string $waiterId, string $targetDate, array $todayAssignmentCount): float
+    {
+        $data = $this->getRackBalancingHistoricalData($targetDate);
+
+        $weeklyRackCount = $data['weekly_rack_count'];
+        $yesterdayCount = $data['yesterday_count'];
+        $completionTimes = $data['completion_times'];
+        $recheckScores = $data['recheck_scores'];
+
+        // Include today's already-assigned count in weekly total
+        $todayCount = $todayAssignmentCount[$waiterId] ?? 0;
+        $waiterWeekly = ($weeklyRackCount[$waiterId] ?? 0) + $todayCount;
+
+        // Calculate average weekly across all waiters that have any data
+        $allWeekly = [];
+        foreach ($todayAssignmentCount as $wid => $cnt) {
+            $allWeekly[$wid] = ($weeklyRackCount[$wid] ?? 0) + $cnt;
+        }
+        // Include waiters with historical data but no today assignment
+        foreach ($weeklyRackCount as $wid => $cnt) {
+            if (! isset($allWeekly[$wid])) {
+                $allWeekly[$wid] = $cnt;
+            }
+        }
+        $avgWeekly = count($allWeekly) > 0 ? array_sum($allWeekly) / count($allWeekly) : 0;
+
+        // Factor 1: Weekly balance (0-50) — fairness utama
+        $balanceScore = min(50.0, max(0.0, ($avgWeekly - $waiterWeekly) * 12));
+
+        // Penalty: strong diminishing return for each task already assigned TODAY
+        // This ensures even distribution within a single day
+        // Value calibrated so that after 1 assignment, score drops below most others' initial score
+        $todayPenalty = $todayCount * 35.0;
+
+        // Factor 2: Quality / recheck score (0-30)
+        $waiterRecheckScores = $recheckScores[$waiterId] ?? [];
+        $avgRecheck = ! empty($waiterRecheckScores)
+            ? array_sum($waiterRecheckScores) / count($waiterRecheckScores)
+            : 5.0; // default neutral
+        $qualityScore = ($avgRecheck / 10) * 30;
+
+        // Factor 3: Speed (0-10) — tiebreaker only
+        $waiterTimes = $completionTimes[$waiterId] ?? [];
+        $avgTime = ! empty($waiterTimes)
+            ? array_sum($waiterTimes) / count($waiterTimes)
+            : 300.0; // default neutral
+        $speedScore = min(10.0, max(0.0, (480 - $avgTime) / 48));
+
+        // Factor 4: Yesterday load (0-10) — anti burnout
+        $waiterYesterday = $yesterdayCount[$waiterId] ?? 0;
+        $recentScore = min(10.0, max(0.0, (3 - $waiterYesterday) * 5));
+
+        return max(0.0, $balanceScore + $qualityScore + $speedScore + $recentScore - $todayPenalty);
     }
 
     public function bulkCancelPendingTasksForDate(string $date, ?string $taskType = null, string $note = 'Dibatalkan admin (bulk cancel)'): int
