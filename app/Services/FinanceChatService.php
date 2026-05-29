@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AiChatMessage;
 use App\Models\AiChatSession;
+use App\Traits\ConversationMemory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Log;
  */
 class FinanceChatService
 {
+    use ConversationMemory;
     protected string $provider;
     protected string $model;
     protected float $temperature;
@@ -110,41 +112,17 @@ class FinanceChatService
             return $this->errorResult('AI belum dikonfigurasi. Set FINANCE_AI_GEMINI_KEY atau FINANCE_AI_OPENROUTER_KEY di .env');
         }
 
-        // Resolve or create session
-        $session = $sessionId ? AiChatSession::find($sessionId) : null;
-        if ($session && $session->user_type !== 'finance_' . $userType) {
-            $session = null;
-        }
-        if (! $session) {
-            $session = AiChatSession::create([
-                'user_id' => $userId,
-                'user_type' => 'finance_' . $userType,
-                'title' => mb_substr($question, 0, 100),
-                'last_product_ids' => [],
-                'primary_product_id' => null,
-            ]);
-        }
+        // Resolve or create session (via ConversationMemory trait)
+        $session = $this->resolveSession($sessionId, $userId, 'finance_' . $userType);
 
         // Save user message
-        $userMsg = AiChatMessage::create([
-            'session_id' => $session->id,
-            'role' => 'user',
-            'message' => $question,
-            'metadata' => null,
-        ]);
+        $userMsg = $this->saveMessage($session->id, 'user', $question);
 
         // Build context from finance data
         $financeContext = $this->buildFinanceContext($question);
 
-        // Build conversation history (last 10 messages)
-        $history = AiChatMessage::where('session_id', $session->id)
-            ->where('id', '<', $userMsg->id)
-            ->orderByDesc('id')
-            ->limit(10)
-            ->get()
-            ->reverse()
-            ->map(fn ($m) => "{$m->role}: {$m->message}")
-            ->implode("\n");
+        // Build conversation history with compression
+        $history = $this->buildConversationHistory($session, $userMsg->id);
 
         // Build full prompt
         $prompt = $this->buildPrompt($question, $financeContext, $history);
@@ -156,14 +134,16 @@ class FinanceChatService
         }
 
         // Save assistant message
-        $assistantMsg = AiChatMessage::create([
-            'session_id' => $session->id,
-            'role' => 'assistant',
-            'message' => $answer,
-            'metadata' => ['type' => 'finance', 'provider' => $this->provider, 'model' => $this->model],
+        $assistantMsg = $this->saveMessage($session->id, 'assistant', $answer, [
+            'type' => 'finance',
+            'provider' => $this->provider,
+            'model' => $this->model,
         ]);
 
-        $session->update(['title' => mb_substr($question, 0, 100)]);
+        // Update session title from first question
+        if ($session->title === 'New conversation') {
+            $session->update(['title' => mb_substr($question, 0, 100)]);
+        }
 
         return [
             'session_id' => $session->id,

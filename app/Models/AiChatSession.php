@@ -11,6 +11,8 @@ class AiChatSession extends Model
         'user_id',
         'user_type',
         'title',
+        'summary',
+        'summarized_up_to',
         'last_product_ids',
         'primary_product_id',
     ];

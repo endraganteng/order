@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 class TelegramBotController extends Controller
 {
     protected string $botToken;
+    protected int $currentFromId = 0;
 
     public function __construct()
     {
@@ -36,6 +37,7 @@ class TelegramBotController extends Controller
         $text = trim($message['text'] ?? '');
         $chatId = $message['chat']['id'] ?? null;
         $threadId = $message['message_thread_id'] ?? null;
+        $this->currentFromId = (int) ($message['from']['id'] ?? 0);
 
         if (!$text || !$chatId) {
             return response()->json(['ok' => true]);
@@ -391,7 +393,7 @@ class TelegramBotController extends Controller
         if ($threadId === 18) {
             try {
                 $taskAI = app(\App\Services\TaskAIService::class);
-                $response = $taskAI->handleMessage($text, $chatId);
+                $response = $taskAI->handleMessage($text, $chatId, $this->currentFromId);
                 if ($response) {
                     $this->sendTelegramMessage($chatId, $response, $threadId);
                 }
@@ -410,8 +412,20 @@ class TelegramBotController extends Controller
                     $this->sendTelegramMessage($chatId, "❌ Finance AI belum dikonfigurasi.", $threadId);
                     return;
                 }
-                $result = $financeAI->ask($text, null, null, 'admin');
+
+                // Track session per Telegram user (30 min idle = new session)
+                $telegramUserId = $this->currentFromId ?? 0;
+                $cacheKey = "finance_ai_session:tg:{$telegramUserId}";
+                $sessionId = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+                $result = $financeAI->ask($text, $sessionId, $telegramUserId, 'telegram');
                 $response = $result['answer'] ?? $result['error'] ?? '❌ Tidak ada respons.';
+
+                // Persist session for 8 hours (1 shift)
+                if (! empty($result['session_id'])) {
+                    \Illuminate\Support\Facades\Cache::put($cacheKey, $result['session_id'], now()->addHours(8));
+                }
+
                 $this->sendTelegramMessage($chatId, $response, $threadId);
             } catch (\Throwable $e) {
                 Log::error('FinanceAI error', ['error' => $e->getMessage(), 'text' => $text]);

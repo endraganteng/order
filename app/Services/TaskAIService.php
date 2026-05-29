@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\AiChatMessage;
+use App\Models\AiChatSession;
+use App\Traits\ConversationMemory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +18,7 @@ use Illuminate\Support\Facades\Log;
  */
 class TaskAIService
 {
+    use ConversationMemory;
     protected FirebaseService $firebase;
     protected string $provider;
     protected string $model;
@@ -37,7 +41,7 @@ class TaskAIService
      *
      * @return string Response text to send back
      */
-    public function handleMessage(string $message, int|string $chatId): string
+    public function handleMessage(string $message, int|string $chatId, int $telegramUserId = 0): string
     {
         $message = trim($message);
         if ($message === '') {
@@ -53,11 +57,22 @@ class TaskAIService
             return $this->cancelPendingAction($chatId);
         }
 
+        // Resolve session (via ConversationMemory trait)
+        $cacheKey = "task_ai_session:tg:{$telegramUserId}";
+        $sessionId = \Illuminate\Support\Facades\Cache::get($cacheKey);
+        $session = $this->resolveSession($sessionId, $telegramUserId, 'task_telegram');
+
+        // Save user message
+        $userMsg = $this->saveMessage($session->id, 'user', $message);
+
         // Build context about current task system state
         $context = $this->buildTaskContext();
 
-        // Build prompt with system knowledge + user message
-        $prompt = $this->buildPrompt($message, $context);
+        // Build conversation history with compression
+        $history = $this->buildConversationHistory($session, $userMsg->id);
+
+        // Build prompt with system knowledge + user message + history
+        $prompt = $this->buildPrompt($message, $context, $history);
 
         // Call AI
         $aiResponse = $this->callAI($prompt);
@@ -66,22 +81,39 @@ class TaskAIService
         }
 
         // Parse AI response for actions
-        return $this->processAIResponse($aiResponse, $chatId);
+        $reply = $this->processAIResponse($aiResponse, $chatId);
+
+        // Save assistant message
+        $this->saveMessage($session->id, 'assistant', $reply, [
+            'type' => 'task',
+            'provider' => $this->provider,
+            'model' => $this->model,
+        ]);
+
+        // Persist session for 8 hours (1 shift)
+        \Illuminate\Support\Facades\Cache::put($cacheKey, $session->id, now()->addHours(8));
+
+        return $reply;
     }
 
     /**
      * Build comprehensive system prompt with full task system knowledge.
      */
-    protected function buildPrompt(string $userMessage, string $context): string
+    protected function buildPrompt(string $userMessage, string $context, string $history = ''): string
     {
         $systemPrompt = $this->getSystemPrompt();
+
+        $historySection = '';
+        if ($history !== '') {
+            $historySection = "\n{$history}\n";
+        }
 
         return <<<PROMPT
 {$systemPrompt}
 
 === DATA SISTEM SAAT INI ===
 {$context}
-
+{$historySection}
 === PESAN DARI SUPERVISOR ===
 {$userMessage}
 
