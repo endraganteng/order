@@ -104,7 +104,7 @@ class KasbonService
     //  CREATE (langsung cair)
     // =========================================================================
 
-    public function create(string $waiterId, int $amount, string $reason, string $createdBy): array
+    public function create(string $waiterId, int $amount, string $reason, string $createdBy, ?int $cashAccountId = null): array
     {
         $waiter = $this->firebase->getWaiterById($waiterId);
         if (! $waiter) {
@@ -137,7 +137,7 @@ class KasbonService
         }
 
         // Langsung cair — potong saldo payroll (boleh negatif)
-        return DB::transaction(function () use ($waiterId, $waiter, $amount, $reason, $createdBy) {
+        return DB::transaction(function () use ($waiterId, $waiter, $amount, $reason, $createdBy, $cashAccountId) {
             $newBalance = $this->payroll->adjustBalancePublic($waiterId, -$amount);
 
             $txId = DB::table('payroll_transactions')->insertGetId([
@@ -160,10 +160,38 @@ class KasbonService
                 'remaining' => $amount,
                 'reason' => $reason,
                 'status' => 'active',
+                'cash_account_id' => $cashAccountId,
                 'created_by' => $createdBy,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            // Kurangi saldo kas fisik + insert mutasi
+            if ($cashAccountId) {
+                $account = DB::table('cash_accounts')->where('id', $cashAccountId)->first();
+                if ($account) {
+                    $newCashBalance = (int) $account->balance - $amount;
+                    DB::table('cash_accounts')->where('id', $cashAccountId)->update([
+                        'balance' => $newCashBalance,
+                        'updated_at' => now(),
+                    ]);
+
+                    DB::table('cash_mutations')->insert([
+                        'cash_account_id' => $cashAccountId,
+                        'type' => 'expense',
+                        'amount' => $amount,
+                        'balance_after' => $newCashBalance,
+                        'reference_type' => 'kasbon',
+                        'reference_id' => (string) $kasbonId,
+                        'description' => 'Kasbon ' . ($waiter['name'] ?? '') . ': ' . ($reason ?: '-'),
+                        'finance_category_id' => null,
+                        'transaction_date' => now()->toDateString(),
+                        'transaction_time' => now()->format('H:i:s'),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
 
             // Trigger flag untuk update portal waiter
             $this->triggerWaiterFlag($waiterId);
@@ -460,12 +488,8 @@ class KasbonService
 
     protected function notifySupervisorKasbonCreated(array $waiter, int $amount, string $reason): void
     {
-        $config = $this->payroll->getConfig();
-        $phone = trim((string) ($config['supervisor_phone'] ?? ''));
-        if ($phone === '') return;
-
         $name = (string) ($waiter['name'] ?? 'Karyawan');
-        $msg = "💰 Kasbon Dicairkan\n\n";
+        $msg = "💰 *Kasbon Dicairkan*\n\n";
         $msg .= "Karyawan: {$name}\n";
         $msg .= "Nominal: Rp " . number_format($amount, 0, ',', '.') . "\n";
         if ($reason !== '') {
@@ -474,7 +498,7 @@ class KasbonService
         $msg .= "\nDicairkan oleh Finance.";
 
         try {
-            $this->fonnte?->sendMessage($phone, $msg);
+            app(TelegramService::class)->sendToFinance($msg);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -482,17 +506,13 @@ class KasbonService
 
     protected function notifySupervisorKasbonPaidOff(object $kasbon): void
     {
-        $config = $this->payroll->getConfig();
-        $phone = trim((string) ($config['supervisor_phone'] ?? ''));
-        if ($phone === '') return;
-
-        $msg = "✅ Kasbon Lunas\n\n";
+        $msg = "✅ *Kasbon Lunas*\n\n";
         $msg .= "Karyawan: {$kasbon->waiter_name}\n";
         $msg .= "Nominal: Rp " . number_format((int) $kasbon->amount, 0, ',', '.') . "\n";
         $msg .= "Status: Lunas otomatis dari potongan gaji.";
 
         try {
-            $this->fonnte?->sendMessage($phone, $msg);
+            app(TelegramService::class)->sendToFinance($msg);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -500,17 +520,13 @@ class KasbonService
 
     protected function notifySupervisorKasbonWrittenOff(object $kasbon, string $reason): void
     {
-        $config = $this->payroll->getConfig();
-        $phone = trim((string) ($config['supervisor_phone'] ?? ''));
-        if ($phone === '') return;
-
-        $msg = "⚠️ Kasbon Write-Off\n\n";
+        $msg = "⚠️ *Kasbon Write-Off*\n\n";
         $msg .= "Karyawan: {$kasbon->waiter_name}\n";
         $msg .= "Sisa hutang: Rp " . number_format((int) $kasbon->remaining, 0, ',', '.') . "\n";
         $msg .= "Alasan: {$reason}";
 
         try {
-            $this->fonnte?->sendMessage($phone, $msg);
+            app(TelegramService::class)->sendToFinance($msg);
         } catch (\Throwable $e) {
             report($e);
         }

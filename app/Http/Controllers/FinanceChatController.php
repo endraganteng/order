@@ -99,4 +99,117 @@ class FinanceChatController extends Controller
 
         return response()->json(['success' => true]);
     }
+
+    /**
+     * POST /admin/finance/ai-chat/models
+     * Fetch available models dari provider yang dikonfigurasi.
+     */
+    public function models(Request $request): JsonResponse
+    {
+        $provider = trim((string) $request->input('provider', 'gemini'));
+        $apiKey = trim((string) $request->input('api_key', ''));
+        $baseUrl = trim((string) $request->input('base_url', ''));
+
+        if ($apiKey === '') {
+            return response()->json(['success' => false, 'message' => 'API key kosong.'], 422);
+        }
+
+        try {
+            if ($provider === 'gemini') {
+                $models = $this->fetchGeminiModels($apiKey);
+            } else {
+                $url = rtrim($baseUrl ?: 'https://openrouter.ai/api/v1', '/');
+                $models = $this->fetchOpenRouterModels($apiKey, $url);
+            }
+
+            return response()->json(['success' => true, 'models' => $models]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal fetch models: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Fetch models dari Gemini API.
+     */
+    protected function fetchGeminiModels(string $apiKey): array
+    {
+        $url = "https://generativelanguage.googleapis.com/v1beta/models?key={$apiKey}";
+
+        $response = \Illuminate\Support\Facades\Http::timeout(15)
+            ->acceptJson()
+            ->get($url);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('Gemini API error: ' . $response->status());
+        }
+
+        $models = [];
+        foreach ($response->json('models', []) as $m) {
+            $name = $m['name'] ?? '';
+            // Filter hanya model yang support generateContent
+            $methods = $m['supportedGenerationMethods'] ?? [];
+            if (! in_array('generateContent', $methods)) {
+                continue;
+            }
+            // Strip "models/" prefix
+            $id = str_replace('models/', '', $name);
+            $models[] = [
+                'id' => $id,
+                'name' => $m['displayName'] ?? $id,
+                'description' => $m['description'] ?? '',
+            ];
+        }
+
+        // Sort: gemini-2.5 first, then 2.0, then others
+        usort($models, function ($a, $b) {
+            $scoreA = str_contains($a['id'], '2.5') ? 0 : (str_contains($a['id'], '2.0') ? 1 : 2);
+            $scoreB = str_contains($b['id'], '2.5') ? 0 : (str_contains($b['id'], '2.0') ? 1 : 2);
+            return $scoreA <=> $scoreB ?: strcmp($a['id'], $b['id']);
+        });
+
+        return $models;
+    }
+
+    /**
+     * Fetch models dari OpenRouter/9router/custom (OpenAI-compatible).
+     */
+    protected function fetchOpenRouterModels(string $apiKey, string $baseUrl): array
+    {
+        $url = "{$baseUrl}/models";
+
+        $response = \Illuminate\Support\Facades\Http::timeout(15)
+            ->withHeaders([
+                'Authorization' => "Bearer {$apiKey}",
+            ])
+            ->acceptJson()
+            ->get($url);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('API error: ' . $response->status());
+        }
+
+        $models = [];
+        $data = $response->json('data', []);
+
+        foreach ($data as $m) {
+            $id = $m['id'] ?? '';
+            if ($id === '') {
+                continue;
+            }
+            $models[] = [
+                'id' => $id,
+                'name' => $m['name'] ?? $id,
+                'description' => $m['description'] ?? '',
+                'pricing' => $m['pricing'] ?? null,
+            ];
+        }
+
+        // Sort alphabetically by id
+        usort($models, fn ($a, $b) => strcmp($a['id'], $b['id']));
+
+        return $models;
+    }
 }

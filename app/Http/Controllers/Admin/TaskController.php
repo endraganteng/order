@@ -2534,6 +2534,8 @@ class TaskController extends Controller
 
         // Validate all waiter IDs are active before creating tasks
         $invalidWaiters = [];
+        $offDayWaiters = [];
+        $today = date('Y-m-d');
         foreach ($assignments as $waiterId => $taskIndices) {
             $waiterId = trim((string) $waiterId);
             if ($waiterId === '' || ! is_array($taskIndices)) {
@@ -2542,12 +2544,19 @@ class TaskController extends Controller
             $waiter = $this->firebase->getWaiterById($waiterId);
             if (! $waiter || (($waiter['is_active'] ?? true) === false)) {
                 $invalidWaiters[] = $waiter['name'] ?? $waiterId;
+            } elseif (! $this->firebase->isWorkingDay($waiterId, $today)) {
+                $offDayWaiters[] = $waiterId;
             }
         }
         if (count($invalidWaiters) > 0) {
             return back()
                 ->withErrors(['batch_tasks_json' => 'Waiter berikut tidak valid atau nonaktif: ' . implode(', ', $invalidWaiters) . '. Refresh halaman dan coba lagi.'])
                 ->withInput();
+        }
+
+        // Remove off-day waiters from assignments (skip tugas untuk yang libur)
+        foreach ($offDayWaiters as $offWaiterId) {
+            unset($assignments[$offWaiterId]);
         }
 
         foreach ($assignments as $waiterId => $taskIndices) {

@@ -94,8 +94,12 @@
                     </div>
                     <div class="fm-form-group">
                         <label class="fm-label">Model</label>
-                        <input type="text" class="fm-input" name="ai_model" value="{{ $settings['ai_model'] ?? 'gemini-2.5-flash' }}" placeholder="gemini-2.5-flash">
-                        <small style="color:#64748b;font-size:11px;">Gemini: gemini-2.5-flash | OpenRouter: google/gemini-2.5-flash, anthropic/claude-3.5-haiku, dll</small>
+                        <div style="display:flex;gap:6px;">
+                            <input type="text" class="fm-input" name="ai_model" id="aiModelInput" value="{{ $settings['ai_model'] ?? 'gemini-2.5-flash' }}" placeholder="gemini-2.5-flash" style="flex:1;">
+                            <button type="button" class="fm-btn fm-btn-outline" id="btnDetectModels" style="white-space:nowrap;font-size:12px;">🔍 Detect</button>
+                        </div>
+                        <small style="color:#64748b;font-size:11px;">Klik Detect untuk lihat model yang tersedia, atau ketik manual</small>
+                        <div id="modelsList" style="display:none;margin-top:8px;max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;"></div>
                     </div>
                 </div>
 
@@ -252,6 +256,76 @@ document.getElementById('btnTestAi').addEventListener('click', async function() 
 
     btn.disabled = false;
     btn.textContent = '🧪 Test AI';
+});
+
+// === Detect Models ===
+
+document.getElementById('btnDetectModels').addEventListener('click', async function() {
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = '⏳ Loading...';
+    const listEl = document.getElementById('modelsList');
+    listEl.style.display = 'none';
+    listEl.innerHTML = '';
+
+    const provider = document.getElementById('aiProvider').value;
+    let apiKey = '';
+    let baseUrl = '';
+
+    if (provider === 'gemini') {
+        apiKey = document.querySelector('input[name="ai_gemini_key"]').value;
+    } else {
+        apiKey = document.querySelector('input[name="ai_api_key"]').value;
+        baseUrl = document.querySelector('input[name="ai_base_url"]').value;
+    }
+
+    if (!apiKey) {
+        showToast('Isi API key dulu sebelum detect models', 'error');
+        btn.disabled = false;
+        btn.textContent = '🔍 Detect';
+        return;
+    }
+
+    try {
+        const res = await fetch('{{ route("admin.finance.ai_chat.models") }}', {
+            method: 'POST',
+            headers: {'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({provider, api_key: apiKey, base_url: baseUrl})
+        });
+        const data = await res.json();
+
+        if (data.success && data.models.length > 0) {
+            let html = '<div style="padding:4px;">';
+            html += '<div style="padding:4px 8px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;">Klik model untuk memilih (' + data.models.length + ' tersedia)</div>';
+            data.models.forEach(m => {
+                const desc = m.description ? m.description.substring(0, 60) : '';
+                html += '<div class="model-item" data-id="' + m.id + '" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:12px;transition:background 0.1s;" onmouseover="this.style.background=\'#e2e8f0\'" onmouseout="this.style.background=\'transparent\'">';
+                html += '<div style="font-weight:600;color:#1e293b;">' + m.id + '</div>';
+                if (m.name && m.name !== m.id) html += '<div style="color:#64748b;font-size:11px;">' + m.name + '</div>';
+                if (desc) html += '<div style="color:#94a3b8;font-size:10px;">' + desc + '</div>';
+                html += '</div>';
+            });
+            html += '</div>';
+            listEl.innerHTML = html;
+            listEl.style.display = 'block';
+
+            // Click to select model
+            listEl.querySelectorAll('.model-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    document.getElementById('aiModelInput').value = this.dataset.id;
+                    listEl.style.display = 'none';
+                    showToast('Model dipilih: ' + this.dataset.id, 'success');
+                });
+            });
+        } else {
+            showToast(data.message || 'Tidak ada model ditemukan', 'error');
+        }
+    } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = '🔍 Detect';
 });
 </script>
 @endpush

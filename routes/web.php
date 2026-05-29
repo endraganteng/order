@@ -353,13 +353,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
             // Finance AI Chat
             Route::prefix('ai-chat')->name('ai_chat.')->group(function () {
-                Route::post('send', [\App\Http\Controllers\FinanceChatController::class, 'send'])
-                    ->middleware('throttle:30,1')->name('send');
+                Route::post('send', [\App\Http\Controllers\FinanceChatController::class, 'send'])->name('send');
+                Route::post('models', [\App\Http\Controllers\FinanceChatController::class, 'models'])->name('models');
                 Route::get('sessions', [\App\Http\Controllers\FinanceChatController::class, 'sessions'])->name('sessions');
-                Route::get('sessions/{id}/messages', [\App\Http\Controllers\FinanceChatController::class, 'messages'])
-                    ->whereNumber('id')->name('messages');
-                Route::delete('sessions/{id}', [\App\Http\Controllers\FinanceChatController::class, 'deleteSession'])
-                    ->whereNumber('id')->name('sessions.delete');
+                Route::get('sessions/{id}/messages', [\App\Http\Controllers\FinanceChatController::class, 'messages'])->name('messages');
+                Route::delete('sessions/{id}', [\App\Http\Controllers\FinanceChatController::class, 'deleteSession'])->name('delete_session');
             });
         });
 

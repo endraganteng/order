@@ -57,6 +57,20 @@
                     <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Isi 0 untuk tidak auto-credit. Auto-credit jalan tiap pagi tanggal ini.</p>
                 </div>
                 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;">
+                <h4 style="margin-top: 0; color: #475569;">🏦 Kasbon</h4>
+                <div style="margin-bottom: 12px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" name="kasbon_enabled" value="1" {{ ($kasbonSettings['kasbon_enabled'] ?? false) ? 'checked' : '' }}>
+                        <span style="font-weight: 600;">Aktifkan fitur kasbon untuk karyawan ini</span>
+                    </label>
+                    <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Jika diaktifkan, Finance bisa membuat kasbon untuk karyawan ini dari halaman Kasbon.</p>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Limit Kasbon (%)</label>
+                    <input type="number" name="kasbon_limit_percent" value="{{ $kasbonSettings['kasbon_limit_percent'] ?? '' }}" min="0" max="100" placeholder="Kosongkan = pakai default (30%)" class="form-control" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Persentase dari gaji berjalan (prorated). Kosongkan untuk pakai default dari pengaturan kasbon.</p>
+                </div>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;">
                 <h4 style="margin-top: 0; color: #475569;">🏦 Rekening Tujuan Penarikan</h4>
                 <p style="font-size: 12px; color: #64748b; margin-bottom: 8px;">Diatur oleh karyawan sendiri lewat portal /waiter/payroll. Anda hanya bisa lihat untuk verifikasi.</p>
                 <div style="background: #f8fafc; border-radius: 8px; padding: 12px; font-size: 13px; color: #475569;">

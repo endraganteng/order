@@ -227,26 +227,21 @@ class FonnteService
      */
     public function sendWeeklyReport(array $stats): bool
     {
-        $phone = $this->getReportPhone();
-        if (! $phone || ! $this->isAutoReportEnabled()) {
-            return false;
-        }
-
         $period = $stats['period'] ?? 'Minggu ini';
         $totalTasks = (int) ($stats['total'] ?? 0);
         $doneTasks = (int) ($stats['done'] ?? 0);
         $overdueTasks = (int) ($stats['overdue'] ?? 0);
         $completionRate = $totalTasks > 0 ? round(($doneTasks / $totalTasks) * 100) : 0;
 
-        $message = "\xF0\x9F\x93\x8A *LAPORAN MINGGUAN*\n";
+        $message = "📊 *LAPORAN MINGGUAN*\n";
         $message .= "Periode: {$period}\n\n";
-        $message .= "\xF0\x9F\x93\x8B Total Tugas: {$totalTasks}\n";
-        $message .= "\xE2\x9C\x85 Selesai: {$doneTasks}\n";
-        $message .= "\xF0\x9F\x9A\xA8 Terlambat: {$overdueTasks}\n";
-        $message .= "\xF0\x9F\x93\x88 Tingkat Penyelesaian: {$completionRate}%\n";
+        $message .= "📋 Total Tugas: {$totalTasks}\n";
+        $message .= "✅ Selesai: {$doneTasks}\n";
+        $message .= "🚨 Terlambat: {$overdueTasks}\n";
+        $message .= "📈 Tingkat Penyelesaian: {$completionRate}%\n";
 
         if (! empty($stats['top_performers'])) {
-            $message .= "\n\xF0\x9F\x8F\x86 *Top Performer:*\n";
+            $message .= "\n🏆 *Top Performer:*\n";
             foreach (array_slice($stats['top_performers'], 0, 3) as $i => $perf) {
                 $rank = $i + 1;
                 $message .= "  {$rank}. {$perf['name']} ({$perf['done']}/{$perf['total']})\n";
@@ -254,15 +249,19 @@ class FonnteService
         }
 
         if (! empty($stats['needs_attention'])) {
-            $message .= "\n\xE2\x9A\xA0\xEF\xB8\x8F *Perlu Perhatian:*\n";
+            $message .= "\n⚠️ *Perlu Perhatian:*\n";
             foreach (array_slice($stats['needs_attention'], 0, 3) as $waiter) {
-                $message .= "  \xE2\x80\xA2 {$waiter['name']} ({$waiter['done']}/{$waiter['total']})\n";
+                $message .= "  • {$waiter['name']} ({$waiter['done']}/{$waiter['total']})\n";
             }
         }
 
-        $result = $this->sendMessage($phone, $message);
-
-        return is_array($result) && ($result['status'] ?? false);
+        try {
+            $result = app(TelegramService::class)->sendToHrd($message);
+            return $result['success'] ?? false;
+        } catch (\Throwable $e) {
+            report($e);
+            return false;
+        }
     }
 
     /**
@@ -270,11 +269,6 @@ class FonnteService
      */
     public function sendMonthlyReport(array $stats): bool
     {
-        $phone = $this->getReportPhone();
-        if (! $phone || ! $this->isAutoReportEnabled()) {
-            return false;
-        }
-
         $period = $stats['period'] ?? 'Bulan ini';
         $totalTasks = (int) ($stats['total'] ?? 0);
         $doneTasks = (int) ($stats['done'] ?? 0);
@@ -282,34 +276,38 @@ class FonnteService
         $completionRate = $totalTasks > 0 ? round(($doneTasks / $totalTasks) * 100) : 0;
         $totalWaiters = (int) ($stats['total_waiters'] ?? 0);
 
-        $message = "\xF0\x9F\x93\x85 *LAPORAN BULANAN*\n";
+        $message = "📅 *LAPORAN BULANAN*\n";
         $message .= "Periode: {$period}\n\n";
-        $message .= "\xF0\x9F\x91\xA5 Waiter Aktif: {$totalWaiters}\n";
-        $message .= "\xF0\x9F\x93\x8B Total Tugas: {$totalTasks}\n";
-        $message .= "\xE2\x9C\x85 Selesai: {$doneTasks}\n";
-        $message .= "\xF0\x9F\x9A\xA8 Terlambat: {$overdueTasks}\n";
-        $message .= "\xF0\x9F\x93\x88 Tingkat Penyelesaian: {$completionRate}%\n";
+        $message .= "👥 Waiter Aktif: {$totalWaiters}\n";
+        $message .= "📋 Total Tugas: {$totalTasks}\n";
+        $message .= "✅ Selesai: {$doneTasks}\n";
+        $message .= "🚨 Terlambat: {$overdueTasks}\n";
+        $message .= "📈 Tingkat Penyelesaian: {$completionRate}%\n";
 
         if (! empty($stats['by_category'])) {
-            $message .= "\n\xF0\x9F\x93\x82 *Per Kategori:*\n";
+            $message .= "\n📂 *Per Kategori:*\n";
             foreach (array_slice($stats['by_category'], 0, 5) as $cat) {
                 $catRate = $cat['total'] > 0 ? round(($cat['done'] / $cat['total']) * 100) : 0;
-                $message .= "  \xE2\x80\xA2 {$cat['name']}: {$cat['done']}/{$cat['total']} ({$catRate}%)\n";
+                $message .= "  • {$cat['name']}: {$cat['done']}/{$cat['total']} ({$catRate}%)\n";
             }
         }
 
         if (! empty($stats['top_performers'])) {
-            $message .= "\n\xF0\x9F\x8F\x86 *Top 3 Performer:*\n";
+            $message .= "\n🏆 *Top 3 Performer:*\n";
             foreach (array_slice($stats['top_performers'], 0, 3) as $i => $perf) {
                 $rank = $i + 1;
                 $perfRate = $perf['total'] > 0 ? round(($perf['done'] / $perf['total']) * 100) : 0;
-                $message .= "  {$rank}. {$perf['name']} \u2014 {$perfRate}% ({$perf['done']}/{$perf['total']})\n";
+                $message .= "  {$rank}. {$perf['name']} — {$perfRate}% ({$perf['done']}/{$perf['total']})\n";
             }
         }
 
-        $result = $this->sendMessage($phone, $message);
-
-        return is_array($result) && ($result['status'] ?? false);
+        try {
+            $result = app(TelegramService::class)->sendToHrd($message);
+            return $result['success'] ?? false;
+        } catch (\Throwable $e) {
+            report($e);
+            return false;
+        }
     }
 
     /**
@@ -338,15 +336,10 @@ class FonnteService
      */
     public function notifyStockShortage(string $rackName, string $waiterName, array $shortageItems, ?array $productChecklist = null): bool
     {
-        $phone = $this->getReportPhone();
-        if (! $phone || ! $this->isEnabled()) {
-            return false;
-        }
-
-        $message = "\xE2\x9A\xA0\xEF\xB8\x8F *ALERT STOK HABIS/RENDAH*\n\n";
-        $message .= "\xF0\x9F\x93\x8D Rak: {$rackName}\n";
-        $message .= "\xF0\x9F\x91\xA4 Dicek oleh: {$waiterName}\n";
-        $message .= "\xF0\x9F\x95\x90 Waktu: ".date('d/m/Y H:i')."\n\n";
+        $message = "⚠️ *ALERT STOK HABIS/RENDAH*\n\n";
+        $message .= "📍 Rak: {$rackName}\n";
+        $message .= "👤 Dicek oleh: {$waiterName}\n";
+        $message .= "🕐 Waktu: ".date('d/m/Y H:i')."\n\n";
 
         if (! empty($productChecklist)) {
             $message .= "*Produk bermasalah:*\n";
@@ -372,9 +365,13 @@ class FonnteService
 
         $message .= "\nSegera lakukan restock.";
 
-        $result = $this->sendMessage($phone, $message);
-
-        return is_array($result) && ($result['status'] ?? false);
+        try {
+            $result = app(TelegramService::class)->sendToGudang($message);
+            return $result['success'] ?? false;
+        } catch (\Throwable $e) {
+            report($e);
+            return false;
+        }
     }
 
     /**
@@ -388,11 +385,6 @@ class FonnteService
      */
     public function notifyTaskRescheduled(array $template, array $waiterOriginal, array $waiterNew, string $originalDate, string $newDate): bool
     {
-        $phone = $this->getReportPhone();
-        if (! $phone || ! $this->isEnabled()) {
-            return false;
-        }
-
         $taskTitle = (string) ($template['title'] ?? 'Tugas');
         $rackName = (string) ($template['rack_name'] ?? '');
         $waiterOrigName = (string) ($waiterOriginal['name'] ?? 'Waiter');
@@ -414,9 +406,13 @@ class FonnteService
             $message .= "Akan dikerjakan oleh: {$waiterNewName}";
         }
 
-        $result = $this->sendMessage($phone, $message);
-
-        return is_array($result) && ($result['status'] ?? false);
+        try {
+            $result = app(TelegramService::class)->sendToHrd($message);
+            return $result['success'] ?? false;
+        } catch (\Throwable $e) {
+            report($e);
+            return false;
+        }
     }
 
     /**
@@ -429,11 +425,6 @@ class FonnteService
      */
     public function notifyTaskUrgentNoCoverage(array $template, string $originalDate, int $daysSearched = 7): bool
     {
-        $phone = $this->getReportPhone();
-        if (! $phone || ! $this->isEnabled()) {
-            return false;
-        }
-
         $taskTitle = (string) ($template['title'] ?? 'Tugas');
         $rackName = (string) ($template['rack_name'] ?? '');
 
@@ -450,9 +441,13 @@ class FonnteService
         $message .= "• Assign manual ke waiter lain via panel admin\n";
         $message .= "• Atau skip cycle ini, tunggu cycle berikutnya";
 
-        $result = $this->sendMessage($phone, $message);
-
-        return is_array($result) && ($result['status'] ?? false);
+        try {
+            $result = app(TelegramService::class)->sendToHrd($message);
+            return $result['success'] ?? false;
+        } catch (\Throwable $e) {
+            report($e);
+            return false;
+        }
     }
 
     protected function resolveClockInTimestamp(?array $attendance, string $date): ?int

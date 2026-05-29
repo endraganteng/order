@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Traits\VerifiesSupervisorPin;
 use App\Services\FirebaseService;
+use App\Services\KasbonService;
 use App\Services\PayrollService;
 use Illuminate\Http\Request;
 
@@ -67,7 +68,11 @@ class PayrollController extends Controller
         $balance = $this->payroll->getBalance($waiterId);
         $transactions = $this->payroll->listTransactionsByWaiter($waiterId, 200);
 
-        return view('admin.payroll.show', compact('waiter', 'settings', 'balance', 'transactions'));
+        // Kasbon settings
+        $kasbonService = app(KasbonService::class);
+        $kasbonSettings = $kasbonService->getWaiterKasbonSettings($waiterId);
+
+        return view('admin.payroll.show', compact('waiter', 'settings', 'balance', 'transactions', 'kasbonSettings'));
     }
 
     public function updateConfig(Request $request)
@@ -93,6 +98,8 @@ class PayrollController extends Controller
             'payroll_enabled'     => 'nullable|boolean',
             'monthly_salary'      => 'nullable|integer|min:0|max:999999999',
             'payday'              => 'nullable|integer|min:0|max:28',
+            'kasbon_enabled'      => 'nullable|boolean',
+            'kasbon_limit_percent' => 'nullable|integer|min:0|max:100',
         ]);
 
         // Bank account fields are managed by waiter themselves via /waiter/payroll.
@@ -100,6 +107,13 @@ class PayrollController extends Controller
             'payroll_enabled'     => (bool) ($data['payroll_enabled'] ?? false),
             'monthly_salary'      => (int) ($data['monthly_salary'] ?? 0),
             'payday'              => (int) ($data['payday'] ?? 0),
+        ]);
+
+        // Update kasbon settings via KasbonService
+        $kasbonService = app(KasbonService::class);
+        $kasbonService->updateWaiterKasbonSettings($waiterId, [
+            'kasbon_enabled' => (bool) ($data['kasbon_enabled'] ?? false),
+            'kasbon_limit_percent' => $data['kasbon_limit_percent'] ?? null,
         ]);
 
         $this->firebase->logAuditAction('payroll_settings_update', 'waiter', $waiterId, [

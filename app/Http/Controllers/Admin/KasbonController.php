@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\FirebaseService;
 use App\Services\KasbonService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class KasbonController extends Controller
 {
@@ -43,12 +44,18 @@ class KasbonController extends Controller
             ->values()
             ->toArray();
 
+        $cashAccounts = DB::table('cash_accounts')
+            ->where('is_active', true)
+            ->get(['id', 'name', 'balance'])
+            ->toArray();
+
         return view('admin.kasbon.index', [
             'kasbons' => $result['items'],
             'total' => $result['total'],
             'stats' => $stats,
             'waiters' => $waiters,
             'filters' => $filters,
+            'cashAccounts' => $cashAccounts,
         ]);
     }
 
@@ -71,6 +78,7 @@ class KasbonController extends Controller
             'waiter_id' => 'required|string',
             'amount' => 'required|integer|min:1',
             'reason' => 'nullable|string|max:500',
+            'cash_account_id' => 'required|integer|exists:cash_accounts,id',
         ]);
 
         $role = session('admin_role', '');
@@ -79,7 +87,7 @@ class KasbonController extends Controller
         }
 
         $createdBy = session('admin_name', $role);
-        $result = $this->kasbon->create($data['waiter_id'], (int) $data['amount'], $data['reason'] ?? '', $createdBy);
+        $result = $this->kasbon->create($data['waiter_id'], (int) $data['amount'], $data['reason'] ?? '', $createdBy, (int) $data['cash_account_id']);
 
         if (! $result['success']) {
             return back()->withErrors(['kasbon' => $result['message']])->withInput();

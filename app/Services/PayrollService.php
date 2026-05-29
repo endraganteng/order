@@ -444,6 +444,7 @@ class PayrollService
             'reference_type'      => 'payroll_withdrawal',
             'reference_id'        => $tx['id'],
             'transaction_date'    => now()->toDateString(),
+            'transaction_time'    => now()->format('H:i:s'),
             'created_at'          => now(),
             'updated_at'          => now(),
         ]);
@@ -556,15 +557,11 @@ class PayrollService
 
     protected function notifySupervisorWithdrawalRequest(array $waiter, int $amount, string $note, int $txId, string $approvalToken = ''): void
     {
-        $config = $this->getConfig();
-        $phone = trim((string) ($config['supervisor_phone'] ?? ''));
-        if ($phone === '') return;
-
         $name = (string) ($waiter['name'] ?? 'Karyawan');
         $bankName = (string) ($waiter['bank_name'] ?? '-');
         $bankAcc = (string) ($waiter['bank_account_number'] ?? '-');
         $bankHolder = (string) ($waiter['bank_account_holder'] ?? '-');
-        $msg = "Permintaan Penarikan Gaji\n\n";
+        $msg = "💸 *Permintaan Penarikan Gaji*\n\n";
         $msg .= "Karyawan: {$name}\n";
         $msg .= "Nominal: Rp " . number_format($amount, 0, ',', '.') . "\n\n";
         $msg .= "Rekening tujuan:\nBank: {$bankName}\nNomor: {$bankAcc}\nAtas Nama: {$bankHolder}\n";
@@ -582,7 +579,7 @@ class PayrollService
         }
 
         try {
-            $this->fonnte?->sendMessage($phone, $msg);
+            app(TelegramService::class)->sendToFinance($msg);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -666,11 +663,8 @@ class PayrollService
 
     protected function notifyFinanceWithdrawalRequest(array $waiter, int $amount, int $txId): void
     {
-        $financeUsers = $this->firebase->getActiveWaitersByRole('finance');
-        if (empty($financeUsers)) return;
-
         $name = (string) ($waiter['name'] ?? 'Karyawan');
-        $msg = "📋 Penarikan Gaji Baru\n\n";
+        $msg = "📋 *Penarikan Gaji Baru*\n\n";
         $msg .= "Karyawan: {$name}\n";
         $msg .= "Nominal: Rp " . number_format($amount, 0, ',', '.') . "\n\n";
         $publicUrl = $this->getPublicBaseUrl();
@@ -678,14 +672,10 @@ class PayrollService
             ? "Cek di panel admin:\n" . $publicUrl . "/admin/payroll/withdrawals"
             : "Cek di panel admin payroll.";
 
-        foreach ($financeUsers as $fu) {
-            $phone = trim((string) ($fu['phone'] ?? ''));
-            if ($phone === '') continue;
-            try {
-                $this->fonnte?->sendMessage($phone, $msg);
-            } catch (\Throwable $e) {
-                report($e);
-            }
+        try {
+            app(TelegramService::class)->sendToFinance($msg);
+        } catch (\Throwable $e) {
+            report($e);
         }
     }
 }

@@ -2920,17 +2920,6 @@
                    ${deadlineText}`;
 
             const isInRefillMode = refillStepByTask.has(task.id);
-            const nowTs = Math.floor(Date.now() / 1000);
-            const claimedBy = String(task?.claimed_by || '');
-            const claimedByName = String(task?.claimed_by_name || 'waiter lain');
-            const claimExpiresAt = Number(task?.claim_expires_at || 0);
-            const claimActive = claimedBy !== '' && claimExpiresAt > nowTs;
-            const claimIsMine = claimActive && claimedBy === waiterId;
-            const claimBanner = claimActive
-                ? (claimIsMine
-                    ? `<div class="meta" style="margin:6px 0; padding:6px 8px; border-radius:6px; background:#ecfdf5; color:#065f46; font-weight:600;">🔐 Anda klaim sampai ${escapeHtml(formatDateTime(claimExpiresAt))}</div>`
-                    : `<div class="meta" style="margin:6px 0; padding:6px 8px; border-radius:6px; background:#fff7ed; color:#9a3412; font-weight:600;">⏳ Sedang dikerjakan oleh ${escapeHtml(claimedByName)} sampai ${escapeHtml(formatDateTime(claimExpiresAt))}</div>`)
-                : '';
             const completeBtnLabel = isRepeatTask
                 ? (completedCount + 1 >= repeatCount ? '✅ Selesaikan (Terakhir)' : `✅ Selesai #${completedCount + 1}`)
                 : '✅ Verifikasi Selesai';
@@ -2946,21 +2935,9 @@
                        <button type="submit" class="btn btn-done">${completeBtnLabel}</button>
                    </form>`;
 
-            // Klaim hanya berguna untuk task yg dishare oleh banyak waiter sekaligus.
-            // Sembunyikan untuk:
-            // - assignment_type='single' (sudah jelas 1 waiter)
-            // - assignment_strategy='role_round_robin' (rolling rotation: scanner sudah pilih 1 waiter)
-            // Tampilkan klaim untuk role-based shared task (semua role member punya akses task sama).
-            const taskAssignmentType = String(task?.assignment_type || '');
-            const taskAssignmentStrategy = String(task?.assignment_strategy || '');
-            const showClaimAction = taskAssignmentType !== 'single'
-                && taskAssignmentStrategy !== 'role_round_robin';
-            const claimActionBlock = !showClaimAction
-                ? ''
-                : `<div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-                        <button type="button" class="btn ${claimActive && !claimIsMine ? '' : 'btn-soft'} js-claim-task" data-task-id="${escapeAttr(task.id)}" ${claimActive && !claimIsMine ? 'disabled style="opacity:.6;cursor:not-allowed;"' : ''}>▶️ Mulai</button>
-                        ${claimIsMine ? `<button type="button" class="btn btn-soft js-release-task" data-task-id="${escapeAttr(task.id)}">Lepas klaim</button>` : ''}
-                   </div>`;
+            // Klaim dihapus — tugas sudah dibagi oleh supervisor, tidak perlu claim.
+            const claimBanner = '';
+            const claimActionBlock = '';
 
             return `<div class="card ${cls}">
                 <div class="title">${escapeHtml(task.title || '-')}</div>

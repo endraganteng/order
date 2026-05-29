@@ -38,9 +38,7 @@
 
     {{-- Actions --}}
     <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
-        @if(session('admin_role') === 'finance' || session('admin_role') === 'supervisor')
         <button type="button" onclick="document.getElementById('modalBuatKasbon').style.display='flex'" style="background: #667eea; color: #fff; padding: 8px 16px; border-radius: 6px; border: none; font-size: 13px; cursor: pointer; font-weight: 600;">+ Buat Kasbon</button>
-        @endif
         <a href="{{ route('admin.kasbon.settings') }}" style="background: #f1f5f9; color: #475569; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600;">⚙️ Pengaturan</a>
     </div>
 
@@ -150,6 +148,15 @@
                     @endforeach
                 </select>
                 <div id="limitInfo" style="font-size:12px; color:#64748b; margin-top:4px;"></div>
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label style="display:block; font-weight:600; font-size:13px; margin-bottom:4px;">Diambil dari Kas</label>
+                <select name="cash_account_id" required style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px;">
+                    <option value="">-- Pilih Kas --</option>
+                    @foreach($cashAccounts as $acc)
+                    <option value="{{ $acc->id }}">{{ $acc->name }} (Rp {{ number_format($acc->balance, 0, ',', '.') }})</option>
+                    @endforeach
+                </select>
             </div>
             <div style="margin-bottom: 12px;">
                 <label style="display:block; font-weight:600; font-size:13px; margin-bottom:4px;">Nominal (Rp)</label>

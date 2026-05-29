@@ -179,7 +179,7 @@ function loadMutations(offset = 0) {
             tbody.innerHTML = rows.map(m => {
                 const isIn = m.type === 'income' || m.type === 'transfer_in';
                 return `<tr>
-                    <td>${m.transaction_date}</td>
+                    <td>${m.transaction_date} <small style="color:#94a3b8">${m.transaction_time || ''}</small></td>
                     <td>${m.account_name}</td>
                     <td><span class="fm-badge fm-badge-${m.type}">${m.type}</span></td>
                     <td>${m.description}</td>
