@@ -77,6 +77,80 @@
             </form>
         </div>
     </div>
+
+    {{-- AI Finance Chat Configuration --}}
+    <div style="margin-top:20px;">
+        <div class="fm-table-wrap" style="padding:20px;">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;">🤖 AI Finance Chat</h3>
+            <p style="font-size:12px;color:#64748b;margin-bottom:16px;">Konfigurasi AI assistant untuk analisis keuangan. Support Gemini langsung, OpenRouter, 9router, atau endpoint OpenAI-compatible lainnya.</p>
+            <form id="aiSettingsForm">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;">
+                    <div class="fm-form-group">
+                        <label class="fm-label">Provider</label>
+                        <select class="fm-select" name="ai_provider" id="aiProvider" onchange="toggleAiFields()">
+                            <option value="gemini" {{ ($settings['ai_provider'] ?? 'gemini') === 'gemini' ? 'selected' : '' }}>Gemini (Google AI langsung)</option>
+                            <option value="openrouter" {{ ($settings['ai_provider'] ?? '') === 'openrouter' ? 'selected' : '' }}>OpenRouter / 9router / Custom</option>
+                        </select>
+                    </div>
+                    <div class="fm-form-group">
+                        <label class="fm-label">Model</label>
+                        <input type="text" class="fm-input" name="ai_model" value="{{ $settings['ai_model'] ?? 'gemini-2.5-flash' }}" placeholder="gemini-2.5-flash">
+                        <small style="color:#64748b;font-size:11px;">Gemini: gemini-2.5-flash | OpenRouter: google/gemini-2.5-flash, anthropic/claude-3.5-haiku, dll</small>
+                    </div>
+                </div>
+
+                {{-- Gemini fields --}}
+                <div id="aiGeminiFields" style="margin-top:12px;">
+                    <div class="fm-form-group">
+                        <label class="fm-label">Gemini API Key</label>
+                        <input type="password" class="fm-input" name="ai_gemini_key" value="{{ $settings['ai_gemini_key'] ?? '' }}" placeholder="AIza...">
+                        <small style="color:#64748b;font-size:11px;">Dari <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a></small>
+                    </div>
+                </div>
+
+                {{-- OpenRouter/Custom fields --}}
+                <div id="aiOpenRouterFields" style="margin-top:12px;display:none;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;">
+                        <div class="fm-form-group">
+                            <label class="fm-label">API Key</label>
+                            <input type="password" class="fm-input" name="ai_api_key" value="{{ $settings['ai_api_key'] ?? '' }}" placeholder="sk-or-v1-...">
+                        </div>
+                        <div class="fm-form-group">
+                            <label class="fm-label">Base URL</label>
+                            <input type="url" class="fm-input" name="ai_base_url" value="{{ $settings['ai_base_url'] ?? 'https://openrouter.ai/api/v1' }}" placeholder="https://openrouter.ai/api/v1">
+                            <small style="color:#64748b;font-size:11px;">OpenRouter: https://openrouter.ai/api/v1 | 9router: https://9router.com/api/v1</small>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Advanced --}}
+                <details style="margin-top:14px;">
+                    <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#475569;">⚙️ Advanced Settings</summary>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px;margin-top:10px;">
+                        <div class="fm-form-group">
+                            <label class="fm-label">Temperature</label>
+                            <input type="number" class="fm-input" name="ai_temperature" value="{{ $settings['ai_temperature'] ?? '0.3' }}" min="0" max="1" step="0.1">
+                            <small style="color:#64748b;font-size:11px;">0 = fokus, 1 = kreatif</small>
+                        </div>
+                        <div class="fm-form-group">
+                            <label class="fm-label">Max Tokens</label>
+                            <input type="number" class="fm-input" name="ai_max_tokens" value="{{ $settings['ai_max_tokens'] ?? '2048' }}" min="256" max="8192" step="256">
+                        </div>
+                        <div class="fm-form-group">
+                            <label class="fm-label">Timeout (detik)</label>
+                            <input type="number" class="fm-input" name="ai_timeout" value="{{ $settings['ai_timeout'] ?? '60' }}" min="10" max="120">
+                        </div>
+                    </div>
+                </details>
+
+                <div style="display:flex;gap:8px;margin-top:16px;">
+                    <button type="submit" class="fm-btn fm-btn-primary">💾 Simpan AI Settings</button>
+                    <button type="button" class="fm-btn fm-btn-outline" id="btnTestAi">🧪 Test AI</button>
+                </div>
+            </form>
+            <div id="aiTestResult" style="margin-top:12px;"></div>
+        </div>
+    </div>
 </div>
 @endsection
 
@@ -132,6 +206,52 @@ document.getElementById('btnTestConn').addEventListener('click', async function(
 
     btn.disabled = false;
     btn.textContent = '🔌 Test Koneksi';
+});
+
+// === AI Settings ===
+
+function toggleAiFields() {
+    const provider = document.getElementById('aiProvider').value;
+    document.getElementById('aiGeminiFields').style.display = provider === 'gemini' ? 'block' : 'none';
+    document.getElementById('aiOpenRouterFields').style.display = provider === 'openrouter' ? 'block' : 'none';
+}
+toggleAiFields();
+
+document.getElementById('aiSettingsForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fd = new FormData(this);
+    const body = Object.fromEntries(fd);
+    const res = await fetch('{{ route("admin.finance.settings.save") }}', {
+        method: 'POST', headers: {'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    showToast(data.message || 'AI Settings disimpan!', data.success ? 'success' : 'error');
+});
+
+document.getElementById('btnTestAi').addEventListener('click', async function() {
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = '⏳ Testing AI...';
+    document.getElementById('aiTestResult').innerHTML = '';
+
+    try {
+        const res = await fetch('{{ route("admin.finance.ai_chat.send") }}', {
+            method: 'POST',
+            headers: {'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: JSON.stringify({message: 'Berapa total saldo kas saat ini? Jawab singkat.'})
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('aiTestResult').innerHTML = '<div class="fm-alert fm-alert-success">✅ AI Connected! Jawaban: ' + data.answer.substring(0, 200) + '...</div>';
+        } else {
+            document.getElementById('aiTestResult').innerHTML = '<div class="fm-alert fm-alert-error">❌ ' + (data.error || data.answer || 'Gagal') + '</div>';
+        }
+    } catch (e) {
+        document.getElementById('aiTestResult').innerHTML = '<div class="fm-alert fm-alert-error">❌ ' + e.message + '</div>';
+    }
+
+    btn.disabled = false;
+    btn.textContent = '🧪 Test AI';
 });
 </script>
 @endpush

@@ -28,20 +28,66 @@ class FinanceChatService
 
     public function __construct()
     {
-        $this->provider = (string) config('finance_chat.provider', 'gemini');
-        $this->model = (string) config('finance_chat.model', 'gemini-2.5-flash');
-        $this->temperature = (float) config('finance_chat.temperature', 0.3);
-        $this->maxTokens = (int) config('finance_chat.max_tokens', 2048);
-        $this->timeout = (int) config('finance_chat.timeout_seconds', 60);
+        // Load dari DB (finance_settings), fallback ke config/env
+        $this->provider = $this->getSetting('ai_provider', config('finance_chat.provider', 'gemini'));
+        $this->model = $this->getSetting('ai_model', config('finance_chat.model', 'gemini-2.5-flash'));
+        $this->temperature = (float) $this->getSetting('ai_temperature', config('finance_chat.temperature', '0.3'));
+        $this->maxTokens = (int) $this->getSetting('ai_max_tokens', config('finance_chat.max_tokens', '2048'));
+        $this->timeout = (int) $this->getSetting('ai_timeout', config('finance_chat.timeout_seconds', '60'));
     }
 
     public function isConfigured(): bool
     {
-        if ($this->provider === 'openrouter') {
-            return (string) config('finance_chat.openrouter_api_key') !== '';
+        return $this->getApiKey() !== '';
+    }
+
+    /**
+     * Get API key berdasarkan provider aktif.
+     */
+    protected function getApiKey(): string
+    {
+        if ($this->provider === 'gemini') {
+            return (string) ($this->getSetting('ai_gemini_key') ?: config('finance_chat.gemini_api_key', ''));
         }
 
-        return (string) config('finance_chat.gemini_api_key') !== '';
+        // openrouter atau custom (9router, dll)
+        return (string) ($this->getSetting('ai_api_key') ?: config('finance_chat.openrouter_api_key', ''));
+    }
+
+    /**
+     * Get base URL berdasarkan provider.
+     */
+    protected function getBaseUrl(): string
+    {
+        $custom = $this->getSetting('ai_base_url');
+        if ($custom) {
+            return rtrim($custom, '/');
+        }
+
+        if ($this->provider === 'gemini') {
+            return rtrim((string) config('finance_chat.gemini_base_url', 'https://generativelanguage.googleapis.com/v1beta'), '/');
+        }
+
+        return rtrim((string) config('finance_chat.openrouter_base_url', 'https://openrouter.ai/api/v1'), '/');
+    }
+
+    /**
+     * Read setting dari finance_settings table.
+     */
+    protected function getSetting(string $key, string $default = ''): string
+    {
+        static $cache = null;
+        if ($cache === null) {
+            $cache = DB::table('finance_settings')
+                ->whereIn('key', [
+                    'ai_provider', 'ai_model', 'ai_api_key', 'ai_gemini_key',
+                    'ai_base_url', 'ai_temperature', 'ai_max_tokens', 'ai_timeout',
+                ])
+                ->pluck('value', 'key')
+                ->toArray();
+        }
+
+        return (string) ($cache[$key] ?? $default);
     }
 
     /**
@@ -143,8 +189,8 @@ class FinanceChatService
      */
     protected function callGemini(string $prompt): ?string
     {
-        $apiKey = (string) config('finance_chat.gemini_api_key');
-        $baseUrl = rtrim((string) config('finance_chat.gemini_base_url'), '/');
+        $apiKey = $this->getApiKey();
+        $baseUrl = $this->getBaseUrl();
         $url = "{$baseUrl}/models/{$this->model}:generateContent?key={$apiKey}";
 
         try {
@@ -178,12 +224,13 @@ class FinanceChatService
 
     /**
      * Call OpenRouter API (OpenAI-compatible format).
-     * Support semua model: Gemini, Claude, GPT, DeepSeek, Llama, dll.
+     * Support semua model: Gemini, Claude, GPT, DeepSeek, dll.
+     * Juga support custom endpoint (9router, dll).
      */
     protected function callOpenRouter(string $prompt): ?string
     {
-        $apiKey = (string) config('finance_chat.openrouter_api_key');
-        $baseUrl = rtrim((string) config('finance_chat.openrouter_base_url'), '/');
+        $apiKey = $this->getApiKey();
+        $baseUrl = $this->getBaseUrl();
         $url = "{$baseUrl}/chat/completions";
 
         $headers = [
@@ -191,8 +238,8 @@ class FinanceChatService
             'Content-Type' => 'application/json',
         ];
 
-        $siteName = config('finance_chat.openrouter_site_name');
-        $siteUrl = config('finance_chat.openrouter_site_url');
+        $siteName = $this->getSetting('ai_site_name') ?: config('finance_chat.openrouter_site_name');
+        $siteUrl = $this->getSetting('ai_site_url') ?: config('finance_chat.openrouter_site_url');
         if ($siteName) {
             $headers['X-Title'] = $siteName;
         }
