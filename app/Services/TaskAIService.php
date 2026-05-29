@@ -155,6 +155,8 @@ SYSTEM;
     protected function buildTaskContext(): string
     {
         $today = date('Y-m-d');
+        $threeDaysAgo = date('Y-m-d', strtotime('-3 days'));
+        $thirtyDaysAgo = date('Y-m-d', strtotime('-30 days'));
         $lines = [];
 
         // 1. Active waiters
@@ -166,36 +168,70 @@ SYSTEM;
             $name = $w['name'] ?? '';
             $id = $w['id'] ?? '';
             if (! $name || ! $id) continue;
-            // Skip non-waiter roles
             if (in_array(strtolower($name), ['endra', 'endra2', 'annisa', 'admin'])) continue;
             $activeWaiters[$id] = $name;
             $lines[] = "  - {$name} (ID: {$id})";
         }
 
-        // 2. Today's tasks summary
+        // 2. Get all tasks for context
+        $db = $this->firebase->getDatabase();
+        $allTasks = $db->getReference('waiter_tasks')->getValue() ?? [];
+
+        // 3. Summary 30 hari (compact stats per waiter)
         $lines[] = "";
-        $lines[] = "TASK HARI INI ({$today}):";
-        $todayTasks = $this->firebase->getWaiterTasksByDate($today);
-        $statusCount = ['pending' => 0, 'in_progress' => 0, 'completed' => 0, 'cancelled' => 0];
-        $waiterTasks = [];
-        foreach ($todayTasks as $task) {
-            $status = $task['status'] ?? 'pending';
-            $statusCount[$status] = ($statusCount[$status] ?? 0) + 1;
-            $waiterName = $task['assigned_waiter_name'] ?? 'Unassigned';
-            $waiterTasks[$waiterName][] = [
-                'title' => $task['title'] ?? '',
-                'status' => $status,
-                'type' => $task['task_type'] ?? 'general',
-            ];
+        $lines[] = "STATISTIK 30 HARI TERAKHIR:";
+        $waiterStats = [];
+        foreach ($allTasks as $t) {
+            $date = $t['scheduled_for_date'] ?? '';
+            if ($date < $thirtyDaysAgo) continue;
+            $waiter = $t['assigned_waiter_name'] ?? 'Unknown';
+            if (!isset($waiterStats[$waiter])) {
+                $waiterStats[$waiter] = ['total' => 0, 'done' => 0, 'pending' => 0, 'cancelled' => 0, 'rack' => 0];
+            }
+            $waiterStats[$waiter]['total']++;
+            $status = $t['status'] ?? 'pending';
+            if (in_array($status, ['done', 'completed'])) $waiterStats[$waiter]['done']++;
+            if ($status === 'pending') $waiterStats[$waiter]['pending']++;
+            if ($status === 'cancelled') $waiterStats[$waiter]['cancelled']++;
+            if (($t['task_type'] ?? '') === 'rack_check') $waiterStats[$waiter]['rack']++;
         }
-        $lines[] = "  Total: " . count($todayTasks) . " (pending:{$statusCount['pending']}, progress:{$statusCount['in_progress']}, done:{$statusCount['completed']}, cancel:{$statusCount['cancelled']})";
-
-        foreach ($waiterTasks as $name => $tasks) {
-            $taskList = array_map(fn($t) => "{$t['title']}[{$t['status']}]", $tasks);
-            $lines[] = "  {$name}: " . implode(', ', $taskList);
+        foreach ($waiterStats as $name => $s) {
+            if (in_array(strtolower($name), ['endra2', 'annisa', 'admin'])) continue;
+            $rate = $s['total'] > 0 ? round(($s['done'] / $s['total']) * 100) : 0;
+            $lines[] = "  {$name}: total={$s['total']} done={$s['done']} cancel={$s['cancelled']} rack={$s['rack']} rate={$rate}%";
         }
 
-        // 3. Active templates
+        // 4. Detail 3 hari terakhir (per task)
+        $lines[] = "";
+        $lines[] = "DETAIL TASK 3 HARI TERAKHIR:";
+        $recentTasks = [];
+        foreach ($allTasks as $id => $t) {
+            $date = $t['scheduled_for_date'] ?? '';
+            if ($date >= $threeDaysAgo) {
+                $recentTasks[$id] = $t;
+            }
+        }
+        // Group by date
+        $byDate = [];
+        foreach ($recentTasks as $id => $t) {
+            $date = $t['scheduled_for_date'] ?? $today;
+            $byDate[$date][] = ['id' => $id] + $t;
+        }
+        krsort($byDate);
+        foreach ($byDate as $date => $tasks) {
+            $dayLabel = $date === $today ? 'HARI INI' : ($date === date('Y-m-d', strtotime('-1 day')) ? 'KEMARIN' : $date);
+            $lines[] = "  [{$dayLabel}]";
+            foreach ($tasks as $t) {
+                $status = $t['status'] ?? 'pending';
+                $type = $t['task_type'] ?? 'general';
+                $waiter = $t['assigned_waiter_name'] ?? '-';
+                $title = $t['title'] ?? '';
+                $taskId = $t['id'] ?? '';
+                $lines[] = "    {$status}|{$type}|{$title}|{$waiter}|ID:{$taskId}";
+            }
+        }
+
+        // 5. Active templates
         $lines[] = "";
         $lines[] = "TEMPLATE AKTIF:";
         $templates = $this->firebase->getRecurringWaiterTaskTemplates();
@@ -206,13 +242,12 @@ SYSTEM;
             $time = $tpl['schedule_time'] ?? '-';
             $title = $tpl['title'] ?? '';
             $id = $tpl['id'] ?? '';
-            $lines[] = "  - [{$type}] {$title} | freq:{$freq} | jam:{$time} | ID:{$id}";
+            $lines[] = "  [{$type}] {$title} | freq:{$freq} | jam:{$time} | ID:{$id}";
         }
 
-        // 4. Current time
+        // 6. Current time
         $lines[] = "";
-        $lines[] = "WAKTU SEKARANG: " . now()->format('Y-m-d H:i:s') . " WITA";
-        $lines[] = "HARI: " . now()->translatedFormat('l');
+        $lines[] = "WAKTU: " . now()->format('Y-m-d H:i') . " WITA (" . now()->translatedFormat('l') . ")";
 
         return implode("\n", $lines);
     }
