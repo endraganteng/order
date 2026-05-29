@@ -56,6 +56,9 @@ class TelegramBotController extends Controller
                 '/help' => $this->sendMenu($chatId, $threadId),
                 default => null,
             };
+        } else {
+            // Non-command messages: route by topic
+            $this->handleNonCommandMessage($text, $chatId, $threadId);
         }
 
         return response()->json(['ok' => true]);
@@ -381,6 +384,27 @@ class TelegramBotController extends Controller
     }
 
     // ─── HRD TASK BOT METHODS ───────────────────────────────────────────
+
+    protected function handleNonCommandMessage(string $text, int|string $chatId, ?int $threadId): void
+    {
+        // Topic HRD (thread_id: 18) → Task AI
+        if ($threadId === 18) {
+            try {
+                $taskAI = app(\App\Services\TaskAIService::class);
+                $response = $taskAI->handleMessage($text, $chatId);
+                if ($response) {
+                    $this->sendTelegramMessage($chatId, $response, $threadId);
+                }
+            } catch (\Throwable $e) {
+                Log::error('TaskAI error', ['error' => $e->getMessage(), 'text' => $text]);
+                $this->sendTelegramMessage($chatId, "❌ Error: " . $e->getMessage(), $threadId);
+            }
+            return;
+        }
+
+        // Topic FINANCE (thread_id: 2) → bisa ditambah Finance AI Chat nanti
+        // Other topics → ignore
+    }
 
     protected function sendHrdTaskMenu(int|string $chatId, ?int $threadId): void
     {
