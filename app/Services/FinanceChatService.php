@@ -256,7 +256,7 @@ class FinanceChatService
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'temperature' => $this->temperature,
-                    'max_tokens' => $this->maxTokens,
+                    'stream' => false,
                 ]);
 
             if (! $response->successful()) {
@@ -516,6 +516,66 @@ class FinanceChatService
         $parts[] = "- Sistem cash basis: expense dicatat saat uang keluar";
         $parts[] = "- Alokasi dana dihitung dari pendapatan bersih harian";
         $parts[] = "- Selisih kas = perbedaan antara kas fisik vs yang tercatat di sistem";
+
+        // 15. Data Olsera POS (produk terlaris, kategori, omzet)
+        $olsera = app(OlseraService::class);
+        $olseraToday = $olsera->getOmzetSummary($today, $today);
+        $olseraWeek = $olsera->getOmzetSummary($weekAgo, $today);
+
+        if ($olseraToday['total_amount'] > 0 || $olseraWeek['total_amount'] > 0) {
+            $parts[] = "\n=== DATA PENJUALAN POS (OLSERA) ===";
+
+            // Omzet hari ini
+            if ($olseraToday['total_amount'] > 0) {
+                $parts[] = "OMZET HARI INI:";
+                $parts[] = "- Total: Rp " . number_format($olseraToday['total_amount'], 0, ',', '.');
+                $parts[] = "- Transaksi: " . $olseraToday['total_transactions'];
+                $parts[] = "- Profit: Rp " . number_format($olseraToday['total_profit'], 0, ',', '.');
+                foreach ($olseraToday['payment_breakdown'] as $type => $amt) {
+                    $parts[] = "  • {$type}: Rp " . number_format($amt, 0, ',', '.');
+                }
+            }
+
+            // Omzet 7 hari
+            if ($olseraWeek['total_amount'] > 0) {
+                $parts[] = "\nOMZET 7 HARI TERAKHIR:";
+                $parts[] = "- Total: Rp " . number_format($olseraWeek['total_amount'], 0, ',', '.');
+                $parts[] = "- Transaksi: " . $olseraWeek['total_transactions'];
+                $parts[] = "- Profit: Rp " . number_format($olseraWeek['total_profit'], 0, ',', '.');
+            }
+
+            // Top produk hari ini
+            $topProductsToday = $olsera->getTopProducts($today, $today, 5);
+            if (! empty($topProductsToday)) {
+                $parts[] = "\nTOP 5 PRODUK HARI INI (by revenue):";
+                foreach ($topProductsToday as $i => $p) {
+                    $parts[] = "- " . ($i + 1) . ". {$p->name}: Rp " . number_format($p->total_amount, 0, ',', '.') .
+                        " ({$p->total_qty} pcs) | profit Rp " . number_format($p->total_profit, 0, ',', '.') .
+                        " | {$p->group_name}";
+                }
+            }
+
+            // Top produk 7 hari
+            $topProductsWeek = $olsera->getTopProducts($weekAgo, $today, 10);
+            if (! empty($topProductsWeek)) {
+                $parts[] = "\nTOP 10 PRODUK 7 HARI (by revenue):";
+                foreach ($topProductsWeek as $i => $p) {
+                    $parts[] = "- " . ($i + 1) . ". {$p->name}: Rp " . number_format($p->total_amount, 0, ',', '.') .
+                        " ({$p->total_qty} pcs) | profit Rp " . number_format($p->total_profit, 0, ',', '.') .
+                        " | {$p->group_name}";
+                }
+            }
+
+            // Top kategori hari ini
+            $topCatsToday = $olsera->getTopCategories($today, $today, 10);
+            if (! empty($topCatsToday)) {
+                $parts[] = "\nTOP KATEGORI HARI INI:";
+                foreach ($topCatsToday as $i => $c) {
+                    $parts[] = "- " . ($i + 1) . ". {$c->name}: Rp " . number_format($c->total_amount, 0, ',', '.') .
+                        " ({$c->total_qty} pcs)";
+                }
+            }
+        }
 
         return implode("\n", $parts);
     }

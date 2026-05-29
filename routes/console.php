@@ -709,3 +709,8 @@ Schedule::command('finance:debt-due-alert')->dailyAt('08:00')->withoutOverlappin
 
 // Settle QRIS pending mutations setiap jam 22:00 (QRIS cair malam)
 Schedule::command('finance:settle-qris')->dailyAt('22:00')->withoutOverlapping();
+
+// Olsera sales data sync — tiap jam 7-21 (jam operasional toko)
+Schedule::command('olsera:sync')->hourlyAt(15)->between('07:00', '21:00')->withoutOverlapping();
+// Sync hari sebelumnya (final) jam 06:00
+Schedule::command('olsera:sync --date=' . date('Y-m-d', strtotime('-1 day')))->dailyAt('06:00')->withoutOverlapping();
