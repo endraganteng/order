@@ -231,21 +231,69 @@ SYSTEM;
             }
         }
 
-        // 5. Active templates
+        // 5. Active templates with scheduling info
         $lines[] = "";
         $lines[] = "TEMPLATE AKTIF:";
         $templates = $this->firebase->getRecurringWaiterTaskTemplates();
         $activeTemplates = array_filter($templates, fn($t) => !empty($t['is_active']));
         foreach ($activeTemplates as $tpl) {
             $type = $tpl['task_type'] ?? 'general';
-            $freq = $tpl['frequency'] ?? 'daily';
-            $time = $tpl['schedule_time'] ?? '-';
+            $recType = $tpl['recurrence_type'] ?? 'daily';
+            $interval = $tpl['interval_days'] ?? null;
+            $lastGen = $tpl['last_generated_date'] ?? '';
             $title = $tpl['title'] ?? '';
             $id = $tpl['id'] ?? '';
-            $lines[] = "  [{$type}] {$title} | freq:{$freq} | jam:{$time} | ID:{$id}";
+            $schedInfo = $recType === 'every_n_days' && $interval
+                ? "setiap {$interval} hari (terakhir: {$lastGen})"
+                : "harian (terakhir: {$lastGen})";
+            $lines[] = "  [{$type}] {$title} | {$schedInfo} | ID:{$id}";
         }
 
-        // 6. Current time
+        // 6. Forecast 3 hari ke depan (prediksi template yang akan jalan)
+        $lines[] = "";
+        $lines[] = "FORECAST TUGAS 3 HARI KE DEPAN:";
+        for ($d = 1; $d <= 3; $d++) {
+            $forecastDate = date('Y-m-d', strtotime("+{$d} days"));
+            $dayName = now()->addDays($d)->translatedFormat('l');
+            $lines[] = "  [{$forecastDate} ({$dayName})]";
+
+            // Tasks already scheduled for this date
+            $scheduled = [];
+            foreach ($allTasks as $taskId => $t) {
+                if (($t['scheduled_for_date'] ?? '') === $forecastDate) {
+                    $taskTitle = $t['title'] ?? '';
+                    $taskWaiter = $t['assigned_waiter_name'] ?? '-';
+                    $scheduled[] = "    ✓ {$taskTitle} → {$taskWaiter} (sudah dijadwalkan)";
+                }
+            }
+
+            // Templates that will generate on this date
+            $predicted = [];
+            foreach ($activeTemplates as $tpl) {
+                $recType = $tpl['recurrence_type'] ?? 'daily';
+                $interval = $tpl['interval_days'] ?? 1;
+                $lastGen = $tpl['last_generated_date'] ?? '';
+                $title = $tpl['title'] ?? '';
+
+                if ($recType === 'daily') {
+                    $predicted[] = "    ~ {$title} (harian, auto-generate)";
+                } elseif ($recType === 'every_n_days' && $lastGen) {
+                    $nextDate = date('Y-m-d', strtotime($lastGen . " +{$interval} days"));
+                    if ($nextDate <= $forecastDate) {
+                        $predicted[] = "    ~ {$title} (interval {$interval}hr, due)";
+                    }
+                }
+            }
+
+            if (empty($scheduled) && empty($predicted)) {
+                $lines[] = "    (belum ada prediksi)";
+            } else {
+                foreach ($scheduled as $s) $lines[] = $s;
+                foreach ($predicted as $p) $lines[] = $p;
+            }
+        }
+
+        // 7. Current time
         $lines[] = "";
         $lines[] = "WAKTU: " . now()->format('Y-m-d H:i') . " WITA (" . now()->translatedFormat('l') . ")";
 
