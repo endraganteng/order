@@ -137,75 +137,98 @@ class KasbonService
         }
 
         // Langsung cair — potong saldo payroll (boleh negatif)
+        // Use advisory lock to prevent double-submit race condition
         return DB::transaction(function () use ($waiterId, $waiter, $amount, $reason, $createdBy, $cashAccountId) {
-            $newBalance = $this->payroll->adjustBalancePublic($waiterId, -$amount);
-
-            $txId = DB::table('payroll_transactions')->insertGetId([
-                'waiter_id' => $waiterId,
-                'waiter_name' => (string) ($waiter['name'] ?? ''),
-                'type' => 'kasbon_disbursement',
-                'amount' => $amount,
-                'balance_after' => $newBalance,
-                'status' => 'completed',
-                'note' => 'Kasbon: ' . ($reason ?: '-'),
-                'created_by' => $createdBy,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            $kasbonId = DB::table('kasbons')->insertGetId([
-                'waiter_id' => $waiterId,
-                'waiter_name' => (string) ($waiter['name'] ?? ''),
-                'amount' => $amount,
-                'remaining' => $amount,
-                'reason' => $reason,
-                'status' => 'active',
-                'cash_account_id' => $cashAccountId,
-                'created_by' => $createdBy,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            // Kurangi saldo kas fisik + insert mutasi
-            if ($cashAccountId) {
-                $account = DB::table('cash_accounts')->where('id', $cashAccountId)->first();
-                if ($account) {
-                    $newCashBalance = (int) $account->balance - $amount;
-                    DB::table('cash_accounts')->where('id', $cashAccountId)->update([
-                        'balance' => $newCashBalance,
-                        'updated_at' => now(),
-                    ]);
-
-                    DB::table('cash_mutations')->insert([
-                        'cash_account_id' => $cashAccountId,
-                        'type' => 'expense',
-                        'amount' => $amount,
-                        'balance_after' => $newCashBalance,
-                        'reference_type' => 'kasbon',
-                        'reference_id' => (string) $kasbonId,
-                        'description' => 'Kasbon ' . ($waiter['name'] ?? '') . ': ' . ($reason ?: '-'),
-                        'finance_category_id' => null,
-                        'transaction_date' => now()->toDateString(),
-                        'transaction_time' => now()->format('H:i:s'),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
+            // Advisory lock per waiter — prevents concurrent kasbon creation
+            $lockKey = 'kasbon_create_' . $waiterId;
+            $lock = \Illuminate\Support\Facades\Cache::lock($lockKey, 10);
+            if (! $lock->get()) {
+                return ['success' => false, 'message' => 'Sedang diproses, coba lagi.'];
             }
 
-            // Trigger flag untuk update portal waiter
-            $this->triggerWaiterFlag($waiterId);
+            try {
+                // Re-check active count inside lock to prevent race
+                $activeCount = DB::table('kasbons')
+                    ->where('waiter_id', $waiterId)
+                    ->where('status', 'active')
+                    ->count();
+                $config = $this->getConfig();
+                $maxActive = (int) $config['max_active_kasbon'];
+                if ($activeCount >= $maxActive) {
+                    return ['success' => false, 'message' => "Sudah ada {$activeCount} kasbon aktif. Maksimal {$maxActive}."];
+                }
 
-            // Notifikasi WA ke supervisor
-            $this->notifySupervisorKasbonCreated($waiter, $amount, $reason);
+                $newBalance = $this->payroll->adjustBalancePublic($waiterId, -$amount);
 
-            return [
-                'success' => true,
-                'kasbon_id' => $kasbonId,
-                'tx_id' => $txId,
-                'balance_after' => $newBalance,
-                'message' => 'Kasbon berhasil dicairkan.',
-            ];
+                $txId = DB::table('payroll_transactions')->insertGetId([
+                    'waiter_id' => $waiterId,
+                    'waiter_name' => (string) ($waiter['name'] ?? ''),
+                    'type' => 'kasbon_disbursement',
+                    'amount' => $amount,
+                    'balance_after' => $newBalance,
+                    'status' => 'completed',
+                    'note' => 'Kasbon: ' . ($reason ?: '-'),
+                    'created_by' => $createdBy,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $kasbonId = DB::table('kasbons')->insertGetId([
+                    'waiter_id' => $waiterId,
+                    'waiter_name' => (string) ($waiter['name'] ?? ''),
+                    'amount' => $amount,
+                    'remaining' => $amount,
+                    'reason' => $reason,
+                    'status' => 'active',
+                    'cash_account_id' => $cashAccountId,
+                    'created_by' => $createdBy,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                // Kurangi saldo kas fisik + insert mutasi
+                if ($cashAccountId) {
+                    $account = DB::table('cash_accounts')->where('id', $cashAccountId)->first();
+                    if ($account) {
+                        $newCashBalance = (int) $account->balance - $amount;
+                        DB::table('cash_accounts')->where('id', $cashAccountId)->update([
+                            'balance' => $newCashBalance,
+                            'updated_at' => now(),
+                        ]);
+
+                        DB::table('cash_mutations')->insert([
+                            'cash_account_id' => $cashAccountId,
+                            'type' => 'expense',
+                            'amount' => $amount,
+                            'balance_after' => $newCashBalance,
+                            'reference_type' => 'kasbon',
+                            'reference_id' => (string) $kasbonId,
+                            'description' => 'Kasbon ' . ($waiter['name'] ?? '') . ': ' . ($reason ?: '-'),
+                            'finance_category_id' => null,
+                            'transaction_date' => now()->toDateString(),
+                            'transaction_time' => now()->format('H:i:s'),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+
+                // Trigger flag untuk update portal waiter
+                $this->triggerWaiterFlag($waiterId);
+
+                // Notifikasi WA ke supervisor
+                $this->notifySupervisorKasbonCreated($waiter, $amount, $reason);
+
+                return [
+                    'success' => true,
+                    'kasbon_id' => $kasbonId,
+                    'tx_id' => $txId,
+                    'balance_after' => $newBalance,
+                    'message' => 'Kasbon berhasil dicairkan.',
+                ];
+            } finally {
+                $lock->release();
+            }
         });
     }
 

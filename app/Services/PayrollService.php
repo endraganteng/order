@@ -146,11 +146,20 @@ class PayrollService
                     'updated_at' => now(),
                 ]);
             } else {
-                $newBalance = $delta;
+                // Create row with balance 0 first, then apply delta
+                // This prevents race condition where two concurrent requests
+                // both see "no row" and both insert with $delta
                 DB::table('payroll_balances')->insert([
                     'waiter_id' => $waiterId,
-                    'balance' => $newBalance,
+                    'balance' => 0,
                     'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                // Re-read with lock and apply delta
+                $row = DB::table('payroll_balances')->where('waiter_id', $waiterId)->lockForUpdate()->first();
+                $newBalance = (int) $row->balance + $delta;
+                DB::table('payroll_balances')->where('id', $row->id)->update([
+                    'balance' => $newBalance,
                     'updated_at' => now(),
                 ]);
             }

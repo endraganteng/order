@@ -16,6 +16,7 @@
         .header-meta { font-size: 11px; opacity: 0.85; }
         .container { max-width: 720px; margin: 0 auto; padding: 16px; }
         .balance-card { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #fff; border-radius: 14px; padding: 24px; margin-bottom: 16px; box-shadow: 0 8px 24px rgba(16, 185, 129, 0.25); transition: opacity 0.2s; }
+        .balance-card.negative { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25); }
         .balance-card.is-updating { opacity: 0.8; }
         .balance-label { font-size: 13px; opacity: 0.9; text-transform: uppercase; font-weight: 600; }
         .balance-value { font-size: 36px; font-weight: 700; margin-top: 6px; line-height: 1.2; transition: color 0.4s; }
@@ -79,9 +80,14 @@
                 <span style="font-size: 13px;">Akun payroll Anda belum diaktifkan oleh supervisor. Hubungi supervisor untuk mengaktifkan fitur ini.</span>
             </div>
         @else
-            <div class="balance-card" id="balanceCard">
+            <div class="balance-card {{ $balance < 0 ? 'negative' : '' }}" id="balanceCard">
                 <div class="balance-label"><span class="live-dot"></span> Saldo Anda</div>
                 <div class="balance-value" id="balanceValue">Rp {{ number_format($balance, 0, ',', '.') }}</div>
+                @if($balance < 0)
+                    <div class="balance-info" style="background: rgba(255,255,255,0.15); border-radius: 8px; padding: 8px 12px; margin-top: 8px;">
+                        ℹ️ Saldo minus karena kasbon yang belum lunas. Akan otomatis terpotong saat gajian.
+                    </div>
+                @endif
                 <div class="balance-info" id="paydayInfo">
                     @if($nextPayday)
                         📅 Gajian berikutnya: {{ \Carbon\Carbon::parse($nextPayday)->translatedFormat('d M Y') }}
