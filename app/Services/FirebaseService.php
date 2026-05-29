@@ -4288,6 +4288,15 @@ class FirebaseService
             $generatedForTemplate = 0;
 
             foreach ($targetWaiters as $waiter) {
+                // For rack_check rolling: idempotency is per template (not per waiter)
+                // because fair distribution may assign to different waiter than original
+                if ($isRackRollingTemplate) {
+                    $templateOnlyKey = (string) $template['id'] . '::*';
+                    if (isset($existingRecurringMap[$templateOnlyKey])) {
+                        continue;
+                    }
+                }
+
                 $mapKey = $this->buildWaiterRecurringInstanceKey($template['id'], $waiter['id'] ?? null);
                 if (isset($existingRecurringMap[$mapKey])) {
                     continue;
@@ -5293,6 +5302,13 @@ class FirebaseService
             }
 
             $map[$this->buildWaiterRecurringInstanceKey($sourceTemplateId, $assignedWaiterId)] = true;
+
+            // For rack_check rolling: also mark template-level key so fair distribution
+            // doesn't re-generate after manual reassignment changes waiter_id
+            if (($task['task_type'] ?? '') === 'rack_check'
+                && ($task['assignment_strategy'] ?? '') === 'role_round_robin') {
+                $map[(string) $sourceTemplateId . '::*'] = true;
+            }
         }
 
         return $map;
