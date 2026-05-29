@@ -50,7 +50,11 @@ class FinanceController extends Controller
         ]);
 
         $old = $this->finance->getAllSettings();
-        $this->finance->saveSettings($request->only(['api_domain', 'api_token', 'auto_sync_enabled', 'auto_sync_time', 'sync_mode', 'sync_data_target']));
+        $this->finance->saveSettings($request->only([
+            'api_domain', 'api_token', 'auto_sync_enabled', 'auto_sync_time', 'sync_mode', 'sync_data_target',
+            'ai_provider', 'ai_model', 'ai_api_key', 'ai_gemini_key', 'ai_base_url',
+            'ai_temperature', 'ai_max_tokens', 'ai_timeout',
+        ]));
         $this->finance->logAudit('update', 'settings', null, $old, $request->only(['api_domain', 'auto_sync_enabled', 'auto_sync_time', 'sync_mode', 'sync_data_target']));
 
         return response()->json(['success' => true, 'message' => 'Pengaturan disimpan.']);
