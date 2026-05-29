@@ -402,7 +402,24 @@ class TelegramBotController extends Controller
             return;
         }
 
-        // Topic FINANCE (thread_id: 2) → bisa ditambah Finance AI Chat nanti
+        // Topic FINANCE (thread_id: 2) → Finance AI Chat
+        if ($threadId === 2) {
+            try {
+                $financeAI = app(\App\Services\FinanceChatService::class);
+                if (! $financeAI->isConfigured()) {
+                    $this->sendTelegramMessage($chatId, "❌ Finance AI belum dikonfigurasi.", $threadId);
+                    return;
+                }
+                $result = $financeAI->ask($text, null, null, 'admin');
+                $response = $result['answer'] ?? $result['error'] ?? '❌ Tidak ada respons.';
+                $this->sendTelegramMessage($chatId, $response, $threadId);
+            } catch (\Throwable $e) {
+                Log::error('FinanceAI error', ['error' => $e->getMessage(), 'text' => $text]);
+                $this->sendTelegramMessage($chatId, "❌ Error: " . $e->getMessage(), $threadId);
+            }
+            return;
+        }
+
         // Other topics → ignore
     }
 
