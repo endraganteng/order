@@ -19,11 +19,7 @@ class TaskAIService
     protected string $provider;
     protected string $model;
     protected float $temperature;
-    protected int $maxTokens;
     protected int $timeout;
-
-    // Pending actions awaiting confirmation (keyed by chat_id)
-    protected static array $pendingActions = [];
 
     public function __construct(FirebaseService $firebase)
     {
@@ -33,7 +29,6 @@ class TaskAIService
         $this->provider = $this->getSetting('ai_provider', 'gemini');
         $this->model = $this->getSetting('ai_model', 'gemini-2.5-flash');
         $this->temperature = (float) $this->getSetting('ai_temperature', '0.3');
-        $this->maxTokens = (int) $this->getSetting('ai_max_tokens', '2048');
         $this->timeout = (int) $this->getSetting('ai_timeout', '60');
     }
 
@@ -121,73 +116,30 @@ PROMPT;
     }
 
     /**
-     * System prompt: pengetahuan lengkap tentang task system.
+     * System prompt: pengetahuan lengkap tentang task system (compact).
      */
     protected function getSystemPrompt(): string
     {
         return <<<'SYSTEM'
-Kamu adalah AI Assistant untuk manajemen tugas karyawan di Mataram Petshop.
-Kamu beroperasi di Telegram topic HRD dan hanya bisa diakses oleh Supervisor/Finance.
+Kamu AI Assistant manajemen tugas karyawan Mataram Petshop. Beroperasi di Telegram topic HRD, hanya diakses Supervisor/Finance.
 
-=== PENGETAHUAN SISTEM TASK ===
+TASK SYSTEM:
+- Storage: Firebase RTDB (waiter_tasks/, waiter_task_templates/, allowed_waiters/)
+- Scanner: waiter:process-tasks tiap 5 menit
+- Tipe: rack_check (cek rak, ada recheck score 1-10), general (umum)
+- Status: pending → in_progress → completed/cancelled
+- Assignment rack_check: AI Balancing (balance 50%, quality 30%, speed 10%, recent 10%)
+- General task: assign ke semua atau specific waiter
 
-1. ARSITEKTUR:
-   - Task disimpan di Firebase Realtime Database (path: waiter_tasks/)
-   - Template recurring di: waiter_task_templates/
-   - Daftar waiter di: allowed_waiters/
-   - Scanner (waiter:process-tasks) jalan tiap 5 menit via cron
+TEMPLATE FIELDS: title, task_type, frequency (daily/every_n_days/specific_days), every_n_days, schedule_time (HH:MM), is_active, assignment_mode (rolling/all)
+TASK FIELDS: title, task_type, status, assigned_waiter_id, assigned_waiter_name, scheduled_for_date (YYYY-MM-DD), schedule_time, source_template_id, priority (normal/high)
 
-2. TIPE TASK:
-   - rack_check: Cek rak/etalase (ada recheck scoring 1-10)
-   - general: Task umum (bersih-bersih, angkat stok, dll)
-
-3. STATUS TASK:
-   - pending: Belum dikerjakan
-   - in_progress: Sedang dikerjakan
-   - completed: Selesai
-   - cancelled: Dibatalkan
-
-4. TEMPLATE FIELDS:
-   - title: Nama task
-   - task_type: rack_check atau general
-   - frequency: daily, every_n_days, specific_days
-   - every_n_days: interval hari (jika frequency = every_n_days)
-   - schedule_time: Jam deadline (format HH:MM)
-   - is_active: true/false
-   - assignment_mode: rolling (rack_check) atau all (general)
-
-5. TASK FIELDS:
-   - title, task_type, status
-   - assigned_waiter_id, assigned_waiter_name
-   - scheduled_for_date: tanggal task (YYYY-MM-DD)
-   - schedule_time: deadline jam
-   - source_template_id: dari template mana
-   - priority: normal, high
-
-6. ASSIGNMENT ALGORITHM (AI Balancing):
-   - Balance 50%: distribusi merata per minggu
-   - Quality 30%: recheck score history
-   - Speed 10%: rata-rata waktu selesai
-   - Recent 10%: beban kemarin
-   - Penalty 35/task: supaya tidak ada yang dapat terlalu banyak per hari
-
-7. WAITER AKTIF:
-   Akan di-inject dari data real-time di context.
-
-8. ATURAN:
-   - Hanya supervisor/finance yang bisa CRUD task
-   - Waiter hanya bisa lihat dan kerjakan task sendiri
-   - Rack check assignment otomatis via AI balancing
-   - General task bisa assign ke semua atau specific waiter
-   - Cancel task harus ada alasan
-   - Template deactivate = cancel semua pending task dari template itu
-
-9. KONTEKS BISNIS:
-   - Mataram Petshop: toko hewan peliharaan
-   - Rak berisi: makanan kucing, anjing, burung, ikan, obat, aksesoris
-   - Gudang ada 3 lantai
-   - Operasional: 08:00 - 21:00 WITA
-   - Shift: pagi (08:00-15:00), siang (15:00-21:00)
+ATURAN:
+- Write ops WAJIB needs_confirmation=true
+- Cancel harus ada alasan
+- Deactivate template = cancel semua pending dari template itu
+- Reassign satu task per action
+- Operasional: 08:00-21:00 WITA
 SYSTEM;
     }
 
@@ -576,7 +528,7 @@ SYSTEM;
             $cache = DB::table('finance_settings')
                 ->whereIn('key', [
                     'ai_provider', 'ai_model', 'ai_api_key', 'ai_gemini_key',
-                    'ai_base_url', 'ai_temperature', 'ai_max_tokens', 'ai_timeout',
+                    'ai_base_url', 'ai_temperature', 'ai_timeout',
                 ])
                 ->pluck('value', 'key')
                 ->toArray();
@@ -627,7 +579,6 @@ SYSTEM;
                     ]],
                     'generationConfig' => [
                         'temperature' => $this->temperature,
-                        'maxOutputTokens' => $this->maxTokens,
                         'responseMimeType' => 'application/json',
                     ],
                 ]);
@@ -666,7 +617,6 @@ SYSTEM;
                         ['role' => 'user', 'content' => $prompt],
                     ],
                     'temperature' => $this->temperature,
-                    'max_tokens' => $this->maxTokens,
                     'response_format' => ['type' => 'json_object'],
                 ]);
 
