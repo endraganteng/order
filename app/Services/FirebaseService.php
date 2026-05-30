@@ -4330,7 +4330,10 @@ class FirebaseService
                         $waiterScheduleTime = date('H:i', $waiterScheduleTimestamp);
 
                         // Check if current time has reached this waiter's schedule time
-                        if ($isToday && $currentTime < $waiterScheduleTime) {
+                        // EXCEPTION: untuk rack_check rolling, tetap generate task meskipun
+                        // waiter belum mulai shift. Task akan muncul di portal setelah schedule_time.
+                        // Ini mencegah waiter shift siang selalu ketinggalan distribusi rak.
+                        if ($isToday && $currentTime < $waiterScheduleTime && !$isRackRollingTemplate) {
                             continue; // Not yet time for this waiter
                         }
 
@@ -4373,7 +4376,15 @@ class FirebaseService
                     $existingStatus = (string) ($existingTaskValue['status'] ?? '');
                     // Kalau task lama berstatus cancelled, allow overwrite (regenerate fresh).
                     // Kalau status lain (pending/in_progress/done/overdue), skip seperti biasa.
+                    // EXCEPTION: cancelled dengan cancel_reason tertentu = final, jangan re-generate.
                     if ($existingStatus !== 'cancelled') {
+                        $existingRecurringMap[$mapKey] = true;
+
+                        continue;
+                    }
+                    $cancelReason = (string) ($existingTaskValue['cancel_reason'] ?? '');
+                    $noRegenReasons = ['role_mismatch_fix', 'anomaly_from_role_mismatch_fix', 'admin_manual', 'bulk_cancel'];
+                    if (in_array($cancelReason, $noRegenReasons, true)) {
                         $existingRecurringMap[$mapKey] = true;
 
                         continue;
