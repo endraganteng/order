@@ -286,28 +286,9 @@
                             @if($isCompleted)
                                 <div class="completed-msg">✅ Item sudah diterima penuh</div>
                             @else
-                                <div style="margin-top:8px; margin-bottom:8px;">
-                                    <label style="font-size:11px; color:#64748b; display:block; margin-bottom:3px;">📦 Simpan ke rak:</label>
-                                    <select class="rack-picker" id="rack-{{ $itemRestockId }}" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#fff;">
-                                        @php $defaultRackId = (string) ($item['rack_id'] ?? ''); @endphp
-                                        @foreach(($activeRacks ?? []) as $rack)
-                                            <option value="{{ $rack['id'] }}" @selected($defaultRackId === ($rack['id'] ?? ''))>
-                                                {{ $rack['name'] ?? '-' }}
-                                                @if(($rack['rack_type'] ?? 'storage') === 'storage')
-                                                    🏬
-                                                @else
-                                                    🛒
-                                                @endif
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @if($defaultRackId !== '' && !empty($item['rack_name']))
-                                        <div style="font-size:10px; color:#94a3b8; margin-top:2px;">PO awal: {{ $item['rack_name'] }} (bisa diubah jika perlu)</div>
-                                    @endif
-                                </div>
                                 <div class="receive-action">
                                     <input type="number" class="qty-input" value="{{ $remaining }}" min="1" max="{{ $remaining }}" id="input-{{ $itemRestockId }}">
-                                    <button class="btn-receive" onclick="receiveItem('{{ $order['id'] }}', '{{ $itemRestockId }}', {{ $remaining }})">
+                                    <button class="btn-receive" onclick="openReceiveModal('{{ $order['id'] }}', '{{ $itemRestockId }}', {{ $remaining }}, '{{ e($item['product_name'] ?? '-') }}', '{{ $item['rack_id'] ?? '' }}')">
                                         Terima
                                     </button>
                                 </div>
@@ -323,6 +304,36 @@
             </div>
         @endforeach
     @endif
+</div>
+
+<!-- Modal Pilih Rak -->
+<div id="receive-modal" onclick="if(event.target===this)closeReceiveModal()" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; padding:20px;">
+    <div style="background:#fff; border-radius:14px; padding:20px; max-width:400px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <h3 style="margin:0 0 4px 0; font-size:16px; color:#1e293b;">📦 Konfirmasi Penerimaan</h3>
+        <div id="modal-product-name" style="font-size:14px; color:#475569; margin-bottom:14px; font-weight:500;"></div>
+        <div style="display:flex; gap:10px; margin-bottom:14px;">
+            <div style="flex:1; background:#f1f5f9; border-radius:8px; padding:8px 10px; text-align:center;">
+                <div style="font-size:11px; color:#64748b;">Qty Terima</div>
+                <div id="modal-qty" style="font-size:18px; font-weight:700; color:#1e293b;"></div>
+            </div>
+        </div>
+        <div style="margin-bottom:14px;">
+            <label style="font-size:12px; color:#64748b; display:block; margin-bottom:5px; font-weight:500;">📍 Simpan ke rak:</label>
+            <select id="modal-rack-select" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; background:#fff;">
+                @foreach(($activeRacks ?? []) as $rack)
+                    <option value="{{ $rack['id'] }}">
+                        {{ $rack['name'] ?? '-' }}
+                        @if(($rack['rack_type'] ?? 'storage') === 'storage') 🏬 @else 🛒 @endif
+                    </option>
+                @endforeach
+            </select>
+            <div id="modal-rack-hint" style="font-size:11px; color:#94a3b8; margin-top:4px;"></div>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button onclick="closeReceiveModal()" style="flex:1; padding:10px; border:1px solid #d1d5db; background:#fff; border-radius:8px; font-size:14px; cursor:pointer; color:#475569;">Batal</button>
+            <button id="modal-confirm-btn" onclick="confirmReceive()" style="flex:1; padding:10px; border:none; background:#2563eb; color:#fff; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">Konfirmasi</button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -445,13 +456,57 @@
         }, 3000);
     }
 
-    function receiveItem(poId, restockId, maxQty) {
+    // ─── Receive Modal ───
+    let _modalState = { poId: '', restockId: '', maxQty: 0 };
+
+    function openReceiveModal(poId, restockId, maxQty, productName, defaultRackId) {
+        const input = document.getElementById(`input-${restockId}`);
+        const qty = parseInt(input?.value) || maxQty;
+
+        if (qty < 1 || qty > maxQty) {
+            alert(`Jumlah tidak valid (max: ${maxQty})`);
+            return;
+        }
+
+        _modalState = { poId, restockId, maxQty };
+
+        document.getElementById('modal-product-name').textContent = productName;
+        document.getElementById('modal-qty').textContent = qty;
+
+        const select = document.getElementById('modal-rack-select');
+        if (defaultRackId) {
+            select.value = defaultRackId;
+            document.getElementById('modal-rack-hint').textContent = '✓ Pre-selected dari PO awal (bisa diubah)';
+        } else {
+            document.getElementById('modal-rack-hint').textContent = 'Pilih rak tujuan penyimpanan';
+        }
+
+        const modal = document.getElementById('receive-modal');
+        modal.style.display = 'flex';
+    }
+
+    function closeReceiveModal() {
+        document.getElementById('receive-modal').style.display = 'none';
+        _modalState = { poId: '', restockId: '', maxQty: 0 };
+    }
+
+    function confirmReceive() {
+        const { poId, restockId, maxQty } = _modalState;
+        if (!poId || !restockId) return;
+
+        const qty = parseInt(document.getElementById('modal-qty').textContent) || 0;
+        const rackId = document.getElementById('modal-rack-select').value || '';
+
+        closeReceiveModal();
+        receiveItem(poId, restockId, maxQty, qty, rackId);
+    }
+
+    function receiveItem(poId, restockId, maxQty, qty, rackId) {
         const poKey = String(poId || '');
         if (poKey && !poReceiveFormInstanceByPo.has(poKey)) {
             poReceiveFormInstanceByPo.set(poKey, newFormInstanceId());
         }
         const input = document.getElementById(`input-${restockId}`);
-        let qty = parseInt(input.value);
         
         if (isNaN(qty) || qty < 1) {
             alert('Jumlah tidak valid');
@@ -460,7 +515,6 @@
         
         if (qty > maxQty) {
             alert(`Maksimal yang bisa diterima adalah ${maxQty}`);
-            input.value = maxQty;
             qty = maxQty;
         }
         
@@ -479,7 +533,7 @@
             body: JSON.stringify({
                 restock_id: restockId,
                 received_qty: qty,
-                rack_id: (document.getElementById('rack-' + restockId)?.value || ''),
+                rack_id: rackId,
                 idempotency_key: `po-receive:${poId}:${poReceiveFormInstanceByPo.get(poKey) || newFormInstanceId()}`
             })
         })
@@ -533,7 +587,7 @@
                     const newMax = (data.qty_ordered || maxQty) - newReceived;
                     input.value = newMax > 0 ? newMax : 1;
                     input.max = newMax > 0 ? newMax : 1;
-                    btn.setAttribute('onclick', `receiveItem('${poId}', '${restockId}', ${newMax})`);
+                    btn.setAttribute('onclick', `openReceiveModal('${poId}', '${restockId}', ${newMax}, '${btn.closest('.item-card').querySelector('.item-name')?.textContent || ''}', '${rackId}')`);
                     btn.disabled = false;
                     btn.textContent = 'Terima';
                 }
