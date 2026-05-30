@@ -513,6 +513,15 @@
         } catch (err) { alert('Error: ' + err.message); }
         finally { btn.disabled = false; btn.textContent = 'Kirim Klaim'; }
     });
+
+    // Auto-switch to verify tab if URL has ?tab=verify (deep-link from quick-action tile)
+    document.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('tab') === 'verify') {
+            const verifyBtn = document.querySelector('.tab-bar .tab-btn:nth-child(3)');
+            if (verifyBtn) verifyBtn.click();
+        }
+    });
     </script>
 </body>
 </html>

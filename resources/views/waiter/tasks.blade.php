@@ -1058,6 +1058,25 @@
             flex-shrink: 0;
             opacity: 0.6;
         }
+        .quick-action-tile__badge {
+            position: absolute;
+            top: 8px;
+            right: 28px;
+            background: #dc2626;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            min-width: 22px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35);
+            animation: badge-pulse 2s ease-in-out infinite;
+        }
+        @keyframes badge-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
         .quick-action-tile--restock .quick-action-tile__chevron {
             color: #059669;
         }
@@ -1561,12 +1580,21 @@
                     </span>
                     <span class="quick-action-tile__chevron">›</span>
                 </a>
-                <a href="{{ route('waiter.bonus_produk', [], false) }}" class="quick-action-tile quick-action-tile--bonus">
+                <a href="{{ route('waiter.bonus_produk', [], false) }}{{ !empty($isVerifier) && !empty($pendingBonusClaims) ? '?tab=verify' : '' }}" class="quick-action-tile quick-action-tile--bonus">
                     <span class="quick-action-tile__icon">🎯</span>
                     <span class="quick-action-tile__body">
                         <span class="quick-action-tile__title">Bonus Produk</span>
-                        <span class="quick-action-tile__sub">Klaim bonus penjualan produk campaign</span>
+                        <span class="quick-action-tile__sub">
+                            @if(!empty($isVerifier) && !empty($pendingBonusClaims))
+                                <strong style="color:#dc2626;">{{ $pendingBonusClaims }} klaim menunggu verifikasi</strong>
+                            @else
+                                Klaim bonus penjualan produk campaign
+                            @endif
+                        </span>
                     </span>
+                    @if(!empty($isVerifier) && !empty($pendingBonusClaims))
+                        <span class="quick-action-tile__badge">{{ $pendingBonusClaims }}</span>
+                    @endif
                     <span class="quick-action-tile__chevron">›</span>
                 </a>
             </div>

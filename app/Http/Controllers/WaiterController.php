@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\BonusService;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
+use App\Services\SalesCampaignService;
 use Illuminate\Http\Request;
 
 class WaiterController extends Controller
@@ -116,9 +117,17 @@ class WaiterController extends Controller
             $waiterRecord = $this->firebase->getWaiterById($waiterId);
             $waiterRole = strtolower((string) ($waiterRecord['waiter_role'] ?? ''));
             $isFinance = $waiterRole === 'finance';
+            $isVerifier = in_array($waiterRole, ['finance', 'supervisor'], true);
             $rackCheckPendingReview = $isFinance
                 ? $this->firebase->getRackCheckPendingReview($reportDate)
                 : [];
+
+            // Bonus produk pending claims badge: untuk finance/supervisor
+            $pendingBonusClaims = 0;
+            if ($isVerifier) {
+                $campaignService = app(SalesCampaignService::class);
+                $pendingBonusClaims = count($campaignService->getClaimsByStatus('pending'));
+            }
         } catch (\Throwable $e) {
             report($e);
 
@@ -134,7 +143,9 @@ class WaiterController extends Controller
             $waiterRecord = null;
             $waiterRole = '';
             $isFinance = false;
+            $isVerifier = false;
             $rackCheckPendingReview = [];
+            $pendingBonusClaims = 0;
         }
 
         return view('waiter.tasks', [
@@ -143,6 +154,7 @@ class WaiterController extends Controller
             'waiterEmail' => (string) session('waiter_email', ''),
             'waiterRole' => $waiterRole,
             'isFinance' => $isFinance,
+            'isVerifier' => $isVerifier,
             'reportDate' => $reportDate,
             'pendingTasks' => $taskBuckets['pending_tasks'],
             'taskHistory' => $taskBuckets['task_history'],
@@ -154,6 +166,7 @@ class WaiterController extends Controller
             'shiftStartTime' => $waiterShift ? ($waiterShift['clock_in_time'] ?? null) : null,
             'clockOutEnabled' => $clockOutEnabled,
             'rackCheckPendingReview' => $rackCheckPendingReview,
+            'pendingBonusClaims' => $pendingBonusClaims,
         ]);
     }
 
