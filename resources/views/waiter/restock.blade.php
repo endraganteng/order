@@ -54,6 +54,17 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.05);
             border-top: 4px solid #3b82f6;
         }
+
+        .po-toggle:hover {
+            background: #f8fafc;
+            border-radius: 8px;
+            margin: -8px;
+            padding: 8px;
+        }
+
+        .po-chevron {
+            color: #94a3b8;
+        }
         
         .po-header {
             display: flex;
@@ -227,7 +238,7 @@
             @endphp
             
             <div class="po-card" id="po-{{ $order['id'] }}">
-                <div class="po-header">
+                <div class="po-header po-toggle" onclick="togglePo('{{ $order['id'] }}')" style="cursor:pointer;">
                     <div>
                         <h3 class="po-title">{{ $order['po_number'] }}</h3>
                         <div class="po-meta">Supplier: {{ $order['supplier'] ?? '-' }}</div>
@@ -236,6 +247,7 @@
                     <div style="text-align: right;">
                         <div style="font-weight: 600; color: #3b82f6;" class="po-progress-text">{{ $order['received_count'] }}/{{ $order['items_count'] }} Item</div>
                         <div style="font-size: 12px; color: #64748b;">Diterima</div>
+                        <div class="po-chevron" id="chevron-{{ $order['id'] }}" style="font-size:18px; margin-top:4px; transition:transform 0.2s;">▼</div>
                     </div>
                 </div>
                 
@@ -243,7 +255,7 @@
                     <div class="progress-fill" style="width: {{ $progressPercent }}%;"></div>
                 </div>
                 
-                <div style="margin-top: 15px;">
+                <div class="po-items-body" id="body-{{ $order['id'] }}" style="margin-top: 15px;">
                     @foreach(($order['items'] ?? []) as $restockKey => $item)
                         @php
                             $qtyOrdered = $item['qty_ordered'] ?? 0;
@@ -525,6 +537,46 @@
             btn.textContent = 'Terima';
         });
     }
+
+    // ─── Collapse/Expand PO ───
+    function togglePo(poId) {
+        const body = document.getElementById('body-' + poId);
+        const chevron = document.getElementById('chevron-' + poId);
+        if (!body) return;
+        const isHidden = body.style.display === 'none';
+        body.style.display = isHidden ? '' : 'none';
+        if (chevron) chevron.style.transform = isHidden ? '' : 'rotate(-90deg)';
+        // Save state
+        try { localStorage.setItem('po_collapse:' + poId, isHidden ? '0' : '1'); } catch(e) {}
+    }
+
+    // Auto-collapse: PO yang 100% selesai di-collapse, sisanya expand
+    (function initPoCollapse() {
+        document.querySelectorAll('.po-card').forEach(card => {
+            const poId = (card.id || '').replace('po-', '');
+            if (!poId) return;
+            const body = document.getElementById('body-' + poId);
+            const chevron = document.getElementById('chevron-' + poId);
+            if (!body) return;
+
+            // Check saved state first
+            const saved = localStorage.getItem('po_collapse:' + poId);
+            if (saved === '1') {
+                body.style.display = 'none';
+                if (chevron) chevron.style.transform = 'rotate(-90deg)';
+                return;
+            }
+            if (saved === '0') return; // explicitly expanded
+
+            // Default: collapse if all items completed
+            const totalItems = body.querySelectorAll('.item-card').length;
+            const completedItems = body.querySelectorAll('.item-card.completed').length;
+            if (totalItems > 0 && totalItems === completedItems) {
+                body.style.display = 'none';
+                if (chevron) chevron.style.transform = 'rotate(-90deg)';
+            }
+        });
+    })();
 
     function reportIssue(poId, restockId, productName) {
         const reason = prompt(`Laporkan masalah untuk "${productName}":\n\n1 = Barang tidak datang (qty = 0)\n2 = Qty tidak sesuai\n3 = Barang rusak/cacat\n\nPilih (1/2/3) atau ketik alasan:`);
