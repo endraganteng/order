@@ -870,18 +870,28 @@
 
             const renderClaimRows = (list, badge) => {
                 if (!list || list.length === 0) {
-                    return '<tr><td colspan="6" class="text-center text-muted" style="padding:1rem;">Belum ada klaim ' + badge.label + '.</td></tr>';
+                    return '<tr><td colspan="7" class="text-center text-muted" style="padding:1rem;">Belum ada klaim ' + badge.label + '.</td></tr>';
                 }
-                return list.map(cl => `
-                    <tr>
-                        <td>${escapeHtml(cl.waiter_name || '-')}</td>
-                        <td>${escapeHtml(cl.product_name || cl.product_key || '-')}</td>
-                        <td class="text-center">${escapeHtml(String(cl.quantity || 0))}</td>
-                        <td class="text-center"><strong>${escapeHtml(String(cl.points_claimed || 0))}</strong></td>
-                        <td class="small text-muted">${escapeHtml(fmtDate(cl.submitted_at || cl.date))}</td>
-                        <td>${cl.photo_url ? `<a href="${escapeHtml(cl.photo_url)}" target="_blank" class="small">📷 Foto</a>` : '<span class="text-muted small">-</span>'}</td>
-                    </tr>
-                `).join('');
+                return list.map(cl => {
+                    const verifierCell = (cl.status === 'approved' || cl.status === 'rejected')
+                        ? `<div class="small">
+                                <strong>${escapeHtml(cl.verified_by || '-')}</strong>
+                                <div class="text-muted" style="font-size:0.7rem;">${escapeHtml(fmtDate(cl.verified_at))}</div>
+                                ${cl.reject_reason ? `<div class="text-danger" style="font-size:0.7rem; margin-top:2px;">⚠️ ${escapeHtml(cl.reject_reason)}</div>` : ''}
+                           </div>`
+                        : '<span class="text-muted small">—</span>';
+                    return `
+                        <tr>
+                            <td>${escapeHtml(cl.waiter_name || '-')}</td>
+                            <td>${escapeHtml(cl.product_name || cl.product_key || '-')}</td>
+                            <td class="text-center">${escapeHtml(String(cl.quantity || 0))}</td>
+                            <td class="text-center"><strong>${escapeHtml(String(cl.points_claimed || 0))}</strong></td>
+                            <td class="small text-muted">${escapeHtml(fmtDate(cl.submitted_at || cl.date))}</td>
+                            <td>${verifierCell}</td>
+                            <td>${cl.photo_url ? `<a href="${escapeHtml(cl.photo_url)}" target="_blank" class="small">📷 Foto</a>` : '<span class="text-muted small">-</span>'}</td>
+                        </tr>
+                    `;
+                }).join('');
             };
 
             const tabBtn = (key, label, count, badgeClass) =>
@@ -922,7 +932,7 @@
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Tanggal</th><th>Bukti</th>
+                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Disubmit</th><th>Diverifikasi</th><th>Bukti</th>
                                     </tr>
                                 </thead>
                                 <tbody>${renderClaimRows(claims.pending, { label: 'pending' })}</tbody>
@@ -934,7 +944,7 @@
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Tanggal</th><th>Bukti</th>
+                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Disubmit</th><th>Diverifikasi</th><th>Bukti</th>
                                     </tr>
                                 </thead>
                                 <tbody>${renderClaimRows(claims.approved, { label: 'approved' })}</tbody>
@@ -946,7 +956,7 @@
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Tanggal</th><th>Bukti</th>
+                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Disubmit</th><th>Diverifikasi</th><th>Bukti</th>
                                     </tr>
                                 </thead>
                                 <tbody>${renderClaimRows(claims.rejected, { label: 'rejected' })}</tbody>
