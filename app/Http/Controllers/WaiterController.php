@@ -89,6 +89,7 @@ class WaiterController extends Controller
         session()->put('waiter_id', $waiter['id']);
         session()->put('waiter_name', $waiter['name'] ?? 'Waiter');
         session()->put('waiter_email', $waiter['email'] ?? '');
+        session()->put('waiter_role', strtolower((string) ($waiter['waiter_role'] ?? '')));
     }
 
     /**
