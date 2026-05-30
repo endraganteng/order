@@ -1715,6 +1715,13 @@
             <span class="nav-icon">🏆</span>
             <span class="nav-label">Bonus</span>
         </button>
+        @if(!empty($isFinance))
+        <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="recheck">
+            <span class="nav-icon">🔍</span>
+            <span class="nav-label">Recheck</span>
+            <span id="badge-mobile-recheck" class="menu-badge js-recheck-menu-badge hidden">0</span>
+        </button>
+        @endif
     </nav>
 
     <div id="scanner-modal" class="scanner-modal" aria-hidden="true">
