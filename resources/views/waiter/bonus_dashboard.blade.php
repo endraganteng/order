@@ -654,6 +654,11 @@
     </div>
 
     <div class="container">
+        {{-- Quick Link: Bonus Produk --}}
+        <a href="{{ route('waiter.bonus_produk') }}" style="display:block; background:linear-gradient(135deg, #667eea, #764ba2); color:white; border-radius:10px; padding:12px 16px; margin-bottom:1rem; text-decoration:none; font-weight:600; font-size:0.9rem; box-shadow:0 2px 8px rgba(102,126,234,0.3);">
+            🎯 Bonus Produk — Klaim bonus penjualan →
+        </a>
+
         @if(!empty($bonusSummary) && ($bonusSummary['status'] ?? '') === 'finalized')
         <div class="finalized-banner">
             <div class="finalized-label">Bonus Final Bulan Ini</div>

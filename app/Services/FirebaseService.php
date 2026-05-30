@@ -4306,6 +4306,14 @@ class FirebaseService
                     if (isset($existingRecurringMap[$templateOnlyKey])) {
                         continue;
                     }
+                    // DEBUG: log when template passes this guard
+                    \Log::info('[RACK_DEBUG] Template passed templateOnlyKey guard', [
+                        'template_id' => $template['id'],
+                        'title' => $template['title'] ?? '',
+                        'templateOnlyKey' => $templateOnlyKey,
+                        'map_keys_for_template' => array_filter(array_keys($existingRecurringMap), fn($k) => str_contains($k, (string) $template['id'])),
+                        'target_waiter' => $waiter['name'] ?? $waiter['id'] ?? '',
+                    ]);
                 }
 
                 $mapKey = $this->buildWaiterRecurringInstanceKey($template['id'], $waiter['id'] ?? null);

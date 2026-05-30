@@ -229,6 +229,13 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('bonus/leaderboard', [BonusController::class, 'leaderboard'])->name('bonus.leaderboard');
         Route::post('bonus/leaderboard/generate', [BonusController::class, 'generateLeaderboard'])->name('bonus.leaderboard.generate');
 
+        // Sales Campaigns (Bonus Produk)
+        Route::get('bonus/campaigns', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'index'])->name('bonus.campaigns');
+        Route::post('bonus/campaigns', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'store'])->name('bonus.campaigns.store');
+        Route::get('bonus/campaigns/{id}', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'show'])->name('bonus.campaigns.show');
+        Route::put('bonus/campaigns/{id}', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'update'])->name('bonus.campaigns.update');
+        Route::delete('bonus/campaigns/{id}', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'destroy'])->name('bonus.campaigns.destroy');
+
         // Payroll Management
         Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');
         Route::post('payroll/config', [PayrollController::class, 'updateConfig'])->name('payroll.config_update');
@@ -501,6 +508,15 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         // Bonus Dashboard
         Route::get('bonus', [\App\Http\Controllers\WaiterBonusController::class, 'index'])->name('bonus');
         Route::get('bonus/api', [\App\Http\Controllers\WaiterBonusController::class, 'apiData'])->name('bonus.api');
+
+        // Bonus Produk (Sales Campaign Claims)
+        Route::get('bonus-produk', [\App\Http\Controllers\WaiterBonusController::class, 'bonusProduk'])->name('bonus_produk');
+        Route::post('bonus-produk/claim', [\App\Http\Controllers\WaiterBonusController::class, 'submitClaim'])->name('bonus_produk.claim');
+        Route::get('bonus-produk/history', [\App\Http\Controllers\WaiterBonusController::class, 'claimHistory'])->name('bonus_produk.history');
+
+        // Finance: Verify Campaign Claims
+        Route::get('bonus-produk/verify', [\App\Http\Controllers\WaiterBonusController::class, 'verifyClaims'])->name('bonus_produk.verify');
+        Route::post('bonus-produk/verify/{id}', [\App\Http\Controllers\WaiterBonusController::class, 'processClaimVerification'])->name('bonus_produk.verify.process');
 
         // Payroll Portal
         Route::get('payroll', [\App\Http\Controllers\WaiterPayrollController::class, 'index'])->name('payroll');

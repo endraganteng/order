@@ -1521,8 +1521,16 @@ class BonusService
         }
 
         // --- Net points & percentage ---
-        // Net = daily auto points + monthly service/sales points + penalties (negative) + manual bonus
-        $netPoints = $totalEarned + $servicePoints + $salesPoints + $totalPenalties + $totalManualBonus;
+        // Net = daily auto points + monthly service/sales points + penalties (negative) + manual bonus + campaign bonus
+        $campaignPoints = 0;
+        try {
+            $campaignService = app(SalesCampaignService::class);
+            $campaignPoints = $campaignService->getUserCampaignPoints($waiterId, $month);
+        } catch (\Throwable $e) {
+            // SalesCampaignService not available — skip
+        }
+
+        $netPoints = $totalEarned + $servicePoints + $salesPoints + $totalPenalties + $totalManualBonus + $campaignPoints;
         $netPoints = max(0, $netPoints);
         $pointsPercentage = $theoreticalMax > 0
             ? round(($netPoints / $theoreticalMax) * 100, 2)
@@ -1574,6 +1582,7 @@ class BonusService
             'total_penalties'        => $totalPenalties,
             'manual_bonus_count'     => $manualBonusCount,
             'total_manual_bonus'     => $totalManualBonus,
+            'campaign_points'        => $campaignPoints,
 
             // Monthly scoring percentages
             'monthly_service_percentage' => $monthlyServicePercentage,

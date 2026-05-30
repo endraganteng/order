@@ -4,17 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Services\BonusService;
 use App\Services\FirebaseService;
+use App\Services\SalesCampaignService;
 use Illuminate\Http\Request;
 
 class WaiterBonusController extends Controller
 {
     protected BonusService $bonus;
     protected FirebaseService $firebase;
+    protected SalesCampaignService $campaign;
 
-    public function __construct(BonusService $bonus, FirebaseService $firebase)
+    public function __construct(BonusService $bonus, FirebaseService $firebase, SalesCampaignService $campaign)
     {
         $this->bonus = $bonus;
         $this->firebase = $firebase;
+        $this->campaign = $campaign;
     }
 
     /**
@@ -103,5 +106,125 @@ class WaiterBonusController extends Controller
             'monthly_sales_max' => $progress['monthly_sales_max'],
             'point_events' => $pointEvents,
         ]);
+    }
+
+    // =========================================================================
+    //  BONUS PRODUK (Sales Campaign Claims)
+    // =========================================================================
+
+    /**
+     * Show bonus produk page — list eligible campaigns + claim form.
+     */
+    public function bonusProduk()
+    {
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+        $month = date('Y-m');
+
+        $campaigns = $this->campaign->getEligibleCampaignsForUser($waiterId);
+        $breakdown = $this->campaign->getUserCampaignBreakdown($waiterId, $month);
+
+        return view('waiter.bonus_produk', compact(
+            'waiterId', 'waiterName', 'month', 'campaigns', 'breakdown'
+        ));
+    }
+
+    /**
+     * Submit a claim for bonus produk.
+     */
+    public function submitClaim(Request $request)
+    {
+        $request->validate([
+            'campaign_id' => 'required|string',
+            'product_key' => 'required|string',
+            'quantity' => 'required|integer|min:1',
+            'photo_proof' => 'required|string|max:5000000', // base64 data URL
+        ]);
+
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+
+        $result = $this->campaign->submitClaim([
+            'campaign_id' => $request->campaign_id,
+            'waiter_id' => $waiterId,
+            'waiter_name' => $waiterName,
+            'product_key' => $request->product_key,
+            'quantity' => (int) $request->quantity,
+            'photo_url' => $request->photo_proof,
+            'date' => date('Y-m-d'),
+        ]);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Get claim history for current waiter (AJAX).
+     */
+    public function claimHistory(Request $request)
+    {
+        $waiterId = (string) session('waiter_id');
+        $month = $request->get('month', date('Y-m'));
+        $claims = $this->campaign->getClaimsByUser($waiterId, $month);
+
+        return response()->json(['success' => true, 'claims' => $claims]);
+    }
+
+    // =========================================================================
+    //  FINANCE: VERIFY CAMPAIGN CLAIMS
+    // =========================================================================
+
+    /**
+     * Show pending claims for finance verification.
+     */
+    public function verifyClaims()
+    {
+        $waiterRole = (string) session('waiter_role', '');
+
+        if (! in_array($waiterRole, ['finance', 'supervisor'])) {
+            return response()->json(['success' => false, 'message' => 'Hanya Finance/Supervisor yang dapat verifikasi.'], 403);
+        }
+
+        $pendingClaims = $this->campaign->getClaimsByStatus('pending');
+        $recentApproved = $this->campaign->getClaimsByStatus('approved');
+        $recentRejected = $this->campaign->getClaimsByStatus('rejected');
+
+        // Limit recent to last 20
+        $recentApproved = array_slice($recentApproved, 0, 20);
+        $recentRejected = array_slice($recentRejected, 0, 20);
+
+        return response()->json([
+            'success' => true,
+            'pending' => $pendingClaims,
+            'recent_approved' => $recentApproved,
+            'recent_rejected' => $recentRejected,
+        ]);
+    }
+
+    /**
+     * Process claim verification (approve/reject).
+     */
+    public function processClaimVerification(Request $request, string $id)
+    {
+        $waiterRole = (string) session('waiter_role', '');
+
+        if (! in_array($waiterRole, ['finance', 'supervisor'])) {
+            return response()->json(['success' => false, 'message' => 'Hanya Finance/Supervisor yang dapat verifikasi.'], 403);
+        }
+
+        $request->validate([
+            'status' => 'required|string|in:approved,rejected',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $verifiedBy = (string) session('waiter_name', 'Finance');
+
+        $result = $this->campaign->verifyClaim(
+            $id,
+            $request->status,
+            $verifiedBy,
+            $request->reason
+        );
+
+        return response()->json($result);
     }
 }
