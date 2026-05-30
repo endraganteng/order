@@ -457,7 +457,7 @@
     }
 
     // ─── Receive Modal ───
-    let _modalState = { poId: '', restockId: '', maxQty: 0 };
+    let _modalState = { poId: '', restockId: '', maxQty: 0, idempotencyKey: '' };
 
     function openReceiveModal(poId, restockId, maxQty, productName, defaultRackId) {
         const input = document.getElementById(`input-${restockId}`);
@@ -468,7 +468,7 @@
             return;
         }
 
-        _modalState = { poId, restockId, maxQty };
+        _modalState = { poId, restockId, maxQty, idempotencyKey: `po-receive:${poId}:${restockId}:${newFormInstanceId()}` };
 
         document.getElementById('modal-product-name').textContent = productName;
         document.getElementById('modal-qty').textContent = qty;
@@ -491,17 +491,17 @@
     }
 
     function confirmReceive() {
-        const { poId, restockId, maxQty } = _modalState;
+        const { poId, restockId, maxQty, idempotencyKey } = _modalState;
         if (!poId || !restockId) return;
 
         const qty = parseInt(document.getElementById('modal-qty').textContent) || 0;
         const rackId = document.getElementById('modal-rack-select').value || '';
 
         closeReceiveModal();
-        receiveItem(poId, restockId, maxQty, qty, rackId);
+        receiveItem(poId, restockId, maxQty, qty, rackId, idempotencyKey);
     }
 
-    function receiveItem(poId, restockId, maxQty, qty, rackId) {
+    function receiveItem(poId, restockId, maxQty, qty, rackId, idempotencyKey) {
         const poKey = String(poId || '');
         if (poKey && !poReceiveFormInstanceByPo.has(poKey)) {
             poReceiveFormInstanceByPo.set(poKey, newFormInstanceId());
@@ -534,7 +534,7 @@
                 restock_id: restockId,
                 received_qty: qty,
                 rack_id: rackId,
-                idempotency_key: `po-receive:${poId}:${poReceiveFormInstanceByPo.get(poKey) || newFormInstanceId()}`
+                idempotency_key: idempotencyKey || `po-receive:${poId}:${restockId}:${newFormInstanceId()}`
             })
         })
         .then(response => {
