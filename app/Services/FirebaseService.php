@@ -5308,7 +5308,14 @@ class FirebaseService
 
             // Skip cancelled tasks — supaya scanner bisa re-generate kalau template
             // tetap aktif setelah admin cancel pending task lama.
+            // EXCEPTION: rack_check dengan role_round_robin TIDAK di-skip,
+            // karena rule bisnis: 1 rak = 1 task/hari, cancel = final (tidak boleh re-generate).
             if ((string) ($task['status'] ?? '') === 'cancelled') {
+                if (($task['task_type'] ?? '') === 'rack_check'
+                    && ($task['assignment_strategy'] ?? '') === 'role_round_robin') {
+                    // Tetap mark template-level key supaya tidak re-generate
+                    $map[(string) $sourceTemplateId . '::*'] = true;
+                }
                 continue;
             }
 
