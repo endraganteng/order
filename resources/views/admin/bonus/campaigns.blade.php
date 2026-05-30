@@ -615,6 +615,43 @@
     .detail-stat .val { font-size: 1.25rem; font-weight: 700; }
     .detail-stat .lbl { font-size: 0.7rem; color: var(--color-text-muted); text-transform: uppercase; }
 
+    /* Claim history tabs */
+    .claim-history { margin-top: 0.85rem; border-top: 1px solid var(--color-border); padding-top: 0.85rem; }
+    .claim-history-header { margin-bottom: 0.6rem; }
+    .claim-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 0.65rem;
+        border-bottom: 1px solid var(--color-border);
+    }
+    .claim-tab-btn {
+        background: transparent;
+        border: none;
+        padding: 0.55rem 0.85rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.15s;
+    }
+    .claim-tab-btn:hover { color: var(--color-text, #1e293b); }
+    .claim-tab-btn.active {
+        color: var(--color-primary);
+        border-bottom-color: var(--color-primary);
+    }
+    .claim-tab-btn .badge {
+        font-size: 0.7rem;
+        padding: 1px 7px;
+    }
+    .claim-tab-content .table { font-size: 0.825rem; }
+    .claim-tab-content .table th { background: #f8fafc; font-size: 0.7rem; text-transform: uppercase; color: var(--color-text-muted); }
+    .claim-tab-content .table td { padding: 0.45rem 0.55rem; vertical-align: middle; }
+
     @media (max-width: 768px) {
         .desktop-only { display: none; }
         .mobile-only { display: block; }
@@ -816,6 +853,7 @@
 
             const c = data.campaign;
             const stats = data.stats;
+            const claims = data.claims || { pending: [], approved: [], rejected: [] };
             const products = Object.values(c.products || {});
             const eligible = c.eligible_users || { type: 'all' };
             const eligibleLabel = eligible.type === 'all'
@@ -823,6 +861,33 @@
                 : eligible.type === 'role'
                     ? (eligible.roles || []).map(r => r[0].toUpperCase() + r.slice(1)).join(', ')
                     : (eligible.user_ids || []).length + ' user';
+
+            const fmtDate = (val) => {
+                if (!val) return '-';
+                if (typeof val === 'number') return new Date(val * 1000).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+                return val;
+            };
+
+            const renderClaimRows = (list, badge) => {
+                if (!list || list.length === 0) {
+                    return '<tr><td colspan="6" class="text-center text-muted" style="padding:1rem;">Belum ada klaim ' + badge.label + '.</td></tr>';
+                }
+                return list.map(cl => `
+                    <tr>
+                        <td>${escapeHtml(cl.waiter_name || '-')}</td>
+                        <td>${escapeHtml(cl.product_name || cl.product_key || '-')}</td>
+                        <td class="text-center">${escapeHtml(String(cl.quantity || 0))}</td>
+                        <td class="text-center"><strong>${escapeHtml(String(cl.points_claimed || 0))}</strong></td>
+                        <td class="small text-muted">${escapeHtml(fmtDate(cl.submitted_at || cl.date))}</td>
+                        <td>${cl.photo_url ? `<a href="${escapeHtml(cl.photo_url)}" target="_blank" class="small">📷 Foto</a>` : '<span class="text-muted small">-</span>'}</td>
+                    </tr>
+                `).join('');
+            };
+
+            const tabBtn = (key, label, count, badgeClass) =>
+                `<button type="button" class="claim-tab-btn ${key === 'pending' ? 'active' : ''}" data-tab="${key}">
+                    ${label} <span class="badge ${badgeClass}">${count}</span>
+                </button>`;
 
             document.getElementById('detailModalTitle').textContent = c.title || 'Detail Campaign';
             document.getElementById('detailContent').innerHTML = `
@@ -837,13 +902,70 @@
                     <div class="detail-stat"><div class="val text-danger">${stats.total_rejected}</div><div class="lbl">Rejected</div></div>
                     <div class="detail-stat"><div class="val">${stats.total_points_approved}</div><div class="lbl">Total Poin</div></div>
                 </div>
-                <div>
+                <div style="margin-bottom:0.85rem;">
                     <strong style="font-size:0.9rem;">Produk (${products.length})</strong>
                     <div style="margin-top:0.5rem;">
-                        ${products.map(p => `<span class="product-tag" style="margin-bottom:0.2rem;">${p.name} — <strong>${p.points_per_unit} poin/unit</strong></span>`).join('')}
+                        ${products.map(p => `<span class="product-tag" style="margin-bottom:0.2rem;">${escapeHtml(p.name)} — <strong>${escapeHtml(String(p.points_per_unit))} poin/unit</strong></span>`).join('')}
+                    </div>
+                </div>
+                <div class="claim-history">
+                    <div class="claim-history-header">
+                        <strong style="font-size:0.9rem;">📋 Riwayat Klaim</strong>
+                    </div>
+                    <div class="claim-tabs">
+                        ${tabBtn('pending', 'Pending', stats.total_pending, 'badge-warning')}
+                        ${tabBtn('approved', 'Approved', stats.total_approved, 'badge-success')}
+                        ${tabBtn('rejected', 'Rejected', stats.total_rejected, 'badge-danger')}
+                    </div>
+                    <div class="claim-tab-content" data-tab="pending">
+                        <div class="table-scroll">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Tanggal</th><th>Bukti</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${renderClaimRows(claims.pending, { label: 'pending' })}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="claim-tab-content" data-tab="approved" style="display:none;">
+                        <div class="table-scroll">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Tanggal</th><th>Bukti</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${renderClaimRows(claims.approved, { label: 'approved' })}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="claim-tab-content" data-tab="rejected" style="display:none;">
+                        <div class="table-scroll">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Tanggal</th><th>Bukti</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${renderClaimRows(claims.rejected, { label: 'rejected' })}</tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             `;
+
+            // Tab switching for claim history
+            document.querySelectorAll('#detailContent .claim-tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const target = btn.dataset.tab;
+                    document.querySelectorAll('#detailContent .claim-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === target));
+                    document.querySelectorAll('#detailContent .claim-tab-content').forEach(c => {
+                        c.style.display = c.dataset.tab === target ? 'block' : 'none';
+                    });
+                });
+            });
         } catch (err) {
             document.getElementById('detailContent').innerHTML = `<p class="text-danger">Error: ${err.message}</p>`;
         }
