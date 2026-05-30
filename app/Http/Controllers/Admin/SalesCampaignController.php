@@ -22,8 +22,9 @@ class SalesCampaignController extends Controller
     {
         $campaigns = $this->campaign->getAllCampaigns();
         $waiters = $this->firebase->getAllowedEmails();
+        $masterProducts = $this->firebase->getActiveProducts();
 
-        return view('admin.bonus.campaigns', compact('campaigns', 'waiters'));
+        return view('admin.bonus.campaigns', compact('campaigns', 'waiters', 'masterProducts'));
     }
 
     public function store(Request $request)
@@ -70,7 +71,7 @@ class SalesCampaignController extends Controller
             'created_by' => session('admin_email') ?? 'admin',
         ]);
 
-        if ($request->ajax()) {
+        if ($request->wantsJson() || $request->ajax()) {
             return response()->json(['success' => true, 'id' => $id, 'message' => 'Campaign berhasil dibuat.']);
         }
 
@@ -119,7 +120,7 @@ class SalesCampaignController extends Controller
             'eligible_users' => $eligibleUsers,
         ]);
 
-        if ($request->ajax()) {
+        if ($request->wantsJson() || $request->ajax()) {
             return response()->json(['success' => true, 'message' => 'Campaign berhasil diupdate.']);
         }
 

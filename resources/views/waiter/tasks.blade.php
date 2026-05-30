@@ -1015,6 +1015,10 @@
             background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
             border: 1px solid #6ee7b7;
         }
+        .quick-action-tile--bonus {
+            background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+            border: 1px solid #c4b5fd;
+        }
         .quick-action-tile__icon {
             font-size: 30px;
             line-height: 1;
@@ -1034,6 +1038,9 @@
         .quick-action-tile--restock .quick-action-tile__title {
             color: #065f46;
         }
+        .quick-action-tile--bonus .quick-action-tile__title {
+            color: #4338ca;
+        }
         .quick-action-tile__sub {
             font-size: 11px;
             color: #0369a1;
@@ -1041,6 +1048,9 @@
         }
         .quick-action-tile--restock .quick-action-tile__sub {
             color: #047857;
+        }
+        .quick-action-tile--bonus .quick-action-tile__sub {
+            color: #5b21b6;
         }
         .quick-action-tile__chevron {
             font-size: 18px;
@@ -1050,6 +1060,9 @@
         }
         .quick-action-tile--restock .quick-action-tile__chevron {
             color: #059669;
+        }
+        .quick-action-tile--bonus .quick-action-tile__chevron {
+            color: #7c3aed;
         }
         /* Compact tiles on mobile/tablet ≤640px */
         @media (max-width: 640px) {
@@ -1076,6 +1089,10 @@
             .quick-action-tile--restock {
                 background: #ecfdf5;
                 border-color: #a7f3d0;
+            }
+            .quick-action-tile--bonus {
+                background: #f5f3ff;
+                border-color: #ddd6fe;
             }
             .quick-action-tile__icon {
                 font-size: 22px;
@@ -1541,6 +1558,14 @@
                     <span class="quick-action-tile__body">
                         <span class="quick-action-tile__title">Penerimaan Barang</span>
                         <span class="quick-action-tile__sub">Catat barang masuk dari supplier (PO)</span>
+                    </span>
+                    <span class="quick-action-tile__chevron">›</span>
+                </a>
+                <a href="{{ route('waiter.bonus_produk', [], false) }}" class="quick-action-tile quick-action-tile--bonus">
+                    <span class="quick-action-tile__icon">🎯</span>
+                    <span class="quick-action-tile__body">
+                        <span class="quick-action-tile__title">Bonus Produk</span>
+                        <span class="quick-action-tile__sub">Klaim bonus penjualan produk campaign</span>
                     </span>
                     <span class="quick-action-tile__chevron">›</span>
                 </a>
