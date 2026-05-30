@@ -335,12 +335,16 @@
         let _firstSnapshot = true; // skip initial snapshot
         const trigger = () => {
             if (_firstSnapshot) { _firstSnapshot = false; return; }
-            // Guard: don't reload if user has unsaved form data
+            // Guard: don't reload if user has unsaved form data or receive in progress
+            if (_receiveInFlight) return;
             if (typeof poReceiveFormInstanceByPo !== 'undefined' && poReceiveFormInstanceByPo.size > 0) return;
             if (pending) return;
             pending = true;
             setTimeout(() => {
                 pending = false;
+                // Re-check guard after debounce (receive might have started during wait)
+                if (_receiveInFlight) return;
+                if (typeof poReceiveFormInstanceByPo !== 'undefined' && poReceiveFormInstanceByPo.size > 0) return;
                 window.location.reload();
             }, debounceMs);
         };
@@ -352,6 +356,7 @@
     })();
 
     const poReceiveFormInstanceByPo = new Map();
+    let _receiveInFlight = false; // Guard: suppress RTDB reload during receive
 
     const newFormInstanceId = () => {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -462,6 +467,7 @@
         const btn = input.closest('.receive-action').querySelector('.btn-receive');
         btn.disabled = true;
         btn.textContent = '...';
+        _receiveInFlight = true;
         
         fetch(`/waiter/restock/${poId}/receive`, {
             method: 'POST',
@@ -477,8 +483,23 @@
                 idempotency_key: `po-receive:${poId}:${poReceiveFormInstanceByPo.get(poKey) || newFormInstanceId()}`
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                // Handle non-200 (CSRF expired, server error, etc)
+                if (response.status === 419) {
+                    throw new Error('Sesi expired. Halaman akan di-refresh...');
+                }
+                throw new Error('Server error (' + response.status + ')');
+            }
+            return response.json();
+        })
         .then(data => {
+            _receiveInFlight = false;
+            // Suppress RTDB reload for 5s after successful receive so user sees feedback
+            if (data.success) {
+                _receiveInFlight = true;
+                setTimeout(() => { _receiveInFlight = false; }, 5000);
+            }
             if (data.success) {
                 showFlash('✅ Penerimaan dicatat! (' + qty + ' unit)');
                 
@@ -532,7 +553,13 @@
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('Terjadi kesalahan sistem');
+            _receiveInFlight = false;
+            if (error.message && error.message.includes('Sesi expired')) {
+                alert('Sesi expired, halaman akan di-refresh.');
+                window.location.reload();
+                return;
+            }
+            alert('Terjadi kesalahan: ' + (error.message || 'Gagal menyimpan'));
             btn.disabled = false;
             btn.textContent = 'Terima';
         });
