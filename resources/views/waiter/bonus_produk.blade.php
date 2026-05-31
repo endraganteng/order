@@ -369,7 +369,7 @@
             position: fixed; inset: 0;
             background: rgba(15, 23, 42, 0.55);
             backdrop-filter: blur(2px);
-            z-index: 2000;
+            z-index: 10000;
             display: none;
             align-items: center; justify-content: center;
         }
@@ -389,7 +389,7 @@
             position: fixed; inset: 0;
             background: rgba(15, 23, 42, 0.55);
             backdrop-filter: blur(2px);
-            z-index: 2100;
+            z-index: 10001;
             display: none;
             align-items: center; justify-content: center;
             padding: 16px;
@@ -1323,6 +1323,9 @@
      * - All fail: ❌ with errors
      */
     function showResultModal(data, itemsForUI) {
+        // Close claim modal first so result modal sits clean on top
+        closeClaimModal();
+
         const modal = document.getElementById('resultModal');
         const icon = document.getElementById('resultIcon');
         const title = document.getElementById('resultTitle');
@@ -1405,12 +1408,18 @@
     }
 
     function goToHistory() {
-        // Switch to history tab on next page load
-        location.href = '{{ route("waiter.bonus_produk") }}#history';
+        // Close result modal first
+        document.getElementById('resultModal').classList.remove('is-active');
+        // Set hash, then force reload supaya DOMContentLoaded handler trigger
+        // (browser TIDAK reload otomatis kalau cuma ganti hash)
+        const url = window.location.pathname + '#history';
+        window.location.replace(url);
+        // Force reload because hash-only change doesn't trigger reload
+        setTimeout(() => window.location.reload(), 50);
     }
 
     // Auto-switch to verify tab if URL has ?tab=verify (deep-link from quick-action tile)
-    document.addEventListener('DOMContentLoaded', () => {
+    function initDeepLinkHandler() {
         const params = new URLSearchParams(window.location.search);
         if (params.get('tab') === 'verify') {
             const verifyBtn = document.querySelector('.tab-bar .tab-btn:nth-child(3)');
@@ -1421,7 +1430,14 @@
             const historyBtn = document.querySelectorAll('.tab-bar .tab-btn')[1];
             if (historyBtn) historyBtn.click();
         }
-    });
+    }
+    // Run immediately if DOM already loaded (script tag at end of body),
+    // otherwise wait for DOMContentLoaded.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initDeepLinkHandler);
+    } else {
+        initDeepLinkHandler();
+    }
     </script>
 </body>
 </html>
