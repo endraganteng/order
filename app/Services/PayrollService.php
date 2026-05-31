@@ -459,6 +459,142 @@ class PayrollService
         ]);
     }
 
+    /**
+     * Bayar gaji/bonus secara TUNAI dari akun kas fisik (Kas Laci, Brankas, dst).
+     * Diinisiasi admin (push), bukan request karyawan.
+     *
+     * Flow:
+     * 1. Validasi saldo wallet karyawan >= amount (single source of truth)
+     * 2. Validasi saldo cash account >= amount
+     * 3. Kurangi saldo wallet (payroll_balances)
+     * 4. Kurangi cash_accounts.balance
+     * 5. Insert payroll_transactions (type=cash_payout, status=approved)
+     * 6. Insert cash_mutations (expense, kategori Gaji & Op)
+     * 7. Notif WA ke karyawan
+     */
+    public function payoutFromCashAccount(string $waiterId, int $amount, int $cashAccountId, string $note, string $paidBy = 'Supervisor'): array
+    {
+        if ($amount <= 0) {
+            return ['success' => false, 'message' => 'Nominal harus lebih dari 0.'];
+        }
+
+        $waiter = $this->firebase->getWaiterById($waiterId);
+        if (! $waiter) {
+            return ['success' => false, 'message' => 'Karyawan tidak ditemukan.'];
+        }
+
+        // Cek saldo wallet karyawan cukup
+        $balance = $this->getBalance($waiterId);
+        if ($amount > $balance) {
+            return [
+                'success' => false,
+                'message' => 'Saldo gaji karyawan tidak cukup. Saldo: Rp '
+                    . number_format($balance, 0, ',', '.'),
+            ];
+        }
+
+        // Cek cash account valid + aktif + cukup saldo
+        $account = DB::table('cash_accounts')->where('id', $cashAccountId)->first();
+        if (! $account) {
+            return ['success' => false, 'message' => 'Akun kas tidak ditemukan.'];
+        }
+        if (! ($account->is_active ?? true)) {
+            return ['success' => false, 'message' => 'Akun kas tidak aktif.'];
+        }
+        $cashBalance = (int) $account->balance;
+        if ($amount > $cashBalance) {
+            return [
+                'success' => false,
+                'message' => "Saldo kas '{$account->name}' tidak cukup. Tersedia: Rp "
+                    . number_format($cashBalance, 0, ',', '.'),
+            ];
+        }
+
+        return DB::transaction(function () use ($waiterId, $waiter, $amount, $cashAccountId, $account, $note, $paidBy) {
+            // Lock cash account row to prevent concurrent overdraft
+            $locked = DB::table('cash_accounts')->where('id', $cashAccountId)->lockForUpdate()->first();
+            if (! $locked || (int) $locked->balance < $amount) {
+                return [
+                    'success' => false,
+                    'message' => 'Saldo kas tidak cukup saat memproses (race). Coba lagi.',
+                ];
+            }
+
+            // 1. Kurangi wallet karyawan
+            $newBalance = $this->adjustBalance($waiterId, -$amount);
+
+            // 2. Insert transaksi payroll (langsung approved/completed)
+            $txId = $this->writeTransaction([
+                'waiter_id'      => $waiterId,
+                'waiter_name'    => (string) ($waiter['name'] ?? ''),
+                'type'           => 'cash_payout',
+                'amount'         => $amount,
+                'balance_after'  => $newBalance,
+                'status'         => 'approved',
+                'note'           => 'Bayar tunai dari ' . $account->name . ($note !== '' ? ': ' . $note : ''),
+                'created_by'     => $paidBy,
+                'processed_at'   => now(),
+                'processed_by'   => $paidBy,
+            ]);
+
+            // 3. Kurangi saldo cash account
+            $newCashBalance = (int) $locked->balance - $amount;
+            DB::table('cash_accounts')->where('id', $cashAccountId)->update([
+                'balance'    => $newCashBalance,
+                'updated_at' => now(),
+            ]);
+
+            // 4. Catat mutasi kas (expense, kategori Gaji & Op)
+            $categoryId = $this->resolvePayrollCategory();
+            DB::table('cash_mutations')->insert([
+                'cash_account_id'     => $cashAccountId,
+                'finance_category_id' => $categoryId,
+                'type'                => 'expense',
+                'amount'              => $amount,
+                'balance_after'       => $newCashBalance,
+                'description'         => 'Bayar gaji tunai: ' . ($waiter['name'] ?? $waiterId)
+                    . ($note !== '' ? ' — ' . $note : ''),
+                'reference_type'      => 'payroll_cash_payout',
+                'reference_id'        => (string) $txId,
+                'transaction_date'    => now()->toDateString(),
+                'transaction_time'    => now()->format('H:i:s'),
+                'created_at'          => now(),
+                'updated_at'          => now(),
+            ]);
+
+            // 5. Trigger flag + notif ke karyawan
+            $this->triggerWaiterFlag($waiterId);
+            $this->notifyWaiterCashPayout($waiterId, $amount, $newBalance, $account->name);
+
+            return [
+                'success'       => true,
+                'tx_id'         => $txId,
+                'balance_after' => $newBalance,
+                'cash_balance_after' => $newCashBalance,
+                'message'       => 'Pembayaran tunai berhasil: Rp ' . number_format($amount, 0, ',', '.'),
+            ];
+        });
+    }
+
+    protected function notifyWaiterCashPayout(string $waiterId, int $amount, int $balanceAfter, string $accountName): void
+    {
+        $waiter = $this->firebase->getWaiterById($waiterId);
+        $phone = trim((string) ($waiter['phone'] ?? ''));
+        if ($phone === '') return;
+
+        $msg = "💵 *Pembayaran Tunai*\n\n";
+        $msg .= "Anda menerima pembayaran tunai sebesar:\n";
+        $msg .= "Rp " . number_format($amount, 0, ',', '.') . "\n";
+        $msg .= "Sumber: " . $accountName . "\n\n";
+        $msg .= "Saldo gaji setelah bayar: Rp " . number_format($balanceAfter, 0, ',', '.');
+
+        try {
+            $this->fonnte?->sendMessage($phone, $msg);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
     protected function resolvePayrollCategory(): ?int
     {
         $row = DB::table('finance_api_mappings')

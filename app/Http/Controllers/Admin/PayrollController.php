@@ -72,7 +72,15 @@ class PayrollController extends Controller
         $kasbonService = app(KasbonService::class);
         $kasbonSettings = $kasbonService->getWaiterKasbonSettings($waiterId);
 
-        return view('admin.payroll.show', compact('waiter', 'settings', 'balance', 'transactions', 'kasbonSettings'));
+        // Cash accounts untuk fitur Bayar Tunai
+        $cashAccounts = \Illuminate\Support\Facades\DB::table('cash_accounts')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name', 'balance']);
+
+        return view('admin.payroll.show', compact(
+            'waiter', 'settings', 'balance', 'transactions', 'kasbonSettings', 'cashAccounts'
+        ));
     }
 
     public function updateConfig(Request $request)
@@ -149,6 +157,54 @@ class PayrollController extends Controller
         ]);
 
         return back()->with('success', 'Saldo berhasil ditambahkan: Rp ' . number_format((int) $data['amount'], 0, ',', '.'));
+    }
+
+    /**
+     * Bayar gaji tunai dari akun kas fisik (Kas Laci, Brankas, dst).
+     * Admin initiate, butuh PIN supervisor + saldo wallet karyawan harus cukup.
+     */
+    public function cashPayout(string $waiterId, Request $request)
+    {
+        $data = $request->validate([
+            'amount'          => 'required|integer|min:1|max:999999999',
+            'cash_account_id' => 'required|integer',
+            'note'            => 'nullable|string|max:200',
+            'supervisor_pin'  => 'nullable|string|max:32',
+        ]);
+
+        if (! $this->verifySupervisorPin($data['supervisor_pin'] ?? null)) {
+            return back()
+                ->withErrors(['supervisor_pin' => 'PIN supervisor salah.'])
+                ->withInput();
+        }
+
+        $admin = (string) (session('admin_name') ?? 'Supervisor');
+        $result = $this->payroll->payoutFromCashAccount(
+            $waiterId,
+            (int) $data['amount'],
+            (int) $data['cash_account_id'],
+            trim((string) ($data['note'] ?? '')),
+            $admin
+        );
+
+        if (! ($result['success'] ?? false)) {
+            return back()
+                ->withErrors(['amount' => $result['message'] ?? 'Gagal bayar tunai'])
+                ->withInput();
+        }
+
+        $this->firebase->logAuditAction('payroll_cash_payout', 'waiter', $waiterId, [
+            'amount'          => (int) $data['amount'],
+            'cash_account_id' => (int) $data['cash_account_id'],
+            'note'            => $data['note'] ?? '',
+            'tx_id'           => $result['tx_id'] ?? '',
+        ]);
+
+        return back()->with(
+            'success',
+            'Bayar tunai berhasil: Rp ' . number_format((int) $data['amount'], 0, ',', '.')
+                . '. Saldo gaji karyawan jadi Rp ' . number_format((int) ($result['balance_after'] ?? 0), 0, ',', '.')
+        );
     }
 
     public function withdrawalsIndex()

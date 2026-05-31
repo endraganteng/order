@@ -260,6 +260,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('payroll/{waiterId}', [PayrollController::class, 'show'])->name('payroll.show');
         Route::post('payroll/{waiterId}/settings', [PayrollController::class, 'updateSettings'])->name('payroll.settings_update');
         Route::post('payroll/{waiterId}/credit', [PayrollController::class, 'manualCredit'])->name('payroll.manual_credit');
+        Route::post('payroll/{waiterId}/cash-payout', [PayrollController::class, 'cashPayout'])->name('payroll.cash_payout');
 
         // Kasbon Management
         Route::get('kasbon', [\App\Http\Controllers\Admin\KasbonController::class, 'index'])->name('kasbon.index');
