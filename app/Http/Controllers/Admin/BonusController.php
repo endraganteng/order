@@ -244,15 +244,38 @@ class BonusController extends Controller
 
     public function storePenalty(Request $request)
     {
+        // BUG FIX (#13): Tighten validation
+        // - Date must be today or recent past (max 60 days back)
+        // - Cannot backdate to far past or future dates
+        $minDate = now()->subDays(60)->format('Y-m-d');
+        $maxDate = now()->format('Y-m-d');
+
         $request->validate([
             'waiter_id' => 'required|string',
             'waiter_name' => 'required|string',
             'penalty_type' => 'required|string',
-            'date' => 'required|date_format:Y-m-d',
+            'date' => 'required|date_format:Y-m-d|before_or_equal:' . $maxDate . '|after_or_equal:' . $minDate,
             'reason' => 'required|string|max:500',
             'evidence_photo_url' => 'nullable|string',
             'related_task_id' => 'nullable|string',
+        ], [
+            'date.before_or_equal' => 'Tanggal penalti tidak boleh di masa depan.',
+            'date.after_or_equal' => 'Tanggal penalti tidak boleh lebih dari 60 hari ke belakang.',
         ]);
+
+        // BUG FIX (#13): Daily cap — max 5 manual penalty per waiter per date
+        $waiterId = (string) $request->input('waiter_id');
+        $date = (string) $request->input('date');
+        $month = substr($date, 0, 7);
+        $existingToday = $this->bonus->getPenaltiesByMonth($month, $waiterId);
+        $sameDayCount = count(array_filter($existingToday, fn($p) => ($p['date'] ?? '') === $date));
+
+        if ($sameDayCount >= 5) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sudah ada 5 penalti untuk waiter ini pada tanggal ' . $date . '. Batas harian tercapai.',
+            ], 422);
+        }
 
         $result = $this->bonus->applyPenalty($request->only([
             'waiter_id', 'waiter_name', 'penalty_type', 'date', 'reason', 'evidence_photo_url', 'related_task_id'

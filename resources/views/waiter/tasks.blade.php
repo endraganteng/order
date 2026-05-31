@@ -2317,7 +2317,10 @@
                         'X-CSRF-TOKEN': csrfToken,
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({ scanned_value: scannedValue }),
+                    body: JSON.stringify({
+                        scanned_value: scannedValue,
+                        client_timestamp: Date.now(),
+                    }),
                 });
 
                 const payload = await response.json();

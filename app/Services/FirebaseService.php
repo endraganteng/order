@@ -4887,11 +4887,37 @@ class FirebaseService
                 $allActive = $this->getActiveWaiters();
                 $selectedWaiterMap = array_fill_keys($selectedWaiterIds, true);
 
-                return array_values(array_filter($allActive, function ($waiter) use ($selectedWaiterMap) {
+                $resolved = array_values(array_filter($allActive, function ($waiter) use ($selectedWaiterMap) {
                     $waiterId = trim((string) ($waiter['id'] ?? ''));
 
                     return $waiterId !== '' && isset($selectedWaiterMap[$waiterId]);
                 }));
+
+                // BUG FIX (#15): Log audit kalau ada waiter yang role-nya tidak match
+                // dengan assignedWaiterRole template. Soft enforcement — tetap allow,
+                // tapi catat untuk monitoring siapa yang dapat task cross-role.
+                if ($assignedWaiterRole) {
+                    $expectedRole = $this->normalizeWaiterRole($assignedWaiterRole);
+                    $mismatched = array_filter($resolved, function ($waiter) use ($expectedRole) {
+                        $actualRole = $this->normalizeWaiterRole((string) ($waiter['waiter_role'] ?? ''));
+                        return $actualRole !== '' && $actualRole !== $expectedRole;
+                    });
+
+                    if (count($mismatched) > 0) {
+                        \Log::info('[ROLE_MISMATCH] rack_check task assigned to waiter outside expected role', [
+                            'expected_role' => $expectedRole,
+                            'mismatched_waiters' => array_map(function ($w) {
+                                return [
+                                    'id' => $w['id'] ?? '',
+                                    'name' => $w['name'] ?? '',
+                                    'actual_role' => $w['waiter_role'] ?? '',
+                                ];
+                            }, array_values($mismatched)),
+                        ]);
+                    }
+                }
+
+                return $resolved;
             }
 
             // General task: tetap filter role-based seperti sebelumnya
@@ -6140,7 +6166,7 @@ class FirebaseService
     /**
      * Consume a one-time attendance QR token and record the attendance action.
      */
-    public function processAttendanceQrScan(string $waiterId, string $purpose, string $scannedValue, string $method = 'qr_scan'): array
+    public function processAttendanceQrScan(string $waiterId, string $purpose, string $scannedValue, string $method = 'qr_scan', ?int $clientTimestamp = null): array
     {
         $waiterId = trim($waiterId);
         $purpose = $purpose === 'clock_out' ? 'clock_out' : 'clock_in';
@@ -6169,6 +6195,12 @@ class FirebaseService
         $nowTime = date('H:i', $nowTimestamp);
         $status = 'present';
         $lateMinutes = 0;
+
+        // BUG FIX (#11): Compute client-server clock skew for audit logging.
+        // We KEEP using server time for late detection (prevent client clock manipulation),
+        // but log the skew so we can detect server lag affecting waiters unfairly.
+        $clientTimestampSeconds = $clientTimestamp !== null ? (int) round($clientTimestamp / 1000) : null;
+        $clockSkewSeconds = $clientTimestampSeconds !== null ? ($nowTimestamp - $clientTimestampSeconds) : null;
 
         if ($purpose === 'clock_in') {
             $shift = $this->getWaiterShiftForDate($waiterId, $today);
@@ -6200,7 +6232,7 @@ class FirebaseService
         $tokenPath = 'waiter_attendance_qr/'.$waiterId.'/'.$today;
         $result = ['success' => false, 'message' => 'Gagal memproses absensi.'];
 
-        $this->database->runTransaction(function ($transaction) use ($attendancePath, $tokenPath, $waiterId, $today, $purpose, $scannedValue, $method, $nowTimestamp, $nowTime, $status, $lateMinutes, &$result) {
+        $this->database->runTransaction(function ($transaction) use ($attendancePath, $tokenPath, $waiterId, $today, $purpose, $scannedValue, $method, $nowTimestamp, $nowTime, $status, $lateMinutes, $clockSkewSeconds, &$result) {
             $attendanceReference = $this->database->getReference($attendancePath);
             $tokenReference = $this->database->getReference($tokenPath);
             $attendanceSnapshot = $transaction->snapshot($attendanceReference);
@@ -6257,6 +6289,21 @@ class FirebaseService
                 $record['method'] = $method;
                 $record['note'] = (string) ($record['note'] ?? '');
 
+                // BUG FIX (#11): Log clock skew for audit. >5s skew = potential server lag issue.
+                if ($clockSkewSeconds !== null) {
+                    $record['clock_in_client_skew_seconds'] = $clockSkewSeconds;
+                    if (abs($clockSkewSeconds) > 5) {
+                        \Log::warning('[ATTENDANCE_LAG] Clock skew detected at scan', [
+                            'waiter_id' => $waiterId,
+                            'date' => $today,
+                            'purpose' => $purpose,
+                            'skew_seconds' => $clockSkewSeconds,
+                            'late_minutes' => $lateMinutes,
+                            'status' => $status,
+                        ]);
+                    }
+                }
+
                 $result = [
                     'success' => true,
                     'message' => $status === 'late'
@@ -6268,6 +6315,10 @@ class FirebaseService
             } else {
                 $record['clock_out'] = $nowTime;
                 $record['clock_out_timestamp'] = $nowTimestamp;
+
+                if ($clockSkewSeconds !== null) {
+                    $record['clock_out_client_skew_seconds'] = $clockSkewSeconds;
+                }
 
                 $result = [
                     'success' => true,
@@ -7072,6 +7123,18 @@ class FirebaseService
         foreach ($primaryKasir as $kasir) {
             $isOff = $this->isRotationOffDay($kasir['pattern'], $date);
             if ($isOff) {
+                // BUG FIX (#12): Validate backup is working today before writing coverage.
+                // Previously: silent fail kalau backup juga libur → toko tanpa kasir.
+                if (! $this->isWorkingDay($backupKasir, $date)) {
+                    \Log::warning('[BACKUP_COVERAGE] Both primary kasir and backup are off — no coverage', [
+                        'date' => $date,
+                        'primary_id' => $kasir['id'],
+                        'backup_id' => $backupKasir,
+                    ]);
+                    // Don't write coverage — coverage absent, downstream code akan handle missing
+                    return;
+                }
+
                 // Backup covers this kasir
                 $this->database->getReference("backup_coverage/{$date}/{$backupKasir}")->set([
                     'covering_for' => $kasir['id'],

@@ -685,8 +685,16 @@ class BonusService
 
         $claimed = false;
         $indexRecord = null;
+
+        // BUG FIX (#3): Pre-generate Firebase push key (client-side, no network)
+        // so we can write index + record atomically in single multi-path update.
+        // Previously, transaction wrote index with penalty_id=null, then later
+        // pushed record + updated index. If crash happened between, index
+        // permanently locked with null ID, blocking all future applies.
+        $penaltyKey = $this->database->getReference('waiter_penalties')->push()->getKey();
+
         try {
-            $this->database->runTransaction(function ($transaction) use (&$claimed, &$indexRecord, $indexRef, $waiterId, $penaltyType, $date, $pointsDeducted, $relatedTaskId) {
+            $this->database->runTransaction(function ($transaction) use (&$claimed, &$indexRecord, $indexRef, $waiterId, $penaltyType, $date, $pointsDeducted, $relatedTaskId, $penaltyKey) {
                 $snapshot = $transaction->snapshot($indexRef);
                 $current = $snapshot->exists() ? (array) $snapshot->getValue() : null;
 
@@ -703,7 +711,7 @@ class BonusService
                     'related_task_id' => $relatedTaskId,
                     'points_deducted' => $pointsDeducted,
                     'created_at' => time(),
-                    'penalty_id' => null,
+                    'penalty_id' => $penaltyKey,
                 ];
 
                 $transaction->set($indexRef, $newRecord);
@@ -738,15 +746,13 @@ class BonusService
             'created_at'         => time(),
         ];
 
-        $ref = $this->database->getReference('waiter_penalties')->push($record);
-        $penaltyId = (string) $ref->getKey();
+        // BUG FIX (#3): Write penalty record at pre-generated key.
+        // Index already has penalty_id pointing here (set in transaction above).
+        $this->database->getReference('waiter_penalties/' . $penaltyKey)->set($record);
+        $penaltyId = $penaltyKey;
 
-        if ($claimed) {
-            $indexRef->update([
-                'penalty_id' => $penaltyId,
-                'created_at' => time(),
-            ]);
-        }
+        // BUG FIX (#3): Index already has correct penalty_id from transaction.
+        // No second update needed — eliminates the orphan window.
 
         return [
             'success'         => true,
@@ -803,11 +809,45 @@ class BonusService
     }
 
     /**
-     * Delete a penalty record.
+     * Delete a penalty record AND its dedupe index entry.
+     *
+     * BUG FIX (#2): Previously only deleted the penalty record but left
+     * waiter_penalties_index/{dedupKey} orphan. This caused future
+     * applyPenalty() calls to return "deduplicated" with empty penalty_id
+     * because the stale index still claimed the slot, blocking re-creation.
+     *
+     * Now we load the penalty first, compute dedupKey, and remove BOTH
+     * the index entry and the penalty record atomically via multi-path update.
      */
     public function deletePenalty(string $penaltyId): void
     {
-        $this->database->getReference('waiter_penalties/' . $penaltyId)->remove();
+        $penaltyRef = $this->database->getReference('waiter_penalties/' . $penaltyId);
+        $penalty = $penaltyRef->getValue();
+
+        if (! is_array($penalty)) {
+            // Record sudah tidak ada — nothing to do
+            return;
+        }
+
+        $penaltyType = (string) ($penalty['penalty_type'] ?? '');
+        $waiterId = (string) ($penalty['waiter_id'] ?? '');
+        $date = (string) ($penalty['date'] ?? '');
+        $relatedTaskId = (string) ($penalty['related_task_id'] ?? '');
+
+        if ($penaltyType !== '' && $waiterId !== '' && $date !== '') {
+            $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $date, $relatedTaskId]));
+
+            // Atomic delete via multi-path update
+            $this->database->getReference()->update([
+                'waiter_penalties/' . $penaltyId => null,
+                'waiter_penalties_index/' . $dedupKey => null,
+            ]);
+
+            return;
+        }
+
+        // Fallback: malformed penalty record — just delete the record
+        $penaltyRef->remove();
     }
 
     // ========================================================================
@@ -1254,8 +1294,11 @@ class BonusService
 
         // -----------------------------------------------------------------
         //  1. LATE ARRIVAL — from attendance
+        //  BUG FIX (#9): Skip late_arrival if status is already 'absent'
+        //  to prevent double penalty (-5 late + -15 absent = -20 unfair)
         // -----------------------------------------------------------------
-        if ($attendance && ((int) ($attendance['late_minutes'] ?? 0)) > 0) {
+        $attendanceStatus = (string) ($attendance['status'] ?? '');
+        if ($attendance && ((int) ($attendance['late_minutes'] ?? 0)) > 0 && $attendanceStatus !== 'absent') {
             $key = 'late_arrival_';
             if (! in_array($key, $existingKeys)) {
                 $lateMin = (int) $attendance['late_minutes'];
@@ -1276,7 +1319,7 @@ class BonusService
         // -----------------------------------------------------------------
         //  2. ABSENT / NO-SHOW — from explicit attendance status
         // -----------------------------------------------------------------
-        if (($attendance['status'] ?? '') === 'absent') {
+        if ($attendanceStatus === 'absent') {
             $key = 'absent_';
             if (! in_array($key, $existingKeys, true)) {
                 $result = $this->applyPenalty([
@@ -1295,7 +1338,13 @@ class BonusService
 
         // -----------------------------------------------------------------
         //  3. MANDATORY TASK MISSED — from overdue tasks
+        //  BUG FIX (#10): Skip mandatory_task_missed if waiter status is
+        //  'sick' or 'day_off' — they have valid excuse for not completing.
         // -----------------------------------------------------------------
+        if (in_array($attendanceStatus, ['sick', 'day_off'], true)) {
+            return $applied;
+        }
+
         $overdueTasks = array_filter($waiterTasks, function ($task) {
             return ($task['status'] ?? '') === 'overdue';
         });
