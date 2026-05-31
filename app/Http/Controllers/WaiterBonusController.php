@@ -58,6 +58,9 @@ class WaiterBonusController extends Controller
         $dailyMaxWithPerfect = (int) $progress['daily_max_with_perfect'];
         $monthlyServiceMax = (int) $progress['monthly_service_max'];
         $monthlySalesMax = (int) $progress['monthly_sales_max'];
+        // BUG FIX (#4): Campaign points & breakdown for dashboard display
+        $campaignPoints = (int) ($progress['campaign_points'] ?? 0);
+        $campaignBreakdown = (array) ($progress['campaign_breakdown'] ?? []);
         
         // Find waiter's rank in leaderboard
         $myRank = null;
@@ -75,7 +78,8 @@ class WaiterBonusController extends Controller
             'monthlyPoints', 'penalties', 'salesTarget', 'bonusSummary',
             'leaderboard', 'myRank', 'pointEvents',
             'totalEarned', 'totalPenalties', 'netPoints', 'daysScored', 'perfectDays',
-            'percentage', 'theoreticalMax', 'workingDays', 'dailyMaxWithPerfect', 'monthlyServiceMax', 'monthlySalesMax'
+            'percentage', 'theoreticalMax', 'workingDays', 'dailyMaxWithPerfect', 'monthlyServiceMax', 'monthlySalesMax',
+            'campaignPoints', 'campaignBreakdown'
         ));
     }
 
@@ -105,6 +109,9 @@ class WaiterBonusController extends Controller
             'monthly_service_max' => $progress['monthly_service_max'],
             'monthly_sales_max' => $progress['monthly_sales_max'],
             'point_events' => $pointEvents,
+            // BUG FIX (#4): expose campaign points in API too
+            'campaign_points' => $progress['campaign_points'] ?? 0,
+            'campaign_breakdown' => $progress['campaign_breakdown'] ?? [],
         ]);
     }
 

@@ -795,6 +795,20 @@
                 <div class="stat-label">Perfect Days</div>
                 <div class="stat-sub">skor sempurna</div>
             </div>
+            @if(($campaignPoints ?? 0) > 0 || !empty($campaignBreakdown['pending_claims']))
+            <div class="stat-card" style="border-left: 4px solid #8b5cf6;">
+                <div class="stat-value" style="color: #6d28d9;">+{{ $campaignPoints ?? 0 }} 🎯</div>
+                <div class="stat-label">Bonus Produk</div>
+                <div class="stat-sub">
+                    @php $pendingPts = (int)($campaignBreakdown['total_pending'] ?? 0); @endphp
+                    @if($pendingPts > 0)
+                        <span style="color:#f59e0b;">+{{ $pendingPts }} pending</span>
+                    @else
+                        approved campaign
+                    @endif
+                </div>
+            </div>
+            @endif
             <div class="stat-card penalty">
                 <div class="stat-value">-{{ $totalPenalties }}</div>
                 <div class="stat-label">Penalti</div>

@@ -174,9 +174,24 @@ class BonusService
 
         $servicePoints = (int) ($bonusSummary['service_points'] ?? 0);
         $salesPoints = (int) ($bonusSummary['sales_points'] ?? 0);
+
+        // BUG FIX (#4): Include approved campaign points so waiter dashboard
+        // matches admin summary. Previously campaignPoints were only counted
+        // in calculateMonthlyBonus (admin) but not here (waiter view), causing
+        // a discrepancy: waiter sees lower total than what admin pays out.
+        $campaignPoints = 0;
+        $campaignBreakdown = ['total_approved' => 0, 'total_pending' => 0, 'total_rejected' => 0, 'approved_claims' => [], 'pending_claims' => [], 'all_claims' => []];
+        try {
+            $campaignService = app(\App\Services\SalesCampaignService::class);
+            $campaignPoints = (int) $campaignService->getUserCampaignPoints($waiterId, $month);
+            $campaignBreakdown = $campaignService->getUserCampaignBreakdown($waiterId, $month);
+        } catch (\Throwable $e) {
+            // Fail open: if campaign service unavailable, treat as 0 points
+        }
+
         // Manual bonus (signed) ikut dihitung agar konsisten dengan calculateMonthlyBonus
         // — supaya yang waiter lihat di dashboard match dengan summary bulan admin.
-        $netPoints = max(0, $totalEarned + $servicePoints + $salesPoints + $penaltySignedTotal + $manualBonusTotal);
+        $netPoints = max(0, $totalEarned + $servicePoints + $salesPoints + $penaltySignedTotal + $manualBonusTotal + $campaignPoints);
         $theoreticalMax = (int) $capacity['theoretical_max'];
         $percentage = $theoreticalMax > 0 ? round(($netPoints / $theoreticalMax) * 100, 1) : 0.0;
 
@@ -193,6 +208,8 @@ class BonusService
             'service_points' => $servicePoints,
             'sales_points' => $salesPoints,
             'manual_bonus_total' => $manualBonusTotal,
+            'campaign_points' => $campaignPoints,
+            'campaign_breakdown' => $campaignBreakdown,
             'net_points' => $netPoints,
             'days_scored' => $daysScored,
             'perfect_days' => $perfectDays,
