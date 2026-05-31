@@ -49,9 +49,39 @@
         .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
         .summary-item .label { font-size: 11px; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.3px; }
         .summary-item .value { font-size: 1.3rem; font-weight: 800; margin-top: 2px; }
+        .summary-sub { font-size: 0.65rem; color: #94a3b8; margin-top: 2px; }
         .value-green { color: #059669; }
         .value-orange { color: #d97706; }
         .value-muted { color: #475569; }
+
+        /* Hero summary - total poin */
+        .summary-hero {
+            display: flex; align-items: center; gap: 14px;
+            padding: 14px 16px; margin: -16px -16px 14px -16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; border-radius: 14px 14px 0 0;
+        }
+        .summary-hero-icon {
+            font-size: 2.5rem; line-height: 1; flex-shrink: 0;
+            filter: drop-shadow(0 2px 6px rgba(0,0,0,0.15));
+        }
+        .summary-hero-content { flex: 1; min-width: 0; }
+        .summary-hero-label {
+            font-size: 0.7rem; opacity: 0.9; font-weight: 500;
+            text-transform: uppercase; letter-spacing: 0.4px;
+            margin-bottom: 2px;
+        }
+        .summary-hero-value {
+            font-size: 1.8rem; font-weight: 800; line-height: 1.1;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .summary-hero-unit { font-size: 0.85rem; font-weight: 500; opacity: 0.85; }
+        .summary-hero-pending {
+            font-size: 0.72rem; opacity: 0.92; margin-top: 4px;
+            background: rgba(255,255,255,0.18);
+            padding: 2px 8px; border-radius: 10px;
+            display: inline-block;
+        }
 
         /* Tabs */
         .tab-bar {
@@ -312,13 +342,47 @@
         .row-photo-upload {
             padding: 14px; border: 1.5px dashed #cbd5e1; border-radius: 8px;
             text-align: center; cursor: pointer; background: white;
-            transition: all 0.15s;
+            transition: all 0.15s; position: relative;
         }
         .row-photo-upload:hover { border-color: #667eea; background: #f8faff; }
         .row-photo-upload.has-photo { border-color: #059669; padding: 6px; }
+        .row-photo-upload.is-loading { border-color: #667eea; background: #f0f4ff; pointer-events: none; }
         .row-photo-upload .icon { font-size: 1.6rem; margin-bottom: 4px; }
         .row-photo-upload .text { font-size: 0.74rem; color: #64748b; }
         .row-photo-preview { max-width: 100%; max-height: 140px; border-radius: 6px; }
+        .row-photo-size {
+            font-size: 0.7rem; color: #475569; padding: 4px 0 0;
+            text-align: right;
+        }
+
+        /* Loading spinner */
+        .loading-spinner {
+            width: 28px; height: 28px;
+            border: 3px solid #e2e8f0; border-top-color: #667eea;
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Submit overlay */
+        .submit-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(2px);
+            z-index: 2000;
+            display: none;
+            align-items: center; justify-content: center;
+        }
+        .submit-overlay.is-active { display: flex; }
+        .submit-box {
+            background: white; padding: 22px 24px;
+            border-radius: 12px; text-align: center;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+            min-width: 200px;
+        }
+        .submit-box .loading-spinner { width: 36px; height: 36px; margin-bottom: 10px; }
+        .submit-box .label { font-size: 0.85rem; color: #1e293b; font-weight: 600; }
+        .submit-box .progress { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
 
         /* Autocomplete dropdown */
         .autocomplete-list {
@@ -366,18 +430,31 @@
     <div class="container">
         {{-- Summary --}}
         <div class="summary-card">
+            <div class="summary-hero">
+                <div class="summary-hero-icon">🏆</div>
+                <div class="summary-hero-content">
+                    <div class="summary-hero-label">Total Poin Bonus Penjualan Bulan {{ date('M Y', strtotime($month . '-01')) }}</div>
+                    <div class="summary-hero-value">+{{ $breakdown['total_approved'] ?? 0 }} <span class="summary-hero-unit">poin</span></div>
+                    @if(($breakdown['total_pending'] ?? 0) > 0)
+                        <div class="summary-hero-pending">+{{ $breakdown['total_pending'] }} pending menunggu verifikasi</div>
+                    @endif
+                </div>
+            </div>
             <div class="summary-grid">
                 <div class="summary-item">
                     <div class="label">Disetujui</div>
-                    <div class="value value-green">{{ $breakdown['total_approved'] ?? 0 }}</div>
+                    <div class="value value-green">{{ count($breakdown['approved_claims'] ?? []) }}</div>
+                    <div class="summary-sub">klaim</div>
                 </div>
                 <div class="summary-item">
                     <div class="label">Pending</div>
-                    <div class="value value-orange">{{ $breakdown['total_pending'] ?? 0 }}</div>
+                    <div class="value value-orange">{{ count($breakdown['pending_claims'] ?? []) }}</div>
+                    <div class="summary-sub">klaim</div>
                 </div>
                 <div class="summary-item">
-                    <div class="label">Bulan</div>
-                    <div class="value value-muted" style="font-size:1rem;">{{ date('M Y', strtotime($month . '-01')) }}</div>
+                    <div class="label">Total Klaim</div>
+                    <div class="value value-muted">{{ count($breakdown['all_claims'] ?? []) }}</div>
+                    <div class="summary-sub">bulan ini</div>
                 </div>
             </div>
         </div>
@@ -522,6 +599,15 @@
 
     {{-- All eligible products data for client-side autocomplete --}}
     <script id="allProductsData" type="application/json">@json($sortedProducts ?? [])</script>
+
+    {{-- Submit progress overlay --}}
+    <div id="submitOverlay" class="submit-overlay">
+        <div class="submit-box">
+            <div class="loading-spinner"></div>
+            <div class="label" id="submitOverlayLabel">Mengirim klaim...</div>
+            <div class="progress" id="submitOverlayProgress">Mohon tunggu</div>
+        </div>
+    </div>
 
     <script>
     function switchTab(tab, btn) {
@@ -773,19 +859,123 @@
     function handleRowPhoto(input, rowId) {
         const file = input.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            rowPhotos[rowId] = e.target.result;
-            const row = document.querySelector(`.claim-item-row[data-row-id="${rowId}"]`);
-            const preview = row.querySelector('.row-photo-preview');
-            const placeholder = row.querySelector('.row-photo-placeholder');
-            preview.src = e.target.result;
-            preview.style.display = 'block';
-            placeholder.style.display = 'none';
-            row.querySelector('.row-photo-upload').classList.add('has-photo');
-            validateForm();
-        };
-        reader.readAsDataURL(file);
+
+        // Validation: file type
+        if (!file.type.startsWith('image/')) {
+            alert('File harus berupa gambar (JPG/PNG). File yang dipilih: ' + (file.type || 'unknown'));
+            input.value = '';
+            return;
+        }
+
+        // Validation: max raw file size 20MB (sebelum compress)
+        const MAX_RAW_SIZE = 20 * 1024 * 1024;
+        if (file.size > MAX_RAW_SIZE) {
+            alert('Foto terlalu besar (' + (file.size / 1024 / 1024).toFixed(1) + ' MB). Max 20 MB sebelum kompresi.');
+            input.value = '';
+            return;
+        }
+
+        const row = document.querySelector(`.claim-item-row[data-row-id="${rowId}"]`);
+        const upload = row.querySelector('.row-photo-upload');
+        const placeholder = row.querySelector('.row-photo-placeholder');
+        const preview = row.querySelector('.row-photo-preview');
+
+        // Show loading state immediately
+        upload.classList.add('is-loading');
+        placeholder.style.display = 'block';
+        placeholder.innerHTML = '<div class="loading-spinner"></div><div class="text" style="margin-top:6px;">Memproses foto...</div>';
+        preview.style.display = 'none';
+
+        compressImage(file)
+            .then(({ dataUrl, originalSize, compressedSize }) => {
+                rowPhotos[rowId] = dataUrl;
+                preview.src = dataUrl;
+                preview.style.display = 'block';
+                placeholder.style.display = 'none';
+                upload.classList.remove('is-loading');
+                upload.classList.add('has-photo');
+
+                // Show compression info ke waiter
+                const sizeBadge = row.querySelector('.row-photo-size') || (() => {
+                    const el = document.createElement('div');
+                    el.className = 'row-photo-size';
+                    upload.parentElement.appendChild(el);
+                    return el;
+                })();
+                const ratio = Math.round((1 - compressedSize / originalSize) * 100);
+                sizeBadge.innerHTML = `✅ ${(compressedSize/1024).toFixed(0)} KB ${ratio > 5 ? `<span style="color:#059669;">(hemat ${ratio}%)</span>` : ''}`;
+
+                validateForm();
+            })
+            .catch(err => {
+                console.error('[bonus produk] photo compress error:', err);
+                alert('Gagal memproses foto: ' + (err.message || 'tidak dikenal') + '. Coba pilih foto lain.');
+                upload.classList.remove('is-loading');
+                placeholder.innerHTML = '<div class="icon">📷</div><div class="text">Tap untuk ambil foto bukti</div>';
+                input.value = '';
+                delete rowPhotos[rowId];
+                validateForm();
+            });
+    }
+
+    /**
+     * Compress image client-side: resize to max 1280px (longest edge) + JPEG quality 0.78.
+     * Returns { dataUrl, originalSize, compressedSize }.
+     * Handles EXIF orientation via createImageBitmap when supported.
+     */
+    function compressImage(file) {
+        return new Promise((resolve, reject) => {
+            const MAX_DIMENSION = 1280;
+            const JPEG_QUALITY = 0.78;
+            const originalSize = file.size;
+
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error('Gagal baca file (FileReader error)'));
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onerror = () => reject(new Error('File bukan gambar valid'));
+                img.onload = () => {
+                    try {
+                        let { width, height } = img;
+                        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+                            if (width > height) {
+                                height = Math.round(height * MAX_DIMENSION / width);
+                                width = MAX_DIMENSION;
+                            } else {
+                                width = Math.round(width * MAX_DIMENSION / height);
+                                height = MAX_DIMENSION;
+                            }
+                        }
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+                        // base64 size estimation: (length * 3/4) - padding
+                        const compressedSize = Math.round((dataUrl.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
+
+                        if (compressedSize > 5 * 1024 * 1024) {
+                            // Still too big, retry with lower quality
+                            const retryUrl = canvas.toDataURL('image/jpeg', 0.55);
+                            const retrySize = Math.round((retryUrl.length - 'data:image/jpeg;base64,'.length) * 3 / 4);
+                            if (retrySize > 5 * 1024 * 1024) {
+                                return reject(new Error('Foto masih terlalu besar setelah kompresi. Pakai foto resolusi lebih rendah.'));
+                            }
+                            return resolve({ dataUrl: retryUrl, originalSize, compressedSize: retrySize });
+                        }
+
+                        resolve({ dataUrl, originalSize, compressedSize });
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
     }
 
     function onSearchInput(input) {
@@ -947,6 +1137,16 @@
             return;
         }
 
+        // Estimate payload size
+        const totalKb = Math.round(items.reduce((acc, it) => acc + (it.photo_proof.length * 3 / 4), 0) / 1024);
+
+        const overlay = document.getElementById('submitOverlay');
+        const overlayLabel = document.getElementById('submitOverlayLabel');
+        const overlayProgress = document.getElementById('submitOverlayProgress');
+        overlay.classList.add('is-active');
+        overlayLabel.textContent = `Mengirim ${items.length} klaim...`;
+        overlayProgress.textContent = `Upload ${totalKb} KB · jangan tutup halaman`;
+
         const btn = document.getElementById('btnClaim');
         btn.disabled = true; btn.textContent = 'Mengirim...';
 
@@ -956,7 +1156,11 @@
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' },
                 body: JSON.stringify({ items }),
             });
+
+            overlayProgress.textContent = 'Memproses respons...';
             const data = await res.json();
+            overlay.classList.remove('is-active');
+
             if (data.success) {
                 alert(data.message || 'Klaim berhasil!');
                 location.reload();
@@ -964,7 +1168,10 @@
                 const errDetail = (data.errors && data.errors.length) ? '\n\n' + data.errors.join('\n') : '';
                 alert((data.message || 'Gagal submit klaim.') + errDetail);
             }
-        } catch (err) { alert('Error: ' + err.message); }
+        } catch (err) {
+            overlay.classList.remove('is-active');
+            alert('Error: ' + err.message + '\n\nCek koneksi internet & coba lagi.');
+        }
         finally { btn.disabled = false; btn.textContent = 'Kirim Klaim'; }
     });
 
