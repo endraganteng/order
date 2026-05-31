@@ -202,6 +202,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('jadwal/reset-week', [\App\Http\Controllers\Admin\JadwalController::class, 'resetWeek'])->name('jadwal.reset_week');
         Route::post('jadwal/apply-attendance', [\App\Http\Controllers\Admin\JadwalController::class, 'applyAttendance'])->name('jadwal.apply_attendance');
 
+        // Jadwal Kasir (2 kasir + 1 backup finance, libur Sen/Sel, jam beda weekday vs weekend)
+        Route::get('kasir', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'index'])->name('kasir.index');
+        Route::post('kasir/save-preferences', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'savePreferences'])->name('kasir.save_preferences');
+        Route::post('kasir/reset-week', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'resetWeek'])->name('kasir.reset_week');
+
         // Attendance
         Route::get('attendance', [AttendanceController::class, 'index'])->name('attendance.index');
         Route::get('attendance/monthly', [AttendanceController::class, 'monthly'])->name('attendance.monthly');
@@ -528,6 +533,9 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
 
         // Jadwal Retail (untuk 3 karyawan retail)
         Route::get('jadwal', [\App\Http\Controllers\WaiterJadwalController::class, 'index'])->name('jadwal');
+
+        // Jadwal Kasir (untuk 2 kasir + 1 backup finance)
+        Route::get('jadwal-kasir', [\App\Http\Controllers\WaiterKasirJadwalController::class, 'index'])->name('kasir_jadwal');
 
         // Payroll Portal
         Route::get('payroll', [\App\Http\Controllers\WaiterPayrollController::class, 'index'])->name('payroll');

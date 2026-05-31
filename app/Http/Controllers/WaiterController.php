@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\BonusService;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
+use App\Services\KasirScheduleService;
 use App\Services\RetailScheduleService;
 use App\Services\SalesCampaignService;
 use App\Services\ScheduleGeneratorService;
@@ -147,6 +148,23 @@ class WaiterController extends Controller
             } catch (\Throwable $e) {
                 report($e);
             }
+
+            // Kasir schedule: cek kalau waiter ini kasir/backup + ambil shift hari ini
+            $isKasirOrBackup = false;
+            $todayKasirShift = null;
+            try {
+                $kasirService = app(KasirScheduleService::class);
+                if ($kasirService->isKasirOrBackup($waiterId)) {
+                    $isKasirOrBackup = true;
+                    $weekStart = \Carbon\Carbon::now()->startOfWeek(\Carbon\Carbon::MONDAY)->toDateString();
+                    $weekSched = $kasirService->getWaiterWeekSchedule($waiterId, $weekStart);
+                    if ($weekSched && ! empty($weekSched['shift_today'])) {
+                        $todayKasirShift = $weekSched['shift_today'];
+                    }
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
         } catch (\Throwable $e) {
             report($e);
 
@@ -167,6 +185,8 @@ class WaiterController extends Controller
             $pendingBonusClaims = 0;
             $isRetailEmployee = false;
             $todayRetailShift = null;
+            $isKasirOrBackup = false;
+            $todayKasirShift = null;
         }
 
         return view('waiter.tasks', [
@@ -190,6 +210,8 @@ class WaiterController extends Controller
             'pendingBonusClaims' => $pendingBonusClaims,
             'isRetailEmployee' => $isRetailEmployee,
             'todayRetailShift' => $todayRetailShift,
+            'isKasirOrBackup' => $isKasirOrBackup,
+            'todayKasirShift' => $todayKasirShift,
         ]);
     }
 

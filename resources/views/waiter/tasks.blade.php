@@ -1023,6 +1023,10 @@
             background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
             border: 1px solid #fcd34d;
         }
+        .quick-action-tile--kasir {
+            background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
+            border: 1px solid #fb923c;
+        }
         .quick-action-tile__icon {
             font-size: 30px;
             line-height: 1;
@@ -1047,6 +1051,12 @@
         }
         .quick-action-tile--jadwal .quick-action-tile__title {
             color: #92400e;
+        }
+        .quick-action-tile--kasir .quick-action-tile__title {
+            color: #9a3412;
+        }
+        .quick-action-tile--kasir .quick-action-tile__sub {
+            color: #c2410c;
         }
         .quick-action-tile__sub {
             font-size: 11px;
@@ -1621,6 +1631,40 @@
                                     Hari ini <strong>{{ $ts['shift'] }}</strong>
                                     @if($ts['shift_meta']['start'] ?? null)
                                         ({{ $ts['shift_meta']['start'] }}–{{ $ts['shift_meta']['end'] }})
+                                    @endif
+                                @endif
+                            @else
+                                Lihat shift mingguan kamu
+                            @endif
+                        </span>
+                    </span>
+                    <span class="quick-action-tile__chevron">›</span>
+                </a>
+                @endif
+                @if(!empty($isKasirOrBackup))
+                <a href="{{ route('waiter.kasir_jadwal', [], false) }}" class="quick-action-tile quick-action-tile--kasir">
+                    <span class="quick-action-tile__icon">💰</span>
+                    <span class="quick-action-tile__body">
+                        <span class="quick-action-tile__title">Jadwal Kasir</span>
+                        <span class="quick-action-tile__sub">
+                            @if(!empty($todayKasirShift))
+                                @php $ks = $todayKasirShift; @endphp
+                                @if($ks['shift'] === 'LIBUR')
+                                    @if($ks['is_backup'] ?? false)
+                                        🛌 Tidak bertugas hari ini
+                                    @else
+                                        🏖️ Hari ini <strong>LIBUR</strong>
+                                    @endif
+                                @else
+                                    @php
+                                        $shiftLabel = $ks['shift'] === 'SHIFT_1' ? 'SHIFT 1' : 'SHIFT 2';
+                                    @endphp
+                                    Hari ini <strong>{{ $shiftLabel }}</strong>
+                                    @if($ks['shift_meta']['start'] ?? null)
+                                        ({{ $ks['shift_meta']['start'] }}–{{ $ks['shift_meta']['end'] }})
+                                    @endif
+                                    @if($ks['is_backup'] ?? false)
+                                        — 🛟 backup
                                     @endif
                                 @endif
                             @else
