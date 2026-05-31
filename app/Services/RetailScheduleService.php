@@ -262,4 +262,190 @@ class RetailScheduleService
 
         return $cells;
     }
+
+    // =========================================================================
+    //  WAITER PORTAL — read-only access
+    // =========================================================================
+
+    /**
+     * Resolve 3 retail employees dari preferences (atau fallback ke name-match).
+     * Mengembalikan array of {id, name, role, ...}.
+     */
+    public function loadRetailEmployees(): array
+    {
+        try {
+            $prefs = $this->getPreferences();
+            $employeeIds = $prefs['employees'] ?? [];
+            if (count($employeeIds) === 3) {
+                $resolved = [];
+                foreach ($employeeIds as $wid) {
+                    if (! $wid) {
+                        continue;
+                    }
+                    $waiter = $this->firebase->getWaiterById($wid);
+                    if ($waiter) {
+                        $resolved[] = [
+                            'id' => $waiter['id'] ?? $wid,
+                            'name' => $waiter['name'] ?? '?',
+                            'role' => $waiter['waiter_role'] ?? null,
+                        ];
+                    }
+                }
+                if (count($resolved) === 3) {
+                    return $resolved;
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // Fallback: name-match Anjar/Rendy/Bagas
+        $targets = ['anjar', 'randy', 'bagas'];
+        $resolved = array_fill(0, 3, null);
+        try {
+            $allWaiters = $this->firebase->getAllowedEmails();
+            foreach ($allWaiters as $w) {
+                $name = strtolower($w['name'] ?? '');
+                foreach ($targets as $i => $t) {
+                    if (str_contains($name, $t) && $resolved[$i] === null) {
+                        $resolved[$i] = [
+                            'id' => $w['id'] ?? null,
+                            'name' => $w['name'] ?? '?',
+                            'role' => $w['waiter_role'] ?? null,
+                        ];
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return array_values(array_filter($resolved));
+    }
+
+    /**
+     * Cek apakah waiter_id adalah retail employee.
+     */
+    public function isRetailEmployee(string $waiterId): bool
+    {
+        if (! $waiterId) {
+            return false;
+        }
+        $employees = $this->loadRetailEmployees();
+        foreach ($employees as $emp) {
+            if (($emp['id'] ?? null) === $waiterId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Generate weekly schedule lalu filter ke waiter spesifik.
+     *
+     * @return array|null  Returns ['week_start', 'week_iso', 'days' => [...], 'summary', 'shift_today', ...] atau null kalau bukan retail.
+     */
+    public function getWaiterWeekSchedule(string $waiterId, string $weekStart, ScheduleGeneratorService $generator): ?array
+    {
+        $employees = $this->loadRetailEmployees();
+        if (count($employees) !== 3) {
+            return null;
+        }
+
+        $waiterEmp = null;
+        foreach ($employees as $e) {
+            if (($e['id'] ?? null) === $waiterId) {
+                $waiterEmp = $e;
+                break;
+            }
+        }
+        if (! $waiterEmp) {
+            return null;
+        }
+
+        // Build prefs same as admin controller
+        $prefs = $this->getPreferences();
+        $genPrefs = [
+            'libur_days' => $prefs['libur_days'] ?? null,
+            'holder_name' => ($prefs['holder_mode'] ?? 'auto') === 'locked' ? ($prefs['holder_name'] ?? null) : null,
+            'shift_modes' => $prefs['shift_modes'] ?? null,
+        ];
+
+        // Compute week ISO untuk lookup override
+        $weekStartCarbon = \Carbon\Carbon::parse($weekStart);
+        if (! $weekStartCarbon->isMonday()) {
+            $weekStartCarbon = $weekStartCarbon->startOfWeek(\Carbon\Carbon::MONDAY);
+        }
+        $weekIso = $weekStartCarbon->isoFormat('GGGG-[W]WW');
+
+        $weekOverride = $this->getWeekOverride($weekIso);
+        $override = null;
+        if ($weekOverride && ! empty($weekOverride['cells'])) {
+            $override = ['cells' => $weekOverride['cells']];
+            if (! empty($weekOverride['holder_used'])) {
+                $genPrefs['holder_name'] = $weekOverride['holder_used'];
+            }
+        }
+
+        $schedule = $generator->generate($weekStartCarbon->toDateString(), $employees, $genPrefs, $override);
+
+        // Filter: ambil cuma assignments untuk waiter ini
+        $today = date('Y-m-d');
+        $days = [];
+        $totalHours = 0.0;
+        $liburDay = null;
+        $shiftToday = null;
+        $todayDate = null;
+
+        foreach ($schedule['matrix'] as $day) {
+            foreach ($day['assignments'] as $a) {
+                if ($a['employee']['name'] !== $waiterEmp['name']) {
+                    continue;
+                }
+                $isToday = $day['date'] === $today;
+                $duration = $a['shift_meta']['duration'] ?? 0;
+                $totalHours += $duration;
+
+                if ($a['shift'] === ScheduleGeneratorService::SHIFT_LIBUR) {
+                    $liburDay = $day['day_label'];
+                }
+
+                if ($isToday) {
+                    $shiftToday = [
+                        'day_label' => $day['day_label'],
+                        'date' => $day['date'],
+                        'date_label' => $day['date_label'],
+                        'shift' => $a['shift'],
+                        'shift_meta' => $a['shift_meta'],
+                    ];
+                    $todayDate = $day['date'];
+                }
+
+                $days[] = [
+                    'day_key' => $day['day_key'],
+                    'day_label' => $day['day_label'],
+                    'date' => $day['date'],
+                    'date_label' => $day['date_label'],
+                    'is_weekend' => $day['is_weekend'],
+                    'is_today' => $isToday,
+                    'shift' => $a['shift'],
+                    'shift_meta' => $a['shift_meta'],
+                ];
+                break;
+            }
+        }
+
+        return [
+            'waiter' => $waiterEmp,
+            'week_start' => $schedule['week_start'],
+            'week_iso' => $schedule['week_iso'],
+            'days' => $days,
+            'total_hours' => $totalHours,
+            'libur_day' => $liburDay,
+            'shift_today' => $shiftToday,
+            'is_holder' => $schedule['holder_name'] === $waiterEmp['name'],
+            'has_override' => $override !== null,
+        ];
+    }
 }

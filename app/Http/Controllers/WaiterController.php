@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Services\BonusService;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
+use App\Services\RetailScheduleService;
 use App\Services\SalesCampaignService;
+use App\Services\ScheduleGeneratorService;
 use Illuminate\Http\Request;
 
 class WaiterController extends Controller
@@ -128,6 +130,23 @@ class WaiterController extends Controller
                 $campaignService = app(SalesCampaignService::class);
                 $pendingBonusClaims = count($campaignService->getClaimsByStatus('pending'));
             }
+
+            // Retail schedule: cek kalau waiter ini retail employee + ambil shift hari ini
+            $isRetailEmployee = false;
+            $todayRetailShift = null;
+            try {
+                $retailService = app(RetailScheduleService::class);
+                if ($retailService->isRetailEmployee($waiterId)) {
+                    $isRetailEmployee = true;
+                    $weekStart = \Carbon\Carbon::now()->startOfWeek(\Carbon\Carbon::MONDAY)->toDateString();
+                    $weekSched = $retailService->getWaiterWeekSchedule($waiterId, $weekStart, app(ScheduleGeneratorService::class));
+                    if ($weekSched && ! empty($weekSched['shift_today'])) {
+                        $todayRetailShift = $weekSched['shift_today'];
+                    }
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
         } catch (\Throwable $e) {
             report($e);
 
@@ -146,6 +165,8 @@ class WaiterController extends Controller
             $isVerifier = false;
             $rackCheckPendingReview = [];
             $pendingBonusClaims = 0;
+            $isRetailEmployee = false;
+            $todayRetailShift = null;
         }
 
         return view('waiter.tasks', [
@@ -167,6 +188,8 @@ class WaiterController extends Controller
             'clockOutEnabled' => $clockOutEnabled,
             'rackCheckPendingReview' => $rackCheckPendingReview,
             'pendingBonusClaims' => $pendingBonusClaims,
+            'isRetailEmployee' => $isRetailEmployee,
+            'todayRetailShift' => $todayRetailShift,
         ]);
     }
 

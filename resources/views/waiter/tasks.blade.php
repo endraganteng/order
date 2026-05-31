@@ -1019,6 +1019,10 @@
             background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
             border: 1px solid #c4b5fd;
         }
+        .quick-action-tile--jadwal {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 1px solid #fcd34d;
+        }
         .quick-action-tile__icon {
             font-size: 30px;
             line-height: 1;
@@ -1041,6 +1045,9 @@
         .quick-action-tile--bonus .quick-action-tile__title {
             color: #4338ca;
         }
+        .quick-action-tile--jadwal .quick-action-tile__title {
+            color: #92400e;
+        }
         .quick-action-tile__sub {
             font-size: 11px;
             color: #0369a1;
@@ -1051,6 +1058,9 @@
         }
         .quick-action-tile--bonus .quick-action-tile__sub {
             color: #5b21b6;
+        }
+        .quick-action-tile--jadwal .quick-action-tile__sub {
+            color: #b45309;
         }
         .quick-action-tile__chevron {
             font-size: 18px;
@@ -1597,6 +1607,30 @@
                     @endif
                     <span class="quick-action-tile__chevron">›</span>
                 </a>
+                @if(!empty($isRetailEmployee))
+                <a href="{{ route('waiter.jadwal', [], false) }}" class="quick-action-tile quick-action-tile--jadwal">
+                    <span class="quick-action-tile__icon">🗓️</span>
+                    <span class="quick-action-tile__body">
+                        <span class="quick-action-tile__title">Jadwal Saya</span>
+                        <span class="quick-action-tile__sub">
+                            @if(!empty($todayRetailShift))
+                                @php $ts = $todayRetailShift; @endphp
+                                @if($ts['shift'] === 'LIBUR')
+                                    🏖️ Hari ini <strong>LIBUR</strong>
+                                @else
+                                    Hari ini <strong>{{ $ts['shift'] }}</strong>
+                                    @if($ts['shift_meta']['start'] ?? null)
+                                        ({{ $ts['shift_meta']['start'] }}–{{ $ts['shift_meta']['end'] }})
+                                    @endif
+                                @endif
+                            @else
+                                Lihat shift mingguan kamu
+                            @endif
+                        </span>
+                    </span>
+                    <span class="quick-action-tile__chevron">›</span>
+                </a>
+                @endif
             </div>
         </div>
 

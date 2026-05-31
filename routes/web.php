@@ -526,6 +526,9 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         Route::get('bonus-produk/verify', [\App\Http\Controllers\WaiterBonusController::class, 'verifyClaims'])->name('bonus_produk.verify');
         Route::post('bonus-produk/verify/{id}', [\App\Http\Controllers\WaiterBonusController::class, 'processClaimVerification'])->name('bonus_produk.verify.process');
 
+        // Jadwal Retail (untuk 3 karyawan retail)
+        Route::get('jadwal', [\App\Http\Controllers\WaiterJadwalController::class, 'index'])->name('jadwal');
+
         // Payroll Portal
         Route::get('payroll', [\App\Http\Controllers\WaiterPayrollController::class, 'index'])->name('payroll');
         Route::get('payroll/api', [\App\Http\Controllers\WaiterPayrollController::class, 'apiSnapshot'])->name('payroll.api');
