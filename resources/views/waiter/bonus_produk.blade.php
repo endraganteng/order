@@ -208,19 +208,44 @@
         /* Campaign Group */
         .campaign-group {
             background: white; border-radius: 12px;
-            margin-bottom: 14px; overflow: hidden;
+            margin-bottom: 12px; overflow: hidden;
             box-shadow: 0 1px 6px rgba(0,0,0,0.04);
         }
+        .campaign-group summary {
+            list-style: none; cursor: pointer;
+            user-select: none;
+        }
+        .campaign-group summary::-webkit-details-marker { display: none; }
         .campaign-group-header {
             background: linear-gradient(135deg, #eff6ff 0%, #ede9fe 100%);
-            padding: 10px 14px;
+            padding: 12px 14px;
             border-bottom: 1px solid #e0e7ff;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 8px;
+            transition: background 0.15s;
         }
+        .campaign-group summary:hover .campaign-group-header {
+            background: linear-gradient(135deg, #dbeafe 0%, #ddd6fe 100%);
+        }
+        .summary-main { flex: 1; min-width: 0; }
+        .summary-toggle {
+            font-size: 1.1rem; color: #6366f1; font-weight: 700;
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+        }
+        .campaign-group[open] .summary-toggle { transform: rotate(180deg); }
         .campaign-title {
-            font-size: 0.85rem; font-weight: 700; color: #4338ca;
+            font-size: 0.86rem; font-weight: 700; color: #4338ca;
         }
         .campaign-end {
             font-size: 0.7rem; color: #64748b; margin-top: 2px;
+        }
+        .product-count {
+            display: inline-block;
+            background: rgba(99, 102, 241, 0.12);
+            color: #4338ca; font-weight: 600;
+            padding: 1px 6px; border-radius: 8px;
+            font-size: 0.65rem;
         }
         .campaign-group-body { padding: 8px 10px; }
         .campaign-group-body .product-card {
@@ -379,13 +404,19 @@
                 </div>
                 <div id="productGroupsContainer">
                     @foreach($groupedProducts as $gIdx => $group)
-                        <div class="campaign-group" data-group-idx="{{ $gIdx }}" data-campaign-title="{{ strtolower($group['campaign_title']) }}">
-                            <div class="campaign-group-header">
-                                <div class="campaign-title">🎯 {{ $group['campaign_title'] }}</div>
-                                @if($group['campaign_end_date'])
-                                    <div class="campaign-end">s/d {{ $group['campaign_end_date'] }}</div>
-                                @endif
-                            </div>
+                        <details class="campaign-group" data-group-idx="{{ $gIdx }}" data-campaign-title="{{ strtolower($group['campaign_title']) }}" {{ $gIdx === 0 ? 'open' : '' }}>
+                            <summary class="campaign-group-header">
+                                <div class="summary-main">
+                                    <div class="campaign-title">🎯 {{ $group['campaign_title'] }}</div>
+                                    <div class="campaign-end">
+                                        <span class="product-count">{{ count($group['products']) }} produk</span>
+                                        @if($group['campaign_end_date'])
+                                            &bull; s/d {{ $group['campaign_end_date'] }}
+                                        @endif
+                                    </div>
+                                </div>
+                                <span class="summary-toggle">▾</span>
+                            </summary>
                             <div class="campaign-group-body">
                                 @foreach($group['products'] as $sp)
                                     <div class="product-card" data-product-name="{{ strtolower($sp['name']) }}">
@@ -403,7 +434,7 @@
                                     </div>
                                 @endforeach
                             </div>
-                        </div>
+                        </details>
                     @endforeach
                 </div>
                 <div id="searchEmpty" style="display:none;" class="empty-state">
@@ -593,7 +624,7 @@
         const groups = document.querySelectorAll('.campaign-group');
         let totalVisible = 0;
 
-        groups.forEach(group => {
+        groups.forEach((group, gIdx) => {
             const campaignTitle = (group.dataset.campaignTitle || '');
             const cards = group.querySelectorAll('.product-card');
             let visibleInGroup = 0;
@@ -614,6 +645,13 @@
             } else {
                 group.classList.remove('is-hidden');
                 totalVisible += visibleInGroup;
+                // Auto-open group when searching with any query
+                // When search is cleared, only first group stays open (default)
+                if (q !== '') {
+                    group.open = true;
+                } else {
+                    group.open = (gIdx === 0);
+                }
             }
         });
 
