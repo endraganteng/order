@@ -190,6 +190,82 @@
         .empty-state { text-align: center; padding: 2.5rem 1rem; color: #94a3b8; }
         .empty-state .icon { font-size: 2.5rem; margin-bottom: 8px; }
         .empty-state p { font-size: 0.85rem; }
+
+        /* Multi-row Claim Items */
+        .claim-item-row {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+        }
+        .claim-item-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 8px;
+        }
+        .claim-item-num { font-size: 0.78rem; font-weight: 700; color: #475569; }
+        .btn-remove-item {
+            width: 24px; height: 24px; border-radius: 50%;
+            background: #fee2e2; color: #dc2626; border: none;
+            font-size: 1rem; font-weight: 700; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            line-height: 1;
+        }
+        .btn-remove-item:hover { background: #fecaca; }
+        .claim-search-wrap { position: relative; margin-bottom: 6px; }
+        .claim-item-meta {
+            display: flex; gap: 6px; font-size: 11px; margin-bottom: 6px;
+            color: #475569;
+        }
+        .claim-qty-row {
+            display: flex; align-items: center; gap: 8px; margin-top: 6px;
+        }
+        .claim-qty-row label { font-size: 0.75rem; color: #475569; font-weight: 600; }
+        .claim-qty-row input[type="number"] {
+            width: 70px; padding: 6px 8px; font-size: 0.85rem;
+        }
+        .btn-add-item {
+            width: 100%; padding: 10px; margin-bottom: 12px;
+            background: #fff; border: 1.5px dashed #94a3b8; color: #475569;
+            border-radius: 10px; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+            transition: all 0.15s;
+        }
+        .btn-add-item:hover {
+            background: #eff6ff; border-color: #667eea; color: #667eea;
+        }
+
+        /* Autocomplete dropdown */
+        .autocomplete-list {
+            position: absolute; top: 100%; left: 0; right: 0;
+            background: white; border: 1px solid #e2e8f0;
+            border-radius: 8px; max-height: 280px; overflow-y: auto;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            z-index: 1100; margin-top: 4px;
+        }
+        .autocomplete-item {
+            padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9;
+            transition: background 0.1s;
+        }
+        .autocomplete-item:hover { background: #f0f4ff; }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item.is-disabled { opacity: 0.45; cursor: not-allowed; }
+        .autocomplete-item.is-disabled:hover { background: white; }
+        .ac-row1 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .ac-name { font-size: 0.84rem; font-weight: 600; color: #1e293b; }
+        .ac-points {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white; padding: 2px 8px; border-radius: 12px;
+            font-size: 0.7rem; font-weight: 700;
+        }
+        .ac-row2 { display: flex; justify-content: space-between; margin-top: 2px; }
+        .ac-campaign { font-size: 0.7rem; color: #94a3b8; }
+        .autocomplete-empty {
+            padding: 12px; text-align: center; color: #94a3b8; font-size: 0.78rem;
+        }
+        .autocomplete-footer {
+            padding: 8px; text-align: center; color: #94a3b8;
+            font-size: 0.7rem; background: #f8fafc; font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -231,28 +307,29 @@
 
         {{-- Products Tab --}}
         <div id="tab-products">
-            @if(count($campaigns) === 0)
+            @if(count($sortedProducts ?? []) === 0)
                 <div class="empty-state">
                     <div class="icon">📦</div>
                     <p>Tidak ada campaign bonus produk aktif saat ini.</p>
                 </div>
             @else
-                @foreach($campaigns as $campaign)
-                    <div class="section-title">{{ $campaign['title'] ?? 'Campaign' }}
-                        @if($campaign['end_date'] ?? null)
-                            <span style="font-weight:400; color:#94a3b8;"> — s/d {{ $campaign['end_date'] }}</span>
-                        @endif
-                    </div>
-                    @php $products = (array) ($campaign['products'] ?? []); @endphp
-                    @foreach($products as $key => $product)
-                        <div class="product-card">
-                            <div class="info">
-                                <h4>{{ $product['name'] ?? '-' }}</h4>
-                                <div class="meta">Jual 1 unit = dapat poin bonus</div>
+                <div class="section-title">🏆 Produk Berpoint (urut tertinggi)</div>
+                @foreach($sortedProducts as $sp)
+                    <div class="product-card">
+                        <div class="info">
+                            <h4>{{ $sp['name'] }}</h4>
+                            <div class="meta">
+                                {{ $sp['campaign_title'] }}
+                                @if($sp['campaign_end_date'])
+                                    &bull; s/d {{ $sp['campaign_end_date'] }}
+                                @endif
+                                @if($sp['has_quota'])
+                                    &bull; <span style="color:{{ $sp['quota_remaining'] === 0 ? '#dc2626' : '#d97706' }};">sisa {{ $sp['quota_remaining'] }}/{{ $sp['quota'] }}</span>
+                                @endif
                             </div>
-                            <div class="points-badge">+{{ $product['points_per_unit'] ?? 0 }} poin</div>
                         </div>
-                    @endforeach
+                        <div class="points-badge">+{{ $sp['points_per_unit'] }} poin</div>
+                    </div>
                 @endforeach
             @endif
         </div>
@@ -312,32 +389,22 @@
             <div class="modal-handle"></div>
             <div class="modal-title">📝 Klaim Bonus Penjualan</div>
             <form id="claimForm">
-                <div class="form-group">
-                    <label>Pilih Produk</label>
-                    <select id="claimProduct" class="form-control" onchange="updatePointsPreview()" required>
-                        <option value="">— Pilih produk —</option>
-                        @foreach($campaigns as $campaign)
-                            @php $products = (array) ($campaign['products'] ?? []); @endphp
-                            @foreach($products as $key => $product)
-                                <option value="{{ $campaign['id'] }}|{{ $key }}" data-points="{{ $product['points_per_unit'] ?? 0 }}">
-                                    {{ $product['name'] ?? '-' }} ({{ $product['points_per_unit'] ?? 0 }} poin/unit)
-                                </option>
-                            @endforeach
-                        @endforeach
-                    </select>
+                <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:0.78rem; color:#1e40af;">
+                    💡 Bisa klaim banyak produk sekaligus dengan 1 foto bukti. Tap "+ Tambah Produk" untuk klaim banyak produk dari struk yang sama.
                 </div>
 
-                <div class="form-group">
-                    <label>Jumlah Unit Terjual</label>
-                    <input type="number" id="claimQty" class="form-control" min="1" value="1" oninput="updatePointsPreview()" required>
+                <div id="claimItemsContainer">
+                    {{-- First row added by JS on modal open --}}
                 </div>
+
+                <button type="button" class="btn-add-item" onclick="addClaimItemRow()">+ Tambah Produk</button>
 
                 <div id="pointsPreview" class="points-preview" style="display:none;">
                     <div class="label">Total poin yang akan diklaim</div>
                     <div class="value" id="previewPoints">0</div>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-top:14px;">
                     <label>Foto Struk / Bukti Penjualan</label>
                     <div class="photo-upload" id="photoUpload" onclick="document.getElementById('photoInput').click()">
                         <div id="photoPlaceholder">
@@ -355,9 +422,10 @@
         </div>
     </div>
 
-    <script>
-    let photoDataUrl = null;
+    {{-- All eligible products data for client-side autocomplete --}}
+    <script id="allProductsData" type="application/json">@json($sortedProducts ?? [])</script>
 
+    <script>
     function switchTab(tab, btn) {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -453,21 +521,207 @@
     }
 
     // ===== CLAIM =====
-    function openClaimModal() { document.getElementById('claimModal').style.display = 'flex'; }
-    function closeClaimModal() { document.getElementById('claimModal').style.display = 'none'; }
+    const ALL_PRODUCTS = (function() {
+        try { return JSON.parse(document.getElementById('allProductsData').textContent || '[]'); }
+        catch (e) { return []; }
+    })();
+    let photoDataUrl = null;
+    let claimRowSeq = 0;
 
-    function updatePointsPreview() {
-        const select = document.getElementById('claimProduct');
-        const qty = parseInt(document.getElementById('claimQty').value) || 0;
-        const option = select.options[select.selectedIndex];
-        const points = parseInt(option?.dataset?.points || 0);
-        const total = points * qty;
+    function escapeHtml(str) {
+        return String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    function openClaimModal() {
+        document.getElementById('claimModal').style.display = 'flex';
+        const container = document.getElementById('claimItemsContainer');
+        if (container.children.length === 0) addClaimItemRow();
+    }
+    function closeClaimModal() {
+        document.getElementById('claimModal').style.display = 'none';
+    }
+
+    function addClaimItemRow(presetProduct) {
+        const container = document.getElementById('claimItemsContainer');
+        const idx = ++claimRowSeq;
+        const row = document.createElement('div');
+        row.className = 'claim-item-row';
+        row.dataset.rowId = idx;
+        row.innerHTML = `
+            <div class="claim-item-header">
+                <span class="claim-item-num">Produk #${container.children.length + 1}</span>
+                <button type="button" class="btn-remove-item" onclick="removeClaimItemRow(this)" title="Hapus produk">×</button>
+            </div>
+            <div class="claim-search-wrap">
+                <input type="text" class="form-control js-product-search" placeholder="Ketik nama produk..." autocomplete="off" data-row-id="${idx}">
+                <input type="hidden" class="js-campaign-id">
+                <input type="hidden" class="js-product-key">
+                <input type="hidden" class="js-points" value="0">
+                <div class="autocomplete-list" data-row-id="${idx}" style="display:none;"></div>
+            </div>
+            <div class="claim-item-meta js-row-meta" style="display:none;">
+                <span class="js-row-points-info"></span>
+                <span class="js-row-quota-info"></span>
+            </div>
+            <div class="claim-qty-row">
+                <label>Qty:</label>
+                <input type="number" class="form-control js-qty" min="1" value="1" oninput="onQtyOrProductChange(this)">
+                <span class="js-row-subtotal" style="font-weight:700; color:#667eea; font-size:0.9rem;"></span>
+            </div>
+        `;
+        container.appendChild(row);
+
+        const search = row.querySelector('.js-product-search');
+        search.addEventListener('input', () => onSearchInput(search));
+        search.addEventListener('focus', () => onSearchInput(search));
+        search.addEventListener('blur', () => setTimeout(() => hideAutocomplete(idx), 200));
+
+        if (presetProduct) {
+            search.value = presetProduct.name;
+            applyProductPick(row, presetProduct);
+        }
+        renumberRows();
+        updateTotalPreview();
+    }
+
+    function removeClaimItemRow(btn) {
+        const row = btn.closest('.claim-item-row');
+        const container = document.getElementById('claimItemsContainer');
+        if (container.children.length === 1) {
+            // Don't allow removing last row, just clear it
+            row.querySelector('.js-product-search').value = '';
+            row.querySelector('.js-campaign-id').value = '';
+            row.querySelector('.js-product-key').value = '';
+            row.querySelector('.js-points').value = '0';
+            row.querySelector('.js-row-meta').style.display = 'none';
+            row.querySelector('.js-row-subtotal').textContent = '';
+            updateTotalPreview();
+            return;
+        }
+        row.remove();
+        renumberRows();
+        updateTotalPreview();
+    }
+
+    function renumberRows() {
+        const rows = document.querySelectorAll('.claim-item-row');
+        rows.forEach((r, i) => {
+            const numEl = r.querySelector('.claim-item-num');
+            if (numEl) numEl.textContent = `Produk #${i + 1}`;
+        });
+    }
+
+    function onSearchInput(input) {
+        const q = input.value.trim().toLowerCase();
+        const idx = input.dataset.rowId;
+        const list = document.querySelector(`.autocomplete-list[data-row-id="${idx}"]`);
+        if (!list) return;
+
+        let matches = ALL_PRODUCTS;
+        if (q) {
+            matches = ALL_PRODUCTS.filter(p =>
+                (p.name || '').toLowerCase().includes(q) ||
+                (p.campaign_title || '').toLowerCase().includes(q)
+            );
+        }
+        // Already sorted by points DESC from backend
+        const limited = matches.slice(0, 10);
+
+        if (limited.length === 0) {
+            list.innerHTML = `<div class="autocomplete-empty">Tidak ada produk cocok dengan "${escapeHtml(q)}"</div>`;
+        } else {
+            list.innerHTML = limited.map((p, i) => {
+                const quotaInfo = p.has_quota
+                    ? (p.quota_remaining === 0
+                        ? '<span style="color:#dc2626; font-size:11px; margin-left:6px;">HABIS</span>'
+                        : `<span style="color:#d97706; font-size:11px; margin-left:6px;">sisa ${p.quota_remaining}</span>`)
+                    : '';
+                return `<div class="autocomplete-item ${p.has_quota && p.quota_remaining === 0 ? 'is-disabled' : ''}" data-idx="${i}">
+                    <div class="ac-row1">
+                        <span class="ac-name">${escapeHtml(p.name)}</span>
+                        <span class="ac-points">+${p.points_per_unit}</span>
+                    </div>
+                    <div class="ac-row2">
+                        <span class="ac-campaign">${escapeHtml(p.campaign_title)}</span>
+                        ${quotaInfo}
+                    </div>
+                </div>`;
+            }).join('') + (matches.length > 10 ? `<div class="autocomplete-footer">+${matches.length - 10} produk lain — perjelas pencarian</div>` : '');
+
+            list.querySelectorAll('.autocomplete-item').forEach(item => {
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    if (item.classList.contains('is-disabled')) {
+                        alert('Produk ini sudah habis quota. Pilih produk lain.');
+                        return;
+                    }
+                    const i = parseInt(item.dataset.idx, 10);
+                    const picked = limited[i];
+                    const row = input.closest('.claim-item-row');
+                    input.value = picked.name;
+                    applyProductPick(row, picked);
+                    hideAutocomplete(idx);
+                });
+            });
+        }
+        list.style.display = 'block';
+    }
+
+    function applyProductPick(row, product) {
+        row.querySelector('.js-campaign-id').value = product.campaign_id;
+        row.querySelector('.js-product-key').value = product.product_key;
+        row.querySelector('.js-points').value = product.points_per_unit;
+
+        const meta = row.querySelector('.js-row-meta');
+        const ptsInfo = row.querySelector('.js-row-points-info');
+        const qInfo = row.querySelector('.js-row-quota-info');
+        ptsInfo.textContent = `+${product.points_per_unit} poin/unit`;
+        if (product.has_quota) {
+            qInfo.textContent = ` • sisa quota: ${product.quota_remaining}/${product.quota}`;
+            qInfo.style.color = product.quota_remaining === 0 ? '#dc2626' : '#d97706';
+        } else {
+            qInfo.textContent = '';
+        }
+        meta.style.display = 'flex';
+
+        onQtyOrProductChange(row.querySelector('.js-qty'));
+    }
+
+    function onQtyOrProductChange(qtyInput) {
+        const row = qtyInput.closest('.claim-item-row');
+        const points = parseInt(row.querySelector('.js-points').value, 10) || 0;
+        const qty = parseInt(qtyInput.value, 10) || 0;
+        const subtotal = points * qty;
+        const subtotalEl = row.querySelector('.js-row-subtotal');
+        subtotalEl.textContent = subtotal > 0 ? `= ${subtotal} poin` : '';
+        updateTotalPreview();
+    }
+
+    function updateTotalPreview() {
+        let total = 0;
+        let validRows = 0;
+        document.querySelectorAll('.claim-item-row').forEach(row => {
+            const points = parseInt(row.querySelector('.js-points').value, 10) || 0;
+            const qty = parseInt(row.querySelector('.js-qty').value, 10) || 0;
+            const productKey = row.querySelector('.js-product-key').value;
+            if (points > 0 && qty > 0 && productKey) {
+                total += points * qty;
+                validRows++;
+            }
+        });
         const preview = document.getElementById('pointsPreview');
-        if (select.value && qty > 0) {
+        if (total > 0) {
             preview.style.display = 'block';
-            document.getElementById('previewPoints').textContent = total + ' poin';
-        } else { preview.style.display = 'none'; }
+            document.getElementById('previewPoints').textContent = `${total} poin (${validRows} produk)`;
+        } else {
+            preview.style.display = 'none';
+        }
         validateForm();
+    }
+
+    function hideAutocomplete(idx) {
+        const list = document.querySelector(`.autocomplete-list[data-row-id="${idx}"]`);
+        if (list) list.style.display = 'none';
     }
 
     function handlePhoto(input) {
@@ -486,17 +740,33 @@
     }
 
     function validateForm() {
-        const product = document.getElementById('claimProduct').value;
-        const qty = parseInt(document.getElementById('claimQty').value) || 0;
-        document.getElementById('btnClaim').disabled = !(product && qty > 0 && photoDataUrl);
+        let validRows = 0;
+        document.querySelectorAll('.claim-item-row').forEach(row => {
+            const productKey = row.querySelector('.js-product-key').value;
+            const qty = parseInt(row.querySelector('.js-qty').value, 10) || 0;
+            if (productKey && qty > 0) validRows++;
+        });
+        document.getElementById('btnClaim').disabled = !(validRows > 0 && photoDataUrl);
     }
 
     document.getElementById('claimForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-        const productVal = document.getElementById('claimProduct').value;
-        const [campaignId, productKey] = productVal.split('|');
-        const qty = parseInt(document.getElementById('claimQty').value);
         if (!photoDataUrl) { alert('Foto struk wajib diupload.'); return; }
+
+        const items = [];
+        document.querySelectorAll('.claim-item-row').forEach(row => {
+            const cId = row.querySelector('.js-campaign-id').value;
+            const pKey = row.querySelector('.js-product-key').value;
+            const qty = parseInt(row.querySelector('.js-qty').value, 10) || 0;
+            if (cId && pKey && qty > 0) {
+                items.push({ campaign_id: cId, product_key: pKey, quantity: qty });
+            }
+        });
+
+        if (items.length === 0) {
+            alert('Minimal pilih 1 produk dengan jumlah > 0.');
+            return;
+        }
 
         const btn = document.getElementById('btnClaim');
         btn.disabled = true; btn.textContent = 'Mengirim...';
@@ -505,11 +775,16 @@
             const res = await fetch('{{ route("waiter.bonus_produk.claim") }}', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' },
-                body: JSON.stringify({ campaign_id: campaignId, product_key: productKey, quantity: qty, photo_proof: photoDataUrl }),
+                body: JSON.stringify({ items, photo_proof: photoDataUrl }),
             });
             const data = await res.json();
-            if (data.success) { alert(data.message || 'Klaim berhasil!'); location.reload(); }
-            else alert(data.message || 'Gagal submit klaim.');
+            if (data.success) {
+                alert(data.message || 'Klaim berhasil!');
+                location.reload();
+            } else {
+                const errDetail = (data.errors && data.errors.length) ? '\n\n' + data.errors.join('\n') : '';
+                alert((data.message || 'Gagal submit klaim.') + errDetail);
+            }
         } catch (err) { alert('Error: ' + err.message); }
         finally { btn.disabled = false; btn.textContent = 'Kirim Klaim'; }
     });

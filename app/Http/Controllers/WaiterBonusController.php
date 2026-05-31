@@ -131,25 +131,120 @@ class WaiterBonusController extends Controller
         $campaigns = $this->campaign->getEligibleCampaignsForUser($waiterId);
         $breakdown = $this->campaign->getUserCampaignBreakdown($waiterId, $month);
 
+        // Flatten products from all eligible campaigns + sort by points DESC.
+        // This gives waiter a single sorted list focused on highest-value products.
+        $sortedProducts = [];
+        foreach ($campaigns as $campaign) {
+            $cId = (string) ($campaign['id'] ?? '');
+            $cTitle = (string) ($campaign['title'] ?? '');
+            $cEnd = $campaign['end_date'] ?? null;
+            foreach ((array) ($campaign['products'] ?? []) as $key => $product) {
+                if (! is_array($product)) {
+                    continue;
+                }
+                $points = (int) ($product['points_per_unit'] ?? 0);
+                if ($points <= 0) {
+                    continue;
+                }
+                $hasQuota = isset($product['quota']) && $product['quota'] !== null && $product['quota'] !== '';
+                $quotaCap = $hasQuota ? (int) $product['quota'] : null;
+                $quotaClaimed = (int) ($product['quota_claimed'] ?? 0);
+                $quotaRemaining = $hasQuota ? max(0, $quotaCap - $quotaClaimed) : null;
+
+                $sortedProducts[] = [
+                    'campaign_id' => $cId,
+                    'campaign_title' => $cTitle,
+                    'campaign_end_date' => $cEnd,
+                    'product_key' => (string) $key,
+                    'name' => (string) ($product['name'] ?? '-'),
+                    'points_per_unit' => $points,
+                    'has_quota' => $hasQuota,
+                    'quota' => $quotaCap,
+                    'quota_remaining' => $quotaRemaining,
+                ];
+            }
+        }
+
+        usort($sortedProducts, function ($a, $b) {
+            // Highest points first; tie-break alphabetical
+            if ($a['points_per_unit'] !== $b['points_per_unit']) {
+                return $b['points_per_unit'] <=> $a['points_per_unit'];
+            }
+            return strcasecmp($a['name'], $b['name']);
+        });
+
         return view('waiter.bonus_produk', compact(
-            'waiterId', 'waiterName', 'month', 'campaigns', 'breakdown'
+            'waiterId', 'waiterName', 'month', 'campaigns', 'breakdown', 'sortedProducts'
         ));
     }
 
     /**
      * Submit a claim for bonus produk.
+     * Supports both single-product (legacy) and multi-product (new) payloads.
      */
     public function submitClaim(Request $request)
     {
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+
+        // Multi-item payload detection
+        if ($request->has('items') && is_array($request->input('items'))) {
+            $request->validate([
+                'items' => 'required|array|min:1|max:20',
+                'items.*.campaign_id' => 'required|string',
+                'items.*.product_key' => 'required|string',
+                'items.*.quantity' => 'required|integer|min:1',
+                'photo_proof' => 'required|string|max:5000000',
+            ]);
+
+            $items = $request->input('items', []);
+            $photoProof = (string) $request->input('photo_proof');
+            $today = date('Y-m-d');
+
+            $results = [];
+            $successCount = 0;
+            $totalPoints = 0;
+            $errors = [];
+
+            foreach ($items as $idx => $item) {
+                $r = $this->campaign->submitClaim([
+                    'campaign_id' => (string) ($item['campaign_id'] ?? ''),
+                    'waiter_id' => $waiterId,
+                    'waiter_name' => $waiterName,
+                    'product_key' => (string) ($item['product_key'] ?? ''),
+                    'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
+                    'photo_url' => $photoProof,
+                    'date' => $today,
+                ]);
+                $results[] = $r;
+                if ($r['success'] ?? false) {
+                    $successCount++;
+                    $totalPoints += (int) ($r['points_claimed'] ?? 0);
+                } else {
+                    $errors[] = 'Item #'.($idx + 1).': '.($r['message'] ?? 'gagal');
+                }
+            }
+
+            return response()->json([
+                'success' => $successCount > 0,
+                'submitted' => $successCount,
+                'total_items' => count($items),
+                'total_points' => $totalPoints,
+                'errors' => $errors,
+                'results' => $results,
+                'message' => $successCount === count($items)
+                    ? "Berhasil submit {$successCount} klaim ({$totalPoints} poin total). Menunggu verifikasi finance."
+                    : "Submit {$successCount}/".count($items)." berhasil. Cek detail di bawah.",
+            ]);
+        }
+
+        // Legacy single-item payload
         $request->validate([
             'campaign_id' => 'required|string',
             'product_key' => 'required|string',
             'quantity' => 'required|integer|min:1',
-            'photo_proof' => 'required|string|max:5000000', // base64 data URL
+            'photo_proof' => 'required|string|max:5000000',
         ]);
-
-        $waiterId = (string) session('waiter_id');
-        $waiterName = (string) session('waiter_name', 'Waiter');
 
         $result = $this->campaign->submitClaim([
             'campaign_id' => $request->campaign_id,
