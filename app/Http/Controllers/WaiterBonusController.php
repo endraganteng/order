@@ -132,12 +132,16 @@ class WaiterBonusController extends Controller
         $breakdown = $this->campaign->getUserCampaignBreakdown($waiterId, $month);
 
         // Flatten products from all eligible campaigns + sort by points DESC.
-        // This gives waiter a single sorted list focused on highest-value products.
+        // sortedProducts: flat list (for autocomplete in claim modal).
+        // groupedProducts: grouped by campaign, products inside each group sorted by points DESC
+        // (for products tab display).
         $sortedProducts = [];
+        $groupedProducts = [];
         foreach ($campaigns as $campaign) {
             $cId = (string) ($campaign['id'] ?? '');
             $cTitle = (string) ($campaign['title'] ?? '');
             $cEnd = $campaign['end_date'] ?? null;
+            $groupItems = [];
             foreach ((array) ($campaign['products'] ?? []) as $key => $product) {
                 if (! is_array($product)) {
                     continue;
@@ -151,7 +155,7 @@ class WaiterBonusController extends Controller
                 $quotaClaimed = (int) ($product['quota_claimed'] ?? 0);
                 $quotaRemaining = $hasQuota ? max(0, $quotaCap - $quotaClaimed) : null;
 
-                $sortedProducts[] = [
+                $entry = [
                     'campaign_id' => $cId,
                     'campaign_title' => $cTitle,
                     'campaign_end_date' => $cEnd,
@@ -162,25 +166,57 @@ class WaiterBonusController extends Controller
                     'quota' => $quotaCap,
                     'quota_remaining' => $quotaRemaining,
                 ];
+                $sortedProducts[] = $entry;
+                $groupItems[] = $entry;
             }
+
+            if (empty($groupItems)) {
+                continue;
+            }
+
+            // Sort within group: points DESC, name ASC tie-break
+            usort($groupItems, function ($a, $b) {
+                if ($a['points_per_unit'] !== $b['points_per_unit']) {
+                    return $b['points_per_unit'] <=> $a['points_per_unit'];
+                }
+                return strcasecmp($a['name'], $b['name']);
+            });
+
+            $groupedProducts[] = [
+                'campaign_id' => $cId,
+                'campaign_title' => $cTitle,
+                'campaign_end_date' => $cEnd,
+                'highest_points' => $groupItems[0]['points_per_unit'],
+                'products' => $groupItems,
+            ];
         }
 
+        // Flat sortedProducts: highest points first across ALL campaigns
         usort($sortedProducts, function ($a, $b) {
-            // Highest points first; tie-break alphabetical
             if ($a['points_per_unit'] !== $b['points_per_unit']) {
                 return $b['points_per_unit'] <=> $a['points_per_unit'];
             }
             return strcasecmp($a['name'], $b['name']);
         });
 
+        // Group order: highest points first (campaign with biggest poin produk on top)
+        usort($groupedProducts, function ($a, $b) {
+            if ($a['highest_points'] !== $b['highest_points']) {
+                return $b['highest_points'] <=> $a['highest_points'];
+            }
+            return strcasecmp($a['campaign_title'], $b['campaign_title']);
+        });
+
         return view('waiter.bonus_produk', compact(
-            'waiterId', 'waiterName', 'month', 'campaigns', 'breakdown', 'sortedProducts'
+            'waiterId', 'waiterName', 'month', 'campaigns', 'breakdown', 'sortedProducts', 'groupedProducts'
         ));
     }
 
     /**
      * Submit a claim for bonus produk.
      * Supports both single-product (legacy) and multi-product (new) payloads.
+     *
+     * Multi-item: each item carries its own photo_proof.
      */
     public function submitClaim(Request $request)
     {
@@ -194,11 +230,10 @@ class WaiterBonusController extends Controller
                 'items.*.campaign_id' => 'required|string',
                 'items.*.product_key' => 'required|string',
                 'items.*.quantity' => 'required|integer|min:1',
-                'photo_proof' => 'required|string|max:5000000',
+                'items.*.photo_proof' => 'required|string|max:5000000',
             ]);
 
             $items = $request->input('items', []);
-            $photoProof = (string) $request->input('photo_proof');
             $today = date('Y-m-d');
 
             $results = [];
@@ -213,7 +248,7 @@ class WaiterBonusController extends Controller
                     'waiter_name' => $waiterName,
                     'product_key' => (string) ($item['product_key'] ?? ''),
                     'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
-                    'photo_url' => $photoProof,
+                    'photo_url' => (string) ($item['photo_proof'] ?? ''),
                     'date' => $today,
                 ]);
                 $results[] = $r;

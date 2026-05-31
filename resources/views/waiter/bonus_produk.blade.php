@@ -191,6 +191,47 @@
         .empty-state .icon { font-size: 2.5rem; margin-bottom: 8px; }
         .empty-state p { font-size: 0.85rem; }
 
+        /* Search Box */
+        .search-box { margin-bottom: 14px; }
+        .search-box input {
+            width: 100%; padding: 11px 14px;
+            background: white; border: 1px solid #e2e8f0;
+            border-radius: 10px; font-size: 0.85rem;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .search-box input:focus {
+            outline: none; border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+        }
+
+        /* Campaign Group */
+        .campaign-group {
+            background: white; border-radius: 12px;
+            margin-bottom: 14px; overflow: hidden;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+        }
+        .campaign-group-header {
+            background: linear-gradient(135deg, #eff6ff 0%, #ede9fe 100%);
+            padding: 10px 14px;
+            border-bottom: 1px solid #e0e7ff;
+        }
+        .campaign-title {
+            font-size: 0.85rem; font-weight: 700; color: #4338ca;
+        }
+        .campaign-end {
+            font-size: 0.7rem; color: #64748b; margin-top: 2px;
+        }
+        .campaign-group-body { padding: 8px 10px; }
+        .campaign-group-body .product-card {
+            margin-bottom: 6px; box-shadow: none;
+            border-left: 3px solid #667eea;
+            background: #fafbff;
+        }
+        .campaign-group-body .product-card:last-child { margin-bottom: 0; }
+        .campaign-group.is-hidden { display: none; }
+        .product-card.is-hidden { display: none !important; }
+
         /* Multi-row Claim Items */
         .claim-item-row {
             background: #f8fafc;
@@ -233,6 +274,26 @@
         .btn-add-item:hover {
             background: #eff6ff; border-color: #667eea; color: #667eea;
         }
+
+        /* Per-row photo upload */
+        .claim-photo-section {
+            margin-top: 8px; padding-top: 8px;
+            border-top: 1px dashed #cbd5e1;
+        }
+        .claim-photo-section label {
+            display: block; font-size: 0.72rem; font-weight: 600;
+            color: #475569; margin-bottom: 6px;
+        }
+        .row-photo-upload {
+            padding: 14px; border: 1.5px dashed #cbd5e1; border-radius: 8px;
+            text-align: center; cursor: pointer; background: white;
+            transition: all 0.15s;
+        }
+        .row-photo-upload:hover { border-color: #667eea; background: #f8faff; }
+        .row-photo-upload.has-photo { border-color: #059669; padding: 6px; }
+        .row-photo-upload .icon { font-size: 1.6rem; margin-bottom: 4px; }
+        .row-photo-upload .text { font-size: 0.74rem; color: #64748b; }
+        .row-photo-preview { max-width: 100%; max-height: 140px; border-radius: 6px; }
 
         /* Autocomplete dropdown */
         .autocomplete-list {
@@ -307,30 +368,48 @@
 
         {{-- Products Tab --}}
         <div id="tab-products">
-            @if(count($sortedProducts ?? []) === 0)
+            @if(count($groupedProducts ?? []) === 0)
                 <div class="empty-state">
                     <div class="icon">📦</div>
                     <p>Tidak ada campaign bonus produk aktif saat ini.</p>
                 </div>
             @else
-                <div class="section-title">🏆 Produk Berpoint (urut tertinggi)</div>
-                @foreach($sortedProducts as $sp)
-                    <div class="product-card">
-                        <div class="info">
-                            <h4>{{ $sp['name'] }}</h4>
-                            <div class="meta">
-                                {{ $sp['campaign_title'] }}
-                                @if($sp['campaign_end_date'])
-                                    &bull; s/d {{ $sp['campaign_end_date'] }}
-                                @endif
-                                @if($sp['has_quota'])
-                                    &bull; <span style="color:{{ $sp['quota_remaining'] === 0 ? '#dc2626' : '#d97706' }};">sisa {{ $sp['quota_remaining'] }}/{{ $sp['quota'] }}</span>
+                <div class="search-box">
+                    <input type="search" id="productSearch" placeholder="🔍 Cari produk (nama / campaign)..." oninput="filterProducts(this.value)">
+                </div>
+                <div id="productGroupsContainer">
+                    @foreach($groupedProducts as $gIdx => $group)
+                        <div class="campaign-group" data-group-idx="{{ $gIdx }}" data-campaign-title="{{ strtolower($group['campaign_title']) }}">
+                            <div class="campaign-group-header">
+                                <div class="campaign-title">🎯 {{ $group['campaign_title'] }}</div>
+                                @if($group['campaign_end_date'])
+                                    <div class="campaign-end">s/d {{ $group['campaign_end_date'] }}</div>
                                 @endif
                             </div>
+                            <div class="campaign-group-body">
+                                @foreach($group['products'] as $sp)
+                                    <div class="product-card" data-product-name="{{ strtolower($sp['name']) }}">
+                                        <div class="info">
+                                            <h4>{{ $sp['name'] }}</h4>
+                                            <div class="meta">
+                                                @if($sp['has_quota'])
+                                                    <span style="color:{{ $sp['quota_remaining'] === 0 ? '#dc2626' : '#d97706' }};">sisa {{ $sp['quota_remaining'] }}/{{ $sp['quota'] }}</span>
+                                                @else
+                                                    Jual 1 unit = dapat poin
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="points-badge">+{{ $sp['points_per_unit'] }} poin</div>
+                                    </div>
+                                @endforeach
+                            </div>
                         </div>
-                        <div class="points-badge">+{{ $sp['points_per_unit'] }} poin</div>
-                    </div>
-                @endforeach
+                    @endforeach
+                </div>
+                <div id="searchEmpty" style="display:none;" class="empty-state">
+                    <div class="icon">🔍</div>
+                    <p>Tidak ada produk cocok dengan pencarian.</p>
+                </div>
             @endif
         </div>
 
@@ -390,7 +469,7 @@
             <div class="modal-title">📝 Klaim Bonus Penjualan</div>
             <form id="claimForm">
                 <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:0.78rem; color:#1e40af;">
-                    💡 Bisa klaim banyak produk sekaligus dengan 1 foto bukti. Tap "+ Tambah Produk" untuk klaim banyak produk dari struk yang sama.
+                    💡 Tap "+ Tambah Produk" untuk klaim banyak produk. Setiap produk butuh foto bukti masing-masing.
                 </div>
 
                 <div id="claimItemsContainer">
@@ -402,18 +481,6 @@
                 <div id="pointsPreview" class="points-preview" style="display:none;">
                     <div class="label">Total poin yang akan diklaim</div>
                     <div class="value" id="previewPoints">0</div>
-                </div>
-
-                <div class="form-group" style="margin-top:14px;">
-                    <label>Foto Struk / Bukti Penjualan</label>
-                    <div class="photo-upload" id="photoUpload" onclick="document.getElementById('photoInput').click()">
-                        <div id="photoPlaceholder">
-                            <div class="icon">📷</div>
-                            <div class="text">Tap untuk ambil foto struk</div>
-                        </div>
-                        <img id="photoPreview" style="display:none;">
-                    </div>
-                    <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none;" onchange="handlePhoto(this)">
                 </div>
 
                 <button type="submit" class="btn btn-primary" id="btnClaim" disabled>Kirim Klaim</button>
@@ -520,12 +587,46 @@
         verifyClaim(id, 'rejected', reason || '');
     }
 
+    // ===== PRODUCT SEARCH FILTER (products tab) =====
+    function filterProducts(query) {
+        const q = (query || '').trim().toLowerCase();
+        const groups = document.querySelectorAll('.campaign-group');
+        let totalVisible = 0;
+
+        groups.forEach(group => {
+            const campaignTitle = (group.dataset.campaignTitle || '');
+            const cards = group.querySelectorAll('.product-card');
+            let visibleInGroup = 0;
+
+            cards.forEach(card => {
+                const name = card.dataset.productName || '';
+                const matches = q === '' || name.includes(q) || campaignTitle.includes(q);
+                if (matches) {
+                    card.classList.remove('is-hidden');
+                    visibleInGroup++;
+                } else {
+                    card.classList.add('is-hidden');
+                }
+            });
+
+            if (visibleInGroup === 0) {
+                group.classList.add('is-hidden');
+            } else {
+                group.classList.remove('is-hidden');
+                totalVisible += visibleInGroup;
+            }
+        });
+
+        const empty = document.getElementById('searchEmpty');
+        if (empty) empty.style.display = totalVisible === 0 ? 'block' : 'none';
+    }
+
     // ===== CLAIM =====
     const ALL_PRODUCTS = (function() {
         try { return JSON.parse(document.getElementById('allProductsData').textContent || '[]'); }
         catch (e) { return []; }
     })();
-    let photoDataUrl = null;
+    const rowPhotos = {}; // { rowId: dataUrl }
     let claimRowSeq = 0;
 
     function escapeHtml(str) {
@@ -568,6 +669,17 @@
                 <input type="number" class="form-control js-qty" min="1" value="1" oninput="onQtyOrProductChange(this)">
                 <span class="js-row-subtotal" style="font-weight:700; color:#667eea; font-size:0.9rem;"></span>
             </div>
+            <div class="claim-photo-section">
+                <label>Foto Struk/Bukti Produk #${container.children.length + 1}</label>
+                <div class="photo-upload row-photo-upload" data-row-id="${idx}" onclick="document.getElementById('photoInput-${idx}').click()">
+                    <div class="row-photo-placeholder">
+                        <div class="icon">📷</div>
+                        <div class="text">Tap untuk ambil foto bukti</div>
+                    </div>
+                    <img class="row-photo-preview" style="display:none;">
+                </div>
+                <input type="file" id="photoInput-${idx}" accept="image/*" capture="environment" style="display:none;" onchange="handleRowPhoto(this, ${idx})">
+            </div>
         `;
         container.appendChild(row);
 
@@ -586,7 +698,9 @@
 
     function removeClaimItemRow(btn) {
         const row = btn.closest('.claim-item-row');
+        const rowId = row.dataset.rowId;
         const container = document.getElementById('claimItemsContainer');
+        delete rowPhotos[rowId];
         if (container.children.length === 1) {
             // Don't allow removing last row, just clear it
             row.querySelector('.js-product-search').value = '';
@@ -595,6 +709,11 @@
             row.querySelector('.js-points').value = '0';
             row.querySelector('.js-row-meta').style.display = 'none';
             row.querySelector('.js-row-subtotal').textContent = '';
+            const preview = row.querySelector('.row-photo-preview');
+            const placeholder = row.querySelector('.row-photo-placeholder');
+            if (preview) { preview.src = ''; preview.style.display = 'none'; }
+            if (placeholder) placeholder.style.display = 'block';
+            row.querySelector('.row-photo-upload').classList.remove('has-photo');
             updateTotalPreview();
             return;
         }
@@ -608,7 +727,27 @@
         rows.forEach((r, i) => {
             const numEl = r.querySelector('.claim-item-num');
             if (numEl) numEl.textContent = `Produk #${i + 1}`;
+            const photoLabel = r.querySelector('.claim-photo-section label');
+            if (photoLabel) photoLabel.textContent = `Foto Struk/Bukti Produk #${i + 1}`;
         });
+    }
+
+    function handleRowPhoto(input, rowId) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            rowPhotos[rowId] = e.target.result;
+            const row = document.querySelector(`.claim-item-row[data-row-id="${rowId}"]`);
+            const preview = row.querySelector('.row-photo-preview');
+            const placeholder = row.querySelector('.row-photo-placeholder');
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+            placeholder.style.display = 'none';
+            row.querySelector('.row-photo-upload').classList.add('has-photo');
+            validateForm();
+        };
+        reader.readAsDataURL(file);
     }
 
     function onSearchInput(input) {
@@ -624,7 +763,6 @@
                 (p.campaign_title || '').toLowerCase().includes(q)
             );
         }
-        // Already sorted by points DESC from backend
         const limited = matches.slice(0, 10);
 
         if (limited.length === 0) {
@@ -724,47 +862,50 @@
         if (list) list.style.display = 'none';
     }
 
-    function handlePhoto(input) {
-        const file = input.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            photoDataUrl = e.target.result;
-            document.getElementById('photoPreview').src = photoDataUrl;
-            document.getElementById('photoPreview').style.display = 'block';
-            document.getElementById('photoPlaceholder').innerHTML = '<div class="icon">✅</div><div class="text">Foto terpilih (tap untuk ganti)</div>';
-            document.getElementById('photoUpload').classList.add('has-photo');
-            validateForm();
-        };
-        reader.readAsDataURL(file);
-    }
-
     function validateForm() {
         let validRows = 0;
         document.querySelectorAll('.claim-item-row').forEach(row => {
             const productKey = row.querySelector('.js-product-key').value;
             const qty = parseInt(row.querySelector('.js-qty').value, 10) || 0;
-            if (productKey && qty > 0) validRows++;
+            const rowId = row.dataset.rowId;
+            const hasPhoto = !!rowPhotos[rowId];
+            if (productKey && qty > 0 && hasPhoto) validRows++;
         });
-        document.getElementById('btnClaim').disabled = !(validRows > 0 && photoDataUrl);
+        document.getElementById('btnClaim').disabled = validRows === 0;
     }
 
     document.getElementById('claimForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-        if (!photoDataUrl) { alert('Foto struk wajib diupload.'); return; }
 
         const items = [];
-        document.querySelectorAll('.claim-item-row').forEach(row => {
+        const issues = [];
+        document.querySelectorAll('.claim-item-row').forEach((row, idx) => {
             const cId = row.querySelector('.js-campaign-id').value;
             const pKey = row.querySelector('.js-product-key').value;
             const qty = parseInt(row.querySelector('.js-qty').value, 10) || 0;
-            if (cId && pKey && qty > 0) {
-                items.push({ campaign_id: cId, product_key: pKey, quantity: qty });
+            const rowId = row.dataset.rowId;
+            const photo = rowPhotos[rowId];
+            if (!cId || !pKey) {
+                issues.push(`Produk #${idx + 1}: belum pilih produk`);
+                return;
             }
+            if (qty <= 0) {
+                issues.push(`Produk #${idx + 1}: qty harus > 0`);
+                return;
+            }
+            if (!photo) {
+                issues.push(`Produk #${idx + 1}: foto bukti wajib diupload`);
+                return;
+            }
+            items.push({ campaign_id: cId, product_key: pKey, quantity: qty, photo_proof: photo });
         });
 
+        if (issues.length > 0) {
+            alert('Lengkapi data berikut:\n- ' + issues.join('\n- '));
+            return;
+        }
         if (items.length === 0) {
-            alert('Minimal pilih 1 produk dengan jumlah > 0.');
+            alert('Minimal pilih 1 produk dengan qty > 0 dan foto bukti.');
             return;
         }
 
@@ -775,7 +916,7 @@
             const res = await fetch('{{ route("waiter.bonus_produk.claim") }}', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' },
-                body: JSON.stringify({ items, photo_proof: photoDataUrl }),
+                body: JSON.stringify({ items }),
             });
             const data = await res.json();
             if (data.success) {
