@@ -384,6 +384,103 @@
         .submit-box .label { font-size: 0.85rem; color: #1e293b; font-weight: 600; }
         .submit-box .progress { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
 
+        /* Result modal */
+        .result-modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(2px);
+            z-index: 2100;
+            display: none;
+            align-items: center; justify-content: center;
+            padding: 16px;
+            animation: fadeIn 0.2s ease;
+        }
+        .result-modal-overlay.is-active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .result-modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 28px 22px 22px;
+            max-width: 380px; width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+            animation: slideUp 0.25s ease;
+        }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .result-icon {
+            font-size: 3.2rem; line-height: 1;
+            margin-bottom: 8px;
+            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.1));
+            animation: bounce 0.6s ease;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: scale(1); }
+            40% { transform: scale(1.15); }
+            70% { transform: scale(0.95); }
+        }
+        .result-title {
+            font-size: 1.25rem; font-weight: 800; color: #1e293b;
+            margin-bottom: 4px;
+        }
+        .result-subtitle {
+            font-size: 0.82rem; color: #64748b;
+            margin-bottom: 18px;
+        }
+        .result-stats {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+            margin-bottom: 16px;
+        }
+        .result-stats:has(#resultFailedStat:not([style*="display:none"])) {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        .result-stat {
+            background: #f8fafc; border-radius: 10px;
+            padding: 10px 8px;
+        }
+        .rs-label {
+            font-size: 0.65rem; color: #64748b; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.4px;
+        }
+        .rs-value {
+            font-size: 1.6rem; font-weight: 800; line-height: 1.1;
+            margin-top: 4px;
+        }
+        .rs-success { color: #059669; }
+        .rs-fail { color: #dc2626; }
+        .rs-points { color: #6366f1; }
+        .result-breakdown {
+            background: #f8fafc; border-radius: 10px;
+            padding: 12px; margin-bottom: 12px; text-align: left;
+            max-height: 180px; overflow-y: auto;
+        }
+        .rb-title { font-size: 0.78rem; font-weight: 700; color: #475569; margin-bottom: 8px; }
+        .rb-list { display: flex; flex-direction: column; gap: 6px; }
+        .rb-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 6px 8px; background: white; border-radius: 6px;
+            font-size: 0.78rem;
+        }
+        .rb-item-name { color: #1e293b; font-weight: 500; flex: 1; min-width: 0; }
+        .rb-item-points {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white; padding: 2px 8px; border-radius: 10px;
+            font-size: 0.7rem; font-weight: 700; white-space: nowrap;
+        }
+        .rb-item.is-failed .rb-item-points {
+            background: #fee2e2; color: #dc2626;
+        }
+        .result-errors {
+            background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+            padding: 10px 12px; margin-bottom: 12px; text-align: left;
+        }
+        .re-title { font-size: 0.78rem; font-weight: 700; color: #b91c1c; margin-bottom: 6px; }
+        .re-list { margin: 0; padding-left: 18px; font-size: 0.74rem; color: #991b1b; }
+        .re-list li { margin-bottom: 2px; }
+        .result-actions {
+            display: flex; gap: 8px;
+        }
+        .result-actions .btn { flex: 1; }
+
         /* Autocomplete dropdown */
         .autocomplete-list {
             position: absolute; top: 100%; left: 0; right: 0;
@@ -606,6 +703,45 @@
             <div class="loading-spinner"></div>
             <div class="label" id="submitOverlayLabel">Mengirim klaim...</div>
             <div class="progress" id="submitOverlayProgress">Mohon tunggu</div>
+        </div>
+    </div>
+
+    {{-- Result modal --}}
+    <div id="resultModal" class="result-modal-overlay">
+        <div class="result-modal-content">
+            <div class="result-icon" id="resultIcon">🎉</div>
+            <div class="result-title" id="resultTitle">Klaim Berhasil!</div>
+            <div class="result-subtitle" id="resultSubtitle">Menunggu verifikasi finance</div>
+
+            <div class="result-stats">
+                <div class="result-stat">
+                    <div class="rs-label">Berhasil</div>
+                    <div class="rs-value rs-success" id="resultSuccessCount">0</div>
+                </div>
+                <div class="result-stat">
+                    <div class="rs-label">Total Poin</div>
+                    <div class="rs-value rs-points" id="resultTotalPoints">0</div>
+                </div>
+                <div class="result-stat" id="resultFailedStat" style="display:none;">
+                    <div class="rs-label">Gagal</div>
+                    <div class="rs-value rs-fail" id="resultFailedCount">0</div>
+                </div>
+            </div>
+
+            <div class="result-breakdown" id="resultBreakdown" style="display:none;">
+                <div class="rb-title">📋 Detail Klaim</div>
+                <div class="rb-list" id="resultBreakdownList"></div>
+            </div>
+
+            <div class="result-errors" id="resultErrors" style="display:none;">
+                <div class="re-title">⚠️ Beberapa klaim gagal</div>
+                <ul class="re-list" id="resultErrorsList"></ul>
+            </div>
+
+            <div class="result-actions">
+                <button type="button" class="btn btn-light" onclick="closeResultModal()">Tutup</button>
+                <button type="button" class="btn btn-primary" onclick="goToHistory()">📋 Lihat Riwayat</button>
+            </div>
         </div>
     </div>
 
@@ -1105,12 +1241,15 @@
     document.getElementById('claimForm').addEventListener('submit', async function(e) {
         e.preventDefault();
 
-        const items = [];
+        const itemsForUI = []; // includes product name + points for breakdown display
+        const itemsPayload = []; // sent to backend
         const issues = [];
         document.querySelectorAll('.claim-item-row').forEach((row, idx) => {
             const cId = row.querySelector('.js-campaign-id').value;
             const pKey = row.querySelector('.js-product-key').value;
             const qty = parseInt(row.querySelector('.js-qty').value, 10) || 0;
+            const points = parseInt(row.querySelector('.js-points').value, 10) || 0;
+            const name = row.querySelector('.js-product-search').value.trim();
             const rowId = row.dataset.rowId;
             const photo = rowPhotos[rowId];
             if (!cId || !pKey) {
@@ -1125,26 +1264,26 @@
                 issues.push(`Produk #${idx + 1}: foto bukti wajib diupload`);
                 return;
             }
-            items.push({ campaign_id: cId, product_key: pKey, quantity: qty, photo_proof: photo });
+            itemsForUI.push({ name, qty, points, subtotal: points * qty });
+            itemsPayload.push({ campaign_id: cId, product_key: pKey, quantity: qty, photo_proof: photo });
         });
 
         if (issues.length > 0) {
             alert('Lengkapi data berikut:\n- ' + issues.join('\n- '));
             return;
         }
-        if (items.length === 0) {
+        if (itemsPayload.length === 0) {
             alert('Minimal pilih 1 produk dengan qty > 0 dan foto bukti.');
             return;
         }
 
-        // Estimate payload size
-        const totalKb = Math.round(items.reduce((acc, it) => acc + (it.photo_proof.length * 3 / 4), 0) / 1024);
+        const totalKb = Math.round(itemsPayload.reduce((acc, it) => acc + (it.photo_proof.length * 3 / 4), 0) / 1024);
 
         const overlay = document.getElementById('submitOverlay');
         const overlayLabel = document.getElementById('submitOverlayLabel');
         const overlayProgress = document.getElementById('submitOverlayProgress');
         overlay.classList.add('is-active');
-        overlayLabel.textContent = `Mengirim ${items.length} klaim...`;
+        overlayLabel.textContent = `Mengirim ${itemsPayload.length} klaim...`;
         overlayProgress.textContent = `Upload ${totalKb} KB · jangan tutup halaman`;
 
         const btn = document.getElementById('btnClaim');
@@ -1154,26 +1293,121 @@
             const res = await fetch('{{ route("waiter.bonus_produk.claim") }}', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, 'Accept': 'application/json' },
-                body: JSON.stringify({ items }),
+                body: JSON.stringify({ items: itemsPayload }),
             });
 
             overlayProgress.textContent = 'Memproses respons...';
             const data = await res.json();
             overlay.classList.remove('is-active');
 
-            if (data.success) {
-                alert(data.message || 'Klaim berhasil!');
-                location.reload();
-            } else {
-                const errDetail = (data.errors && data.errors.length) ? '\n\n' + data.errors.join('\n') : '';
-                alert((data.message || 'Gagal submit klaim.') + errDetail);
-            }
+            // Always show result modal (success or partial fail)
+            showResultModal(data, itemsForUI);
         } catch (err) {
             overlay.classList.remove('is-active');
-            alert('Error: ' + err.message + '\n\nCek koneksi internet & coba lagi.');
+            showResultModal({
+                success: false,
+                submitted: 0,
+                total_items: itemsPayload.length,
+                total_points: 0,
+                errors: ['Network error: ' + err.message + '. Cek koneksi internet & coba lagi.'],
+                results: [],
+            }, itemsForUI);
         }
         finally { btn.disabled = false; btn.textContent = 'Kirim Klaim'; }
     });
+
+    /**
+     * Show result modal after submit. Handles all states:
+     * - All success: 🎉 with breakdown
+     * - Partial success: 🟡 with success+failed counts + errors
+     * - All fail: ❌ with errors
+     */
+    function showResultModal(data, itemsForUI) {
+        const modal = document.getElementById('resultModal');
+        const icon = document.getElementById('resultIcon');
+        const title = document.getElementById('resultTitle');
+        const subtitle = document.getElementById('resultSubtitle');
+        const successCount = document.getElementById('resultSuccessCount');
+        const failedCount = document.getElementById('resultFailedCount');
+        const failedStat = document.getElementById('resultFailedStat');
+        const totalPoints = document.getElementById('resultTotalPoints');
+        const breakdown = document.getElementById('resultBreakdown');
+        const breakdownList = document.getElementById('resultBreakdownList');
+        const errorsBox = document.getElementById('resultErrors');
+        const errorsList = document.getElementById('resultErrorsList');
+
+        const total = data.total_items || itemsForUI.length;
+        const submitted = data.submitted || 0;
+        const failed = total - submitted;
+
+        // State
+        if (submitted === total && submitted > 0) {
+            icon.textContent = '🎉';
+            title.textContent = 'Klaim Berhasil!';
+            subtitle.textContent = 'Menunggu verifikasi finance';
+        } else if (submitted > 0) {
+            icon.textContent = '⚠️';
+            title.textContent = 'Sebagian Berhasil';
+            subtitle.textContent = `${submitted} sukses, ${failed} gagal`;
+        } else {
+            icon.textContent = '❌';
+            title.textContent = 'Klaim Gagal';
+            subtitle.textContent = 'Tidak ada klaim yang berhasil disubmit';
+        }
+
+        successCount.textContent = submitted;
+        totalPoints.textContent = '+' + (data.total_points || 0);
+
+        if (failed > 0) {
+            failedStat.style.display = 'block';
+            failedCount.textContent = failed;
+        } else {
+            failedStat.style.display = 'none';
+        }
+
+        // Breakdown - show successful items first
+        if (submitted > 0 && Array.isArray(data.results) && data.results.length > 0) {
+            breakdownList.innerHTML = '';
+            data.results.forEach((r, idx) => {
+                const ui = itemsForUI[idx] || {};
+                const success = r.success ?? false;
+                const item = document.createElement('div');
+                item.className = 'rb-item' + (!success ? ' is-failed' : '');
+                const name = escapeHtml(ui.name || 'Produk #' + (idx + 1));
+                const qtyTxt = ui.qty ? `× ${ui.qty}` : '';
+                const ptsTxt = success ? `+${r.points_claimed || ui.subtotal || 0} poin` : 'Gagal';
+                item.innerHTML = `
+                    <div class="rb-item-name">${name} ${qtyTxt}</div>
+                    <div class="rb-item-points">${ptsTxt}</div>
+                `;
+                breakdownList.appendChild(item);
+            });
+            breakdown.style.display = 'block';
+        } else {
+            breakdown.style.display = 'none';
+        }
+
+        // Errors
+        if (Array.isArray(data.errors) && data.errors.length > 0) {
+            errorsBox.style.display = 'block';
+            errorsList.innerHTML = data.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('');
+        } else {
+            errorsBox.style.display = 'none';
+        }
+
+        modal.classList.add('is-active');
+    }
+
+    function closeResultModal() {
+        document.getElementById('resultModal').classList.remove('is-active');
+        // Reload to refresh breakdown + product quota
+        location.reload();
+    }
+
+    function goToHistory() {
+        // Switch to history tab on next page load
+        location.href = '{{ route("waiter.bonus_produk") }}#history';
+    }
 
     // Auto-switch to verify tab if URL has ?tab=verify (deep-link from quick-action tile)
     document.addEventListener('DOMContentLoaded', () => {
@@ -1181,6 +1415,11 @@
         if (params.get('tab') === 'verify') {
             const verifyBtn = document.querySelector('.tab-bar .tab-btn:nth-child(3)');
             if (verifyBtn) verifyBtn.click();
+        }
+        // Auto-switch to history tab if URL hash is #history (from result modal "Lihat Riwayat")
+        if (window.location.hash === '#history') {
+            const historyBtn = document.querySelectorAll('.tab-bar .tab-btn')[1];
+            if (historyBtn) historyBtn.click();
         }
     });
     </script>
