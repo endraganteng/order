@@ -246,6 +246,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('bonus/campaigns/{id}', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'show'])->name('bonus.campaigns.show');
         Route::put('bonus/campaigns/{id}', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'update'])->name('bonus.campaigns.update');
         Route::delete('bonus/campaigns/{id}', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'destroy'])->name('bonus.campaigns.destroy');
+        Route::post('bonus/campaigns/{id}/claims/{claimId}/verify', [\App\Http\Controllers\Admin\SalesCampaignController::class, 'verifyClaim'])->name('bonus.campaigns.verify');
 
         // Payroll Management
         Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');

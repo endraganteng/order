@@ -37,6 +37,30 @@
         </div>
     </div>
 
+    {{-- Fitur #3: Filter & Search Toolbar --}}
+    <div class="campaign-toolbar">
+        <div class="toolbar-search">
+            <span class="toolbar-search-icon">🔍</span>
+            <input type="text" id="campaignSearch" class="form-control" placeholder="Cari campaign atau produk...">
+        </div>
+        <div class="toolbar-filters">
+            <select id="campaignStatusFilter" class="form-control form-control-sm">
+                <option value="">Semua Status</option>
+                <option value="active">Aktif</option>
+                <option value="draft">Draft</option>
+                <option value="ended">Selesai</option>
+            </select>
+            <select id="campaignEligibleFilter" class="form-control form-control-sm">
+                <option value="">Semua Target</option>
+                <option value="all">Semua Karyawan</option>
+                <option value="role">Per Role</option>
+                <option value="specific">Pilih Manual</option>
+            </select>
+            <button type="button" class="btn btn-sm btn-light" id="clearCampaignFilters">✕ Reset</button>
+        </div>
+        <div class="toolbar-result text-muted small" id="campaignResultCount"></div>
+    </div>
+
     {{-- Desktop Table --}}
     <div class="card desktop-only">
         <div class="table-scroll">
@@ -68,8 +92,13 @@
                                 'ended' => 'badge-secondary',
                                 default => 'badge-secondary',
                             };
+                            $productNames = implode(' ', array_map(fn($p) => (string) ($p['name'] ?? ''), $products));
+                            $searchBlob = strtolower(($campaign['title'] ?? '') . ' ' . $productNames);
                         @endphp
-                        <tr>
+                        <tr class="js-campaign-row"
+                            data-search="{{ $searchBlob }}"
+                            data-status="{{ $campaign['status'] ?? '' }}"
+                            data-eligible-type="{{ $eligible['type'] ?? 'all' }}">
                             <td>
                                 <strong>{{ $campaign['title'] ?? '-' }}</strong>
                                 <div class="text-muted small">{{ count($products) }} produk</div>
@@ -125,8 +154,13 @@
                     'ended' => 'badge-secondary',
                     default => 'badge-secondary',
                 };
+                $productNames = implode(' ', array_map(fn($p) => (string) ($p['name'] ?? ''), $products));
+                $searchBlob = strtolower(($campaign['title'] ?? '') . ' ' . $productNames);
             @endphp
-            <div class="card mobile-card">
+            <div class="card mobile-card js-campaign-row"
+                 data-search="{{ $searchBlob }}"
+                 data-status="{{ $campaign['status'] ?? '' }}"
+                 data-eligible-type="{{ $eligible['type'] ?? 'all' }}">
                 <div class="mobile-card-head d-flex justify-content-between align-items-center">
                     <strong>{{ $campaign['title'] ?? '-' }}</strong>
                     <span class="badge {{ $badgeClass }}">{{ ucfirst($campaign['status'] ?? '-') }}</span>
@@ -276,6 +310,36 @@
             <button type="button" class="btn btn-sm btn-light" id="closeDetailModal">✕</button>
         </div>
         <div id="detailContent" class="modal-body">Loading...</div>
+    </div>
+</div>
+
+{{-- Fitur #11: Photo Zoom Modal --}}
+<div class="photo-modal-backdrop" id="photoModalBackdrop"></div>
+<div class="photo-modal" id="photoModal" role="dialog" aria-modal="true" aria-label="Foto bukti klaim">
+    <button type="button" class="photo-modal-close" id="closePhotoModal" aria-label="Tutup">✕</button>
+    <img id="photoModalImg" src="" alt="Foto bukti klaim">
+    <div class="photo-modal-caption" id="photoModalCaption"></div>
+</div>
+
+{{-- Fitur #1: Reject Reason Modal --}}
+<div class="modal-backdrop" id="rejectModalBackdrop"></div>
+<div class="modal" id="rejectModal" role="dialog" aria-modal="true" aria-labelledby="rejectModalTitle">
+    <div class="modal-content">
+        <div class="modal-header d-flex justify-content-between align-items-center">
+            <h3 id="rejectModalTitle">Tolak Klaim</h3>
+            <button type="button" class="btn btn-sm btn-light" id="closeRejectModal">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="small text-muted" id="rejectClaimSummary"></p>
+            <div class="form-group">
+                <label class="form-label" for="rejectReason">Alasan Penolakan <span class="text-danger">*</span></label>
+                <textarea id="rejectReason" class="form-control" rows="3" placeholder="Misal: foto tidak jelas / produk tidak sesuai..." maxlength="500"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-light" id="cancelRejectBtn">Batal</button>
+            <button type="button" class="btn btn-danger" id="confirmRejectBtn">🗑️ Tolak Klaim</button>
+        </div>
     </div>
 </div>
 
@@ -652,11 +716,336 @@
     .claim-tab-content .table th { background: #f8fafc; font-size: 0.7rem; text-transform: uppercase; color: var(--color-text-muted); }
     .claim-tab-content .table td { padding: 0.45rem 0.55rem; vertical-align: middle; }
 
+    /* Fitur #3: Campaign list toolbar */
+    .campaign-toolbar {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 0.65rem;
+        margin-bottom: 1rem;
+        align-items: center;
+    }
+    .toolbar-search {
+        position: relative;
+    }
+    .toolbar-search-icon {
+        position: absolute;
+        left: 0.65rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--color-text-muted);
+        font-size: 0.85rem;
+        pointer-events: none;
+    }
+    .toolbar-search input {
+        padding-left: 2rem;
+    }
+    .toolbar-filters {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    .toolbar-filters select { min-width: 130px; }
+    .form-control-sm { padding: 0.4rem 0.55rem; font-size: 0.85rem; }
+    .toolbar-result {
+        grid-column: 1 / -1;
+        font-size: 0.78rem;
+    }
+
+    /* Fitur #4: Claim filter row inside detail modal */
+    .claim-filter-row {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.65rem;
+        align-items: center;
+        font-size: 0.85rem;
+    }
+    .claim-filter-row input,
+    .claim-filter-row select {
+        padding: 0.35rem 0.5rem;
+        font-size: 0.82rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: #fff;
+    }
+    .claim-filter-row input[type="search"] { flex: 1; min-width: 160px; }
+    .claim-filter-row .filter-label {
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    /* Fitur #1: Inline approve/reject buttons */
+    .btn-approve {
+        background: #16a34a;
+        color: #fff;
+        border: 1px solid #16a34a;
+        padding: 0.3rem 0.55rem;
+        font-size: 0.78rem;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .btn-approve:hover { background: #15803d; }
+    .btn-approve:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-reject {
+        background: #fff;
+        color: #dc3545;
+        border: 1px solid #dc3545;
+        padding: 0.3rem 0.55rem;
+        font-size: 0.78rem;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .btn-reject:hover { background: #dc3545; color: #fff; }
+    .claim-action-cell { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+    /* Fitur #11: Photo Zoom Modal */
+    .photo-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s ease;
+        z-index: 2000;
+    }
+    .photo-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.94);
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s ease;
+        z-index: 2001;
+        max-width: 95vw;
+        max-height: 92vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    .photo-modal img {
+        max-width: 100%;
+        max-height: 85vh;
+        border-radius: var(--radius-md);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        background: #fff;
+        object-fit: contain;
+    }
+    .photo-modal-close {
+        position: absolute;
+        top: -3rem;
+        right: 0;
+        background: rgba(255, 255, 255, 0.95);
+        color: #1e293b;
+        border: none;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        font-size: 1.1rem;
+        cursor: pointer;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    .photo-modal-close:hover { background: #fff; }
+    .photo-modal-caption {
+        color: #fff;
+        font-size: 0.85rem;
+        text-align: center;
+        max-width: 80vw;
+    }
+    .modal-open-photo #photoModal,
+    .modal-open-photo #photoModalBackdrop {
+        opacity: 1;
+        visibility: visible;
+    }
+    .modal-open-photo #photoModal {
+        transform: translate(-50%, -50%) scale(1);
+    }
+    .photo-thumb {
+        cursor: zoom-in;
+        border: none;
+        background: transparent;
+        padding: 0;
+        text-decoration: none;
+        font-size: 0.78rem;
+        color: var(--color-primary);
+        font-weight: 600;
+    }
+    .photo-thumb:hover { color: #4338ca; text-decoration: underline; }
+    .photo-thumb-img {
+        display: inline-block;
+        width: 36px;
+        height: 36px;
+        object-fit: cover;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
+        cursor: zoom-in;
+        transition: transform 0.15s;
+    }
+    .photo-thumb-img:hover { transform: scale(1.05); border-color: var(--color-primary); }
+
+    /* Fitur #1: Reject reason modal — uses base .modal styles */
+    .modal-open-reject #rejectModal,
+    .modal-open-reject #rejectModalBackdrop {
+        opacity: 1;
+        visibility: visible;
+    }
+    .modal-open-reject #rejectModal {
+        transform: translate(-50%, -50%);
+    }
+
+    /* Fitur #8: Product Stats Grid */
+    .product-stats-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.55rem;
+        margin-top: 0.5rem;
+    }
+    .product-stat-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: 0.7rem;
+        background: #fff;
+    }
+    .product-stat-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.5rem;
+        margin-bottom: 0.45rem;
+    }
+    .product-stat-name {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--color-text, #1e293b);
+    }
+    .product-stat-points {
+        background: #eef2ff;
+        color: #4338ca;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .product-stat-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.45rem;
+        margin-bottom: 0.5rem;
+    }
+    .product-stat-cell {
+        text-align: center;
+        padding: 0.45rem 0.3rem;
+        background: #f8fafc;
+        border-radius: var(--radius-sm);
+    }
+    .product-stat-cell .v {
+        font-size: 1rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+    .product-stat-cell .l {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+        letter-spacing: 0.3px;
+    }
+    .quota-bar {
+        height: 6px;
+        background: #e5e7eb;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 0.35rem;
+    }
+    .quota-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #16a34a, #4338ca);
+        border-radius: 999px;
+        transition: width 0.3s;
+    }
+    .quota-bar-fill.warn { background: linear-gradient(90deg, #f59e0b, #dc2626); }
+    .quota-bar-fill.danger { background: #dc2626; }
+    .quota-text {
+        font-size: 0.72rem;
+        color: var(--color-text-muted);
+        margin-top: 0.25rem;
+    }
+
+    /* Fitur #9: Top Performer Leaderboard */
+    .leaderboard-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        margin-top: 0.5rem;
+    }
+    .leaderboard-row {
+        display: grid;
+        grid-template-columns: 32px 1fr auto auto;
+        gap: 0.55rem;
+        align-items: center;
+        padding: 0.5rem 0.7rem;
+        background: #fff;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+    }
+    .leaderboard-rank {
+        width: 28px;
+        height: 28px;
+        background: #f1f5f9;
+        color: var(--color-text-muted);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.85rem;
+    }
+    .leaderboard-row:nth-child(1) .leaderboard-rank { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #fff; }
+    .leaderboard-row:nth-child(2) .leaderboard-rank { background: linear-gradient(135deg, #cbd5e1, #94a3b8); color: #fff; }
+    .leaderboard-row:nth-child(3) .leaderboard-rank { background: linear-gradient(135deg, #d97706, #92400e); color: #fff; }
+    .leaderboard-name { font-weight: 600; font-size: 0.88rem; }
+    .leaderboard-meta { color: var(--color-text-muted); font-size: 0.72rem; }
+    .leaderboard-points {
+        font-weight: 700;
+        color: #4338ca;
+        font-size: 0.95rem;
+        min-width: 60px;
+        text-align: right;
+    }
+    .leaderboard-empty {
+        text-align: center;
+        padding: 1rem;
+        color: var(--color-text-muted);
+        font-size: 0.85rem;
+        background: #f8fafc;
+        border-radius: var(--radius-md);
+    }
+
     @media (max-width: 768px) {
         .desktop-only { display: none; }
         .mobile-only { display: block; }
         .mobile-cards { display: grid; }
         .detail-stat-grid { grid-template-columns: repeat(2, 1fr); }
+        .campaign-toolbar { grid-template-columns: 1fr; }
+        .toolbar-filters { flex-wrap: wrap; }
+        .product-stat-row { grid-template-columns: repeat(2, 1fr); }
+        .leaderboard-row { grid-template-columns: 28px 1fr auto; }
+        .leaderboard-row .leaderboard-meta { grid-column: 2; }
+    }
+    /* Wider detail modal on desktop to fit table */
+    @media (min-width: 769px) {
+        #detailModal { width: min(820px, calc(100% - 1.5rem)); }
     }
 </style>
 
@@ -668,6 +1057,11 @@
     const showUrlTemplate = @json(route('admin.bonus.campaigns.show', '__ID__'));
     const updateUrlTemplate = @json(route('admin.bonus.campaigns.update', '__ID__'));
     const destroyUrlTemplate = @json(route('admin.bonus.campaigns.destroy', '__ID__'));
+    const verifyUrlTemplate = @json(route('admin.bonus.campaigns.verify', ['id' => '__ID__', 'claimId' => '__CLAIM__']));
+
+    // Detail modal state (used by approve/reject/filter handlers)
+    let currentCampaignId = null;
+    let currentCampaignData = null;
 
     const root = document.documentElement;
     const form = document.getElementById('campaignForm');
@@ -852,140 +1246,364 @@
                 return;
             }
 
-            const c = data.campaign;
-            const stats = data.stats;
-            const claims = data.claims || { pending: [], approved: [], rejected: [] };
-            const products = Object.values(c.products || {});
-            const eligible = c.eligible_users || { type: 'all' };
-            const eligibleLabel = eligible.type === 'all'
-                ? 'Semua Karyawan'
-                : eligible.type === 'role'
-                    ? (eligible.roles || []).map(r => r[0].toUpperCase() + r.slice(1)).join(', ')
-                    : (eligible.user_ids || []).length + ' user';
-
-            const fmtDate = (val) => {
-                if (!val) return '-';
-                if (typeof val === 'number') return new Date(val * 1000).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
-                return val;
-            };
-
-            const renderClaimRows = (list, badge) => {
-                if (!list || list.length === 0) {
-                    return '<tr><td colspan="7" class="text-center text-muted" style="padding:1rem;">Belum ada klaim ' + badge.label + '.</td></tr>';
-                }
-                return list.map(cl => {
-                    const verifierCell = (cl.status === 'approved' || cl.status === 'rejected')
-                        ? `<div class="small">
-                                <strong>${escapeHtml(cl.verified_by || '-')}</strong>
-                                <div class="text-muted" style="font-size:0.7rem;">${escapeHtml(fmtDate(cl.verified_at))}</div>
-                                ${cl.reject_reason ? `<div class="text-danger" style="font-size:0.7rem; margin-top:2px;">⚠️ ${escapeHtml(cl.reject_reason)}</div>` : ''}
-                           </div>`
-                        : '<span class="text-muted small">—</span>';
-                    return `
-                        <tr>
-                            <td>${escapeHtml(cl.waiter_name || '-')}</td>
-                            <td>${escapeHtml(cl.product_name || cl.product_key || '-')}</td>
-                            <td class="text-center">${escapeHtml(String(cl.quantity || 0))}</td>
-                            <td class="text-center"><strong>${escapeHtml(String(cl.points_claimed || 0))}</strong></td>
-                            <td class="small text-muted">${escapeHtml(fmtDate(cl.submitted_at || cl.date))}</td>
-                            <td>${verifierCell}</td>
-                            <td>${cl.photo_url ? `<a href="${escapeHtml(cl.photo_url)}" target="_blank" class="small">📷 Foto</a>` : '<span class="text-muted small">-</span>'}</td>
-                        </tr>
-                    `;
-                }).join('');
-            };
-
-            const tabBtn = (key, label, count, badgeClass) =>
-                `<button type="button" class="claim-tab-btn ${key === 'pending' ? 'active' : ''}" data-tab="${key}">
-                    ${label} <span class="badge ${badgeClass}">${count}</span>
-                </button>`;
-
-            document.getElementById('detailModalTitle').textContent = c.title || 'Detail Campaign';
-            document.getElementById('detailContent').innerHTML = `
-                <div class="card" style="background:#f8fafc; margin-bottom:0.85rem;">
-                    <div class="small"><strong>Periode:</strong> ${c.start_date || '∞'} → ${c.end_date || '∞'}</div>
-                    <div class="small"><strong>Status:</strong> ${c.status || '-'}</div>
-                    <div class="small"><strong>Eligible:</strong> ${eligibleLabel}</div>
-                </div>
-                <div class="detail-stat-grid">
-                    <div class="detail-stat"><div class="val text-warning">${stats.total_pending}</div><div class="lbl">Pending</div></div>
-                    <div class="detail-stat"><div class="val text-success">${stats.total_approved}</div><div class="lbl">Approved</div></div>
-                    <div class="detail-stat"><div class="val text-danger">${stats.total_rejected}</div><div class="lbl">Rejected</div></div>
-                    <div class="detail-stat"><div class="val">${stats.total_points_approved}</div><div class="lbl">Total Poin</div></div>
-                </div>
-                <div style="margin-bottom:0.85rem;">
-                    <strong style="font-size:0.9rem;">Produk (${products.length})</strong>
-                    <div style="margin-top:0.5rem;">
-                        ${products.map(p => {
-                            const hasQuota = p.quota != null && p.quota !== '';
-                            const claimed = parseInt(p.quota_claimed ?? 0, 10) || 0;
-                            const quotaTxt = hasQuota
-                                ? ` <span style="color:#6b7280;">(${claimed}/${p.quota} unit)</span>`
-                                : '';
-                            return `<span class="product-tag" style="margin-bottom:0.2rem;">${escapeHtml(p.name)} — <strong>${escapeHtml(String(p.points_per_unit))} poin/unit</strong>${quotaTxt}</span>`;
-                        }).join('')}
-                    </div>
-                </div>
-                <div class="claim-history">
-                    <div class="claim-history-header">
-                        <strong style="font-size:0.9rem;">📋 Riwayat Klaim</strong>
-                    </div>
-                    <div class="claim-tabs">
-                        ${tabBtn('pending', 'Pending', stats.total_pending, 'badge-warning')}
-                        ${tabBtn('approved', 'Approved', stats.total_approved, 'badge-success')}
-                        ${tabBtn('rejected', 'Rejected', stats.total_rejected, 'badge-danger')}
-                    </div>
-                    <div class="claim-tab-content" data-tab="pending">
-                        <div class="table-scroll">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Disubmit</th><th>Diverifikasi</th><th>Bukti</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${renderClaimRows(claims.pending, { label: 'pending' })}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="claim-tab-content" data-tab="approved" style="display:none;">
-                        <div class="table-scroll">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Disubmit</th><th>Diverifikasi</th><th>Bukti</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${renderClaimRows(claims.approved, { label: 'approved' })}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="claim-tab-content" data-tab="rejected" style="display:none;">
-                        <div class="table-scroll">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Disubmit</th><th>Diverifikasi</th><th>Bukti</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${renderClaimRows(claims.rejected, { label: 'rejected' })}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // Tab switching for claim history
-            document.querySelectorAll('#detailContent .claim-tab-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const target = btn.dataset.tab;
-                    document.querySelectorAll('#detailContent .claim-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === target));
-                    document.querySelectorAll('#detailContent .claim-tab-content').forEach(c => {
-                        c.style.display = c.dataset.tab === target ? 'block' : 'none';
-                    });
-                });
-            });
+            // Stash for child handlers (approve/reject/filter/photo) without round-trip refetch.
+            currentCampaignId = id;
+            currentCampaignData = data;
+            renderDetailModal();
         } catch (err) {
             document.getElementById('detailContent').innerHTML = `<p class="text-danger">Error: ${err.message}</p>`;
+        }
+    }
+
+    function renderDetailModal() {
+        if (!currentCampaignData) return;
+        const data = currentCampaignData;
+        const c = data.campaign;
+        const stats = data.stats;
+        const claims = data.claims || { pending: [], approved: [], rejected: [] };
+        const productStats = data.product_stats || [];
+        const leaderboard = data.leaderboard || [];
+        const eligible = c.eligible_users || { type: 'all' };
+        const eligibleLabel = eligible.type === 'all'
+            ? 'Semua Karyawan'
+            : eligible.type === 'role'
+                ? (eligible.roles || []).map(r => r[0].toUpperCase() + r.slice(1)).join(', ')
+                : (eligible.user_ids || []).length + ' user';
+
+        const fmtDate = (val) => {
+            if (!val) return '-';
+            if (typeof val === 'number') return new Date(val * 1000).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+            return val;
+        };
+
+        // Fitur #11: Photo cell with thumbnail + zoom trigger
+        const photoCell = (cl) => {
+            if (!cl.photo_url) return '<span class="text-muted small">-</span>';
+            const safeUrl = escapeHtml(cl.photo_url);
+            const caption = escapeHtml(`${cl.waiter_name || '-'} — ${cl.product_name || '-'} (${cl.quantity || 0} unit)`);
+            return `<button type="button" class="photo-thumb js-photo-zoom" data-url="${safeUrl}" data-caption="${caption}" title="Klik untuk zoom">
+                <img src="${safeUrl}" class="photo-thumb-img" alt="Bukti">
+            </button>`;
+        };
+
+        // Fitur #1: Action cell with approve/reject for pending tab
+        const actionCell = (cl) => {
+            if (cl.status !== 'pending') return '';
+            return `<div class="claim-action-cell">
+                <button type="button" class="btn-approve js-approve-claim" data-claim-id="${escapeHtml(cl.id)}" data-summary="${escapeHtml(`${cl.waiter_name} → ${cl.product_name} (${cl.quantity}x = ${cl.points_claimed}p)`)}">✓ Approve</button>
+                <button type="button" class="btn-reject js-reject-claim" data-claim-id="${escapeHtml(cl.id)}" data-summary="${escapeHtml(`${cl.waiter_name} → ${cl.product_name} (${cl.quantity}x)`)}">✕ Tolak</button>
+            </div>`;
+        };
+
+        const renderClaimRows = (list, status) => {
+            const showAction = status === 'pending';
+            const colspan = showAction ? 8 : 7;
+            if (!list || list.length === 0) {
+                return `<tr><td colspan="${colspan}" class="text-center text-muted" style="padding:1rem;">Belum ada klaim ${status}.</td></tr>`;
+            }
+            return list.map(cl => {
+                const verifierCell = (cl.status === 'approved' || cl.status === 'rejected')
+                    ? `<div class="small">
+                            <strong>${escapeHtml(cl.verified_by || '-')}</strong>
+                            <div class="text-muted" style="font-size:0.7rem;">${escapeHtml(fmtDate(cl.verified_at))}</div>
+                            ${cl.reject_reason ? `<div class="text-danger" style="font-size:0.7rem; margin-top:2px;">⚠️ ${escapeHtml(cl.reject_reason)}</div>` : ''}
+                       </div>`
+                    : '<span class="text-muted small">—</span>';
+                const dateStr = (cl.date || '').toString();
+                const waiterId = (cl.waiter_id || '').toString();
+                return `
+                    <tr class="js-claim-row" data-status="${cl.status}" data-waiter-id="${escapeHtml(waiterId)}" data-date="${escapeHtml(dateStr)}" data-search="${escapeHtml((cl.waiter_name + ' ' + cl.product_name).toLowerCase())}">
+                        <td>${escapeHtml(cl.waiter_name || '-')}</td>
+                        <td>${escapeHtml(cl.product_name || cl.product_key || '-')}</td>
+                        <td class="text-center">${escapeHtml(String(cl.quantity || 0))}</td>
+                        <td class="text-center"><strong>${escapeHtml(String(cl.points_claimed || 0))}</strong></td>
+                        <td class="small text-muted">${escapeHtml(fmtDate(cl.submitted_at || cl.date))}</td>
+                        <td>${verifierCell}</td>
+                        <td>${photoCell(cl)}</td>
+                        ${showAction ? `<td>${actionCell(cl)}</td>` : ''}
+                    </tr>
+                `;
+            }).join('');
+        };
+
+        const tabBtn = (key, label, count, badgeClass) =>
+            `<button type="button" class="claim-tab-btn ${key === 'pending' ? 'active' : ''}" data-tab="${key}">
+                ${label} <span class="badge ${badgeClass}">${count}</span>
+            </button>`;
+
+        // Fitur #4: Build unique waiter list from all claims for filter dropdown
+        const allClaims = [...(claims.pending || []), ...(claims.approved || []), ...(claims.rejected || [])];
+        const waiterMap = {};
+        allClaims.forEach(cl => {
+            const wid = cl.waiter_id || '';
+            if (wid && !waiterMap[wid]) waiterMap[wid] = cl.waiter_name || wid;
+        });
+        const waiterOpts = Object.entries(waiterMap).map(([wid, name]) =>
+            `<option value="${escapeHtml(wid)}">${escapeHtml(name)}</option>`
+        ).join('');
+
+        // Fitur #4: Filter row markup (shared per tab)
+        const filterRow = `
+            <div class="claim-filter-row">
+                <span class="filter-label">Filter:</span>
+                <input type="search" id="claimSearchFilter" placeholder="Cari nama waiter / produk..." aria-label="Cari klaim">
+                <select id="claimWaiterFilter" aria-label="Filter waiter">
+                    <option value="">Semua Waiter</option>
+                    ${waiterOpts}
+                </select>
+                <input type="date" id="claimDateFromFilter" aria-label="Tanggal mulai">
+                <input type="date" id="claimDateToFilter" aria-label="Tanggal selesai">
+                <button type="button" class="btn btn-sm btn-light" id="clearClaimFilters">✕ Reset</button>
+                <span class="text-muted small" id="claimFilterCount"></span>
+            </div>`;
+
+        const tableHead = (showAction) => `
+            <thead>
+                <tr>
+                    <th>Waiter</th><th>Produk</th><th class="text-center">Qty</th><th class="text-center">Poin</th><th>Disubmit</th><th>Diverifikasi</th><th>Bukti</th>
+                    ${showAction ? '<th>Aksi</th>' : ''}
+                </tr>
+            </thead>`;
+
+        // Fitur #8: Product stats markup
+        const productStatsHtml = productStats.length === 0
+            ? '<div class="text-muted small" style="padding:0.5rem;">Belum ada produk.</div>'
+            : productStats.map(ps => {
+                const hasQuota = ps.quota != null && ps.quota !== '';
+                const quotaCap = hasQuota ? parseInt(ps.quota, 10) : 0;
+                const quotaClaimed = parseInt(ps.quota_claimed, 10) || 0;
+                const quotaPct = hasQuota && quotaCap > 0 ? Math.min(100, (quotaClaimed / quotaCap) * 100) : 0;
+                const quotaCls = quotaPct >= 90 ? 'danger' : (quotaPct >= 70 ? 'warn' : '');
+                const quotaBlock = hasQuota ? `
+                    <div class="quota-bar"><div class="quota-bar-fill ${quotaCls}" style="width:${quotaPct.toFixed(1)}%;"></div></div>
+                    <div class="quota-text">Quota: ${quotaClaimed}/${quotaCap} unit (${quotaPct.toFixed(0)}%)</div>
+                ` : `<div class="quota-text">Tanpa quota (unlimited)</div>`;
+                return `
+                    <div class="product-stat-card">
+                        <div class="product-stat-head">
+                            <div class="product-stat-name">${escapeHtml(ps.name)}</div>
+                            <div class="product-stat-points">${escapeHtml(String(ps.points_per_unit))} p/unit</div>
+                        </div>
+                        <div class="product-stat-row">
+                            <div class="product-stat-cell"><div class="v text-success">${ps.approved_qty}</div><div class="l">Approved Qty</div></div>
+                            <div class="product-stat-cell"><div class="v" style="color:#4338ca;">${ps.approved_points}</div><div class="l">Total Poin</div></div>
+                            <div class="product-stat-cell"><div class="v text-warning">${ps.pending_qty}</div><div class="l">Pending Qty</div></div>
+                            <div class="product-stat-cell"><div class="v">${ps.unique_waiters}</div><div class="l">Waiter Aktif</div></div>
+                        </div>
+                        ${quotaBlock}
+                    </div>
+                `;
+            }).join('');
+
+        // Fitur #9: Leaderboard markup (top 10)
+        const leaderboardHtml = leaderboard.length === 0
+            ? '<div class="leaderboard-empty">Belum ada klaim approved untuk leaderboard.</div>'
+            : leaderboard.slice(0, 10).map((row, idx) => {
+                const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : (idx + 1)));
+                return `
+                    <div class="leaderboard-row">
+                        <div class="leaderboard-rank">${medal}</div>
+                        <div>
+                            <div class="leaderboard-name">${escapeHtml(row.waiter_name)}</div>
+                            <div class="leaderboard-meta">${row.claim_count} klaim · ${row.total_qty} unit</div>
+                        </div>
+                        <div class="leaderboard-points">${row.total_points}<small style="font-size:0.7rem; color:var(--color-text-muted); font-weight:600;"> poin</small></div>
+                    </div>
+                `;
+            }).join('');
+
+        document.getElementById('detailModalTitle').textContent = c.title || 'Detail Campaign';
+        document.getElementById('detailContent').innerHTML = `
+            <div class="card" style="background:#f8fafc; margin-bottom:0.85rem;">
+                <div class="small"><strong>Periode:</strong> ${c.start_date || '∞'} → ${c.end_date || '∞'}</div>
+                <div class="small"><strong>Status:</strong> ${c.status || '-'}</div>
+                <div class="small"><strong>Eligible:</strong> ${eligibleLabel}</div>
+            </div>
+            <div class="detail-stat-grid">
+                <div class="detail-stat"><div class="val text-warning">${stats.total_pending}</div><div class="lbl">Pending</div></div>
+                <div class="detail-stat"><div class="val text-success">${stats.total_approved}</div><div class="lbl">Approved</div></div>
+                <div class="detail-stat"><div class="val text-danger">${stats.total_rejected}</div><div class="lbl">Rejected</div></div>
+                <div class="detail-stat"><div class="val">${stats.total_points_approved}</div><div class="lbl">Total Poin</div></div>
+            </div>
+
+            <div style="margin-bottom:0.85rem;">
+                <strong style="font-size:0.9rem;">📊 Statistik Per Produk</strong>
+                <div class="product-stats-grid">${productStatsHtml}</div>
+            </div>
+
+            <div style="margin-bottom:0.85rem;">
+                <strong style="font-size:0.9rem;">🏆 Top Performer (Approved)</strong>
+                <div class="leaderboard-list">${leaderboardHtml}</div>
+            </div>
+
+            <div class="claim-history">
+                <div class="claim-history-header">
+                    <strong style="font-size:0.9rem;">📋 Riwayat Klaim</strong>
+                </div>
+                <div class="claim-tabs">
+                    ${tabBtn('pending', 'Pending', stats.total_pending, 'badge-warning')}
+                    ${tabBtn('approved', 'Approved', stats.total_approved, 'badge-success')}
+                    ${tabBtn('rejected', 'Rejected', stats.total_rejected, 'badge-danger')}
+                </div>
+                ${filterRow}
+                <div class="claim-tab-content" data-tab="pending">
+                    <div class="table-scroll">
+                        <table class="table">${tableHead(true)}<tbody>${renderClaimRows(claims.pending, 'pending')}</tbody></table>
+                    </div>
+                </div>
+                <div class="claim-tab-content" data-tab="approved" style="display:none;">
+                    <div class="table-scroll">
+                        <table class="table">${tableHead(false)}<tbody>${renderClaimRows(claims.approved, 'approved')}</tbody></table>
+                    </div>
+                </div>
+                <div class="claim-tab-content" data-tab="rejected" style="display:none;">
+                    <div class="table-scroll">
+                        <table class="table">${tableHead(false)}<tbody>${renderClaimRows(claims.rejected, 'rejected')}</tbody></table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        wireDetailHandlers();
+        applyClaimFilters(); // Initial count update
+    }
+
+    // Tab switching + handler wiring (Fitur #1, #4, #11)
+    function wireDetailHandlers() {
+        const root = document.getElementById('detailContent');
+        if (!root) return;
+
+        // Tab switching
+        root.querySelectorAll('.claim-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const target = btn.dataset.tab;
+                root.querySelectorAll('.claim-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === target));
+                root.querySelectorAll('.claim-tab-content').forEach(c => {
+                    c.style.display = c.dataset.tab === target ? 'block' : 'none';
+                });
+                applyClaimFilters();
+            });
+        });
+
+        // Fitur #4: Filter listeners
+        ['claimSearchFilter', 'claimWaiterFilter', 'claimDateFromFilter', 'claimDateToFilter'].forEach(fid => {
+            const el = document.getElementById(fid);
+            if (el) el.addEventListener('input', applyClaimFilters);
+        });
+        const clearBtn = document.getElementById('clearClaimFilters');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                ['claimSearchFilter', 'claimWaiterFilter', 'claimDateFromFilter', 'claimDateToFilter'].forEach(fid => {
+                    const el = document.getElementById(fid);
+                    if (el) el.value = '';
+                });
+                applyClaimFilters();
+            });
+        }
+
+        // Fitur #11: Photo zoom
+        root.querySelectorAll('.js-photo-zoom').forEach(btn => {
+            btn.addEventListener('click', () => {
+                openPhotoModal(btn.dataset.url, btn.dataset.caption || '');
+            });
+        });
+
+        // Fitur #1: Approve / Reject inline
+        root.querySelectorAll('.js-approve-claim').forEach(btn => {
+            btn.addEventListener('click', () => approveClaim(btn.dataset.claimId, btn.dataset.summary || ''));
+        });
+        root.querySelectorAll('.js-reject-claim').forEach(btn => {
+            btn.addEventListener('click', () => openRejectModal(btn.dataset.claimId, btn.dataset.summary || ''));
+        });
+    }
+
+    function applyClaimFilters() {
+        const search = (document.getElementById('claimSearchFilter')?.value || '').trim().toLowerCase();
+        const waiter = (document.getElementById('claimWaiterFilter')?.value || '').trim();
+        const dateFrom = (document.getElementById('claimDateFromFilter')?.value || '').trim();
+        const dateTo = (document.getElementById('claimDateToFilter')?.value || '').trim();
+
+        let visibleCount = 0;
+        const activeTab = document.querySelector('#detailContent .claim-tab-btn.active')?.dataset.tab;
+        document.querySelectorAll('#detailContent .js-claim-row').forEach(row => {
+            // Only count rows in the active tab
+            const inActiveTab = row.closest('.claim-tab-content')?.dataset.tab === activeTab;
+            const blob = row.dataset.search || '';
+            const wid = row.dataset.waiterId || '';
+            const date = row.dataset.date || '';
+
+            let show = true;
+            if (search && !blob.includes(search)) show = false;
+            if (waiter && wid !== waiter) show = false;
+            if (dateFrom && date < dateFrom) show = false;
+            if (dateTo && date > dateTo) show = false;
+
+            row.style.display = show ? '' : 'none';
+            if (show && inActiveTab) visibleCount++;
+        });
+
+        const cnt = document.getElementById('claimFilterCount');
+        if (cnt) {
+            const hasFilter = search || waiter || dateFrom || dateTo;
+            cnt.textContent = hasFilter ? `${visibleCount} klaim cocok` : '';
+        }
+    }
+
+    // Fitur #11: Photo zoom modal
+    function openPhotoModal(url, caption) {
+        document.getElementById('photoModalImg').src = url;
+        document.getElementById('photoModalCaption').textContent = caption || '';
+        root.classList.add('modal-open-photo');
+    }
+    function closePhotoModal() {
+        root.classList.remove('modal-open-photo');
+        document.getElementById('photoModalImg').src = '';
+    }
+
+    // Fitur #1: Approve/Reject claims
+    async function approveClaim(claimId, summary) {
+        if (!window.confirm(`Approve klaim ini?\n\n${summary}\n\nPoin akan masuk ke bonus bulanan waiter.`)) return;
+        await sendVerifyRequest(claimId, 'approved', null);
+    }
+
+    let rejectingClaimId = null;
+    function openRejectModal(claimId, summary) {
+        rejectingClaimId = claimId;
+        document.getElementById('rejectClaimSummary').textContent = summary;
+        document.getElementById('rejectReason').value = '';
+        root.classList.add('modal-open-reject');
+        setTimeout(() => document.getElementById('rejectReason').focus(), 100);
+    }
+    function closeRejectModal() {
+        root.classList.remove('modal-open-reject');
+        rejectingClaimId = null;
+    }
+
+    async function sendVerifyRequest(claimId, status, reason) {
+        const url = verifyUrlTemplate
+            .replace('__ID__', encodeURIComponent(currentCampaignId))
+            .replace('__CLAIM__', encodeURIComponent(claimId));
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ status, reason }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert(data.message || 'Gagal verifikasi.');
+                return;
+            }
+            // Refetch detail data and re-render to reflect updated state.
+            const fresh = await fetch(urlWith(showUrlTemplate, currentCampaignId), { headers: { 'Accept': 'application/json' } });
+            currentCampaignData = await fresh.json();
+            renderDetailModal();
+        } catch (err) {
+            alert('Error: ' + err.message);
         }
     }
 
@@ -1013,6 +1631,35 @@
     document.getElementById('closeDetailModal').addEventListener('click', closeDetail);
     modalDetailBackdrop.addEventListener('click', closeDetail);
 
+    // Fitur #11: Photo zoom modal close handlers
+    document.getElementById('closePhotoModal').addEventListener('click', closePhotoModal);
+    document.getElementById('photoModalBackdrop').addEventListener('click', closePhotoModal);
+
+    // Fitur #1: Reject reason modal handlers
+    document.getElementById('closeRejectModal').addEventListener('click', closeRejectModal);
+    document.getElementById('rejectModalBackdrop').addEventListener('click', closeRejectModal);
+    document.getElementById('cancelRejectBtn').addEventListener('click', closeRejectModal);
+    document.getElementById('confirmRejectBtn').addEventListener('click', async () => {
+        const reason = document.getElementById('rejectReason').value.trim();
+        if (!reason) {
+            alert('Alasan penolakan wajib diisi.');
+            document.getElementById('rejectReason').focus();
+            return;
+        }
+        if (!rejectingClaimId) return;
+        const id = rejectingClaimId;
+        closeRejectModal();
+        await sendVerifyRequest(id, 'rejected', reason);
+    });
+
+    // Esc key closes photo modal (most disruptive UX expected for top-layer modal)
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            if (root.classList.contains('modal-open-photo')) closePhotoModal();
+            else if (root.classList.contains('modal-open-reject')) closeRejectModal();
+        }
+    });
+
     document.getElementById('fEligibleType').addEventListener('change', toggleEligible);
     document.getElementById('addProductBtn').addEventListener('click', () => addProductRow());
 
@@ -1024,6 +1671,43 @@
     });
     document.querySelectorAll('.js-delete-campaign').forEach(btn => {
         btn.addEventListener('click', () => deleteCampaign(btn.dataset.id, btn.dataset.title || ''));
+    });
+
+    // Fitur #3: Campaign list search + filter
+    function applyCampaignFilters() {
+        const search = (document.getElementById('campaignSearch')?.value || '').trim().toLowerCase();
+        const status = (document.getElementById('campaignStatusFilter')?.value || '').trim();
+        const eligible = (document.getElementById('campaignEligibleFilter')?.value || '').trim();
+        let visibleCount = 0;
+        document.querySelectorAll('.js-campaign-row').forEach(row => {
+            const blob = row.dataset.search || '';
+            const rowStatus = row.dataset.status || '';
+            const rowEligible = row.dataset.eligibleType || '';
+            let show = true;
+            if (search && !blob.includes(search)) show = false;
+            if (status && rowStatus !== status) show = false;
+            if (eligible && rowEligible !== eligible) show = false;
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+        // Mobile cards counted separately - dedupe per-row by checking parent
+        const desktopCount = document.querySelectorAll('.desktop-only .js-campaign-row:not([style*="display: none"])').length;
+        const cnt = document.getElementById('campaignResultCount');
+        if (cnt) {
+            const total = campaigns.length;
+            const hasFilter = search || status || eligible;
+            cnt.textContent = hasFilter ? `${desktopCount} dari ${total} campaign cocok` : '';
+        }
+    }
+    ['campaignSearch', 'campaignStatusFilter', 'campaignEligibleFilter'].forEach(fid => {
+        const el = document.getElementById(fid);
+        if (el) el.addEventListener('input', applyCampaignFilters);
+    });
+    document.getElementById('clearCampaignFilters')?.addEventListener('click', () => {
+        document.getElementById('campaignSearch').value = '';
+        document.getElementById('campaignStatusFilter').value = '';
+        document.getElementById('campaignEligibleFilter').value = '';
+        applyCampaignFilters();
     });
 
     form.addEventListener('submit', async function (e) {

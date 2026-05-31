@@ -175,6 +175,65 @@ class SalesCampaignController extends Controller
         $approvedClaims = $this->campaign->getClaimsByStatus('approved', $id);
         $rejectedClaims = $this->campaign->getClaimsByStatus('rejected', $id);
 
+        // Fitur #8: Stats per produk - aggregate dari approved claims
+        $productStats = [];
+        $products = (array) ($campaign['products'] ?? []);
+        foreach ($products as $key => $p) {
+            $productStats[$key] = [
+                'name' => $p['name'] ?? '-',
+                'points_per_unit' => (int) ($p['points_per_unit'] ?? 0),
+                'quota' => $p['quota'] ?? null,
+                'quota_claimed' => (int) ($p['quota_claimed'] ?? 0),
+                'approved_qty' => 0,
+                'approved_points' => 0,
+                'pending_qty' => 0,
+                'rejected_qty' => 0,
+                'unique_waiters' => 0,
+            ];
+        }
+        $waiterTracker = []; // [productKey => set of waiterIds]
+        foreach ($approvedClaims as $cl) {
+            $pk = (string) ($cl['product_key'] ?? '');
+            if (! isset($productStats[$pk])) continue;
+            $productStats[$pk]['approved_qty'] += (int) ($cl['quantity'] ?? 0);
+            $productStats[$pk]['approved_points'] += (int) ($cl['points_claimed'] ?? 0);
+            $waiterTracker[$pk][(string) ($cl['waiter_id'] ?? '')] = true;
+        }
+        foreach ($pendingClaims as $cl) {
+            $pk = (string) ($cl['product_key'] ?? '');
+            if (! isset($productStats[$pk])) continue;
+            $productStats[$pk]['pending_qty'] += (int) ($cl['quantity'] ?? 0);
+        }
+        foreach ($rejectedClaims as $cl) {
+            $pk = (string) ($cl['product_key'] ?? '');
+            if (! isset($productStats[$pk])) continue;
+            $productStats[$pk]['rejected_qty'] += (int) ($cl['quantity'] ?? 0);
+        }
+        foreach ($waiterTracker as $pk => $waiters) {
+            $productStats[$pk]['unique_waiters'] = count($waiters);
+        }
+
+        // Fitur #9: Top performer leaderboard - aggregate approved claims per waiter
+        $leaderboardMap = []; // [waiterId => {name, total_qty, total_points, claim_count}]
+        foreach ($approvedClaims as $cl) {
+            $wid = (string) ($cl['waiter_id'] ?? '');
+            if ($wid === '') continue;
+            if (! isset($leaderboardMap[$wid])) {
+                $leaderboardMap[$wid] = [
+                    'waiter_id' => $wid,
+                    'waiter_name' => $cl['waiter_name'] ?? '-',
+                    'total_qty' => 0,
+                    'total_points' => 0,
+                    'claim_count' => 0,
+                ];
+            }
+            $leaderboardMap[$wid]['total_qty'] += (int) ($cl['quantity'] ?? 0);
+            $leaderboardMap[$wid]['total_points'] += (int) ($cl['points_claimed'] ?? 0);
+            $leaderboardMap[$wid]['claim_count']++;
+        }
+        $leaderboard = array_values($leaderboardMap);
+        usort($leaderboard, fn($a, $b) => $b['total_points'] <=> $a['total_points']);
+
         return response()->json([
             'success' => true,
             'campaign' => $campaign,
@@ -189,6 +248,31 @@ class SalesCampaignController extends Controller
                 'total_rejected' => count($rejectedClaims),
                 'total_points_approved' => array_sum(array_column($approvedClaims, 'points_claimed')),
             ],
+            'product_stats' => array_values($productStats),
+            'leaderboard' => $leaderboard,
         ]);
+    }
+
+    /**
+     * Verify (approve/reject) a campaign claim from admin panel.
+     * Mirror dari WaiterBonusController::processClaimVerification, dipanggil oleh admin.
+     */
+    public function verifyClaim(Request $request, string $id, string $claimId)
+    {
+        $data = $request->validate([
+            'status' => 'required|string|in:approved,rejected',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $verifiedBy = (string) (session('admin_name') ?? session('admin_email') ?? 'Admin');
+
+        $result = $this->campaign->verifyClaim(
+            $claimId,
+            $data['status'],
+            $verifiedBy,
+            $data['reason'] ?? null
+        );
+
+        return response()->json($result, $result['success'] ? 200 : 400);
     }
 }
