@@ -197,7 +197,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Jadwal Shift Retail (standalone planning tool — tidak terintegrasi dengan attendance)
         Route::get('jadwal', [\App\Http\Controllers\Admin\JadwalController::class, 'index'])->name('jadwal.index');
-        Route::post('jadwal/generate', [\App\Http\Controllers\Admin\JadwalController::class, 'generate'])->name('jadwal.generate');
+        Route::post('jadwal/save-preferences', [\App\Http\Controllers\Admin\JadwalController::class, 'savePreferences'])->name('jadwal.save_preferences');
+        Route::post('jadwal/save-week', [\App\Http\Controllers\Admin\JadwalController::class, 'saveWeek'])->name('jadwal.save_week');
+        Route::post('jadwal/reset-week', [\App\Http\Controllers\Admin\JadwalController::class, 'resetWeek'])->name('jadwal.reset_week');
+        Route::post('jadwal/apply-attendance', [\App\Http\Controllers\Admin\JadwalController::class, 'applyAttendance'])->name('jadwal.apply_attendance');
 
         // Attendance
         Route::get('attendance', [AttendanceController::class, 'index'])->name('attendance.index');

@@ -7,17 +7,20 @@ use Carbon\Carbon;
 /**
  * ScheduleGeneratorService
  *
- * Standalone schedule generator untuk toko retail dengan 3 karyawan.
- * Tidak terintegrasi dengan sistem shift attendance existing — purely planning tool.
+ * Generator jadwal toko retail untuk 3 karyawan, support full customization:
+ * - Setiap karyawan bisa pilih hari libur (Sen/Sel/Rab/Kam/Jum)
+ * - Holder 4× FULL bisa di-pick manual atau auto rotate
+ * - Per-week override (manual edit cell)
  *
- * Spec rules (lihat jadwal.md):
+ * Rules dijaga oleh validator:
  *  - Toko buka 06:30–21:00 setiap hari
- *  - 3 karyawan, masing-masing libur 1x/minggu
- *  - Libur dilarang Sabtu & Minggu
- *  - Senin–Rabu: 2 orang masuk (1 libur), keduanya FULL
- *  - Kamis–Minggu: 3 orang masuk = 1 FULL + 1 PAGI + 1 SORE
- *  - Rotasi 4x FULL holder per minggu (deterministic by ISO week)
- *  - Total 10 FULL slot/minggu = 1×4 + 2×3
+ *  - Min 2 orang masuk per hari
+ *  - Setiap orang libur tepat 1× per minggu
+ *  - Libur dilarang Sat/Sun
+ *  - 3 libur days harus berbeda (max 1 orang libur per hari)
+ *  - 2-person day: keduanya FULL
+ *  - 3-person day: 1 FULL + 1 PAGI + 1 SORE
+ *  - Holder dapat 4× FULL total
  */
 class ScheduleGeneratorService
 {
@@ -35,48 +38,21 @@ class ScheduleGeneratorService
 
     public const DAY_LABELS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
     public const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    public const WEEKDAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 
-    /**
-     * Canonical template: E1 = 4x FULL holder.
-     * E0/E1/E2 di-map ke karyawan actual via buildMapping().
-     *
-     *  Day:    Sen     Sel     Rab     Kam    Jum    Sab    Min
-     *  E0:     LIBUR   FULL    FULL    PAGI   SORE   FULL   PAGI
-     *  E1:     FULL    LIBUR   FULL    SORE   FULL   PAGI   FULL  (4x FULL: Sen,Rab,Jum,Min)
-     *  E2:     FULL    FULL    LIBUR   FULL   PAGI   SORE   SORE
-     */
-    private const CANONICAL = [
-        'E0' => ['LIBUR', 'FULL',  'FULL',  'PAGI', 'SORE', 'FULL', 'PAGI'],
-        'E1' => ['FULL',  'LIBUR', 'FULL',  'SORE', 'FULL', 'PAGI', 'FULL'],
-        'E2' => ['FULL',  'FULL',  'LIBUR', 'FULL', 'PAGI', 'SORE', 'SORE'],
-    ];
-
-    /**
-     * Base rotation: minggu 2026-W22 = Rendy (idx 1) jadi 4x holder.
-     * Rotation order: Rendy → Bagas → Anjar → repeat.
-     */
+    /** Base rotation week: 2026-W22 = Rendy (idx 1). */
     private const BASE_WEEK = '2026-W22';
-    private const ROTATION_ORDER = [1, 2, 0];
+    private const ROTATION_ORDER = [1, 2, 0]; // Rendy → Bagas → Anjar
 
     /**
-     * Generate jadwal mingguan untuk roster employees.
+     * Generate jadwal mingguan dengan preferences + optional override.
      *
      * @param  string  $weekStart  ISO date Senin (YYYY-MM-DD)
-     * @param  array<int, array{id?: string, name: string}>  $employees  3 karyawan dengan urutan tetap
-     * @param  int|null  $holderIdx  Override 4x FULL holder. null = auto rotate.
-     * @return array{
-     *   week_start: string,
-     *   week_iso: string,
-     *   employees: array,
-     *   holder_idx: int,
-     *   holder_name: string,
-     *   matrix: array,
-     *   summary: array,
-     *   breaks: array,
-     *   validation: array
-     * }
+     * @param  array<int, array{id?: ?string, name: string}>  $employees  3 karyawan
+     * @param  array  $preferences  ['libur_days' => [empName => dayKey], 'holder_name' => string|null]
+     * @param  array|null  $override  Per-week matrix override
      */
-    public function generate(string $weekStart, array $employees, ?int $holderIdx = null): array
+    public function generate(string $weekStart, array $employees, array $preferences = [], ?array $override = null): array
     {
         if (count($employees) !== 3) {
             throw new \InvalidArgumentException('Generator butuh tepat 3 karyawan.');
@@ -84,61 +60,90 @@ class ScheduleGeneratorService
 
         $weekStartCarbon = Carbon::parse($weekStart);
         if (! $weekStartCarbon->isMonday()) {
-            // Snap ke Senin minggu yang sama
             $weekStartCarbon = $weekStartCarbon->startOfWeek(Carbon::MONDAY);
         }
-
         $weekIso = $weekStartCarbon->isoFormat('GGGG-[W]WW');
 
-        if ($holderIdx === null) {
-            $holderIdx = $this->computeHolderIdx($weekStartCarbon);
+        $resolved = $this->resolvePreferences($employees, $preferences, $weekStartCarbon);
+        $liburDays = $resolved['libur_days'];
+        $holderName = $resolved['holder_name'];
+        $holderIdx = $this->findEmployeeIdxByName($employees, $holderName);
+
+        $matrix = $this->buildMatrix($weekStartCarbon, $employees, $liburDays, $holderName);
+
+        if (is_array($override) && isset($override['cells'])) {
+            $matrix = $this->applyCellOverrides($matrix, $override['cells']);
         }
 
-        $mapping = $this->buildMapping($employees, $holderIdx);
-        $matrix = $this->buildMatrix($mapping, $weekStartCarbon);
         $summary = $this->calculateSummary($matrix, $employees);
         $breaks = $this->calculateBreaks($matrix);
-        $validation = $this->validate($matrix, $employees, $holderIdx);
+        $validation = $this->validate($matrix, $employees, $holderName);
 
         return [
             'week_start' => $weekStartCarbon->toDateString(),
             'week_iso' => $weekIso,
             'employees' => $employees,
+            'preferences' => $resolved,
             'holder_idx' => $holderIdx,
-            'holder_name' => $employees[$holderIdx]['name'],
+            'holder_name' => $holderName,
+            'libur_days' => $liburDays,
             'matrix' => $matrix,
             'summary' => $summary,
             'breaks' => $breaks,
             'validation' => $validation,
+            'is_overridden' => $override !== null,
         ];
     }
 
-    /**
-     * Hitung holder index by ISO week relative to BASE_WEEK.
-     */
-    public function computeHolderIdx(Carbon $weekStart): int
+    private function resolvePreferences(array $employees, array $prefs, Carbon $weekStart): array
+    {
+        $names = array_column($employees, 'name');
+
+        $defaultLibur = [
+            $names[0] => 'monday',
+            $names[1] => 'tuesday',
+            $names[2] => 'wednesday',
+        ];
+
+        $liburDays = $prefs['libur_days'] ?? $defaultLibur;
+
+        foreach ($names as $name) {
+            if (! isset($liburDays[$name])) {
+                $liburDays[$name] = $defaultLibur[$name] ?? 'monday';
+            }
+        }
+
+        $holderName = $prefs['holder_name'] ?? null;
+        if (! $holderName || ! in_array($holderName, $names, true)) {
+            $holderIdx = $this->computeRotationHolderIdx($weekStart);
+            $holderName = $names[$holderIdx];
+        }
+
+        return [
+            'libur_days' => $liburDays,
+            'holder_name' => $holderName,
+        ];
+    }
+
+    public function computeRotationHolderIdx(Carbon $weekStart): int
     {
         $current = $weekStart->isoFormat('GGGG-[W]WW');
         $diff = $this->isoWeekDiff(self::BASE_WEEK, $current);
-        $rotIdx = (($diff % 3) + 3) % 3; // safe modulo for negatives
+        $rotIdx = (($diff % 3) + 3) % 3;
 
         return self::ROTATION_ORDER[$rotIdx];
     }
 
-    /**
-     * Selisih minggu antara dua ISO week strings (e.g. "2026-W22" → "2026-W30" = 8).
-     */
     private function isoWeekDiff(string $from, string $to): int
     {
-        $fromCarbon = $this->parseIsoWeek($from);
-        $toCarbon = $this->parseIsoWeek($to);
+        $f = $this->parseIsoWeek($from);
+        $t = $this->parseIsoWeek($to);
 
-        return (int) $fromCarbon->diffInWeeks($toCarbon, false);
+        return (int) $f->diffInWeeks($t, false);
     }
 
     private function parseIsoWeek(string $iso): Carbon
     {
-        // Format: "2026-W22"
         if (! preg_match('/^(\d{4})-W(\d{2})$/', $iso, $m)) {
             throw new \InvalidArgumentException("Invalid ISO week: $iso");
         }
@@ -146,29 +151,22 @@ class ScheduleGeneratorService
         return Carbon::now()->setISODate((int) $m[1], (int) $m[2])->startOfWeek(Carbon::MONDAY);
     }
 
-    /**
-     * Map E0/E1/E2 ke karyawan actual.
-     * E1 = holder. E0 = first non-holder. E2 = second non-holder.
-     */
-    private function buildMapping(array $employees, int $holderIdx): array
+    private function findEmployeeIdxByName(array $employees, string $name): int
     {
-        $holder = $employees[$holderIdx];
-        $others = [];
-        foreach ($employees as $i => $emp) {
-            if ($i !== $holderIdx) {
-                $others[] = $emp;
+        foreach ($employees as $i => $e) {
+            if ($e['name'] === $name) {
+                return $i;
             }
         }
 
-        return ['E0' => $others[0], 'E1' => $holder, 'E2' => $others[1]];
+        return 0;
     }
 
-    /**
-     * Build matrix: array of 7 days, each day has 3 employee assignments.
-     */
-    private function buildMatrix(array $mapping, Carbon $weekStart): array
+    private function buildMatrix(Carbon $weekStart, array $employees, array $liburDays, string $holderName): array
     {
         $matrix = [];
+        $threePersonDayIndices = [];
+
         foreach (self::DAY_KEYS as $dayIdx => $dayKey) {
             $date = $weekStart->copy()->addDays($dayIdx);
             $row = [
@@ -180,26 +178,186 @@ class ScheduleGeneratorService
                 'assignments' => [],
             ];
 
-            foreach (['E0', 'E1', 'E2'] as $slot) {
-                $shift = self::CANONICAL[$slot][$dayIdx];
-                $emp = $mapping[$slot];
-                $row['assignments'][] = [
-                    'employee' => $emp,
-                    'slot' => $slot,
-                    'shift' => $shift,
-                    'shift_meta' => self::SHIFTS[$shift],
-                ];
+            $liburEmployees = [];
+            foreach ($employees as $e) {
+                if (($liburDays[$e['name']] ?? null) === $dayKey) {
+                    $liburEmployees[] = $e['name'];
+                }
+            }
+
+            if (count($liburEmployees) > 0) {
+                foreach ($employees as $e) {
+                    $isLibur = in_array($e['name'], $liburEmployees, true);
+                    $shift = $isLibur ? self::SHIFT_LIBUR : self::SHIFT_FULL;
+                    $row['assignments'][] = [
+                        'employee' => $e,
+                        'shift' => $shift,
+                        'shift_meta' => self::SHIFTS[$shift],
+                    ];
+                }
+            } else {
+                foreach ($employees as $e) {
+                    $row['assignments'][] = [
+                        'employee' => $e,
+                        'shift' => null,
+                        'shift_meta' => null,
+                    ];
+                }
+                $threePersonDayIndices[] = $dayIdx;
             }
 
             $matrix[] = $row;
         }
 
-        return $matrix;
+        return $this->distributeThreePersonDays($matrix, $threePersonDayIndices, $employees, $holderName);
     }
 
     /**
-     * Hitung total full shift, partial shift, dan total jam per karyawan.
+     * 4 days × 3 persons. Holder 4× FULL? Tidak realistic — holder 2× FULL on 3-person + 2× FULL on 2-person = 4 total.
+     * Pattern di 4 three-person days:
+     *   Day 0: holder=FULL,  nonH1=PAGI,  nonH2=SORE
+     *   Day 1: holder=PAGI,  nonH1=SORE,  nonH2=FULL  (nonH2 dapat 1 FULL)
+     *   Day 2: holder=FULL,  nonH1=SORE,  nonH2=PAGI
+     *   Day 3: holder=SORE,  nonH1=FULL,  nonH2=PAGI  (nonH1 dapat 1 FULL)
+     *
+     * Hitungan FULL across 4 three-person days:
+     *   - Holder: 2× FULL
+     *   - nonH1:  1× FULL
+     *   - nonH2:  1× FULL
+     *
+     * Kombinasi dengan 2-person days (3 days, 1 untuk masing-masing libur):
+     *   - Holder libur 0× → masuk 3× → 3× FULL
+     *   - nonH1 libur 1× → masuk 2× → 2× FULL
+     *   - nonH2 libur 1× → masuk 2× → 2× FULL
+     *
+     * Holder = 0× libur (karena holder = E1 yang non-libur). Wait — holder bisa libur juga.
+     * Re-think: holder bisa siapa saja, juga libur 1× per minggu.
+     *
+     * Kalau holder libur, dia masuk 6 hari = 4× FULL (3 dari 2-person + 1 dari 3-person).
+     * Kalau holder libur Senin, maka 2-person days = Sel libur nonH1, Rab libur nonH2.
+     * Holder masuk: Sel, Rab (FULL), Kam-Min (3-person = 2× FULL + 1× lain).
      */
+    private function distributeThreePersonDays(array $matrix, array $threePersonIndices, array $employees, string $holderName): array
+    {
+        $nonHolders = [];
+        foreach ($employees as $e) {
+            if ($e['name'] !== $holderName) {
+                $nonHolders[] = $e;
+            }
+        }
+
+        if (count($nonHolders) !== 2) {
+            return $matrix;
+        }
+
+        // Hitung berapa kali holder & non-holder masuk di 2-person days
+        $holderTwoPersonCount = 0;
+        $nonH1TwoPersonCount = 0;
+        $nonH2TwoPersonCount = 0;
+
+        foreach ($matrix as $day) {
+            // Skip 3-person days (assignments belum diisi)
+            $isThreePerson = false;
+            foreach ($day['assignments'] as $a) {
+                if ($a['shift'] === null) {
+                    $isThreePerson = true;
+                    break;
+                }
+            }
+            if ($isThreePerson) {
+                continue;
+            }
+
+            foreach ($day['assignments'] as $a) {
+                if ($a['shift'] === self::SHIFT_FULL) {
+                    if ($a['employee']['name'] === $holderName) {
+                        $holderTwoPersonCount++;
+                    } elseif ($a['employee']['name'] === $nonHolders[0]['name']) {
+                        $nonH1TwoPersonCount++;
+                    } else {
+                        $nonH2TwoPersonCount++;
+                    }
+                }
+            }
+        }
+
+        // Target: holder total 4× FULL across whole week.
+        // Holder needs: 4 - holderTwoPersonCount more FULL on 3-person days.
+        $holderTargetFull = max(0, 4 - $holderTwoPersonCount);
+        $threePersonCount = count($threePersonIndices);
+
+        // Build patterns dynamically
+        // Holder gets FULL on first $holderTargetFull three-person days, then alternates PAGI/SORE
+        // Non-holders share remaining FULL slots and PAGI/SORE
+        foreach ($threePersonIndices as $i => $dayIdx) {
+            // Determine holder's shift for this 3-person day
+            if ($i < $holderTargetFull) {
+                $holderShift = self::SHIFT_FULL;
+            } elseif (($i - $holderTargetFull) % 2 === 0) {
+                $holderShift = self::SHIFT_PAGI;
+            } else {
+                $holderShift = self::SHIFT_SORE;
+            }
+
+            // Non-holders take remaining slots
+            // Each 3-person day must have 1 FULL + 1 PAGI + 1 SORE
+            $remainingShifts = [self::SHIFT_FULL, self::SHIFT_PAGI, self::SHIFT_SORE];
+            $remainingShifts = array_values(array_diff($remainingShifts, [$holderShift]));
+            // remainingShifts has 2 items
+
+            // Assign non-holders alternating to balance
+            // Strategy: nonH1 takes first remaining on even-index days, nonH2 takes second
+            if ($i % 2 === 0) {
+                $nonH1Shift = $remainingShifts[0];
+                $nonH2Shift = $remainingShifts[1];
+            } else {
+                $nonH1Shift = $remainingShifts[1];
+                $nonH2Shift = $remainingShifts[0];
+            }
+
+            foreach ($matrix[$dayIdx]['assignments'] as $aIdx => $assign) {
+                $empName = $assign['employee']['name'];
+                if ($empName === $holderName) {
+                    $shift = $holderShift;
+                } elseif ($empName === $nonHolders[0]['name']) {
+                    $shift = $nonH1Shift;
+                } else {
+                    $shift = $nonH2Shift;
+                }
+                $matrix[$dayIdx]['assignments'][$aIdx]['shift'] = $shift;
+                $matrix[$dayIdx]['assignments'][$aIdx]['shift_meta'] = self::SHIFTS[$shift];
+            }
+        }
+
+        return $matrix;
+    }
+
+    private function applyCellOverrides(array $matrix, array $cells): array
+    {
+        foreach ($matrix as &$day) {
+            $dayCells = $cells[$day['day_key']] ?? [];
+            if (empty($dayCells)) {
+                continue;
+            }
+
+            foreach ($day['assignments'] as &$assign) {
+                $empName = $assign['employee']['name'];
+                if (isset($dayCells[$empName])) {
+                    $newShift = $dayCells[$empName];
+                    if (isset(self::SHIFTS[$newShift])) {
+                        $assign['shift'] = $newShift;
+                        $assign['shift_meta'] = self::SHIFTS[$newShift];
+                        $assign['is_manual'] = true;
+                    }
+                }
+            }
+            unset($assign);
+        }
+        unset($day);
+
+        return $matrix;
+    }
+
     private function calculateSummary(array $matrix, array $employees): array
     {
         $summary = [];
@@ -219,7 +377,7 @@ class ScheduleGeneratorService
             foreach ($day['assignments'] as $assign) {
                 $name = $assign['employee']['name'];
                 $shift = $assign['shift'];
-                $duration = $assign['shift_meta']['duration'];
+                $duration = $assign['shift_meta']['duration'] ?? 0;
 
                 $summary[$name]['total_hours'] += $duration;
 
@@ -239,51 +397,43 @@ class ScheduleGeneratorService
         return array_values($summary);
     }
 
-    /**
-     * Jadwal istirahat:
-     *  - Senin–Rabu: fleksibel di toko (cuma 2 orang)
-     *  - Kamis–Minggu: 3 slot bergiliran 12:00–15:00
-     */
     private function calculateBreaks(array $matrix): array
     {
         $breakSlots = ['12:00–13:00', '13:00–14:00', '14:00–15:00'];
         $breaks = [];
 
         foreach ($matrix as $day) {
-            $isThreePersonDay = ! in_array($day['day_key'], ['monday', 'tuesday', 'wednesday'], true);
-
-            if ($isThreePersonDay) {
-                // Find PAGI, FULL, SORE workers (skip LIBUR — won't occur on Thu-Sun)
-                $byShift = [];
-                foreach ($day['assignments'] as $a) {
+            $byShift = [];
+            $working = [];
+            foreach ($day['assignments'] as $a) {
+                if ($a['shift'] !== self::SHIFT_LIBUR) {
+                    $working[] = $a['employee']['name'];
                     $byShift[$a['shift']] = $a['employee']['name'];
                 }
+            }
 
+            $isThreePerson = count($working) === 3;
+            $hasOverlap = isset($byShift[self::SHIFT_PAGI]) && isset($byShift[self::SHIFT_SORE]) && isset($byShift[self::SHIFT_FULL]);
+
+            if ($isThreePerson && $hasOverlap) {
                 $breaks[] = [
                     'day_label' => $day['day_label'],
                     'date_label' => $day['date_label'],
                     'mode' => 'rotation',
                     'note' => null,
                     'slots' => [
-                        ['time' => $breakSlots[0], 'employee' => $byShift[self::SHIFT_PAGI] ?? '-'],
-                        ['time' => $breakSlots[1], 'employee' => $byShift[self::SHIFT_FULL] ?? '-'],
-                        ['time' => $breakSlots[2], 'employee' => $byShift[self::SHIFT_SORE] ?? '-'],
+                        ['time' => $breakSlots[0], 'employee' => $byShift[self::SHIFT_PAGI]],
+                        ['time' => $breakSlots[1], 'employee' => $byShift[self::SHIFT_FULL]],
+                        ['time' => $breakSlots[2], 'employee' => $byShift[self::SHIFT_SORE]],
                     ],
                 ];
             } else {
-                $workers = [];
-                foreach ($day['assignments'] as $a) {
-                    if ($a['shift'] !== self::SHIFT_LIBUR) {
-                        $workers[] = $a['employee']['name'];
-                    }
-                }
-
                 $breaks[] = [
                     'day_label' => $day['day_label'],
                     'date_label' => $day['date_label'],
                     'mode' => 'flex',
                     'note' => 'Istirahat fleksibel di toko, makan bergantian, tidak boleh meninggalkan area.',
-                    'workers' => $workers,
+                    'workers' => $working,
                     'slots' => [],
                 ];
             }
@@ -292,17 +442,12 @@ class ScheduleGeneratorService
         return $breaks;
     }
 
-    /**
-     * Validate jadwal terhadap semua rules di spec.
-     *
-     * @return array{valid: bool, errors: array, warnings: array}
-     */
-    public function validate(array $matrix, array $employees, int $holderIdx): array
+    public function validate(array $matrix, array $employees, string $holderName): array
     {
         $errors = [];
         $warnings = [];
 
-        // Rule 1: Setiap karyawan libur tepat 1x/minggu
+        // Rule 1: Setiap karyawan libur tepat 1×
         $liburCount = array_fill_keys(array_column($employees, 'name'), 0);
         foreach ($matrix as $day) {
             foreach ($day['assignments'] as $a) {
@@ -313,11 +458,11 @@ class ScheduleGeneratorService
         }
         foreach ($liburCount as $name => $count) {
             if ($count !== 1) {
-                $errors[] = "$name punya $count hari libur (harusnya tepat 1x).";
+                $errors[] = "$name punya $count hari libur (harusnya tepat 1×).";
             }
         }
 
-        // Rule 2: Sabtu & Minggu — semua karyawan masuk (no LIBUR)
+        // Rule 2: Sat/Sun no LIBUR
         foreach ($matrix as $day) {
             if (in_array($day['day_key'], ['saturday', 'sunday'], true)) {
                 foreach ($day['assignments'] as $a) {
@@ -328,7 +473,7 @@ class ScheduleGeneratorService
             }
         }
 
-        // Rule 3: Tidak ada 2 karyawan libur di hari yang sama
+        // Rule 3: Max 1 libur per hari
         foreach ($matrix as $day) {
             $liburToday = 0;
             foreach ($day['assignments'] as $a) {
@@ -341,7 +486,7 @@ class ScheduleGeneratorService
             }
         }
 
-        // Rule 4: Minimal 2 orang masuk per hari
+        // Rule 4: Min 2 orang masuk
         foreach ($matrix as $day) {
             $working = 0;
             foreach ($day['assignments'] as $a) {
@@ -354,7 +499,7 @@ class ScheduleGeneratorService
             }
         }
 
-        // Rule 5: Jika 3 orang masuk, harus 1 FULL + 1 PAGI + 1 SORE
+        // Rule 5: Distribusi shift
         foreach ($matrix as $day) {
             $shiftCounts = [self::SHIFT_FULL => 0, self::SHIFT_PAGI => 0, self::SHIFT_SORE => 0, self::SHIFT_LIBUR => 0];
             foreach ($day['assignments'] as $a) {
@@ -363,41 +508,29 @@ class ScheduleGeneratorService
             $working = 3 - $shiftCounts[self::SHIFT_LIBUR];
             if ($working === 3) {
                 if ($shiftCounts[self::SHIFT_FULL] !== 1 || $shiftCounts[self::SHIFT_PAGI] !== 1 || $shiftCounts[self::SHIFT_SORE] !== 1) {
-                    $errors[] = "{$day['day_label']}: 3 orang masuk tapi distribusi shift bukan FULL+PAGI+SORE.";
+                    $warnings[] = "{$day['day_label']}: 3 orang masuk tapi distribusi shift bukan FULL+PAGI+SORE (manual edit?).";
                 }
             } elseif ($working === 2) {
                 if ($shiftCounts[self::SHIFT_FULL] !== 2) {
-                    $errors[] = "{$day['day_label']}: 2 orang masuk harusnya keduanya FULL (sekarang {$shiftCounts[self::SHIFT_FULL]} FULL).";
+                    $warnings[] = "{$day['day_label']}: 2 orang masuk idealnya keduanya FULL (sekarang {$shiftCounts[self::SHIFT_FULL]} FULL).";
                 }
             }
         }
 
-        // Rule 6: Coverage 06:30–21:00 minimal 2 orang
-        $coverageIssues = $this->checkCoverage($matrix);
-        $errors = array_merge($errors, $coverageIssues);
+        // Rule 6: Coverage
+        $errors = array_merge($errors, $this->checkCoverage($matrix));
 
-        // Rule 7: Holder dapat tepat 4x FULL
-        $holderName = $employees[$holderIdx]['name'];
+        // Rule 7: Holder ~ 4× FULL (warning only)
         $holderFullCount = 0;
-        $othersFullCount = [];
         foreach ($matrix as $day) {
             foreach ($day['assignments'] as $a) {
-                if ($a['shift'] === self::SHIFT_FULL) {
-                    if ($a['employee']['name'] === $holderName) {
-                        $holderFullCount++;
-                    } else {
-                        $othersFullCount[$a['employee']['name']] = ($othersFullCount[$a['employee']['name']] ?? 0) + 1;
-                    }
+                if ($a['shift'] === self::SHIFT_FULL && $a['employee']['name'] === $holderName) {
+                    $holderFullCount++;
                 }
             }
         }
         if ($holderFullCount !== 4) {
-            $errors[] = "Holder $holderName dapat $holderFullCount FULL (harusnya 4x).";
-        }
-        foreach ($othersFullCount as $name => $count) {
-            if ($count !== 3) {
-                $warnings[] = "$name dapat $count FULL (idealnya 3x untuk non-holder).";
-            }
+            $warnings[] = "Holder $holderName dapat $holderFullCount FULL (idealnya 4×).";
         }
 
         return [
@@ -407,15 +540,9 @@ class ScheduleGeneratorService
         ];
     }
 
-    /**
-     * Cek apakah toko ter-cover minimal 2 orang dari 06:30 sampai 21:00 setiap hari.
-     * Pakai 30-min slots.
-     */
     private function checkCoverage(array $matrix): array
     {
         $errors = [];
-        // Operating hours: 06:30 → 21:00, 30-min slots = 29 slots
-        // Tapi cukup cek titik kritis: 06:30 (PAGI/FULL only), 12:00 (SORE join), 15:30 (PAGI ends), 21:00 (end)
         $criticalSlots = [
             '06:30' => ['FULL', 'PAGI'],
             '12:00' => ['FULL', 'PAGI', 'SORE'],
@@ -438,5 +565,45 @@ class ScheduleGeneratorService
         }
 
         return $errors;
+    }
+
+    /**
+     * Validate preferences sebelum simpan.
+     */
+    public function validatePreferences(array $employees, array $prefs): array
+    {
+        $errors = [];
+        $names = array_column($employees, 'name');
+
+        $liburDays = $prefs['libur_days'] ?? [];
+
+        $usedDays = [];
+        foreach ($names as $name) {
+            $day = $liburDays[$name] ?? null;
+            if (! $day) {
+                $errors[] = "$name belum dipilih hari libur.";
+
+                continue;
+            }
+            if (! in_array($day, self::WEEKDAY_KEYS, true)) {
+                $errors[] = "$name pilih hari libur invalid ($day) — harus Senin–Jumat.";
+
+                continue;
+            }
+            if (isset($usedDays[$day])) {
+                $errors[] = "Tabrakan: $name dan {$usedDays[$day]} sama-sama libur ".self::DAY_LABELS[array_search($day, self::DAY_KEYS)].".";
+            } else {
+                $usedDays[$day] = $name;
+            }
+        }
+
+        if (! empty($prefs['holder_name']) && ! in_array($prefs['holder_name'], $names, true)) {
+            $errors[] = "Holder name '{$prefs['holder_name']}' bukan karyawan yang valid.";
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors,
+        ];
     }
 }
