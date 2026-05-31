@@ -45,6 +45,7 @@ class RetailScheduleService
             'libur_days' => $prefs['libur_days'] ?? [],
             'holder_name' => $prefs['holder_name'] ?? null,
             'holder_mode' => $prefs['holder_mode'] ?? 'auto', // 'auto' | 'locked'
+            'employees' => $prefs['employees'] ?? [], // array of waiter_ids (3 ids)
             'updated_at' => time(),
         ];
 

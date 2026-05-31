@@ -51,27 +51,72 @@
         <summary>⚙️ Preferensi Global (berlaku untuk semua minggu ke depan)</summary>
         <form id="prefsForm" class="prefs-form">
             @csrf
-            <div class="prefs-grid">
-                @foreach($schedule['employees'] as $emp)
-                    @php $currentLibur = $schedule['libur_days'][$emp['name']] ?? 'monday'; @endphp
-                    <div class="pref-item">
-                        <label class="form-label"><strong>{{ $emp['name'] }}</strong> — Hari Libur</label>
-                        <select name="libur_days[{{ $emp['name'] }}]" class="form-control">
-                            @foreach($weekdayKeys as $i => $key)
-                                <option value="{{ $key }}" @if($currentLibur === $key) selected @endif>{{ $dayLabels[$i] }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                @endforeach
+
+            {{-- Mapping status indicator --}}
+            <div class="mapping-status-bar">
+                <strong style="font-size: 0.85rem;">🔗 Mapping ke User Firebase:</strong>
+                <div class="mapping-grid">
+                    @foreach($mappingStatus as $m)
+                        <div class="mapping-item {{ $m['matched'] ? 'is-matched' : 'is-missing' }}">
+                            <strong>{{ $m['name'] }}</strong>
+                            @if($m['matched'])
+                                <span class="text-muted small">→ {{ $m['firebase_name'] }}</span>
+                                @if($m['role'])
+                                    <span class="badge badge-info">{{ $m['role'] }}</span>
+                                @endif
+                            @else
+                                <span class="text-danger small">❌ Tidak ditemukan di Firebase</span>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
             </div>
 
-            <div class="prefs-holder">
+            {{-- Employee selection --}}
+            <div class="prefs-section">
+                <label class="form-label"><strong>Pilih 3 Karyawan Retail</strong></label>
+                <div class="prefs-grid" style="margin-top: 6px;">
+                    @foreach($schedule['employees'] as $i => $emp)
+                        <div class="pref-item">
+                            <label class="form-label small">Slot {{ $i + 1 }}</label>
+                            <select name="employees[]" class="form-control">
+                                <option value="">— Tidak dipilih —</option>
+                                @foreach($allWaiters as $w)
+                                    <option value="{{ $w['id'] }}" @if(($emp['id'] ?? null) === $w['id']) selected @endif>
+                                        {{ $w['name'] }}@if($w['role']) ({{ $w['role'] }})@endif
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @endforeach
+                </div>
+                <small class="text-muted">Pilih 3 karyawan dari daftar waiter aktif. Default fallback: Anjar/Rendy/Bagas (by name match).</small>
+            </div>
+
+            <div class="prefs-section">
+                <label class="form-label"><strong>Hari Libur per Karyawan</strong></label>
+                <div class="prefs-grid" style="margin-top: 6px;">
+                    @foreach($schedule['employees'] as $emp)
+                        @php $currentLibur = $schedule['libur_days'][$emp['name']] ?? 'monday'; @endphp
+                        <div class="pref-item">
+                            <label class="form-label small"><strong>{{ $emp['name'] }}</strong></label>
+                            <select name="libur_days[{{ $emp['name'] }}]" class="form-control">
+                                @foreach($weekdayKeys as $i => $key)
+                                    <option value="{{ $key }}" @if($currentLibur === $key) selected @endif>{{ $dayLabels[$i] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="prefs-section">
                 <label class="form-label"><strong>Holder 4× Full Shift</strong></label>
                 @php $holderMode = $preferences['holder_mode'] ?? 'auto'; @endphp
                 <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 6px;">
                     <label class="radio-line">
                         <input type="radio" name="holder_mode" value="auto" @if($holderMode === 'auto') checked @endif onchange="document.getElementById('lockedHolderSelect').disabled=true">
-                        Auto rotate (Rendy → Bagas → Anjar)
+                        Auto rotate
                     </label>
                     <label class="radio-line">
                         <input type="radio" name="holder_mode" value="locked" @if($holderMode === 'locked') checked @endif onchange="document.getElementById('lockedHolderSelect').disabled=false">
@@ -271,9 +316,17 @@
         .prefs-form { padding: 0 16px 16px 16px; }
         .prefs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
         .pref-item { background: #fff; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); }
-        .prefs-holder { background: #fff; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); margin-bottom: 14px; }
-        .radio-line { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+        .prefs-section { background: #fff; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); margin-bottom: 12px; }
         .prefs-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+        .mapping-status-bar { background: #fff; padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); margin-bottom: 12px; }
+        .mapping-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 6px; }
+        .mapping-item { padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid; display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; }
+        .mapping-item.is-matched { background: #ecfdf5; border-color: #6ee7b7; color: #065f46; }
+        .mapping-item.is-missing { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+        .mapping-item .badge-info { background: #e0e7ff; color: #3730a3; font-size: 0.7rem; padding: 1px 6px; align-self: flex-start; margin-top: 2px; }
+        .form-label.small { font-size: 0.75rem; color: var(--color-text-muted); margin-bottom: 4px; display: block; }
+        .radio-line { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 
         .card-block { background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px 16px 16px 16px; margin-bottom: 14px; }
         .card-block__header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
@@ -357,16 +410,20 @@
             const form = document.getElementById('prefsForm');
             const data = new FormData(form);
             const liburDays = {};
+            const employees = [];
             for (const [k, v] of data.entries()) {
                 if (k.startsWith('libur_days[')) {
                     const m = k.match(/libur_days\[(.+)\]/);
                     if (m) liburDays[m[1]] = v;
+                } else if (k === 'employees[]') {
+                    employees.push(v);
                 }
             }
             const payload = {
                 libur_days: liburDays,
                 holder_mode: data.get('holder_mode') || 'auto',
                 holder_name: data.get('holder_name') || null,
+                employees: employees.length === 3 ? employees : null,
             };
             const { ok, data: resp } = await postJson(URLS.savePrefs, payload);
             if (ok && resp.success) {

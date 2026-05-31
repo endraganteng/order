@@ -24,6 +24,35 @@ class JadwalController extends Controller
 
     private function loadDefaultEmployees(): array
     {
+        // 1. Coba dari preferences (waiter_ids tersimpan)
+        try {
+            $prefs = $this->retail->getPreferences();
+            $employeeIds = $prefs['employees'] ?? [];
+            if (count($employeeIds) === 3) {
+                $resolved = [];
+                foreach ($employeeIds as $wid) {
+                    if (! $wid) {
+                        continue;
+                    }
+                    $waiter = $this->firebase->getWaiterById($wid);
+                    if ($waiter) {
+                        $resolved[] = [
+                            'id' => $waiter['id'] ?? $wid,
+                            'name' => $waiter['name'] ?? '?',
+                            'firebase_name' => $waiter['name'] ?? null,
+                            'role' => $waiter['waiter_role'] ?? null,
+                        ];
+                    }
+                }
+                if (count($resolved) === 3) {
+                    return $resolved;
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // 2. Fallback ke name-match (Anjar/Rendy/Bagas)
         $targets = [
             ['key' => 'anjar', 'display' => 'Anjar'],
             ['key' => 'randy', 'display' => 'Rendy'],
@@ -40,7 +69,7 @@ class JadwalController extends Controller
                     if (str_contains($name, $t['key']) && $resolved[$i] === null) {
                         $resolved[$i] = [
                             'id' => $w['id'] ?? null,
-                            'name' => $t['display'],
+                            'name' => $w['name'] ?? $t['display'],
                             'firebase_name' => $w['name'] ?? null,
                             'role' => $w['waiter_role'] ?? null,
                         ];
@@ -58,6 +87,36 @@ class JadwalController extends Controller
         }
 
         return $resolved;
+    }
+
+    /**
+     * Load all active waiters untuk dropdown selection.
+     */
+    private function loadAllActiveWaiters(): array
+    {
+        try {
+            $waiters = $this->firebase->getAllowedEmails();
+            $active = [];
+            foreach ($waiters as $w) {
+                if (! ($w['is_active'] ?? false)) {
+                    continue;
+                }
+                $active[] = [
+                    'id' => $w['id'] ?? null,
+                    'name' => $w['name'] ?? '?',
+                    'role' => $w['waiter_role'] ?? null,
+                ];
+            }
+
+            // Sort by name
+            usort($active, fn ($a, $b) => strcmp(strtolower($a['name']), strtolower($b['name'])));
+
+            return $active;
+        } catch (\Throwable $e) {
+            report($e);
+
+            return [];
+        }
     }
 
     public function index(Request $request)
@@ -109,6 +168,18 @@ class JadwalController extends Controller
         $prevWeek = Carbon::parse($schedule['week_start'])->subWeek()->toDateString();
         $nextWeek = Carbon::parse($schedule['week_start'])->addWeek()->toDateString();
 
+        // Resolve mapping status untuk indicator
+        $mappingStatus = [];
+        foreach ($employees as $emp) {
+            $mappingStatus[] = [
+                'name' => $emp['name'],
+                'firebase_name' => $emp['firebase_name'] ?? null,
+                'firebase_id' => $emp['id'] ?? null,
+                'role' => $emp['role'] ?? null,
+                'matched' => ! empty($emp['id']),
+            ];
+        }
+
         return view('admin.jadwal.index', [
             'schedule' => $schedule,
             'prevWeek' => $prevWeek,
@@ -119,6 +190,8 @@ class JadwalController extends Controller
             'shiftCodes' => array_keys(ScheduleGeneratorService::SHIFTS),
             'weekdayKeys' => ScheduleGeneratorService::WEEKDAY_KEYS,
             'dayLabels' => ScheduleGeneratorService::DAY_LABELS,
+            'allWaiters' => $this->loadAllActiveWaiters(),
+            'mappingStatus' => $mappingStatus,
         ]);
     }
 
@@ -129,17 +202,53 @@ class JadwalController extends Controller
             'libur_days.*' => 'required|string|in:monday,tuesday,wednesday,thursday,friday',
             'holder_mode' => 'required|string|in:auto,locked',
             'holder_name' => 'nullable|string',
+            'employees' => 'nullable|array|size:3',
+            'employees.*' => 'nullable|string',
         ]);
 
-        $employees = $this->loadDefaultEmployees();
+        // Validate 3 different employees
+        $newEmployeeIds = $request->input('employees', []);
+        if (count($newEmployeeIds) === 3) {
+            $unique = array_unique(array_filter($newEmployeeIds));
+            if (count($unique) !== 3) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pilih 3 karyawan yang berbeda.',
+                    'errors' => ['Ada karyawan yang dipilih lebih dari sekali atau ada slot kosong.'],
+                ], 422);
+            }
+        }
+
+        // Resolve employees from selected waiter_ids
+        $resolvedEmployees = [];
+        if (count($newEmployeeIds) === 3) {
+            foreach ($newEmployeeIds as $wid) {
+                $waiter = $this->firebase->getWaiterById($wid);
+                if (! $waiter) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Waiter ID $wid tidak ditemukan.",
+                    ], 422);
+                }
+                $resolvedEmployees[] = [
+                    'id' => $waiter['id'] ?? $wid,
+                    'name' => $waiter['name'] ?? '?',
+                    'firebase_name' => $waiter['name'] ?? null,
+                    'role' => $waiter['waiter_role'] ?? null,
+                ];
+            }
+        } else {
+            $resolvedEmployees = $this->loadDefaultEmployees();
+        }
 
         $prefs = [
             'libur_days' => $request->libur_days,
             'holder_mode' => $request->holder_mode,
             'holder_name' => $request->holder_mode === 'locked' ? $request->holder_name : null,
+            'employees' => count($newEmployeeIds) === 3 ? $newEmployeeIds : null,
         ];
 
-        $validation = $this->generator->validatePreferences($employees, $prefs);
+        $validation = $this->generator->validatePreferences($resolvedEmployees, $prefs);
         if (! $validation['valid']) {
             return response()->json([
                 'success' => false,
