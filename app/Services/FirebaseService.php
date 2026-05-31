@@ -6823,9 +6823,75 @@ class FirebaseService
 
     /**
      * Check if a waiter is working on a specific date (from template).
+     *
+     * Multi-source check (priority order):
+     *  1. Retail schedule (kalau dia retail employee) — /retail_schedule_preferences + /retail_schedules/{week_iso}
+     *  2. Kasir schedule (kalau dia kasir/backup finance) — /kasir_schedule_preferences + /kasir_schedules/{week_iso}
+     *  3. Existing /waiter_schedule_template/{wid} (default fallback)
+     *
+     * Result is cached in-request to minimize Firebase reads dalam 1 task generation cycle.
      */
     public function isWorkingDay(string $waiterId, string $date): bool
     {
+        if (! $waiterId) {
+            return false;
+        }
+
+        // In-request cache via existing $requestCache
+        $cacheKey = 'isWorkingDay:'.$waiterId.'|'.$date;
+        if (array_key_exists($cacheKey, $this->requestCache)) {
+            return $this->requestCache[$cacheKey];
+        }
+
+        $result = $this->resolveIsWorkingDay($waiterId, $date);
+        $this->requestCache[$cacheKey] = $result;
+
+        return $result;
+    }
+
+    /**
+     * Internal multi-source resolver untuk isWorkingDay().
+     */
+    private function resolveIsWorkingDay(string $waiterId, string $date): bool
+    {
+        // Source 1: Retail schedule
+        try {
+            $retailService = app(\App\Services\RetailScheduleService::class);
+            if ($retailService->isRetailEmployee($waiterId)) {
+                $generator = app(\App\Services\ScheduleGeneratorService::class);
+                $weekStart = (new \DateTime($date))->modify('Monday this week')->format('Y-m-d');
+                $sched = $retailService->getWaiterWeekSchedule($waiterId, $weekStart, $generator);
+                if ($sched && ! empty($sched['days'])) {
+                    foreach ($sched['days'] as $day) {
+                        if ($day['date'] === $date) {
+                            return $day['shift'] !== \App\Services\ScheduleGeneratorService::SHIFT_LIBUR;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // Source 2: Kasir schedule
+        try {
+            $kasirService = app(\App\Services\KasirScheduleService::class);
+            if ($kasirService->isKasirOrBackup($waiterId)) {
+                $weekStart = (new \DateTime($date))->modify('Monday this week')->format('Y-m-d');
+                $sched = $kasirService->getWaiterWeekSchedule($waiterId, $weekStart);
+                if ($sched && ! empty($sched['days'])) {
+                    foreach ($sched['days'] as $day) {
+                        if ($day['date'] === $date) {
+                            return $day['shift'] !== \App\Services\KasirScheduleService::SHIFT_LIBUR;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // Source 3: Existing /waiter_schedule_template/ (fallback)
         $dayOfWeek = strtolower(date('l', strtotime($date)));
         $template = $this->getScheduleTemplate();
         $shiftId = $template[$waiterId][$dayOfWeek] ?? null;
