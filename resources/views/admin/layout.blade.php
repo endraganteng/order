@@ -1317,8 +1317,6 @@
                         <a class="{{ request()->routeIs('admin.products.*') ? 'is-active' : '' }}" href="{{ route('admin.products.index') }}">🏷️ Produk</a>
                         <a class="{{ request()->routeIs('admin.product_categories.*') ? 'is-active' : '' }}" href="{{ route('admin.product_categories.index') }}">📂 Kategori</a>
                         <div class="dropdown-divider"></div>
-                        <a class="{{ request()->routeIs('admin.shifts.*') ? 'is-active' : '' }}" href="{{ route('admin.shifts.index') }}">⏰ Shift</a>
-                        <a class="{{ request()->routeIs('admin.schedules.*') ? 'is-active' : '' }}" href="{{ route('admin.schedules.index') }}">📅 Jadwal</a>
                         <a class="{{ request()->routeIs('admin.jadwal.*') ? 'is-active' : '' }}" href="{{ route('admin.jadwal.index') }}">🗓️ Jadwal Retail</a>
                         <a class="{{ request()->routeIs('admin.kasir.*') ? 'is-active' : '' }}" href="{{ route('admin.kasir.index') }}">💰 Jadwal Kasir</a>
                         <div class="dropdown-divider"></div>

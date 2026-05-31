@@ -195,12 +195,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('schedules', [ShiftController::class, 'schedules'])->name('schedules.index');
         Route::post('schedules/save', [ShiftController::class, 'saveScheduleTemplate'])->name('schedules.save');
 
-        // Jadwal Shift Retail (standalone planning tool — tidak terintegrasi dengan attendance)
+        // Jadwal Shift Retail (source of truth - hooked into late detection via getWaiterShiftForDate)
         Route::get('jadwal', [\App\Http\Controllers\Admin\JadwalController::class, 'index'])->name('jadwal.index');
         Route::post('jadwal/save-preferences', [\App\Http\Controllers\Admin\JadwalController::class, 'savePreferences'])->name('jadwal.save_preferences');
         Route::post('jadwal/save-week', [\App\Http\Controllers\Admin\JadwalController::class, 'saveWeek'])->name('jadwal.save_week');
         Route::post('jadwal/reset-week', [\App\Http\Controllers\Admin\JadwalController::class, 'resetWeek'])->name('jadwal.reset_week');
-        Route::post('jadwal/apply-attendance', [\App\Http\Controllers\Admin\JadwalController::class, 'applyAttendance'])->name('jadwal.apply_attendance');
 
         // Jadwal Kasir (2 kasir + 1 backup finance, libur Sen/Sel, jam beda weekday vs weekend)
         Route::get('kasir', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'index'])->name('kasir.index');

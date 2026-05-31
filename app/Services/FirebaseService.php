@@ -7085,37 +7085,86 @@ class FirebaseService
     }
 
     /**
-     * Get waiter's shift for a specific date (from template).
-     * Returns the shift data array or null if day off / no schedule.
+     * Get waiter's shift for a specific date.
+     *
+     * Multi-source check (priority order):
+     *  1. Rotation pattern (legacy primary kasir / backup with rotation)
+     *  2. Retail schedule tool (kalau dia retail employee) — convert to /work_shifts schema
+     *  3. Kasir schedule tool (kalau dia kasir/backup finance) — convert to /work_shifts schema
+     *  4. Fallback ke /waiter_schedule_template/{wid}/{day} (admin/exempt/legacy)
+     *
+     * Returns array kompatibel /work_shifts schema:
+     *   { id, name, clock_in_time, clock_out_time, late_tolerance_minutes }
+     * Atau null kalau libur/no schedule.
+     *
+     * Result is cached in-request to minimize Firebase reads dalam 1 cron cycle.
      */
     public function getWaiterShiftForDate(string $waiterId, string $date): ?array
     {
-        // PRIORITY 1: Check rotation pattern first
+        $cacheKey = 'waiterShift:'.$waiterId.'|'.$date;
+        if (array_key_exists($cacheKey, $this->requestCache)) {
+            return $this->requestCache[$cacheKey];
+        }
+
+        $shift = $this->resolveWaiterShiftForDate($waiterId, $date);
+        $this->requestCache[$cacheKey] = $shift;
+
+        return $shift;
+    }
+
+    private function resolveWaiterShiftForDate(string $waiterId, string $date): ?array
+    {
+        // PRIORITY 1: Check rotation pattern first (legacy)
         $pattern = $this->getRotationPattern($waiterId);
         if ($pattern) {
             if ($pattern['role'] === 'primary') {
-                // Primary kasir with rotation
                 $isOffDay = $this->isRotationOffDay($pattern, $date);
                 if ($isOffDay) {
-                    return null; // Libur karena rotation
+                    return null;
                 }
-                // Working - return default shift
                 $shiftId = $pattern['default_shift_id'];
                 if ($shiftId) {
                     return $this->getShiftById($shiftId);
                 }
             } elseif ($pattern['role'] === 'backup') {
-                // Backup kasir - check if covering someone
                 $coverage = $this->getBackupCoverage($waiterId, $date);
                 if ($coverage) {
                     return $this->getShiftById($coverage['shift_id']);
                 }
-                // Backup not covering anyone today = off
                 return null;
             }
         }
-        
-        // PRIORITY 2: Fallback to template (existing logic for waiter)
+
+        // PRIORITY 2: Retail schedule tool
+        try {
+            $retailService = app(\App\Services\RetailScheduleService::class);
+            if ($retailService->isRetailEmployee($waiterId)) {
+                $shift = $this->buildShiftFromRetailTool($retailService, $waiterId, $date);
+                if ($shift !== null) {
+                    return $shift; // hit (working) or null (libur)
+                }
+                // null + retail employee = libur
+                return null;
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // PRIORITY 3: Kasir schedule tool
+        try {
+            $kasirService = app(\App\Services\KasirScheduleService::class);
+            if ($kasirService->isKasirOrBackup($waiterId)) {
+                $shift = $this->buildShiftFromKasirTool($kasirService, $waiterId, $date);
+                if ($shift !== null) {
+                    return $shift;
+                }
+                return null;
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // PRIORITY 4: Fallback /waiter_schedule_template (admin/exempt/legacy)
         $dayOfWeek = strtolower(date('l', strtotime($date)));
         $template = $this->getScheduleTemplate();
         $shiftId = $template[$waiterId][$dayOfWeek] ?? null;
@@ -7125,6 +7174,94 @@ class FirebaseService
         }
 
         return $this->getShiftById($shiftId);
+    }
+
+    /**
+     * Convert retail tool shift_today into /work_shifts schema for late detection.
+     */
+    private function buildShiftFromRetailTool(\App\Services\RetailScheduleService $retailService, string $waiterId, string $date): ?array
+    {
+        $weekStart = \Carbon\Carbon::parse($date)->startOfWeek(\Carbon\Carbon::MONDAY)->toDateString();
+        $generator = app(\App\Services\ScheduleGeneratorService::class);
+        $weekSched = $retailService->getWaiterWeekSchedule($waiterId, $weekStart, $generator);
+
+        if (! is_array($weekSched) || empty($weekSched['days'])) {
+            return null;
+        }
+
+        // Find day matching $date
+        $matched = null;
+        foreach ($weekSched['days'] as $d) {
+            if (($d['date'] ?? '') === $date) {
+                $matched = $d;
+                break;
+            }
+        }
+        if (! $matched) {
+            return null;
+        }
+
+        $shiftCode = (string) ($matched['shift'] ?? '');
+        if ($shiftCode === '' || $shiftCode === \App\Services\ScheduleGeneratorService::SHIFT_LIBUR) {
+            return null;
+        }
+
+        $meta = $matched['shift_meta'] ?? null;
+        if (! is_array($meta) || empty($meta['start']) || empty($meta['end'])) {
+            return null;
+        }
+
+        return [
+            'id' => 'retail:'.$shiftCode,
+            'name' => 'Retail '.($meta['label'] ?? $shiftCode),
+            'clock_in_time' => $meta['start'],
+            'clock_out_time' => $meta['end'],
+            'late_tolerance_minutes' => 15,
+            'source' => 'retail_tool',
+        ];
+    }
+
+    /**
+     * Convert kasir tool shift_today into /work_shifts schema for late detection.
+     */
+    private function buildShiftFromKasirTool(\App\Services\KasirScheduleService $kasirService, string $waiterId, string $date): ?array
+    {
+        $weekStart = \Carbon\Carbon::parse($date)->startOfWeek(\Carbon\Carbon::MONDAY)->toDateString();
+        $weekSched = $kasirService->getWaiterWeekSchedule($waiterId, $weekStart);
+
+        if (! is_array($weekSched) || empty($weekSched['days'])) {
+            return null;
+        }
+
+        $matched = null;
+        foreach ($weekSched['days'] as $d) {
+            if (($d['date'] ?? '') === $date) {
+                $matched = $d;
+                break;
+            }
+        }
+        if (! $matched) {
+            return null;
+        }
+
+        $shiftCode = (string) ($matched['shift'] ?? '');
+        if ($shiftCode === '' || $shiftCode === \App\Services\KasirScheduleService::SHIFT_LIBUR) {
+            return null;
+        }
+
+        $meta = $matched['shift_meta'] ?? null;
+        if (! is_array($meta) || empty($meta['start']) || empty($meta['end'])) {
+            return null;
+        }
+
+        return [
+            'id' => 'kasir:'.$shiftCode,
+            'name' => 'Kasir '.($meta['label'] ?? $shiftCode),
+            'clock_in_time' => $meta['start'],
+            'clock_out_time' => $meta['end'],
+            'late_tolerance_minutes' => 15,
+            'source' => 'kasir_tool',
+        ];
     }
 
     /**

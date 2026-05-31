@@ -165,7 +165,6 @@
                 @if($hasWeekOverride)
                     <button type="button" class="btn btn-sm" onclick="resetWeek()" style="background: #fee2e2; color: #991b1b; border-color: #fca5a5;">🔄 Reset ke Default</button>
                 @endif
-                <button type="button" class="btn btn-sm" onclick="applyAttendance()" style="background: #d1fae5; color: #065f46; border-color: #6ee7b7;">⚡ Apply ke Attendance</button>
             </div>
         </div>
 
@@ -401,7 +400,6 @@
             savePrefs: BASE + '/admin/jadwal/save-preferences',
             saveWeek: BASE + '/admin/jadwal/save-week',
             resetWeek: BASE + '/admin/jadwal/reset-week',
-            applyAttendance: BASE + '/admin/jadwal/apply-attendance',
         };
         const WEEK_ISO = @json($schedule['week_iso']);
         const WEEK_START = @json($schedule['week_start']);
@@ -508,16 +506,6 @@
                 location.reload();
             } else {
                 alert(data.message || 'Gagal reset.');
-            }
-        }
-
-        async function applyAttendance() {
-            if (!confirm('Apply jadwal ini ke attendance system existing? Akan overwrite jadwal mingguan untuk 3 karyawan.')) return;
-            const { ok, data } = await postJson(URLS.applyAttendance, { week_start: WEEK_START });
-            if (ok && data.success) {
-                alert(data.message);
-            } else {
-                alert((data.message || 'Gagal apply') + (data.errors && data.errors.length ? '\n- ' + data.errors.join('\n- ') : ''));
             }
         }
     </script>
