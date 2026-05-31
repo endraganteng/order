@@ -738,7 +738,7 @@
         // Cleanup orphan portal dropdowns from previous open
         document.querySelectorAll('body > .autocomplete-suggestions').forEach(el => el.remove());
         const products = c.products || {};
-        Object.values(products).forEach(p => addProductRow(p.name, p.points_per_unit));
+        Object.values(products).forEach(p => addProductRow(p.name, p.points_per_unit, p.quota));
         if (Object.keys(products).length === 0) addProductRow();
 
         openCreate();
@@ -761,7 +761,7 @@
         return String(str || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
     }
 
-    function addProductRow(name = '', points = '') {
+    function addProductRow(name = '', points = '', quota = '') {
         const container = document.getElementById('productsContainer');
         const row = document.createElement('div');
         row.className = 'product-row';
@@ -769,7 +769,8 @@
             <div class="autocomplete-wrap" style="position:relative; flex:1; min-width:0;">
                 <input type="text" class="form-control js-prod-name" placeholder="Cari produk..." value="${escapeHtml(name)}" autocomplete="off" required>
             </div>
-            <input type="number" class="form-control js-prod-points" placeholder="Poin" value="${escapeHtml(points)}" min="1" required style="flex:0 0 100px;">
+            <input type="number" class="form-control js-prod-points" placeholder="Poin" value="${escapeHtml(points)}" min="1" required style="flex:0 0 90px;" title="Poin per unit">
+            <input type="number" class="form-control js-prod-quota" placeholder="Quota" value="${escapeHtml(quota ?? '')}" min="1" style="flex:0 0 90px;" title="Quota max unit (kosong = unlimited)">
             <button type="button" class="btn-remove">×</button>
         `;
 
@@ -915,7 +916,14 @@
                 <div style="margin-bottom:0.85rem;">
                     <strong style="font-size:0.9rem;">Produk (${products.length})</strong>
                     <div style="margin-top:0.5rem;">
-                        ${products.map(p => `<span class="product-tag" style="margin-bottom:0.2rem;">${escapeHtml(p.name)} — <strong>${escapeHtml(String(p.points_per_unit))} poin/unit</strong></span>`).join('')}
+                        ${products.map(p => {
+                            const hasQuota = p.quota != null && p.quota !== '';
+                            const claimed = parseInt(p.quota_claimed ?? 0, 10) || 0;
+                            const quotaTxt = hasQuota
+                                ? ` <span style="color:#6b7280;">(${claimed}/${p.quota} unit)</span>`
+                                : '';
+                            return `<span class="product-tag" style="margin-bottom:0.2rem;">${escapeHtml(p.name)} — <strong>${escapeHtml(String(p.points_per_unit))} poin/unit</strong>${quotaTxt}</span>`;
+                        }).join('')}
                     </div>
                 </div>
                 <div class="claim-history">
@@ -1027,7 +1035,13 @@
         document.querySelectorAll('#productsContainer .product-row').forEach(row => {
             const name = row.querySelector('.js-prod-name').value.trim();
             const points = parseInt(row.querySelector('.js-prod-points').value, 10) || 0;
-            if (name && points > 0) products.push({ name, points_per_unit: points });
+            const quotaRaw = row.querySelector('.js-prod-quota').value.trim();
+            const quota = quotaRaw === '' ? null : (parseInt(quotaRaw, 10) || null);
+            if (name && points > 0) {
+                const item = { name, points_per_unit: points };
+                if (quota !== null) item.quota = quota;
+                products.push(item);
+            }
         });
         if (products.length === 0) { alert('Tambahkan minimal 1 produk.'); return; }
 

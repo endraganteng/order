@@ -4154,7 +4154,30 @@ class FirebaseService
                         }));
 
                         if (! empty($peerCandidates)) {
-                            // Untuk single assignment, pilih hanya 1 peer (yang pertama tersedia)
+                            // BUG FIX (#6): Pick peer with LOWEST active task load,
+                            // not always alphabetical [0]. Prevents same waiter
+                            // from being overburdened every time backup is needed.
+                            usort($peerCandidates, function ($a, $b) use ($effectiveTargetDate) {
+                                $aId = (string) ($a['id'] ?? '');
+                                $bId = (string) ($b['id'] ?? '');
+                                $aTasks = $this->getWaiterTasksForDate($aId, $effectiveTargetDate);
+                                $bTasks = $this->getWaiterTasksForDate($bId, $effectiveTargetDate);
+                                $aActive = count(array_filter($aTasks, function ($t) {
+                                    $s = (string) ($t['status'] ?? 'pending');
+                                    return ! in_array($s, ['done', 'cancelled'], true);
+                                }));
+                                $bActive = count(array_filter($bTasks, function ($t) {
+                                    $s = (string) ($t['status'] ?? 'pending');
+                                    return ! in_array($s, ['done', 'cancelled'], true);
+                                }));
+                                if ($aActive !== $bActive) {
+                                    return $aActive <=> $bActive;
+                                }
+                                // Tie-break: alphabetical (deterministic)
+                                return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+                            });
+
+                            // Untuk single assignment, pilih hanya 1 peer (load paling rendah)
                             $targetWaiters = [$peerCandidates[0]];
                             $peerFallbackUsed = true;
                             $rescheduledFromDate = null;
@@ -4163,6 +4186,7 @@ class FirebaseService
                             $rescheduleMarkerRef->set([
                                 'type' => 'peer_fallback',
                                 'peer_waiter_id' => $peerCandidates[0]['id'] ?? '',
+                                'peer_selection' => 'lowest_load',
                                 'created_at' => time(),
                             ]);
 
@@ -4203,9 +4227,11 @@ class FirebaseService
                         continue;
                     }
 
+                    $isEmergencyAssignment = (bool) ($rescheduleResult['is_emergency_assignment'] ?? false);
+
                     // Write reschedule marker to prevent repeated processing
                     $rescheduleMarkerRef->set([
-                        'type' => 'rescheduled',
+                        'type' => $isEmergencyAssignment ? 'emergency_supervisor_fallback' : 'rescheduled',
                         'new_date' => $rescheduleResult['new_date'] ?? '',
                         'created_at' => time(),
                     ]);
@@ -4218,6 +4244,7 @@ class FirebaseService
                 }
             } else {
                 $rescheduledFromDate = null;
+                $isEmergencyAssignment = false;
             }
 
             if ($isRackRollingTemplate) {
@@ -4447,6 +4474,12 @@ class FirebaseService
                     'original_due_date' => $rescheduledFromDate,
                 ]);
 
+                // BUG FIX (#7): Tag task as emergency assignment so admin
+                // can identify supervisor-fallback tasks in dashboards.
+                if (! empty($isEmergencyAssignment)) {
+                    $taskData['is_emergency_assignment'] = true;
+                }
+
                 // === ROLLING / SHIFT FLAGS ===
                 if ($isGeneralRolling) {
                     $taskData['is_rolling_assignment'] = true;
@@ -4581,6 +4614,66 @@ class FirebaseService
                 'reason' => 'Tidak ada waiter available dgn load < '.$loadCap.' task dalam '.$maxDaysAhead.' hari ke depan',
                 'created_at' => time(),
             ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // BUG FIX (#7): PRIORITY 4 — Emergency supervisor fallback.
+        // Before giving up, try to assign to an active supervisor working today
+        // (or tomorrow). Tagged with is_emergency_assignment=true so admin can
+        // identify these in dashboards. Skip if waiter is attendance_exempt.
+        try {
+            $supervisors = $this->getActiveWaitersByRole('supervisor');
+            $candidateDates = [$originalDate, date('Y-m-d', strtotime($originalDate.' +1 day'))];
+
+            foreach ($supervisors as $supervisor) {
+                $supId = (string) ($supervisor['id'] ?? '');
+                if ($supId === '' || ! empty($supervisor['attendance_exempt'])) {
+                    continue;
+                }
+
+                foreach ($candidateDates as $candidateDate) {
+                    if (! $this->isWorkingDay($supId, $candidateDate)) {
+                        continue;
+                    }
+
+                    try {
+                        $fonnte = app(\App\Services\FonnteService::class);
+                        $fonnte->notifyTaskRescheduled(
+                            $template,
+                            $originalTargetWaiters[0] ?? [],
+                            $supervisor,
+                            $originalDate,
+                            $candidateDate
+                        );
+                    } catch (\Throwable $e) {
+                        report($e);
+                    }
+
+                    try {
+                        $this->database->getReference('audit_logs/emergency_assignments')->push([
+                            'template_id' => $template['id'] ?? null,
+                            'template_title' => $template['title'] ?? '',
+                            'supervisor_id' => $supId,
+                            'supervisor_name' => $supervisor['name'] ?? '',
+                            'original_date' => $originalDate,
+                            'assigned_date' => $candidateDate,
+                            'reason' => 'No regular waiter available — fallback to supervisor',
+                            'created_at' => time(),
+                        ]);
+                    } catch (\Throwable $e) {
+                        report($e);
+                    }
+
+                    return [
+                        'rescheduled' => true,
+                        'new_date' => $candidateDate,
+                        'original_date' => $originalDate,
+                        'waiters' => [$supervisor],
+                        'is_emergency_assignment' => true,
+                    ];
+                }
+            }
         } catch (\Throwable $e) {
             report($e);
         }
@@ -9991,6 +10084,13 @@ class FirebaseService
             if (($task['task_type'] ?? '') !== 'rack_check') {
                 continue;
             }
+            // BUG FIX (#8): Skip cancelled tasks from weekly count.
+            // Previously, cancelled tasks counted toward workload, causing
+            // unfair penalty: a waiter whose task was cancelled by admin
+            // looked busier than they actually were.
+            if (($task['status'] ?? '') === 'cancelled') {
+                continue;
+            }
             $wid = (string) ($task['assigned_waiter_id'] ?? '');
             if ($wid === '') {
                 continue;
@@ -10081,6 +10181,25 @@ class FirebaseService
 
         // Factor 1: Weekly balance (0-50) — fairness utama
         $balanceScore = min(50.0, max(0.0, ($avgWeekly - $waiterWeekly) * 12));
+
+        // BUG FIX (#16): New waiter warm-up damping.
+        // New waiter has 0 history -> avgWeekly delta is huge -> they'd get max
+        // balance score and immediately receive most tasks (overload from day 1).
+        // Damping factor (days_since_created / 7) clamped to [0.14, 1.0] gives
+        // gradual ramp-up: day 1 = 14% balance, day 7 = 100%.
+        try {
+            $waiter = $this->getWaiterById($waiterId);
+            $createdAt = (int) ($waiter['created_at'] ?? 0);
+            if ($createdAt > 0) {
+                $daysSinceCreated = max(1, (int) floor((time() - $createdAt) / 86400));
+                if ($daysSinceCreated < 7) {
+                    $dampingFactor = max(0.14, $daysSinceCreated / 7);
+                    $balanceScore *= $dampingFactor;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fail open: skip damping if waiter lookup fails
+        }
 
         // Penalty: strong diminishing return for each task already assigned TODAY
         // This ensures even distribution within a single day

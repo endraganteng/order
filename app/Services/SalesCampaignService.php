@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Kreait\Firebase\Contract\Database;
+use Kreait\Firebase\Exception\Database\TransactionFailed;
 
 class SalesCampaignService
 {
@@ -174,6 +175,54 @@ class SalesCampaignService
         $pointsPerUnit = (int) ($product['points_per_unit'] ?? 0);
         $pointsClaimed = $quantity * $pointsPerUnit;
 
+        // BUG FIX (#5): Atomic quota check via Firebase transaction.
+        // If product has 'quota' field, decrement quota_remaining atomically.
+        // Two simultaneous submits can no longer both succeed past the cap.
+        // Existing campaigns without quota field stay unlimited (backward compat).
+        $hasQuota = isset($product['quota']) && $product['quota'] !== null && $product['quota'] !== '';
+        $quotaPath = 'sales_campaigns/' . $campaignId . '/products/' . $product['key'];
+
+        if ($hasQuota) {
+            $quotaCap = (int) $product['quota'];
+            $quotaRef = $this->database->getReference($quotaPath);
+            $claimedAfter = null;
+            $rejected = false;
+
+            try {
+                $this->database->runTransaction(function ($transaction) use ($quotaRef, $quotaCap, $quantity, &$claimedAfter, &$rejected) {
+                    $snapshot = $transaction->snapshot($quotaRef);
+                    $current = $snapshot->exists() ? (array) $snapshot->getValue() : null;
+                    if (! is_array($current)) {
+                        $rejected = true;
+                        return;
+                    }
+                    $alreadyClaimed = (int) ($current['quota_claimed'] ?? 0);
+                    $afterClaim = $alreadyClaimed + $quantity;
+                    if ($afterClaim > $quotaCap) {
+                        $rejected = true;
+                        return;
+                    }
+                    $current['quota_claimed'] = $afterClaim;
+                    $transaction->set($quotaRef, $current);
+                    $claimedAfter = $afterClaim;
+                });
+            } catch (TransactionFailed $e) {
+                return [
+                    'success' => false,
+                    'message' => 'Klaim tidak bisa diproses (lalu lintas tinggi). Coba lagi sebentar.',
+                ];
+            }
+
+            if ($rejected) {
+                $alreadyClaimed = (int) ($product['quota_claimed'] ?? 0);
+                $remaining = max(0, $quotaCap - $alreadyClaimed);
+                return [
+                    'success' => false,
+                    'message' => "Quota produk '{$product['name']}' sudah habis. Sisa: {$remaining} unit.",
+                ];
+            }
+        }
+
         $claimData = [
             'campaign_id' => $campaignId,
             'campaign_title' => $campaign['title'] ?? '',
@@ -191,6 +240,7 @@ class SalesCampaignService
             'verified_by' => null,
             'verified_at' => null,
             'reject_reason' => null,
+            'quota_consumed' => $hasQuota ? $quantity : 0,
         ];
 
         $ref = $this->database->getReference('sales_campaign_claims')->push($claimData);
@@ -286,6 +336,37 @@ class SalesCampaignService
         }
 
         $this->database->getReference($path)->update($updates);
+
+        // BUG FIX (#5): Refund quota when claim is rejected so the slot can
+        // be re-claimed by another waiter.
+        if ($status === 'rejected') {
+            $quotaConsumed = (int) ($claim['quota_consumed'] ?? 0);
+            if ($quotaConsumed > 0) {
+                $campaignId = (string) ($claim['campaign_id'] ?? '');
+                $productKey = (string) ($claim['product_key'] ?? '');
+                if ($campaignId !== '' && $productKey !== '') {
+                    $quotaRef = $this->database->getReference('sales_campaigns/' . $campaignId . '/products/' . $productKey);
+                    try {
+                        $this->database->runTransaction(function ($transaction) use ($quotaRef, $quotaConsumed) {
+                            $snap = $transaction->snapshot($quotaRef);
+                            $current = $snap->exists() ? (array) $snap->getValue() : null;
+                            if (! is_array($current)) {
+                                return;
+                            }
+                            $alreadyClaimed = (int) ($current['quota_claimed'] ?? 0);
+                            $current['quota_claimed'] = max(0, $alreadyClaimed - $quotaConsumed);
+                            $transaction->set($quotaRef, $current);
+                        });
+                    } catch (TransactionFailed $e) {
+                        // Refund best-effort. Log but don't fail the verification.
+                        \Log::warning('[CAMPAIGN_QUOTA_REFUND] Gagal refund quota', [
+                            'claim_id' => $claimId,
+                            'quota_consumed' => $quotaConsumed,
+                        ]);
+                    }
+                }
+            }
+        }
 
         return [
             'success' => true,

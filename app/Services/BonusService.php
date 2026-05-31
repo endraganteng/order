@@ -670,7 +670,16 @@ class BonusService
         $date = (string) ($data['date'] ?? date('Y-m-d'));
         $waiterId = (string) ($data['waiter_id'] ?? '');
         $relatedTaskId = (string) ($data['related_task_id'] ?? '');
-        $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $date, $relatedTaskId]));
+
+        // BUG FIX (#1): For mandatory_task_missed, dedupe by taskId only
+        // (without date) so a task overdue across multiple days doesn't get
+        // multiple penalties. The penalty is "missing this task" (one event),
+        // not "missing today" (recurring event).
+        if ($penaltyType === 'mandatory_task_missed' && $relatedTaskId !== '') {
+            $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $relatedTaskId]));
+        } else {
+            $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $date, $relatedTaskId]));
+        }
         $indexRef = $this->database->getReference('waiter_penalties_index/'.$dedupKey);
 
         $existingIndex = $indexRef->getValue();

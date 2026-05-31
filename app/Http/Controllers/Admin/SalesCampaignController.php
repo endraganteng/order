@@ -42,6 +42,7 @@ class SalesCampaignController extends Controller
             'products' => 'required|array|min:1',
             'products.*.name' => 'required|string|max:200',
             'products.*.points_per_unit' => 'required|integer|min:1',
+            'products.*.quota' => 'nullable|integer|min:1',
         ]);
 
         $eligibleUsers = ['type' => $data['eligible_type']];
@@ -55,10 +56,15 @@ class SalesCampaignController extends Controller
         $products = [];
         foreach ($data['products'] as $i => $product) {
             $key = 'product_' . $i;
-            $products[$key] = [
+            $entry = [
                 'name' => $product['name'],
                 'points_per_unit' => (int) $product['points_per_unit'],
             ];
+            if (isset($product['quota']) && $product['quota'] !== null && $product['quota'] !== '') {
+                $entry['quota'] = (int) $product['quota'];
+                $entry['quota_claimed'] = 0;
+            }
+            $products[$key] = $entry;
         }
 
         $id = $this->campaign->createCampaign([
@@ -93,6 +99,7 @@ class SalesCampaignController extends Controller
             'products' => 'required|array|min:1',
             'products.*.name' => 'required|string|max:200',
             'products.*.points_per_unit' => 'required|integer|min:1',
+            'products.*.quota' => 'nullable|integer|min:1',
         ]);
 
         $eligibleUsers = ['type' => $data['eligible_type']];
@@ -102,13 +109,32 @@ class SalesCampaignController extends Controller
             $eligibleUsers['user_ids'] = $data['eligible_user_ids'] ?? [];
         }
 
+        // BUG FIX (#5): Preserve existing quota_claimed counter when updating
+        // products. Match by name+points_per_unit since UI doesn't send keys.
+        $existingCampaign = $this->campaign->getCampaignById($id);
+        $existingProducts = (array) ($existingCampaign['products'] ?? []);
+        $existingByName = [];
+        foreach ($existingProducts as $oldProduct) {
+            $name = (string) ($oldProduct['name'] ?? '');
+            if ($name !== '') {
+                $existingByName[mb_strtolower($name)] = $oldProduct;
+            }
+        }
+
         $products = [];
         foreach ($data['products'] as $i => $product) {
             $key = 'product_' . $i;
-            $products[$key] = [
+            $entry = [
                 'name' => $product['name'],
                 'points_per_unit' => (int) $product['points_per_unit'],
             ];
+            if (isset($product['quota']) && $product['quota'] !== null && $product['quota'] !== '') {
+                $entry['quota'] = (int) $product['quota'];
+                // Preserve quota_claimed if same product name exists
+                $matched = $existingByName[mb_strtolower($product['name'])] ?? null;
+                $entry['quota_claimed'] = (int) ($matched['quota_claimed'] ?? 0);
+            }
+            $products[$key] = $entry;
         }
 
         $this->campaign->updateCampaign($id, [
