@@ -1573,13 +1573,25 @@
             ❌ {{ session('error') ?? '' }}
         </div>
 
-        <div id="attendance-bar" class="attendance-bar">
+        <div id="attendance-bar" class="attendance-bar"
+            data-attendance-exempt="{{ ($isAttendanceExempt ?? false) ? '1' : '0' }}"
+            style="{{ ($isAttendanceExempt ?? false) ? 'display:none;' : '' }}">
             <div class="attendance-info">
                 <span class="attendance-shift" id="attendance-shift-label">Memuat info shift...</span>
                 <span class="attendance-status not-yet" id="attendance-status-label">Memuat status absensi...</span>
             </div>
             <button type="button" class="btn-attendance" id="btn-attendance-action" disabled>Memuat...</button>
         </div>
+
+        @if(($isAttendanceExempt ?? false))
+            <div class="attendance-exempt-banner" style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);border:1px solid #fcd34d;border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+                <span style="font-size:24px;">🛟</span>
+                <div style="flex:1;">
+                    <div style="font-weight:600;color:#92400e;font-size:14px;">Mode On-Call / Admin</div>
+                    <div style="font-size:12px;color:#78350f;margin-top:2px;">Akun ini bebas dari absensi otomatis dan tidak menerima task terjadwal.</div>
+                </div>
+            </div>
+        @endif
 
         <div class="quick-actions">
             <div class="quick-actions-label">Akses Cepat</div>
@@ -2187,8 +2199,10 @@
             renderAttendanceBar();
         }
 
-        async function loadAttendanceStatus() {
-            if (!attendanceStatusUrl) return;
+    async function loadAttendanceStatus() {
+        if (!attendanceStatusUrl) return;
+        // Skip for attendance-exempt waiters (admin/on-call) — bar disembunyikan via Blade
+        if (attendanceBarEl?.dataset?.attendanceExempt === '1') return;
             try {
                 const res = await fetch(attendanceStatusUrl, {
                     method: 'GET',

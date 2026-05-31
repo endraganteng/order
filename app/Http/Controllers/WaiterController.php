@@ -121,6 +121,7 @@ class WaiterController extends Controller
             $waiterRole = strtolower((string) ($waiterRecord['waiter_role'] ?? ''));
             $isFinance = $waiterRole === 'finance';
             $isVerifier = in_array($waiterRole, ['finance', 'supervisor'], true);
+            $isAttendanceExempt = ! empty($waiterRecord['attendance_exempt']);
             $rackCheckPendingReview = $isFinance
                 ? $this->firebase->getRackCheckPendingReview($reportDate)
                 : [];
@@ -181,6 +182,7 @@ class WaiterController extends Controller
             $waiterRole = '';
             $isFinance = false;
             $isVerifier = false;
+            $isAttendanceExempt = false;
             $rackCheckPendingReview = [];
             $pendingBonusClaims = 0;
             $isRetailEmployee = false;
@@ -196,6 +198,7 @@ class WaiterController extends Controller
             'waiterRole' => $waiterRole,
             'isFinance' => $isFinance,
             'isVerifier' => $isVerifier,
+            'isAttendanceExempt' => $isAttendanceExempt,
             'reportDate' => $reportDate,
             'pendingTasks' => $taskBuckets['pending_tasks'],
             'taskHistory' => $taskBuckets['task_history'],

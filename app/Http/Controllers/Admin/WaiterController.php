@@ -46,7 +46,8 @@ class WaiterController extends Controller
 
         $shiftId = $request->shift_id ?: null;
         $phone = $request->phone ?: null;
-        $this->firebase->addAllowedEmailWithPassword($email, $request->name, $passwordHash, $request->waiter_role, $shiftId, $phone);
+        $attendanceExempt = (bool) $request->attendance_exempt;
+        $this->firebase->addAllowedEmailWithPassword($email, $request->name, $passwordHash, $request->waiter_role, $shiftId, $phone, $attendanceExempt);
 
         $this->firebase->logAuditAction('create', 'waiter', null, ['email' => $email, 'name' => $request->name, 'role' => $request->waiter_role]);
 

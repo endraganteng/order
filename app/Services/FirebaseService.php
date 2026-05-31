@@ -84,7 +84,7 @@ class FirebaseService
     /**
      * Add new waiter account (with optional password hash).
      */
-    public function addAllowedEmailWithPassword($email, $name, $passwordHash = null, $waiterRole = 'pelayan', $shiftId = null, $phone = null)
+    public function addAllowedEmailWithPassword($email, $name, $passwordHash = null, $waiterRole = 'pelayan', $shiftId = null, $phone = null, $attendanceExempt = false)
     {
         $payload = [
             'email' => strtolower(trim((string) $email)),
@@ -104,6 +104,10 @@ class FirebaseService
 
         if ($phone) {
             $payload['phone'] = trim((string) $phone);
+        }
+
+        if ($attendanceExempt) {
+            $payload['attendance_exempt'] = true;
         }
 
         $this->database->getReference('allowed_waiters')->push($payload);
@@ -6854,6 +6858,17 @@ class FirebaseService
      */
     private function resolveIsWorkingDay(string $waiterId, string $date): bool
     {
+        // Short-circuit: attendance_exempt waiter (admin/on-call) selalu OFF
+        // → AI Balancing skip, task generator skip, cron audit skip
+        try {
+            $waiter = $this->getWaiterById($waiterId);
+            if ($waiter && ! empty($waiter['attendance_exempt'])) {
+                return false;
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         // Source 1: Retail schedule
         try {
             $retailService = app(\App\Services\RetailScheduleService::class);

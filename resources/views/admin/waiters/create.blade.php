@@ -80,6 +80,22 @@
             </div>
 
             <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">Wajib Absensi</label>
+                <select name="attendance_exempt"
+                    style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 4px;">
+                    <option value="0" {{ !old('attendance_exempt') ? 'selected' : '' }}>Ya — Wajib absen</option>
+                    <option value="1" {{ old('attendance_exempt') ? 'selected' : '' }}>Tidak — Bebas dari kewajiban absen</option>
+                </select>
+                <div style="font-size: 12px; color: #666; margin-top: 6px;">
+                    Pilih "Tidak" untuk admin/on-call: tidak kena penalti absen, tidak diwajibkan clock-in,
+                    dan otomatis dikecualikan dari penjadwalan tugas (AI Balancing, recurring tasks).
+                </div>
+                @error('attendance_exempt')
+                    <span style="color: #dc3545; font-size: 12px;">{{ $message }}</span>
+                @enderror
+            </div>
+
+            <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; color: #555; font-weight: 500;">
                     Password Cadangan <span style="color: #777; font-weight: normal;">(opsional)</span>
                 </label>

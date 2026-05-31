@@ -575,10 +575,6 @@ class KasirScheduleService
         return ['valid' => empty($errors), 'errors' => $errors];
     }
 
-    // =========================================================================
-    //  WAITER PORTAL — read-only filter
-    // =========================================================================
-
     public function getWaiterWeekSchedule(string $waiterId, string $weekStart): ?array
     {
         $emp = $this->loadEmployees();
