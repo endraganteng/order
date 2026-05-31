@@ -4021,12 +4021,25 @@ class FirebaseService
                 if (! empty($rollingIds)) {
                     $period = (string) ($template['rolling_period'] ?? 'weekly');
                     $anchor = trim((string) ($template['rolling_anchor_date'] ?? ''));
+
+                    // BUG FIX (#14): Use persisted counter for fairness during
+                    // roster changes. Falls back to calendar offset internally
+                    // if counter is empty/inconsistent.
+                    $pickedId = $this->resolveRollingWaiterIdByCounter(
+                        (string) ($template['id'] ?? ''),
+                        $rollingIds,
+                        $period,
+                        $effectiveTargetDate,
+                        $anchor !== '' ? $anchor : null
+                    );
+
+                    // Calendar offset still needed for fallback iteration below
                     $offset = $this->resolveRotationOffsetForPeriod(
                         $effectiveTargetDate,
                         $period,
                         $anchor !== '' ? $anchor : null
                     );
-                    $pickedId = $rollingIds[$offset % count($rollingIds)];
+
                     $pickedWaiter = null;
                     foreach ($targetWaiters as $w) {
                         if ((string) ($w['id'] ?? '') === $pickedId) {
@@ -5283,6 +5296,140 @@ class FirebaseService
 
         // daily (default)
         return $diffDays;
+    }
+
+    /**
+     * Compute period key for rotation counter persistence.
+     * Format: '{period}_{key}' (e.g., 'weekly_2026-W22', 'monthly_2026-05', 'daily_2026-05-31').
+     */
+    protected function buildRotationPeriodKey(string $date, string $period): string
+    {
+        try {
+            $dt = new \DateTimeImmutable($date);
+        } catch (\Throwable $e) {
+            return strtolower($period) . '_' . $date;
+        }
+
+        $period = strtolower($period);
+        if ($period === 'monthly') {
+            return 'monthly_' . $dt->format('Y-m');
+        }
+        if ($period === 'weekly') {
+            return 'weekly_' . $dt->format('o-\WW');
+        }
+
+        return 'daily_' . $dt->format('Y-m-d');
+    }
+
+    /**
+     * BUG FIX (#14): Resolve rolling waiter ID via persisted counter instead
+     * of calendar-modulo offset.
+     *
+     * Why: When roster changes (waiter added/removed from rolling_waiter_ids),
+     * `offset % count` shifts which waiter is "next", breaking fairness.
+     * Persisted counter tracks last_assigned and rotates from there.
+     *
+     * Behavior:
+     * 1. Within same period (e.g., same week) → return cached assignee
+     *    (idempotent for cron reruns).
+     * 2. New period → pick waiter after last_assignee in current rollingIds.
+     * 3. last_assignee not in rollingIds (was removed) → fall back to
+     *    calendar offset (preserves backward compat for new templates).
+     *
+     * Storage:
+     *   /rotation_counters/{templateId} = {
+     *     last_period_key: 'weekly_2026-W22',
+     *     last_assigned_waiter_id: '-OipayVWnWj-Tr7BumNZ',
+     *     period_assignees: { 'weekly_2026-W22': '-OipayVWnWj-Tr7BumNZ', ... },
+     *     updated_at: int
+     *   }
+     */
+    protected function resolveRollingWaiterIdByCounter(
+        string $templateId,
+        array $rollingIds,
+        string $period,
+        string $date,
+        ?string $anchor = null
+    ): string {
+        if (empty($rollingIds)) {
+            return '';
+        }
+
+        $periodKey = $this->buildRotationPeriodKey($date, $period);
+        $counterRef = $this->database->getReference('rotation_counters/' . $templateId);
+
+        try {
+            $snapshot = $counterRef->getSnapshot();
+            $current = $snapshot->exists() ? (array) $snapshot->getValue() : [];
+
+            // 1. Idempotency: within same period, return cached assignee
+            $cached = (string) ($current['period_assignees'][$periodKey] ?? '');
+            if ($cached !== '' && in_array($cached, $rollingIds, true)) {
+                return $cached;
+            }
+
+            // 2. New period: pick waiter after last_assignee
+            $lastAssignee = (string) ($current['last_assigned_waiter_id'] ?? '');
+            $nextId = '';
+
+            if ($lastAssignee !== '') {
+                $lastIdx = array_search($lastAssignee, $rollingIds, true);
+                if ($lastIdx !== false) {
+                    $nextIdx = ($lastIdx + 1) % count($rollingIds);
+                    $nextId = $rollingIds[$nextIdx];
+                }
+            }
+
+            // 3. Fallback to calendar offset (last_assignee removed or first run)
+            if ($nextId === '') {
+                $offset = $this->resolveRotationOffsetForPeriod($date, $period, $anchor);
+                $nextId = $rollingIds[$offset % count($rollingIds)];
+            }
+
+            // Persist via atomic transaction
+            try {
+                $this->database->runTransaction(function ($transaction) use ($counterRef, $periodKey, $nextId) {
+                    $snap = $transaction->snapshot($counterRef);
+                    $existing = $snap->exists() ? (array) $snap->getValue() : [];
+
+                    // Re-check inside transaction (race condition safety)
+                    $alreadyAssigned = (string) ($existing['period_assignees'][$periodKey] ?? '');
+                    if ($alreadyAssigned !== '') {
+                        return; // someone else won the race; we'll re-read below
+                    }
+
+                    $existing['period_assignees'][$periodKey] = $nextId;
+                    $existing['last_period_key'] = $periodKey;
+                    $existing['last_assigned_waiter_id'] = $nextId;
+                    $existing['updated_at'] = time();
+
+                    // Cap history at 12 entries to prevent unbounded growth
+                    $assignees = (array) ($existing['period_assignees'] ?? []);
+                    if (count($assignees) > 12) {
+                        ksort($assignees);
+                        $assignees = array_slice($assignees, -12, null, true);
+                        $existing['period_assignees'] = $assignees;
+                    }
+
+                    $transaction->set($counterRef, $existing);
+                });
+            } catch (\Throwable $e) {
+                // If transaction fails, re-read to honor any race winner
+                $reread = $counterRef->getValue();
+                if (is_array($reread)) {
+                    $rereadCached = (string) ($reread['period_assignees'][$periodKey] ?? '');
+                    if ($rereadCached !== '' && in_array($rereadCached, $rollingIds, true)) {
+                        return $rereadCached;
+                    }
+                }
+            }
+
+            return $nextId;
+        } catch (\Throwable $e) {
+            // Catastrophic fallback: pure calendar offset
+            $offset = $this->resolveRotationOffsetForPeriod($date, $period, $anchor);
+            return $rollingIds[$offset % count($rollingIds)];
+        }
     }
 
     /**
