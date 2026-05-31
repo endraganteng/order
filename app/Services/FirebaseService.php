@@ -4373,12 +4373,25 @@ class FirebaseService
 
                 $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity(
                     $template['id'],
-                    $waiter['id'] ?? null,
+                    // For rack_check rolling: use wildcard instead of waiter ID
+                    // so the node key is deterministic per template+date (not per waiter).
+                    // This prevents duplicate tasks when AI Balancing picks different waiter on re-run.
+                    $isRackRollingTemplate ? '*' : ($waiter['id'] ?? null),
                     $effectiveTargetDate
                 );
                 $taskNodeKey = $this->buildWaiterRecurringTaskNodeKey($recurringInstanceKey);
                 $taskReference = $this->database->getReference('waiter_tasks/'.$taskNodeKey);
                 $existingTaskSnap = $taskReference->getSnapshot();
+
+                // TRANSITION GUARD: For rack rolling, if wildcard node doesn't exist yet
+                // but templateOnlyKey is already in existingRecurringMap (from old per-waiter nodes),
+                // skip to prevent duplicates during migration from old to new node key format.
+                if ($isRackRollingTemplate && !$existingTaskSnap->exists()) {
+                    $templateOnlyKeyCheck = (string) $template['id'] . '::*';
+                    if (isset($existingRecurringMap[$templateOnlyKeyCheck])) {
+                        continue;
+                    }
+                }
                 if ($existingTaskSnap->exists()) {
                     $existingTaskValue = (array) $existingTaskSnap->getValue();
                     $existingStatus = (string) ($existingTaskValue['status'] ?? '');
@@ -4391,7 +4404,7 @@ class FirebaseService
                         continue;
                     }
                     $cancelReason = (string) ($existingTaskValue['cancel_reason'] ?? '');
-                    $noRegenReasons = ['role_mismatch_fix', 'anomaly_from_role_mismatch_fix', 'admin_manual', 'bulk_cancel'];
+                    $noRegenReasons = ['role_mismatch_fix', 'anomaly_from_role_mismatch_fix', 'admin_manual', 'bulk_cancel', 'duplicate_rack_fix'];
                     if (in_array($cancelReason, $noRegenReasons, true)) {
                         $existingRecurringMap[$mapKey] = true;
 
