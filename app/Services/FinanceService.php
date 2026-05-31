@@ -342,10 +342,18 @@ class FinanceService
                 ->where('cash_account_id', $accountId)
                 ->orderBy('transaction_date')
                 ->orderBy('id')
-                ->get(['id', 'type', 'amount']);
+                ->get(['id', 'type', 'amount', 'settlement_status']);
 
             $balance = 0;
             foreach ($mutations as $m) {
+                // Hanya hitung mutasi yang sudah settled ke balance
+                // Mutasi pending belum masuk saldo (akan di-increment saat settle)
+                if ($m->settlement_status === 'pending') {
+                    // balance_after untuk pending = balance saat ini (belum berubah)
+                    DB::table('cash_mutations')->where('id', $m->id)->update(['balance_after' => $balance]);
+                    continue;
+                }
+
                 if ($m->type === 'income' || $m->type === 'transfer_in') {
                     $balance += (int) $m->amount;
                 } else {
@@ -354,7 +362,7 @@ class FinanceService
                 DB::table('cash_mutations')->where('id', $m->id)->update(['balance_after' => $balance]);
             }
 
-            // Sync saldo akun ke balance terakhir
+            // Sync saldo akun ke balance terakhir (hanya dari settled mutations)
             DB::table('cash_accounts')->where('id', $accountId)->update(['balance' => $balance, 'updated_at' => now()]);
         }
     }
