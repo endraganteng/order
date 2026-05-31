@@ -5292,17 +5292,24 @@
             const container = document.getElementById('recheck-pending-container');
             const empty = document.getElementById('recheck-empty');
             const badge = document.getElementById('badge-tab-recheck');
+            const mobileBadge = document.getElementById('badge-mobile-recheck');
             if (!container) return;
             container.innerHTML = '';
             if (recheckPendingTasks.length === 0) {
                 if (empty) empty.style.display = 'block';
                 if (badge) badge.classList.add('hidden');
+                if (mobileBadge) mobileBadge.classList.add('hidden');
                 return;
             }
             if (empty) empty.style.display = 'none';
+            const count = String(recheckPendingTasks.length);
             if (badge) {
                 badge.classList.remove('hidden');
-                badge.textContent = String(recheckPendingTasks.length);
+                badge.textContent = count;
+            }
+            if (mobileBadge) {
+                mobileBadge.classList.remove('hidden');
+                mobileBadge.textContent = count;
             }
             recheckPendingTasks.forEach(t => {
                 const card = document.createElement('div');
