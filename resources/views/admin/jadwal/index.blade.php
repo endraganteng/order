@@ -111,6 +111,24 @@
             </div>
 
             <div class="prefs-section">
+                <label class="form-label"><strong>Mode Shift per Karyawan</strong></label>
+                <div class="prefs-grid" style="margin-top: 6px;">
+                    @foreach($schedule['employees'] as $emp)
+                        @php $currentMode = $schedule['shift_modes'][$emp['name']] ?? 'default'; @endphp
+                        <div class="pref-item">
+                            <label class="form-label small"><strong>{{ $emp['name'] }}</strong></label>
+                            <select name="shift_modes[{{ $emp['name'] }}]" class="form-control">
+                                <option value="default" @if($currentMode === 'default') selected @endif>Default (rotasi normal)</option>
+                                <option value="prefer_full" @if($currentMode === 'prefer_full') selected @endif>Always FULL (~87j/minggu)</option>
+                                <option value="prefer_short" @if($currentMode === 'prefer_short') selected @endif>Always Short (PAGI/SORE saja)</option>
+                            </select>
+                        </div>
+                    @endforeach
+                </div>
+                <small class="text-muted">⚠️ Mode "Always FULL" bisa bikin total jam lewat 75/minggu (UU TK). Tidak ada validasi otomatis.</small>
+            </div>
+
+            <div class="prefs-section">
                 <label class="form-label"><strong>Holder 4× Full Shift</strong></label>
                 @php $holderMode = $preferences['holder_mode'] ?? 'auto'; @endphp
                 <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 6px;">
@@ -410,11 +428,15 @@
             const form = document.getElementById('prefsForm');
             const data = new FormData(form);
             const liburDays = {};
+            const shiftModes = {};
             const employees = [];
             for (const [k, v] of data.entries()) {
                 if (k.startsWith('libur_days[')) {
                     const m = k.match(/libur_days\[(.+)\]/);
                     if (m) liburDays[m[1]] = v;
+                } else if (k.startsWith('shift_modes[')) {
+                    const m = k.match(/shift_modes\[(.+)\]/);
+                    if (m) shiftModes[m[1]] = v;
                 } else if (k === 'employees[]') {
                     employees.push(v);
                 }
@@ -424,6 +446,7 @@
                 holder_mode: data.get('holder_mode') || 'auto',
                 holder_name: data.get('holder_name') || null,
                 employees: employees.length === 3 ? employees : null,
+                shift_modes: shiftModes,
             };
             const { ok, data: resp } = await postJson(URLS.savePrefs, payload);
             if (ok && resp.success) {

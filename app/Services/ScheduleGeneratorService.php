@@ -49,7 +49,7 @@ class ScheduleGeneratorService
      *
      * @param  string  $weekStart  ISO date Senin (YYYY-MM-DD)
      * @param  array<int, array{id?: ?string, name: string}>  $employees  3 karyawan
-     * @param  array  $preferences  ['libur_days' => [empName => dayKey], 'holder_name' => string|null]
+     * @param  array  $preferences  ['libur_days' => [empName => dayKey], 'holder_name' => string|null, 'shift_modes' => [empName => mode]]
      * @param  array|null  $override  Per-week matrix override
      */
     public function generate(string $weekStart, array $employees, array $preferences = [], ?array $override = null): array
@@ -67,9 +67,10 @@ class ScheduleGeneratorService
         $resolved = $this->resolvePreferences($employees, $preferences, $weekStartCarbon);
         $liburDays = $resolved['libur_days'];
         $holderName = $resolved['holder_name'];
+        $shiftModes = $resolved['shift_modes'];
         $holderIdx = $this->findEmployeeIdxByName($employees, $holderName);
 
-        $matrix = $this->buildMatrix($weekStartCarbon, $employees, $liburDays, $holderName);
+        $matrix = $this->buildMatrix($weekStartCarbon, $employees, $liburDays, $holderName, $shiftModes);
 
         if (is_array($override) && isset($override['cells'])) {
             $matrix = $this->applyCellOverrides($matrix, $override['cells']);
@@ -87,6 +88,7 @@ class ScheduleGeneratorService
             'holder_idx' => $holderIdx,
             'holder_name' => $holderName,
             'libur_days' => $liburDays,
+            'shift_modes' => $shiftModes,
             'matrix' => $matrix,
             'summary' => $summary,
             'breaks' => $breaks,
@@ -106,10 +108,17 @@ class ScheduleGeneratorService
         ];
 
         $liburDays = $prefs['libur_days'] ?? $defaultLibur;
-
         foreach ($names as $name) {
             if (! isset($liburDays[$name])) {
                 $liburDays[$name] = $defaultLibur[$name] ?? 'monday';
+            }
+        }
+
+        // Shift mode per employee: 'default' | 'prefer_full' | 'prefer_short'
+        $shiftModes = $prefs['shift_modes'] ?? [];
+        foreach ($names as $name) {
+            if (! isset($shiftModes[$name]) || ! in_array($shiftModes[$name], ['default', 'prefer_full', 'prefer_short'], true)) {
+                $shiftModes[$name] = 'default';
             }
         }
 
@@ -122,6 +131,7 @@ class ScheduleGeneratorService
         return [
             'libur_days' => $liburDays,
             'holder_name' => $holderName,
+            'shift_modes' => $shiftModes,
         ];
     }
 
@@ -162,7 +172,7 @@ class ScheduleGeneratorService
         return 0;
     }
 
-    private function buildMatrix(Carbon $weekStart, array $employees, array $liburDays, string $holderName): array
+    private function buildMatrix(Carbon $weekStart, array $employees, array $liburDays, string $holderName, array $shiftModes = []): array
     {
         $matrix = [];
         $threePersonDayIndices = [];
@@ -209,54 +219,113 @@ class ScheduleGeneratorService
             $matrix[] = $row;
         }
 
-        return $this->distributeThreePersonDays($matrix, $threePersonDayIndices, $employees, $holderName);
+        return $this->distributeThreePersonDays($matrix, $threePersonDayIndices, $employees, $holderName, $shiftModes);
     }
 
     /**
-     * 4 days × 3 persons. Holder 4× FULL? Tidak realistic — holder 2× FULL on 3-person + 2× FULL on 2-person = 4 total.
-     * Pattern di 4 three-person days:
-     *   Day 0: holder=FULL,  nonH1=PAGI,  nonH2=SORE
-     *   Day 1: holder=PAGI,  nonH1=SORE,  nonH2=FULL  (nonH2 dapat 1 FULL)
-     *   Day 2: holder=FULL,  nonH1=SORE,  nonH2=PAGI
-     *   Day 3: holder=SORE,  nonH1=FULL,  nonH2=PAGI  (nonH1 dapat 1 FULL)
+     * Distribute shifts pada 3-person days dengan considerasi shift_modes.
      *
-     * Hitungan FULL across 4 three-person days:
-     *   - Holder: 2× FULL
-     *   - nonH1:  1× FULL
-     *   - nonH2:  1× FULL
-     *
-     * Kombinasi dengan 2-person days (3 days, 1 untuk masing-masing libur):
-     *   - Holder libur 0× → masuk 3× → 3× FULL
-     *   - nonH1 libur 1× → masuk 2× → 2× FULL
-     *   - nonH2 libur 1× → masuk 2× → 2× FULL
-     *
-     * Holder = 0× libur (karena holder = E1 yang non-libur). Wait — holder bisa libur juga.
-     * Re-think: holder bisa siapa saja, juga libur 1× per minggu.
-     *
-     * Kalau holder libur, dia masuk 6 hari = 4× FULL (3 dari 2-person + 1 dari 3-person).
-     * Kalau holder libur Senin, maka 2-person days = Sel libur nonH1, Rab libur nonH2.
-     * Holder masuk: Sel, Rab (FULL), Kam-Min (3-person = 2× FULL + 1× lain).
+     * Shift modes (per employee):
+     *   - 'default'      : ikut aturan distribusi normal
+     *   - 'prefer_full'  : selalu FULL pada 3-person days
+     *   - 'prefer_short' : selalu PAGI/SORE (rotasi)
      */
-    private function distributeThreePersonDays(array $matrix, array $threePersonIndices, array $employees, string $holderName): array
+    private function distributeThreePersonDays(array $matrix, array $threePersonIndices, array $employees, string $holderName, array $shiftModes = []): array
     {
-        $nonHolders = [];
-        foreach ($employees as $e) {
-            if ($e['name'] !== $holderName) {
-                $nonHolders[] = $e;
-            }
-        }
-
-        if (count($nonHolders) !== 2) {
+        if (count($threePersonIndices) === 0) {
             return $matrix;
         }
 
-        // Hitung berapa kali holder & non-holder masuk di 2-person days
-        $holderTwoPersonCount = 0;
-        $nonH1TwoPersonCount = 0;
-        $nonH2TwoPersonCount = 0;
+        $names = array_column($employees, 'name');
 
+        // Default mode kalau belum di-set
+        foreach ($names as $n) {
+            if (! isset($shiftModes[$n])) {
+                $shiftModes[$n] = 'default';
+            }
+        }
+
+        // Identifikasi prefer_full employees (max 1 yang akan FULL setiap 3-person day)
+        $preferFullNames = array_values(array_filter($names, fn ($n) => $shiftModes[$n] === 'prefer_full'));
+        $preferShortNames = array_values(array_filter($names, fn ($n) => $shiftModes[$n] === 'prefer_short'));
+        $defaultNames = array_values(array_filter($names, fn ($n) => $shiftModes[$n] === 'default'));
+
+        // Kalau ada lebih dari 1 prefer_full, pertahankan first sebagai full, sisanya jadi default (warning di validate)
+        $primaryFull = $preferFullNames[0] ?? null;
+
+        // Distribute pattern: alternate PAGI/SORE between non-FULL employees
+        $pagiToggle = 0;
+
+        foreach ($threePersonIndices as $i => $dayIdx) {
+            $assignments = [];
+
+            // Step 1: Tentukan siapa FULL hari ini
+            $fullName = null;
+            if ($primaryFull) {
+                $fullName = $primaryFull;
+            } elseif (! empty($defaultNames)) {
+                // Default: holder gets FULL on first half, alternate
+                if (in_array($holderName, $defaultNames, true)) {
+                    $holderTwoPersonCount = $this->countTwoPersonFull($matrix, $holderName);
+                    $holderTargetFull = max(0, 4 - $holderTwoPersonCount);
+                    if ($i < $holderTargetFull) {
+                        $fullName = $holderName;
+                    }
+                }
+
+                if (! $fullName) {
+                    // Round-robin among default employees
+                    $candidates = array_values(array_filter($defaultNames, fn ($n) => $n !== $holderName));
+                    if (! empty($candidates)) {
+                        $fullName = $candidates[$i % count($candidates)];
+                    } else {
+                        $fullName = $defaultNames[$i % count($defaultNames)];
+                    }
+                }
+            } else {
+                // Semua prefer_short — tetap perlu 1 FULL untuk coverage
+                $fullName = $names[$i % count($names)];
+            }
+
+            // Step 2: Sisa 2 orang dapat PAGI/SORE
+            $remainingNames = array_values(array_filter($names, fn ($n) => $n !== $fullName));
+            // Untuk balance, alternate siapa PAGI / SORE setiap 3-person day
+            if ($pagiToggle % 2 === 0) {
+                $pagiName = $remainingNames[0] ?? null;
+                $soreName = $remainingNames[1] ?? null;
+            } else {
+                $pagiName = $remainingNames[1] ?? null;
+                $soreName = $remainingNames[0] ?? null;
+            }
+            $pagiToggle++;
+
+            // Step 3: Apply assignments
+            foreach ($matrix[$dayIdx]['assignments'] as $aIdx => $assign) {
+                $empName = $assign['employee']['name'];
+                if ($empName === $fullName) {
+                    $shift = self::SHIFT_FULL;
+                } elseif ($empName === $pagiName) {
+                    $shift = self::SHIFT_PAGI;
+                } elseif ($empName === $soreName) {
+                    $shift = self::SHIFT_SORE;
+                } else {
+                    $shift = self::SHIFT_PAGI;
+                }
+                $matrix[$dayIdx]['assignments'][$aIdx]['shift'] = $shift;
+                $matrix[$dayIdx]['assignments'][$aIdx]['shift_meta'] = self::SHIFTS[$shift];
+            }
+        }
+
+        return $matrix;
+    }
+
+    /**
+     * Hitung berapa kali employee dapat FULL di 2-person days.
+     */
+    private function countTwoPersonFull(array $matrix, string $employeeName): int
+    {
+        $count = 0;
         foreach ($matrix as $day) {
-            // Skip 3-person days (assignments belum diisi)
             $isThreePerson = false;
             foreach ($day['assignments'] as $a) {
                 if ($a['shift'] === null) {
@@ -267,69 +336,14 @@ class ScheduleGeneratorService
             if ($isThreePerson) {
                 continue;
             }
-
             foreach ($day['assignments'] as $a) {
-                if ($a['shift'] === self::SHIFT_FULL) {
-                    if ($a['employee']['name'] === $holderName) {
-                        $holderTwoPersonCount++;
-                    } elseif ($a['employee']['name'] === $nonHolders[0]['name']) {
-                        $nonH1TwoPersonCount++;
-                    } else {
-                        $nonH2TwoPersonCount++;
-                    }
+                if ($a['shift'] === self::SHIFT_FULL && $a['employee']['name'] === $employeeName) {
+                    $count++;
                 }
             }
         }
 
-        // Target: holder total 4× FULL across whole week.
-        // Holder needs: 4 - holderTwoPersonCount more FULL on 3-person days.
-        $holderTargetFull = max(0, 4 - $holderTwoPersonCount);
-        $threePersonCount = count($threePersonIndices);
-
-        // Build patterns dynamically
-        // Holder gets FULL on first $holderTargetFull three-person days, then alternates PAGI/SORE
-        // Non-holders share remaining FULL slots and PAGI/SORE
-        foreach ($threePersonIndices as $i => $dayIdx) {
-            // Determine holder's shift for this 3-person day
-            if ($i < $holderTargetFull) {
-                $holderShift = self::SHIFT_FULL;
-            } elseif (($i - $holderTargetFull) % 2 === 0) {
-                $holderShift = self::SHIFT_PAGI;
-            } else {
-                $holderShift = self::SHIFT_SORE;
-            }
-
-            // Non-holders take remaining slots
-            // Each 3-person day must have 1 FULL + 1 PAGI + 1 SORE
-            $remainingShifts = [self::SHIFT_FULL, self::SHIFT_PAGI, self::SHIFT_SORE];
-            $remainingShifts = array_values(array_diff($remainingShifts, [$holderShift]));
-            // remainingShifts has 2 items
-
-            // Assign non-holders alternating to balance
-            // Strategy: nonH1 takes first remaining on even-index days, nonH2 takes second
-            if ($i % 2 === 0) {
-                $nonH1Shift = $remainingShifts[0];
-                $nonH2Shift = $remainingShifts[1];
-            } else {
-                $nonH1Shift = $remainingShifts[1];
-                $nonH2Shift = $remainingShifts[0];
-            }
-
-            foreach ($matrix[$dayIdx]['assignments'] as $aIdx => $assign) {
-                $empName = $assign['employee']['name'];
-                if ($empName === $holderName) {
-                    $shift = $holderShift;
-                } elseif ($empName === $nonHolders[0]['name']) {
-                    $shift = $nonH1Shift;
-                } else {
-                    $shift = $nonH2Shift;
-                }
-                $matrix[$dayIdx]['assignments'][$aIdx]['shift'] = $shift;
-                $matrix[$dayIdx]['assignments'][$aIdx]['shift_meta'] = self::SHIFTS[$shift];
-            }
-        }
-
-        return $matrix;
+        return $count;
     }
 
     private function applyCellOverrides(array $matrix, array $cells): array

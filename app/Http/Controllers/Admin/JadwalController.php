@@ -150,6 +150,7 @@ class JadwalController extends Controller
         $genPrefs = [
             'libur_days' => $prefs['libur_days'] ?? null,
             'holder_name' => null,
+            'shift_modes' => $prefs['shift_modes'] ?? null,
         ];
         if (($prefs['holder_mode'] ?? 'auto') === 'locked' && ! empty($prefs['holder_name'])) {
             $genPrefs['holder_name'] = $prefs['holder_name'];
@@ -204,6 +205,8 @@ class JadwalController extends Controller
             'holder_name' => 'nullable|string',
             'employees' => 'nullable|array|size:3',
             'employees.*' => 'nullable|string',
+            'shift_modes' => 'nullable|array',
+            'shift_modes.*' => 'nullable|string|in:default,prefer_full,prefer_short',
         ]);
 
         // Validate 3 different employees
@@ -246,6 +249,7 @@ class JadwalController extends Controller
             'holder_mode' => $request->holder_mode,
             'holder_name' => $request->holder_mode === 'locked' ? $request->holder_name : null,
             'employees' => count($newEmployeeIds) === 3 ? $newEmployeeIds : null,
+            'shift_modes' => $request->input('shift_modes', []),
         ];
 
         $validation = $this->generator->validatePreferences($resolvedEmployees, $prefs);
@@ -334,6 +338,7 @@ class JadwalController extends Controller
         $genPrefs = [
             'libur_days' => $prefs['libur_days'] ?? null,
             'holder_name' => ($prefs['holder_mode'] ?? 'auto') === 'locked' ? ($prefs['holder_name'] ?? null) : null,
+            'shift_modes' => $prefs['shift_modes'] ?? null,
         ];
 
         $weekOverride = $this->retail->getWeekOverride($weekIso);

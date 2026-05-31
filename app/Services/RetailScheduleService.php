@@ -46,6 +46,7 @@ class RetailScheduleService
             'holder_name' => $prefs['holder_name'] ?? null,
             'holder_mode' => $prefs['holder_mode'] ?? 'auto', // 'auto' | 'locked'
             'employees' => $prefs['employees'] ?? [], // array of waiter_ids (3 ids)
+            'shift_modes' => $prefs['shift_modes'] ?? [], // [empName => 'default'|'prefer_full'|'prefer_short']
             'updated_at' => time(),
         ];
 
