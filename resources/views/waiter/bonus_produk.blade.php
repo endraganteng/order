@@ -934,11 +934,11 @@
                 <div class="photo-upload row-photo-upload" data-row-id="${idx}" onclick="document.getElementById('photoInput-${idx}').click()">
                     <div class="row-photo-placeholder">
                         <div class="icon">📷</div>
-                        <div class="text">Tap untuk ambil foto bukti</div>
+                        <div class="text">Tap untuk ambil/pilih foto bukti</div>
                     </div>
                     <img class="row-photo-preview" style="display:none;">
                 </div>
-                <input type="file" id="photoInput-${idx}" accept="image/*" capture="environment" style="display:none;" onchange="handleRowPhoto(this, ${idx})">
+                <input type="file" id="photoInput-${idx}" accept="image/*" style="display:none;" onchange="handleRowPhoto(this, ${idx})">
             </div>
         `;
         container.appendChild(row);
