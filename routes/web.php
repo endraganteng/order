@@ -195,6 +195,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('schedules', [ShiftController::class, 'schedules'])->name('schedules.index');
         Route::post('schedules/save', [ShiftController::class, 'saveScheduleTemplate'])->name('schedules.save');
 
+        // Jadwal Shift Retail (standalone planning tool — tidak terintegrasi dengan attendance)
+        Route::get('jadwal', [\App\Http\Controllers\Admin\JadwalController::class, 'index'])->name('jadwal.index');
+        Route::post('jadwal/generate', [\App\Http\Controllers\Admin\JadwalController::class, 'generate'])->name('jadwal.generate');
+
         // Attendance
         Route::get('attendance', [AttendanceController::class, 'index'])->name('attendance.index');
         Route::get('attendance/monthly', [AttendanceController::class, 'monthly'])->name('attendance.monthly');
