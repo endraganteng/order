@@ -1705,7 +1705,8 @@
             <h2 style="margin: 0 0 10px 0;">🔍 Recheck Cek Rak (Finance)</h2>
             <div style="background:#fff7ed; border:1px solid #fdba74; border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:13px; color:#7c2d12;">
                 Berikut daftar cek rak yang sudah dikerjakan waiter dan menunggu review Anda. Klik untuk kasih poin (0-10) + catatan.
-                Poin recheck masuk kategori "Recheck Rak" di bonus harian waiter (max 10/hari).
+                Poin recheck masuk kategori "Recheck Rak" di bonus harian waiter (max 10/hari).<br>
+                <strong>📅 Termasuk task 7 hari ke belakang yang belum direview.</strong> Task lewat hari akan ditandai merah.
             </div>
             <div id="recheck-pending-container"></div>
             <div id="recheck-empty" style="text-align:center; padding:30px; color:#94a3b8; display:none;">
@@ -5306,9 +5307,16 @@
             recheckPendingTasks.forEach(t => {
                 const card = document.createElement('div');
                 card.className = 'recheck-pending-card';
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const taskDate = t.scheduled_for_date || '';
+                const isOldTask = taskDate && taskDate !== todayStr;
+                const dateBadge = isOldTask
+                    ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:4px; font-weight:700; font-size:11px;">📅 ${escapeHtml(taskDate)} (TERLEWAT)</span>`
+                    : (taskDate ? `<span style="color:#475569;">📅 ${escapeHtml(taskDate)}</span>` : '');
                 card.innerHTML = `
                     <div class="recheck-pending-card-title">${escapeHtml(t.rack_name || t.title || 'Rak')}</div>
                     <div class="recheck-pending-card-meta">
+                        ${dateBadge}
                         <span>👤 ${escapeHtml(t.completed_by_waiter_name || t.assigned_waiter_name || '?')}</span>
                         <span>📍 ${escapeHtml(t.rack_location || '—')}</span>
                         <span>⏱ ${formatTaskTime(t.completed_at)}</span>

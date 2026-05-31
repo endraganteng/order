@@ -2727,21 +2727,32 @@ class FirebaseService
      * Returns tasks where: task_type=rack_check, status=done, recheck_pending=true.
      *
      * @param  string|null  $date  Filter by scheduled_for_date (Y-m-d), null = today
+     * @param  int  $lookbackDays  Number of days backwards to include (0 = only $date itself)
      * @return array
      */
-    public function getRackCheckPendingReview(?string $date = null): array
+    public function getRackCheckPendingReview(?string $date = null, int $lookbackDays = 0): array
     {
         $date = $date ?: date('Y-m-d');
-        $tasks = $this->getWaiterTasksByDate($date);
-        $pending = array_values(array_filter($tasks, function ($t) {
-            return ($t['task_type'] ?? '') === 'rack_check'
-                && ($t['status'] ?? '') === 'done'
-                && ! empty($t['recheck_pending']);
-        }));
-        usort($pending, function ($a, $b) {
+        $lookbackDays = max(0, $lookbackDays);
+
+        $allPending = [];
+        for ($offset = 0; $offset <= $lookbackDays; $offset++) {
+            $checkDate = date('Y-m-d', strtotime($date . ' -' . $offset . ' days'));
+            $tasks = $this->getWaiterTasksByDate($checkDate);
+            foreach ($tasks as $t) {
+                if (($t['task_type'] ?? '') === 'rack_check'
+                    && ($t['status'] ?? '') === 'done'
+                    && ! empty($t['recheck_pending'])) {
+                    $allPending[] = $t;
+                }
+            }
+        }
+
+        usort($allPending, function ($a, $b) {
             return ($b['completed_at'] ?? 0) - ($a['completed_at'] ?? 0);
         });
-        return $pending;
+
+        return $allPending;
     }
 
     /**

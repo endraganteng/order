@@ -123,7 +123,7 @@ class WaiterController extends Controller
             $isVerifier = in_array($waiterRole, ['finance', 'supervisor'], true);
             $isAttendanceExempt = ! empty($waiterRecord['attendance_exempt']);
             $rackCheckPendingReview = $isFinance
-                ? $this->firebase->getRackCheckPendingReview($reportDate)
+                ? $this->firebase->getRackCheckPendingReview($reportDate, 7)
                 : [];
 
             // Bonus produk pending claims badge: untuk finance/supervisor
