@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\FinanceDashboardController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PayrollController;
 use App\Http\Controllers\Admin\RackController;
+use App\Http\Controllers\Admin\RackCheckTemplateController;
 use App\Http\Controllers\Admin\ReconciliationController;
 use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\RackProductController;
@@ -136,6 +137,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::delete('tasks/{id}', [TaskController::class, 'destroy'])->name('tasks.destroy');
         Route::post('tasks/recurring/batch-destroy', [TaskController::class, 'recurringBatchDestroy'])->name('tasks.recurring.batch_destroy');
         Route::post('tasks/rack-mass-assign', [TaskController::class, 'rackMassAssign'])->name('tasks.rack_mass_assign');
+
+        // Rack Check Wizard (mode simple_lowest_load)
+        Route::prefix('rack-check')->name('rack_check.')->group(function () {
+            Route::get('templates', [RackCheckTemplateController::class, 'index'])->name('templates.index');
+            Route::get('templates/create', [RackCheckTemplateController::class, 'create'])->name('templates.create');
+            Route::post('templates', [RackCheckTemplateController::class, 'store'])->name('templates.store');
+            Route::get('templates/{id}/preview', [RackCheckTemplateController::class, 'preview'])->name('templates.preview');
+            Route::post('templates/{id}/generate', [RackCheckTemplateController::class, 'generateNow'])->name('templates.generate');
+            Route::post('templates/{id}/toggle', [RackCheckTemplateController::class, 'toggle'])->name('templates.toggle');
+            Route::delete('templates/{id}', [RackCheckTemplateController::class, 'destroy'])->name('templates.destroy');
+        });
 
         // Live Dashboard
         Route::get('tasks/live', [TaskController::class, 'live'])->name('tasks.live');

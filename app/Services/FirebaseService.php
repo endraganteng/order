@@ -3992,6 +3992,56 @@ class FirebaseService
 
             $templateAssignmentType = (string) ($template['assignment_type'] ?? 'all');
             $assignmentStrategy = (string) ($template['assignment_strategy'] ?? '');
+
+            // === SIMPLE LOWEST LOAD STRATEGY ===
+            // Mode baru untuk wizard /admin/rack-check/templates.
+            // Bypass AI balancing, peer fallback, reschedule. Pilih waiter dgn beban
+            // rack_check paling ringan dari selected_waiter_ids. Lock-based dedupe.
+            if ($assignmentStrategy === 'simple_lowest_load') {
+                try {
+                    $simpleResult = $this->processSimpleLowestLoadTemplate(
+                        $template,
+                        $effectiveTargetDate,
+                        $isCatchUp,
+                        $force
+                    );
+                    $producedCount = (int) ($simpleResult['generated_count'] ?? 0);
+                    if ($producedCount > 0) {
+                        $generatedCount += $producedCount;
+                        $this->database->getReference('waiter_task_templates/'.$template['id'])->update([
+                            'last_generated_date' => $effectiveTargetDate,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+                continue;
+            }
+
+            // === ROUND ROBIN SIMPLE STRATEGY ===
+            // Mode "Giliran Tetap": bergiliran sesuai urutan selected_waiter_ids.
+            // Petugas libur dilewati ke giliran berikutnya. Counter persisten.
+            if ($assignmentStrategy === 'round_robin_simple') {
+                try {
+                    $rrResult = $this->processRoundRobinSimpleTemplate(
+                        $template,
+                        $effectiveTargetDate,
+                        $isCatchUp,
+                        $force
+                    );
+                    $producedCount = (int) ($rrResult['generated_count'] ?? 0);
+                    if ($producedCount > 0) {
+                        $generatedCount += $producedCount;
+                        $this->database->getReference('waiter_task_templates/'.$template['id'])->update([
+                            'last_generated_date' => $effectiveTargetDate,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+                continue;
+            }
+
             $assignedWaiterRole = $this->normalizeWaiterRole($template['assigned_waiter_role'] ?? 'pelayan');
             $isRackRollingTemplate = (string) ($template['task_type'] ?? 'general') === 'rack_check'
                 && $assignmentStrategy === 'role_round_robin'
@@ -10623,5 +10673,862 @@ class FirebaseService
         }
 
         return $this->bulkCancelWaiterTasks($cancelTaskIds, $note);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SIMPLE LOWEST LOAD (rack-check wizard)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Process a single rack-check template with assignment_strategy=simple_lowest_load.
+     * Picks one waiter dengan beban paling ringan dari selected_waiter_ids,
+     * write lock supaya tidak re-generate setelah cancel.
+     *
+     * @return array{generated_count:int,status:string,reason?:string,task_id?:string,assigned_waiter_id?:string}
+     */
+    public function processSimpleLowestLoadTemplate(array $template, string $targetDate, bool $isCatchUp = false, bool $force = false): array
+    {
+        $templateId = (string) ($template['id'] ?? '');
+        if ($templateId === '') {
+            return ['generated_count' => 0, 'status' => 'invalid_template', 'reason' => 'missing_template_id'];
+        }
+
+        // Catch-up: untuk simple_lowest_load, skip catch-up untuk hari yang sudah lewat
+        // (karena tidak ada konsep "task hari kemarin yang harus dibuat hari ini").
+        if ($isCatchUp) {
+            return ['generated_count' => 0, 'status' => 'skipped_catch_up'];
+        }
+
+        // ── 1. Lock check ──
+        $existingLock = $this->getSimpleLowestLoadLock($templateId, $targetDate);
+        if ($existingLock !== null && ! $force) {
+            $lockStatus = (string) ($existingLock['status'] ?? '');
+            // Jika sudah generated/skipped/cancelled, jangan re-process kecuali force.
+            if (in_array($lockStatus, ['generated', 'skipped_no_eligible_waiter', 'cancelled_by_admin'], true)) {
+                return ['generated_count' => 0, 'status' => 'lock_exists', 'reason' => $lockStatus];
+            }
+        }
+
+        // ── 2. Resolve eligible candidates ──
+        $evaluation = $this->evaluateSimpleLowestLoadCandidates($template, $targetDate);
+        $evaluated = $evaluation['evaluated'];
+        $eligible = $evaluation['eligible'];
+
+        if (empty($eligible)) {
+            $rejected = array_values(array_filter($evaluated, fn ($row) => ! $row['eligible']));
+            $rejectedSummary = array_map(fn ($r) => [
+                'waiter_id' => $r['waiter_id'],
+                'name' => $r['waiter']['name'] ?? '',
+                'reason' => $r['reject_reason'] ?? '',
+            ], $rejected);
+
+            $this->writeSimpleLowestLoadLock($templateId, $targetDate, [
+                'status' => 'skipped_no_eligible_waiter',
+                'reason' => 'no_eligible_waiter',
+                'evaluated_candidates' => $evaluated,
+                'rejected_candidates' => $rejectedSummary,
+            ]);
+            return ['generated_count' => 0, 'status' => 'skipped_no_eligible_waiter', 'reason' => 'no_eligible_waiter'];
+        }
+
+        // ── 3. Sort kandidat: today_count ASC, weekly_count ASC, last_assigned_at ASC, waiter_id ASC ──
+        usort($eligible, function ($a, $b) {
+            return [
+                $a['today_count'], $a['weekly_count'], $a['last_assigned_at'], $a['waiter_id'],
+            ] <=> [
+                $b['today_count'], $b['weekly_count'], $b['last_assigned_at'], $b['waiter_id'],
+            ];
+        });
+
+        $selected = $eligible[0];
+        $selectedWaiter = $selected['waiter'];
+        $selectedWaiterId = (string) $selected['waiter_id'];
+
+        // ── 4. Build assignment_reason ──
+        $rejectedSummary = [];
+        foreach ($evaluated as $row) {
+            if ($row['eligible'] && $row['waiter_id'] === $selectedWaiterId) {
+                continue;
+            }
+            $rejectedSummary[] = [
+                'waiter_id' => $row['waiter_id'],
+                'name' => $row['waiter']['name'] ?? '',
+                'reason' => $row['eligible']
+                    ? 'Beban hari ini lebih tinggi atau peringkat lebih rendah'
+                    : ($row['reject_reason'] ?? ''),
+            ];
+        }
+
+        $assignmentReason = [
+            'mode' => 'simple_lowest_load',
+            'selected_waiter_id' => $selectedWaiterId,
+            'selected_waiter_name' => (string) ($selectedWaiter['name'] ?? ''),
+            'reason' => sprintf(
+                '%s dipilih karena sedang kerja dan memiliki beban cek rak paling ringan.',
+                $selectedWaiter['name'] ?? 'Waiter'
+            ),
+            'today_rack_task_count_before' => (int) $selected['today_count'],
+            'weekly_rack_task_count' => (int) $selected['weekly_count'],
+            'daily_cap' => (int) $selected['daily_cap'],
+            'candidate_count' => count($evaluated),
+            'eligible_candidate_count' => count($eligible),
+            'rejected_candidates' => $rejectedSummary,
+        ];
+
+        // ── 5. Build task payload + persist ──
+        $createResult = $this->createSimpleLowestLoadTask(
+            $template,
+            $selectedWaiter,
+            $targetDate,
+            $assignmentReason
+        );
+
+        if (! ($createResult['success'] ?? false)) {
+            return [
+                'generated_count' => 0,
+                'status' => 'create_failed',
+                'reason' => (string) ($createResult['reason'] ?? 'unknown'),
+            ];
+        }
+
+        // ── 6. Write lock ──
+        $this->writeSimpleLowestLoadLock($templateId, $targetDate, [
+            'status' => 'generated',
+            'task_id' => (string) ($createResult['task_node_key'] ?? ''),
+            'assigned_waiter_id' => $selectedWaiterId,
+            'assigned_waiter_name' => (string) ($selectedWaiter['name'] ?? ''),
+            'evaluated_candidates' => $evaluated,
+        ]);
+
+        return [
+            'generated_count' => 1,
+            'status' => 'generated',
+            'task_id' => (string) ($createResult['task_node_key'] ?? ''),
+            'assigned_waiter_id' => $selectedWaiterId,
+        ];
+    }
+
+    /**
+     * Dry-run preview: evaluate candidates tanpa create task atau lock.
+     * Used by /admin/rack-check/templates/{id}/preview.
+     */
+    public function previewSimpleLowestLoadTemplate(array $template, string $targetDate): array
+    {
+        $evaluation = $this->evaluateSimpleLowestLoadCandidates($template, $targetDate);
+        $evaluated = $evaluation['evaluated'];
+        $eligible = $evaluation['eligible'];
+
+        if (empty($eligible)) {
+            $rejected = array_values(array_filter($evaluated, fn ($row) => ! $row['eligible']));
+            return [
+                'status' => 'skipped_no_eligible_waiter',
+                'date' => $targetDate,
+                'rack_name' => (string) ($template['rack_name'] ?? ''),
+                'selected' => null,
+                'evaluated' => $evaluated,
+                'rejected_candidates' => array_map(fn ($r) => [
+                    'waiter_id' => $r['waiter_id'],
+                    'name' => $r['waiter']['name'] ?? '',
+                    'reason' => $r['reject_reason'] ?? '',
+                ], $rejected),
+            ];
+        }
+
+        usort($eligible, function ($a, $b) {
+            return [
+                $a['today_count'], $a['weekly_count'], $a['last_assigned_at'], $a['waiter_id'],
+            ] <=> [
+                $b['today_count'], $b['weekly_count'], $b['last_assigned_at'], $b['waiter_id'],
+            ];
+        });
+
+        $selected = $eligible[0];
+        $selectedWaiterId = (string) $selected['waiter_id'];
+
+        $rejectedSummary = [];
+        foreach ($evaluated as $row) {
+            if ($row['waiter_id'] === $selectedWaiterId) {
+                continue;
+            }
+            $rejectedSummary[] = [
+                'waiter_id' => $row['waiter_id'],
+                'name' => $row['waiter']['name'] ?? '',
+                'reason' => $row['eligible']
+                    ? 'Masuk, tapi beban lebih tinggi atau peringkat lebih rendah'
+                    : ($row['reject_reason'] ?? ''),
+                'is_working_day' => (bool) $row['is_working_day'],
+                'today_count' => (int) $row['today_count'],
+                'daily_cap' => (int) $row['daily_cap'],
+            ];
+        }
+
+        return [
+            'status' => 'eligible',
+            'date' => $targetDate,
+            'rack_name' => (string) ($template['rack_name'] ?? ''),
+            'selected' => [
+                'waiter_id' => $selectedWaiterId,
+                'name' => (string) ($selected['waiter']['name'] ?? ''),
+                'today_count' => (int) $selected['today_count'],
+                'weekly_count' => (int) $selected['weekly_count'],
+                'daily_cap' => (int) $selected['daily_cap'],
+            ],
+            'evaluated' => $evaluated,
+            'rejected_candidates' => $rejectedSummary,
+        ];
+    }
+
+    /**
+     * Evaluate semua selected_waiter_ids: cek isWorkingDay, daily cap,
+     * count today + weekly rack_check tasks, last_assigned_at.
+     *
+     * @return array{evaluated:array<int,array>,eligible:array<int,array>}
+     */
+    private function evaluateSimpleLowestLoadCandidates(array $template, string $targetDate): array
+    {
+        $selectedIdsRaw = $template['selected_waiter_ids'] ?? [];
+        if (! is_array($selectedIdsRaw)) {
+            $selectedIdsRaw = [];
+        }
+        $selectedIds = array_values(array_unique(array_filter(array_map(
+            fn ($id) => trim((string) $id),
+            $selectedIdsRaw
+        ), fn ($id) => $id !== '')));
+
+        // Resolve waiter records — only active waiters.
+        $candidates = [];
+        foreach ($selectedIds as $waiterId) {
+            try {
+                $waiter = $this->getWaiterById($waiterId);
+            } catch (\Throwable $e) {
+                report($e);
+                continue;
+            }
+            if (! $waiter || ($waiter['is_active'] ?? true) === false) {
+                continue;
+            }
+            $candidates[] = $waiter;
+        }
+
+        // Compute weekStart (Monday) untuk weekly count.
+        $weekStart = (new \DateTime($targetDate))->modify('Monday this week')->format('Y-m-d');
+
+        $evaluated = [];
+        foreach ($candidates as $waiter) {
+            $waiterId = (string) ($waiter['id'] ?? '');
+            $isWorking = $waiterId !== '' ? $this->isWorkingDay($waiterId, $targetDate) : false;
+            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($waiterId, $targetDate) : 0;
+            $todayCount = $waiterId !== ''
+                ? $this->countRackCheckTasksForWaiterOnDate($waiterId, $targetDate)
+                : 0;
+            $weeklyCount = $waiterId !== ''
+                ? $this->countRackCheckTasksForWaiterBetweenDates($waiterId, $weekStart, $targetDate)
+                : 0;
+            $lastAssignedAt = $waiterId !== ''
+                ? $this->getLastRackCheckAssignedAt($waiterId)
+                : 0;
+
+            $eligible = $isWorking && $todayCount < $dailyCap;
+
+            $rejectReason = '';
+            if (! $isWorking) {
+                $rejectReason = 'LIBUR';
+            } elseif ($todayCount >= $dailyCap) {
+                $rejectReason = "Sudah {$todayCount}/{$dailyCap} task cek rak hari ini";
+            }
+
+            $evaluated[] = [
+                'waiter' => $waiter,
+                'waiter_id' => $waiterId,
+                'is_working_day' => $isWorking,
+                'daily_cap' => $dailyCap,
+                'today_count' => $todayCount,
+                'weekly_count' => $weeklyCount,
+                'last_assigned_at' => $lastAssignedAt,
+                'eligible' => $eligible,
+                'reject_reason' => $rejectReason,
+            ];
+        }
+
+        $eligibleList = array_values(array_filter($evaluated, fn ($row) => $row['eligible']));
+
+        return [
+            'evaluated' => $evaluated,
+            'eligible' => $eligibleList,
+        ];
+    }
+
+    /**
+     * Persist task payload untuk simple_lowest_load. Reuse buildWaiterTaskPayload
+     * + node key scheme yang sama dgn generator existing supaya kompatibel
+     * dgn waiter portal, recheck, bonus pipeline.
+     *
+     * @return array{success:bool,reason?:string,task_node_key?:string}
+     */
+    private function createSimpleLowestLoadTask(array $template, array $waiter, string $targetDate, array $assignmentReason): array
+    {
+        $templateId = (string) ($template['id'] ?? '');
+        $waiterId = (string) ($waiter['id'] ?? '');
+        if ($templateId === '' || $waiterId === '') {
+            return ['success' => false, 'reason' => 'invalid_ids'];
+        }
+
+        // Schedule mengikuti shift waiter terpilih.
+        // - scheduled_time = shift.clock_in_time
+        // - deadline_at    = shift.clock_out_time (akhir shift; kalau no shift, fallback +8 jam dari sekarang)
+        $shift = $this->getWaiterShiftForDate($waiterId, $targetDate);
+        $shiftStart = $shift && ! empty($shift['clock_in_time']) ? (string) $shift['clock_in_time'] : '08:00';
+        $shiftEnd   = $shift && ! empty($shift['clock_out_time']) ? (string) $shift['clock_out_time'] : '';
+
+        $scheduleTime = $shiftStart;
+
+        $scheduleTimestamp = $this->buildScheduledTimestamp($targetDate, $shiftStart);
+        $waiterDeadlineAt = null;
+        if ($shiftEnd !== '') {
+            $endTimestamp = $this->buildScheduledTimestamp($targetDate, $shiftEnd);
+            // Handle overnight shift (end <= start)
+            if ($endTimestamp <= $scheduleTimestamp) {
+                $endTimestamp += 86400;
+            }
+            $waiterDeadlineAt = $endTimestamp;
+        } else {
+            // No shift end: fallback 8 jam dari sekarang (defensive)
+            $waiterDeadlineAt = max(time(), $scheduleTimestamp) + (8 * 3600);
+        }
+
+        // Skip task hari ini kalau deadline sudah lewat (consistency dgn generator existing)
+        if ($targetDate === date('Y-m-d') && $waiterDeadlineAt > 0 && $waiterDeadlineAt <= time()) {
+            return ['success' => false, 'reason' => 'deadline_already_passed'];
+        }
+
+        $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity($templateId, $waiterId, $targetDate);
+        $taskNodeKey = $this->buildWaiterRecurringTaskNodeKey($recurringInstanceKey);
+        $taskReference = $this->database->getReference('waiter_tasks/'.$taskNodeKey);
+        $existingSnap = $taskReference->getSnapshot();
+        if ($existingSnap->exists()) {
+            $existing = (array) $existingSnap->getValue();
+            $status = (string) ($existing['status'] ?? '');
+            if ($status !== 'cancelled') {
+                return ['success' => false, 'reason' => 'task_already_exists'];
+            }
+            // cancelled with cancel_reason final → don't regenerate
+            $cancelReason = (string) ($existing['cancel_reason'] ?? '');
+            $finalReasons = ['admin_manual', 'bulk_cancel', 'duplicate_rack_fix', 'libur_off_day_correction'];
+            if (in_array($cancelReason, $finalReasons, true)) {
+                return ['success' => false, 'reason' => 'task_finally_cancelled'];
+            }
+        }
+
+        $taskData = $this->buildWaiterTaskPayload($template, $waiter, [
+            'status' => 'pending',
+            'created_at' => time(),
+            'completed_at' => null,
+            'completed_note' => null,
+            'completed_by_waiter_id' => null,
+            'completed_by_waiter_name' => null,
+            'completed_by_waiter_email' => null,
+            'is_recurring_instance' => true,
+            'scheduled_time' => $scheduleTime,
+            'scheduled_for_date' => $targetDate,
+            'source_template_id' => $templateId,
+            'recurring_instance_key' => $recurringInstanceKey,
+            'time_limit_minutes' => null,
+            'deadline_at' => $waiterDeadlineAt,
+            'recurrence_type' => $template['recurrence_type'] ?? 'daily',
+            'is_rescheduled' => false,
+            'rescheduled_from_date' => null,
+            'original_due_date' => null,
+            'assignment_mode' => 'simple_lowest_load',
+            'assignment_reason' => $assignmentReason,
+            'shift_id_at_assignment' => $shift ? (string) ($shift['id'] ?? '') : '',
+            'shift_clock_in_at_assignment' => $shiftStart,
+            'shift_clock_out_at_assignment' => $shiftEnd,
+        ]);
+
+        $taskReference->set($taskData);
+
+        return [
+            'success' => true,
+            'task_node_key' => $taskNodeKey,
+        ];
+    }
+
+    /**
+     * Count rack_check tasks for a waiter on a specific date (any status except cancelled).
+     */
+    public function countRackCheckTasksForWaiterOnDate(string $waiterId, string $date): int
+    {
+        if ($waiterId === '' || $date === '') {
+            return 0;
+        }
+        try {
+            $tasks = $this->getWaiterTasksForDate($waiterId, $date);
+        } catch (\Throwable $e) {
+            report($e);
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($tasks as $task) {
+            if (($task['task_type'] ?? '') !== 'rack_check') {
+                continue;
+            }
+            if ((string) ($task['status'] ?? '') === 'cancelled') {
+                continue;
+            }
+            $count++;
+        }
+        return $count;
+    }
+
+    /**
+     * Count rack_check tasks for a waiter between two dates inclusive.
+     */
+    public function countRackCheckTasksForWaiterBetweenDates(string $waiterId, string $startDate, string $endDate): int
+    {
+        if ($waiterId === '' || $startDate === '' || $endDate === '') {
+            return 0;
+        }
+        try {
+            $allTasks = $this->getWaiterTasksByWaiterId($waiterId);
+        } catch (\Throwable $e) {
+            report($e);
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($allTasks as $task) {
+            if (($task['task_type'] ?? '') !== 'rack_check') {
+                continue;
+            }
+            if ((string) ($task['status'] ?? '') === 'cancelled') {
+                continue;
+            }
+            $taskDate = (string) ($task['scheduled_for_date'] ?? '');
+            if ($taskDate === '') {
+                $createdAt = (int) ($task['created_at'] ?? 0);
+                if ($createdAt > 0) {
+                    $taskDate = date('Y-m-d', $createdAt);
+                }
+            }
+            if ($taskDate === '' || $taskDate < $startDate || $taskDate > $endDate) {
+                continue;
+            }
+            $count++;
+        }
+        return $count;
+    }
+
+    /**
+     * Get last rack_check task created_at for a waiter (Unix timestamp).
+     * Used as tie-breaker untuk lowest_load sort.
+     */
+    public function getLastRackCheckAssignedAt(string $waiterId): int
+    {
+        if ($waiterId === '') {
+            return 0;
+        }
+        try {
+            $tasks = $this->getWaiterTasksByWaiterId($waiterId);
+        } catch (\Throwable $e) {
+            report($e);
+            return 0;
+        }
+
+        $latest = 0;
+        foreach ($tasks as $task) {
+            if (($task['task_type'] ?? '') !== 'rack_check') {
+                continue;
+            }
+            $createdAt = (int) ($task['created_at'] ?? 0);
+            if ($createdAt > $latest) {
+                $latest = $createdAt;
+            }
+        }
+        return $latest;
+    }
+
+    /**
+     * Get generation lock for a template+date.
+     *
+     * @return array|null Lock data or null if not exists.
+     */
+    public function getSimpleLowestLoadLock(string $templateId, string $date): ?array
+    {
+        if ($templateId === '' || $date === '') {
+            return null;
+        }
+        $path = 'waiter_task_generation_locks/'.$templateId.'/'.str_replace('-', '', $date);
+        try {
+            $snap = $this->database->getReference($path)->getSnapshot();
+        } catch (\Throwable $e) {
+            report($e);
+            return null;
+        }
+        if (! $snap->exists()) {
+            return null;
+        }
+        $value = $snap->getValue();
+        return is_array($value) ? $value : null;
+    }
+
+    /**
+     * Write generation lock.
+     */
+    public function writeSimpleLowestLoadLock(string $templateId, string $date, array $payload): void
+    {
+        if ($templateId === '' || $date === '') {
+            return;
+        }
+        $path = 'waiter_task_generation_locks/'.$templateId.'/'.str_replace('-', '', $date);
+        $existing = $this->getSimpleLowestLoadLock($templateId, $date);
+        $forceCount = (int) ($existing['force_regenerate_count'] ?? 0);
+        $base = [
+            'template_id' => $templateId,
+            'date' => $date,
+            'cancelled_by_admin' => (bool) ($existing['cancelled_by_admin'] ?? false),
+            'force_regenerate_count' => $forceCount,
+            'generated_at' => time(),
+        ];
+        try {
+            $this->database->getReference($path)->set(array_merge($base, $payload));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Mark lock as cancelled_by_admin (called from cancel handler / admin UI).
+     */
+    public function markSimpleLowestLoadLockCancelled(string $templateId, string $date): void
+    {
+        $existing = $this->getSimpleLowestLoadLock($templateId, $date);
+        if ($existing === null) {
+            return;
+        }
+        $path = 'waiter_task_generation_locks/'.$templateId.'/'.str_replace('-', '', $date);
+        try {
+            $this->database->getReference($path)->update([
+                'status' => 'cancelled_by_admin',
+                'cancelled_by_admin' => true,
+                'cancelled_at' => time(),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ROUND ROBIN SIMPLE (rack-check wizard, mode "Giliran Tetap")
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Process template dengan strategy=round_robin_simple.
+     * Bergiliran urut sesuai selected_waiter_ids. Petugas libur skip ke berikutnya.
+     * Counter persisten di /waiter_task_round_robin_counters/{templateId}.
+     *
+     * @return array{generated_count:int,status:string,reason?:string,task_id?:string,assigned_waiter_id?:string}
+     */
+    public function processRoundRobinSimpleTemplate(array $template, string $targetDate, bool $isCatchUp = false, bool $force = false): array
+    {
+        $templateId = (string) ($template['id'] ?? '');
+        if ($templateId === '') {
+            return ['generated_count' => 0, 'status' => 'invalid_template', 'reason' => 'missing_template_id'];
+        }
+
+        if ($isCatchUp) {
+            return ['generated_count' => 0, 'status' => 'skipped_catch_up'];
+        }
+
+        // ── 1. Lock check (reuse simple_lowest_load lock infrastructure) ──
+        $existingLock = $this->getSimpleLowestLoadLock($templateId, $targetDate);
+        if ($existingLock !== null && ! $force) {
+            $lockStatus = (string) ($existingLock['status'] ?? '');
+            if (in_array($lockStatus, ['generated', 'skipped_no_eligible_waiter', 'cancelled_by_admin'], true)) {
+                return ['generated_count' => 0, 'status' => 'lock_exists', 'reason' => $lockStatus];
+            }
+        }
+
+        // ── 2. Resolve selected waiters ──
+        $selectedIdsRaw = $template['selected_waiter_ids'] ?? [];
+        if (! is_array($selectedIdsRaw)) {
+            $selectedIdsRaw = [];
+        }
+        $selectedIds = array_values(array_unique(array_filter(array_map(
+            fn ($id) => trim((string) $id),
+            $selectedIdsRaw
+        ), fn ($id) => $id !== '')));
+
+        if (empty($selectedIds)) {
+            $this->writeSimpleLowestLoadLock($templateId, $targetDate, [
+                'status' => 'skipped_no_eligible_waiter',
+                'reason' => 'empty_waiter_list',
+                'mode' => 'round_robin_simple',
+            ]);
+            return ['generated_count' => 0, 'status' => 'skipped_no_eligible_waiter', 'reason' => 'empty_waiter_list'];
+        }
+
+        // ── 3. Resolve counter (current rotation index) ──
+        $counterPath = 'waiter_task_round_robin_counters/'.$templateId;
+        $counterSnap = $this->database->getReference($counterPath)->getSnapshot();
+        $counter = $counterSnap->exists() ? (array) $counterSnap->getValue() : [];
+        $currentIdx = (int) ($counter['next_index'] ?? 0);
+        if ($currentIdx < 0 || $currentIdx >= count($selectedIds)) {
+            $currentIdx = 0;
+        }
+
+        // ── 4. Iterate dari currentIdx, cari first eligible (working day + belum hit cap) ──
+        $evaluated = [];
+        $selectedWaiter = null;
+        $pickedIdx = null;
+        $loopCount = count($selectedIds);
+        for ($i = 0; $i < $loopCount; $i++) {
+            $idx = ($currentIdx + $i) % $loopCount;
+            $candidateId = $selectedIds[$idx];
+
+            try {
+                $waiter = $this->getWaiterById($candidateId);
+            } catch (\Throwable $e) {
+                report($e);
+                $waiter = null;
+            }
+            if (! $waiter || ($waiter['is_active'] ?? true) === false) {
+                $evaluated[] = [
+                    'waiter_id' => $candidateId,
+                    'name' => '—',
+                    'reason' => 'Tidak aktif atau tidak ditemukan',
+                ];
+                continue;
+            }
+
+            $isWorking = $this->isWorkingDay($candidateId, $targetDate);
+            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($candidateId, $targetDate) : 0;
+            $todayCount = $this->countRackCheckTasksForWaiterOnDate($candidateId, $targetDate);
+
+            if (! $isWorking) {
+                $evaluated[] = [
+                    'waiter_id' => $candidateId,
+                    'name' => (string) ($waiter['name'] ?? ''),
+                    'reason' => 'LIBUR',
+                ];
+                continue;
+            }
+            if ($todayCount >= $dailyCap) {
+                $evaluated[] = [
+                    'waiter_id' => $candidateId,
+                    'name' => (string) ($waiter['name'] ?? ''),
+                    'reason' => "Sudah {$todayCount}/{$dailyCap} task hari ini",
+                ];
+                continue;
+            }
+
+            $selectedWaiter = $waiter;
+            $pickedIdx = $idx;
+            break;
+        }
+
+        if ($selectedWaiter === null) {
+            $this->writeSimpleLowestLoadLock($templateId, $targetDate, [
+                'status' => 'skipped_no_eligible_waiter',
+                'reason' => 'no_eligible_in_rotation',
+                'mode' => 'round_robin_simple',
+                'rotation_start_index' => $currentIdx,
+                'rotation_size' => $loopCount,
+                'rejected_candidates' => $evaluated,
+            ]);
+            return ['generated_count' => 0, 'status' => 'skipped_no_eligible_waiter', 'reason' => 'no_eligible_in_rotation'];
+        }
+
+        // ── 5. Build assignment_reason ──
+        $skippedNames = array_map(fn ($r) => $r['name'].' ('.$r['reason'].')', $evaluated);
+        $assignmentReason = [
+            'mode' => 'round_robin_simple',
+            'selected_waiter_id' => (string) ($selectedWaiter['id'] ?? ''),
+            'selected_waiter_name' => (string) ($selectedWaiter['name'] ?? ''),
+            'reason' => sprintf(
+                '%s mendapat giliran (slot ke-%d) dan masuk kerja hari ini.',
+                $selectedWaiter['name'] ?? 'Waiter',
+                $pickedIdx + 1
+            ),
+            'rotation_start_index' => $currentIdx,
+            'rotation_picked_index' => $pickedIdx,
+            'rotation_size' => $loopCount,
+            'rotation_skipped' => count($evaluated),
+            'rejected_candidates' => $evaluated,
+        ];
+
+        // ── 6. Build task ──
+        $createResult = $this->createSimpleLowestLoadTask(
+            $template,
+            $selectedWaiter,
+            $targetDate,
+            $assignmentReason
+        );
+
+        if (! ($createResult['success'] ?? false)) {
+            return [
+                'generated_count' => 0,
+                'status' => 'create_failed',
+                'reason' => (string) ($createResult['reason'] ?? 'unknown'),
+            ];
+        }
+
+        // ── 7. Advance counter ke slot setelah pickedIdx ──
+        $nextIdx = ($pickedIdx + 1) % $loopCount;
+        try {
+            $this->database->getReference($counterPath)->set([
+                'template_id' => $templateId,
+                'next_index' => $nextIdx,
+                'last_picked_index' => $pickedIdx,
+                'last_picked_waiter_id' => (string) ($selectedWaiter['id'] ?? ''),
+                'last_picked_at' => time(),
+                'last_picked_date' => $targetDate,
+                'rotation_size' => $loopCount,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        // ── 8. Lock ──
+        $this->writeSimpleLowestLoadLock($templateId, $targetDate, [
+            'status' => 'generated',
+            'mode' => 'round_robin_simple',
+            'task_id' => (string) ($createResult['task_node_key'] ?? ''),
+            'assigned_waiter_id' => (string) ($selectedWaiter['id'] ?? ''),
+            'assigned_waiter_name' => (string) ($selectedWaiter['name'] ?? ''),
+            'rotation_picked_index' => $pickedIdx,
+            'rotation_size' => $loopCount,
+        ]);
+
+        return [
+            'generated_count' => 1,
+            'status' => 'generated',
+            'task_id' => (string) ($createResult['task_node_key'] ?? ''),
+            'assigned_waiter_id' => (string) ($selectedWaiter['id'] ?? ''),
+        ];
+    }
+
+    /**
+     * Dry-run preview untuk round_robin_simple. Tidak buat task atau advance counter.
+     */
+    public function previewRoundRobinSimpleTemplate(array $template, string $targetDate): array
+    {
+        $templateId = (string) ($template['id'] ?? '');
+        $selectedIdsRaw = $template['selected_waiter_ids'] ?? [];
+        if (! is_array($selectedIdsRaw)) {
+            $selectedIdsRaw = [];
+        }
+        $selectedIds = array_values(array_unique(array_filter(array_map(
+            fn ($id) => trim((string) $id),
+            $selectedIdsRaw
+        ), fn ($id) => $id !== '')));
+
+        if (empty($selectedIds)) {
+            return [
+                'status' => 'skipped_no_eligible_waiter',
+                'date' => $targetDate,
+                'rack_name' => (string) ($template['rack_name'] ?? ''),
+                'mode' => 'round_robin_simple',
+                'selected' => null,
+                'evaluated' => [],
+                'rejected_candidates' => [],
+            ];
+        }
+
+        $counterPath = 'waiter_task_round_robin_counters/'.$templateId;
+        $counter = $templateId !== ''
+            ? (array) ($this->database->getReference($counterPath)->getValue() ?? [])
+            : [];
+        $currentIdx = (int) ($counter['next_index'] ?? 0);
+        if ($currentIdx < 0 || $currentIdx >= count($selectedIds)) {
+            $currentIdx = 0;
+        }
+
+        $evaluated = [];
+        $selectedWaiter = null;
+        $pickedIdx = null;
+        $loopCount = count($selectedIds);
+
+        for ($i = 0; $i < $loopCount; $i++) {
+            $idx = ($currentIdx + $i) % $loopCount;
+            $candidateId = $selectedIds[$idx];
+            try {
+                $waiter = $this->getWaiterById($candidateId);
+            } catch (\Throwable $e) {
+                $waiter = null;
+            }
+            if (! $waiter || ($waiter['is_active'] ?? true) === false) {
+                $evaluated[] = [
+                    'waiter_id' => $candidateId,
+                    'name' => $waiter['name'] ?? '—',
+                    'reason' => 'Tidak aktif atau tidak ditemukan',
+                    'is_working_day' => false,
+                    'today_count' => 0,
+                    'daily_cap' => 0,
+                ];
+                continue;
+            }
+
+            $isWorking = $this->isWorkingDay($candidateId, $targetDate);
+            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($candidateId, $targetDate) : 0;
+            $todayCount = $this->countRackCheckTasksForWaiterOnDate($candidateId, $targetDate);
+
+            if (! $isWorking) {
+                $evaluated[] = [
+                    'waiter_id' => $candidateId,
+                    'name' => (string) ($waiter['name'] ?? ''),
+                    'reason' => 'LIBUR',
+                    'is_working_day' => false,
+                    'today_count' => $todayCount,
+                    'daily_cap' => $dailyCap,
+                ];
+                continue;
+            }
+            if ($todayCount >= $dailyCap) {
+                $evaluated[] = [
+                    'waiter_id' => $candidateId,
+                    'name' => (string) ($waiter['name'] ?? ''),
+                    'reason' => "Sudah {$todayCount}/{$dailyCap} task hari ini",
+                    'is_working_day' => true,
+                    'today_count' => $todayCount,
+                    'daily_cap' => $dailyCap,
+                ];
+                continue;
+            }
+
+            $selectedWaiter = $waiter;
+            $pickedIdx = $idx;
+            break;
+        }
+
+        if ($selectedWaiter === null) {
+            return [
+                'status' => 'skipped_no_eligible_waiter',
+                'date' => $targetDate,
+                'rack_name' => (string) ($template['rack_name'] ?? ''),
+                'mode' => 'round_robin_simple',
+                'selected' => null,
+                'evaluated' => $evaluated,
+                'rejected_candidates' => $evaluated,
+                'rotation_start_index' => $currentIdx,
+                'rotation_size' => $loopCount,
+            ];
+        }
+
+        return [
+            'status' => 'eligible',
+            'date' => $targetDate,
+            'rack_name' => (string) ($template['rack_name'] ?? ''),
+            'mode' => 'round_robin_simple',
+            'selected' => [
+                'waiter_id' => (string) ($selectedWaiter['id'] ?? ''),
+                'name' => (string) ($selectedWaiter['name'] ?? ''),
+                'rotation_picked_index' => $pickedIdx,
+                'rotation_size' => $loopCount,
+            ],
+            'rotation_start_index' => $currentIdx,
+            'evaluated' => $evaluated,
+            'rejected_candidates' => $evaluated,
+        ];
     }
 }

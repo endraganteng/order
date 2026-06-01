@@ -123,9 +123,9 @@ class TaskController extends Controller
         $requestedScope = (string) $request->input('task_scope', 'general');
         $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
 
-        // Studio sekarang handle BOTH scopes. Redirect old URL builder ke studio.
+        // Rack-check builder lama diarsipkan: redirect ke wizard baru.
         if ($taskScope === 'rack_check') {
-            return redirect()->route('admin.tasks.studio', ['scope' => 'rack_check']);
+            return redirect()->route('admin.rack_check.templates.create');
         }
 
         return redirect()->route('admin.tasks.studio');
@@ -1578,6 +1578,11 @@ class TaskController extends Controller
      */
     public function studio(Request $request)
     {
+        // Rack-check studio diarsipkan: redirect ke wizard baru.
+        if ((string) $request->query('scope', '') === 'rack_check') {
+            return redirect()->route('admin.rack_check.templates.create');
+        }
+
         $scope = 'general';
         $waiters = $this->firebase->getActiveWaiters();
         $categories = $this->firebase->getTaskCategories();

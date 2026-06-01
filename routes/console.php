@@ -569,6 +569,35 @@ Artisan::command('waiter:send-daily-task-recap {--date= : Tanggal (Y-m-d), defau
     $this->info("Daily task recap sent for {$date}.");
 })->purpose('Kirim rekap task harian per karyawan ke Telegram HRD (21:00 WIB)');
 
+Artisan::command('waiter:cancel-pending-today {--date= : Tanggal (Y-m-d), default hari ini}', function () {
+    $firebase = app(FirebaseService::class);
+    $date = $this->option('date') ?: date('Y-m-d');
+    $tasks = $firebase->getWaiterTasksByDate($date);
+
+    if (empty($tasks)) {
+        $this->info("Tidak ada task untuk tanggal {$date}.");
+        return;
+    }
+
+    $pendingIds = [];
+    foreach ($tasks as $task) {
+        if (($task['status'] ?? '') === 'pending') {
+            $taskId = (string) ($task['id'] ?? '');
+            if ($taskId !== '') {
+                $pendingIds[] = $taskId;
+            }
+        }
+    }
+
+    if (empty($pendingIds)) {
+        $this->info("Tidak ada task pending untuk tanggal {$date}.");
+        return;
+    }
+
+    $cancelled = $firebase->bulkCancelWaiterTasks($pendingIds, 'Dibatalkan admin (bulk cancel pending ' . $date . ')');
+    $this->info("{$cancelled} task pending berhasil dibatalkan untuk {$date}.");
+})->purpose('Cancel semua task pending untuk tanggal tertentu (default hari ini)');
+
 Schedule::command('waiter:process-tasks')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('waiter:audit-attendance')->hourly()->withoutOverlapping();

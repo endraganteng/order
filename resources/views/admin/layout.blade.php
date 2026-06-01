@@ -1288,7 +1288,7 @@
                 @php
                     $grpRingkasan  = request()->routeIs(['admin.dashboard','admin.current_order.*','admin.test_order']);
                     $grpTim        = request()->routeIs(['admin.waiters.*','admin.racks.*','admin.products.*','admin.product_categories.*','admin.shifts.*','admin.schedules.*']);
-                    $grpOps        = request()->routeIs(['admin.tasks.live','admin.tasks.index','admin.tasks.rack.*','admin.restock.*','admin.suppliers.*','admin.attendance.*','admin.cleanup','admin.reconciliation.*']);
+                    $grpOps        = request()->routeIs(['admin.tasks.live','admin.tasks.index','admin.tasks.rack.*','admin.rack_check.*','admin.restock.*','admin.suppliers.*','admin.attendance.*','admin.cleanup','admin.reconciliation.*']);
                     $grpBonus      = request()->routeIs(['admin.bonus.config','admin.bonus.daily_scoring','admin.bonus.penalties','admin.bonus.manual_bonus','admin.bonus.sales_targets','admin.bonus.monthly_summary','admin.bonus.leaderboard','admin.bonus.campaigns']);
                     $grpPayroll    = request()->routeIs(['admin.payroll.index','admin.payroll.show','admin.payroll.withdrawals']);
                     $grpFinance    = request()->routeIs('admin.finance.*') || $grpPayroll;
@@ -1332,7 +1332,10 @@
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.tasks.live') ? 'is-active' : '' }}" href="{{ route('admin.tasks.live') }}">📡 Live Monitor</a>
                         <a class="{{ request()->routeIs('admin.tasks.index') ? 'is-active' : '' }}" href="{{ route('admin.tasks.index') }}">📝 Tugas Umum</a>
-                        <a class="{{ request()->routeIs('admin.tasks.rack.*') ? 'is-active' : '' }}" href="{{ route('admin.tasks.rack.index') }}">📦 Cek Rak</a>
+                        <a class="{{ request()->routeIs('admin.rack_check.*') ? 'is-active' : '' }}" href="{{ route('admin.rack_check.templates.index') }}">📦 Cek Rak Otomatis</a>
+                        @if(request()->routeIs('admin.tasks.rack.*'))
+                            <a class="is-active" href="{{ route('admin.tasks.rack.index') }}">🗄 Cek Rak (Arsip)</a>
+                        @endif
                         <div class="dropdown-divider"></div>
                         <a class="{{ request()->routeIs('admin.restock.*') ? 'is-active' : '' }}" href="{{ route('admin.restock.index') }}">📦 Restock & PO</a>
                         <a class="{{ request()->routeIs('admin.suppliers.*') ? 'is-active' : '' }}" href="{{ route('admin.suppliers.index') }}">🏪 Supplier</a>
