@@ -7216,7 +7216,7 @@ class FirebaseService
             'name' => 'Retail '.($meta['label'] ?? $shiftCode),
             'clock_in_time' => $meta['start'],
             'clock_out_time' => $meta['end'],
-            'late_tolerance_minutes' => 15,
+            'late_tolerance_minutes' => 0,
             'source' => 'retail_tool',
         ];
     }
@@ -7259,7 +7259,7 @@ class FirebaseService
             'name' => 'Kasir '.($meta['label'] ?? $shiftCode),
             'clock_in_time' => $meta['start'],
             'clock_out_time' => $meta['end'],
-            'late_tolerance_minutes' => 15,
+            'late_tolerance_minutes' => 0,
             'source' => 'kasir_tool',
         ];
     }
