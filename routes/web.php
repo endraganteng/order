@@ -204,6 +204,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Jadwal Kasir (2 kasir + 1 backup finance, libur Sen/Sel, jam beda weekday vs weekend)
         Route::get('kasir', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'index'])->name('kasir.index');
         Route::post('kasir/save-preferences', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'savePreferences'])->name('kasir.save_preferences');
+        Route::post('kasir/save-week', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'saveWeek'])->name('kasir.save_week');
         Route::post('kasir/reset-week', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'resetWeek'])->name('kasir.reset_week');
 
         // Attendance

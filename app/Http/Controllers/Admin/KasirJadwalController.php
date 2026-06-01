@@ -127,4 +127,52 @@ class KasirJadwalController extends Controller
             'message' => 'Override minggu '.$request->week_iso.' dihapus.',
         ]);
     }
+
+    /**
+     * Save manual override per-cell untuk minggu spesifik.
+     * Cells format: { day_key => { employee_name => shift } }
+     * Valid shifts: SHIFT_1, SHIFT_2, LIBUR
+     */
+    public function saveWeek(Request $request)
+    {
+        $request->validate([
+            'week_iso' => 'required|string|regex:/^\d{4}-W\d{2}$/',
+            'week_start' => 'required|date_format:Y-m-d',
+            'cells' => 'required|array',
+            'cells.*' => 'array',
+            'cells.*.*' => 'string|in:SHIFT_1,SHIFT_2,LIBUR',
+        ]);
+
+        $weekStart = $request->input('week_start');
+        $cells = $request->input('cells', []);
+
+        // Validate hasil generate dengan override sebelum save
+        try {
+            $schedule = $this->kasir->generate($weekStart, ['cells' => $cells]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal generate: '.$e->getMessage(),
+            ], 422);
+        }
+
+        if (! $schedule['validation']['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jadwal tidak valid: '.implode('; ', $schedule['validation']['errors']),
+                'errors' => $schedule['validation']['errors'],
+            ], 422);
+        }
+
+        $this->kasir->saveWeekSchedule($request->input('week_iso'), [
+            'cells' => $cells,
+            'libur_days_used' => $schedule['libur_days'] ?? [],
+            'saved_by' => session('admin_name') ?? session('admin_email') ?? 'admin',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal minggu '.$request->input('week_iso').' tersimpan.',
+        ]);
+    }
 }

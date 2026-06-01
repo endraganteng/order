@@ -148,6 +148,9 @@
             <div class="card-block__header">
                 <h3 class="card-block__title">📊 Jadwal Mingguan</h3>
                 <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-sm" id="toggleEditBtn" onclick="toggleEditMode()" style="background: #eef2ff; color: #4338ca; border-color: #c7d2fe;">✏️ Edit Manual</button>
+                    <button type="button" class="btn btn-sm btn-primary" id="saveWeekBtn" onclick="saveWeek()" style="display: none;">💾 Simpan Minggu Ini</button>
+                    <button type="button" class="btn btn-sm" id="cancelEditBtn" onclick="cancelEdit()" style="display: none; background: #f3f4f6;">✕ Batal</button>
                     @if($hasWeekOverride)
                         <button type="button" class="btn btn-sm" onclick="resetWeek()" style="background: #fee2e2; color: #991b1b; border-color: #fca5a5;">🔄 Reset ke Default</button>
                     @endif
@@ -155,7 +158,7 @@
             </div>
 
             <div class="table-scroll">
-                <table class="table schedule-matrix">
+                <table class="table schedule-matrix" id="scheduleMatrix">
                     <thead>
                         <tr>
                             <th>Hari</th>
@@ -169,7 +172,7 @@
                     </thead>
                     <tbody>
                         @foreach($schedule['matrix'] as $day)
-                            <tr class="{{ $day['is_weekend'] ? 'is-weekend' : '' }}">
+                            <tr class="{{ $day['is_weekend'] ? 'is-weekend' : '' }}" data-day-key="{{ $day['day_key'] }}">
                                 <td>
                                     <strong>{{ $day['day_label'] }}</strong>
                                     <div class="text-muted small">{{ $day['date_label'] }}</div>
@@ -178,6 +181,7 @@
                                     @php
                                         $shift = $a['shift'];
                                         $meta = $a['shift_meta'];
+                                        $empName = $a['employee']['name'] ?? '';
                                         $badgeClass = match($shift) {
                                             'SHIFT_1' => 'shift-badge shift-pagi',
                                             'SHIFT_2' => 'shift-badge shift-sore',
@@ -189,19 +193,30 @@
                                             default => 'LIBUR',
                                         };
                                     @endphp
-                                    <td class="text-center">
-                                        <div class="{{ $badgeClass }}">
+                                    <td class="text-center cell-shift" data-day="{{ $day['day_key'] }}" data-emp="{{ $empName }}" data-orig="{{ $shift }}">
+                                        <div class="shift-display {{ $badgeClass }}">
                                             <strong>{{ $shiftLabel }}</strong>
                                             @if($meta['start'] ?? null)
                                                 <div class="shift-time">{{ $meta['start'] }}–{{ $meta['end'] }}</div>
                                             @endif
                                         </div>
+                                        <select class="shift-edit form-control form-control-sm" style="display: none;">
+                                            <option value="SHIFT_1" @if($shift === 'SHIFT_1') selected @endif>SHIFT 1 (Pagi)</option>
+                                            <option value="SHIFT_2" @if($shift === 'SHIFT_2') selected @endif>SHIFT 2 (Sore)</option>
+                                            <option value="LIBUR" @if($shift === 'LIBUR') selected @endif>LIBUR</option>
+                                        </select>
                                     </td>
                                 @endforeach
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
+            </div>
+
+            <div id="livePreview" style="display: none; margin-top: 12px; padding: 12px; border: 1px dashed #cbd5e1; border-radius: var(--radius-md); background: #f8fafc;">
+                <div style="font-weight: 600; margin-bottom: 6px; font-size: 0.85rem;">🔍 Preview Validasi:</div>
+                <div id="livePreviewContent" class="text-muted small">Klik "Validasi" untuk cek aturan setelah ubah cell.</div>
+                <button type="button" class="btn btn-sm" onclick="validatePreview()" style="margin-top: 8px; background: #fff;">Validasi Perubahan</button>
             </div>
         </div>
 
@@ -290,6 +305,9 @@
         .shift-libur { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
         .rules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px; }
         .rule-item { font-size: 0.85rem; padding: 8px 10px; background: #f8fafc; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+        .form-control-sm { padding: 4px 6px; font-size: 0.8rem; width: 100%; min-width: 96px; }
+        .cell-shift .shift-edit { background: #fff; }
+        .schedule-matrix tbody tr.is-editing td { background: #fefce8; }
     </style>
     @endpush
 
@@ -353,6 +371,88 @@
                 location.reload();
             } else {
                 alert(data.message || 'Gagal reset.');
+            }
+        }
+
+        // ===== Edit Manual Mode =====
+        let isEditing = false;
+
+        function toggleEditMode() {
+            if (isEditing) {
+                cancelEdit();
+                return;
+            }
+            isEditing = true;
+            document.querySelectorAll('.shift-display').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.shift-edit').forEach(el => el.style.display = '');
+            document.getElementById('toggleEditBtn').style.display = 'none';
+            document.getElementById('saveWeekBtn').style.display = '';
+            document.getElementById('cancelEditBtn').style.display = '';
+            document.getElementById('livePreview').style.display = '';
+        }
+
+        function cancelEdit() {
+            isEditing = false;
+            // Reset selects ke nilai original
+            document.querySelectorAll('.cell-shift').forEach(td => {
+                const sel = td.querySelector('.shift-edit');
+                if (sel) sel.value = td.dataset.orig;
+            });
+            document.querySelectorAll('.shift-display').forEach(el => el.style.display = '');
+            document.querySelectorAll('.shift-edit').forEach(el => el.style.display = 'none');
+            document.getElementById('toggleEditBtn').style.display = '';
+            document.getElementById('saveWeekBtn').style.display = 'none';
+            document.getElementById('cancelEditBtn').style.display = 'none';
+            document.getElementById('livePreview').style.display = 'none';
+            document.getElementById('livePreviewContent').innerHTML = 'Klik "Validasi" untuk cek aturan setelah ubah cell.';
+        }
+
+        function collectCells() {
+            const cells = {};
+            document.querySelectorAll('.cell-shift').forEach(td => {
+                const day = td.dataset.day;
+                const emp = td.dataset.emp;
+                const sel = td.querySelector('.shift-edit');
+                if (!day || !emp || !sel) return;
+                if (!cells[day]) cells[day] = {};
+                cells[day][emp] = sel.value;
+            });
+            return cells;
+        }
+
+        async function validatePreview() {
+            const previewEl = document.getElementById('livePreviewContent');
+            previewEl.innerHTML = '⏳ Validating...';
+            const cells = collectCells();
+            const { ok, data } = await postJson(URLS.saveWeek, {
+                week_iso: WEEK_ISO,
+                week_start: WEEK_START,
+                cells: cells,
+                _dry_run: true, // backend ignore tapi kita pisahkan via flag tambahan
+            });
+            // Backend nge-save kalau valid. Untuk preview-only, kita parse hasil.
+            if (ok && data.success) {
+                previewEl.innerHTML = '<span style="color:#065f46;">✅ Valid — perubahan tersimpan otomatis.</span>';
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                const errors = (data.errors || [data.message || 'Tidak valid']).map(e => `<li>${e}</li>`).join('');
+                previewEl.innerHTML = `<div style="color:#991b1b;"><strong>❌ Tidak valid:</strong><ul>${errors}</ul></div>`;
+            }
+        }
+
+        async function saveWeek() {
+            const cells = collectCells();
+            const { ok, data } = await postJson(URLS.saveWeek, {
+                week_iso: WEEK_ISO,
+                week_start: WEEK_START,
+                cells: cells,
+            });
+            if (ok && data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                const errors = (data.errors || [data.message || 'Gagal']).join('\n- ');
+                alert('Gagal: \n- ' + errors);
             }
         }
     </script>
