@@ -4298,6 +4298,31 @@ class FirebaseService
                     }
                 }
 
+                // SHIFT-AWARE DAILY CAP: filter waiters yang sudah hit max rack_check hari ini.
+                // FULL shift (14j+) max 2, PAGI/SORE (8-10j) max 1, LIBUR auto-skipped via line 4148.
+                // Mencegah 1 waiter di-assign 5+ task sekaligus.
+                $cappedWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($rackCheckAssignmentCount, $effectiveTargetDate) {
+                    $wId = (string) ($waiter['id'] ?? '');
+                    if ($wId === '') {
+                        return true;
+                    }
+                    $assigned = (int) ($rackCheckAssignmentCount[$wId] ?? 0);
+                    $cap = $this->getRackCheckDailyCap($wId, $effectiveTargetDate);
+                    return $assigned < $cap;
+                }));
+                if (! empty($cappedWaiters)) {
+                    $targetWaiters = $cappedWaiters;
+                } else {
+                    // SEMUA waiter sudah hit cap. Skip template ini.
+                    \Log::info('[RACK_DAILY_CAP] Semua waiter di template ini sudah hit cap rack_check hari ini', [
+                        'template_id' => $template['id'] ?? '',
+                        'rack' => $template['rack_name'] ?? '?',
+                        'date' => $effectiveTargetDate,
+                        'counts' => $rackCheckAssignmentCount,
+                    ]);
+                    continue;
+                }
+
                 // AI Balancing: sort by weighted score (balance 50%, quality 30%, speed 10%, recent 10%)
                 // Higher score = higher priority to receive this task
                 usort($targetWaiters, function ($a, $b) use ($rackCheckAssignmentCount, $effectiveTargetDate) {
@@ -4459,7 +4484,7 @@ class FirebaseService
                         continue;
                     }
                     $cancelReason = (string) ($existingTaskValue['cancel_reason'] ?? '');
-                    $noRegenReasons = ['role_mismatch_fix', 'anomaly_from_role_mismatch_fix', 'admin_manual', 'bulk_cancel', 'duplicate_rack_fix'];
+                    $noRegenReasons = ['role_mismatch_fix', 'anomaly_from_role_mismatch_fix', 'admin_manual', 'bulk_cancel', 'duplicate_rack_fix', 'libur_off_day_correction'];
                     if (in_array($cancelReason, $noRegenReasons, true)) {
                         $existingRecurringMap[$mapKey] = true;
 
@@ -10440,6 +10465,43 @@ class FirebaseService
         ];
 
         return $this->rackBalancingCache;
+    }
+
+    /**
+     * Get max rack_check tasks per day for a waiter based on their shift today.
+     * - LIBUR (off day): 0 tasks
+     * - Short shift (PAGI/SORE/SHIFT_1/SHIFT_2 ~8-10 jam): 1 task
+     * - FULL shift (12+ jam): 2 tasks
+     * - No shift info / fallback: 1 task (conservative default)
+     *
+     * Used by generateRecurringTasksForDate() to prevent overloading single waiter.
+     */
+    private function getRackCheckDailyCap(string $waiterId, string $date): int
+    {
+        // Quick early-out: not working today = no rack tasks
+        if (! $this->isWorkingDay($waiterId, $date)) {
+            return 0;
+        }
+
+        try {
+            $shift = $this->getWaiterShiftForDate($waiterId, $date);
+            if (! $shift || empty($shift['clock_in_time']) || empty($shift['clock_out_time'])) {
+                return 1; // unknown shift -> default conservative
+            }
+
+            // Compute shift duration in hours
+            $start = strtotime($date . ' ' . $shift['clock_in_time']);
+            $end = strtotime($date . ' ' . $shift['clock_out_time']);
+            if ($end <= $start) {
+                $end += 86400; // overnight
+            }
+            $durationHours = ($end - $start) / 3600.0;
+
+            // FULL shift (>=12 jam) = 2 tasks; partial shift = 1 task
+            return $durationHours >= 12 ? 2 : 1;
+        } catch (\Throwable $e) {
+            return 1;
+        }
     }
 
     /**
