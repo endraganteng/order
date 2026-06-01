@@ -591,7 +591,13 @@ class KasirScheduleService
             return null;
         }
 
-        $schedule = $this->generate($weekStart);
+        // Auto-load week override (kalau ada) supaya manual edit dari admin
+        // tercermin di hasil. Tanpa ini, generate() pakai default rotation
+        // dan override di /kasir_schedules/{weekIso} di-ignore.
+        $weekIso = Carbon::parse($weekStart)->startOfWeek(Carbon::MONDAY)->isoFormat('GGGG-[W]WW');
+        $override = $this->getWeekOverride($weekIso);
+
+        $schedule = $this->generate($weekStart, $override);
 
         $today = date('Y-m-d');
         $days = [];
