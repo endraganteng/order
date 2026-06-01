@@ -4502,6 +4502,25 @@ class FirebaseService
                     continue;
                 }
 
+                // BELT-AND-SUSPENDERS GUARD: rack_check task tidak boleh assign ke waiter LIBUR.
+                // Filter di line 4148 (filter $targetWaiters) seharusnya sudah skip LIBUR,
+                // tapi defensive re-check di sini menutup edge cases (cache stale,
+                // race condition antara filter dan persist, dll).
+                $taskTypeForGuard = (string) ($template['task_type'] ?? 'general');
+                $waiterIdForGuard = (string) ($waiter['id'] ?? '');
+                if ($taskTypeForGuard === 'rack_check' && $waiterIdForGuard !== ''
+                    && ! $this->isWorkingDay($waiterIdForGuard, $effectiveTargetDate)) {
+                    \Log::warning('[RACK_LIBUR_GUARD] Skip persist rack_check ke waiter LIBUR', [
+                        'template_id' => $template['id'] ?? '',
+                        'rack' => $template['rack_name'] ?? '?',
+                        'waiter_id' => $waiterIdForGuard,
+                        'waiter_name' => $waiter['name'] ?? '?',
+                        'date' => $effectiveTargetDate,
+                    ]);
+                    $existingRecurringMap[$mapKey] = true;
+                    continue;
+                }
+
                 $taskData = $this->buildWaiterTaskPayload($template, $waiter, [
                     'status' => 'pending',
                     'created_at' => time(),
