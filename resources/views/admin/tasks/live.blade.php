@@ -116,6 +116,7 @@
 
 {{-- Waiter data from server --}}
 <script id="lm-waiters-data" type="application/json">{!! json_encode($waiters ?? []) !!}</script>
+<script id="lm-waiter-day-off-data" type="application/json">{!! json_encode($waiterDayOffMap ?? []) !!}</script>
 
 <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
@@ -157,6 +158,11 @@
 
     const waiterMap = {};
     waiters.forEach(w => { waiterMap[w.id] = w; });
+
+    let waiterDayOffMap = {};
+    try {
+        waiterDayOffMap = JSON.parse(document.getElementById('lm-waiter-day-off-data')?.textContent || '{}') || {};
+    } catch (e) { waiterDayOffMap = {}; }
 
     // State
     let allTasks = {};
@@ -215,7 +221,7 @@
     })();
 
     function updateDashboard() {
-        const tasks = Object.entries(allTasks);
+        const tasks = getVisibleTaskEntries(allTasks);
         let total = 0, done = 0, inProgress = 0, pending = 0, overdue = 0;
         let generalDone = 0, generalTotal = 0, rackDone = 0, rackTotal = 0;
         const waiterStats = {};
@@ -274,6 +280,40 @@
 
         // Update feed
         buildFeed(tasks);
+    }
+
+    function getVisibleTaskEntries(rawTasks) {
+        const entries = Object.entries(rawTasks || {});
+        const currentSimpleTemplates = new Set();
+
+        entries.forEach(([, task]) => {
+            if (!task || task.status === 'cancelled') return;
+            if (task.task_type !== 'rack_check') return;
+            if (task.assignment_strategy !== 'simple_lowest_load') return;
+            const templateId = String(task.source_template_id || '');
+            if (!templateId) return;
+            if (task.assignment_mode === 'simple_lowest_load' || Object.prototype.hasOwnProperty.call(task, 'assignment_reason')) {
+                currentSimpleTemplates.add(templateId);
+            }
+        });
+
+        return entries.filter(([, task]) => {
+            if (!task || task.status === 'cancelled') return false;
+
+            const waiterId = String(task.assigned_waiter_id || '');
+            if (waiterId && waiterDayOffMap[waiterId] === true) return false;
+
+            if (task.task_type === 'rack_check' && task.assignment_strategy === 'simple_lowest_load') {
+                const templateId = String(task.source_template_id || '');
+                const isCurrent = task.assignment_mode === 'simple_lowest_load'
+                    || Object.prototype.hasOwnProperty.call(task, 'assignment_reason');
+                if (templateId && currentSimpleTemplates.has(templateId) && !isCurrent) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
     }
 
     function renderWaiterProgress(stats) {

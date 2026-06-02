@@ -18,10 +18,10 @@ class BonusServiceTest extends TestCase
             $this->createMock(Database::class)
         );
 
-        $capacity = $service->getMonthlyPointsCapacity($service->getDefaultConfig());
+        $capacity = $service->getPeriodPointsCapacity($service->getDefaultConfig(), 26);
 
         // Default config: daily=30 (5 disiplin + 10 operasional + 5 attitude + 10 rack_recheck),
-        // service & sales monthly (5 per day each), perfect_day_bonus=5.
+        // service & sales monthly (5 per day each), perfect_day_bonus=5. 26 working days.
         $this->assertSame(26, $capacity['working_days']);
         $this->assertSame(30, $capacity['daily_max_points']);
         $this->assertSame(35, $capacity['daily_max_with_perfect']);
@@ -40,7 +40,7 @@ class BonusServiceTest extends TestCase
                 return $this->getDefaultConfig();
             }
 
-            public function getMonthlyDailyPoints(string $waiterId, string $month): array
+            public function getDailyPointsInRange(string $waiterId, string $startDate, string $endDate): array
             {
                 return [
                     '2026-05-01' => ['daily_total' => 25, 'perfect_day_bonus' => 5],
@@ -48,19 +48,19 @@ class BonusServiceTest extends TestCase
                 ];
             }
 
-            public function getPenaltiesByMonth(string $month, ?string $waiterId = null): array
+            public function getPenaltiesByPeriod(string $startDate, string $endDate, ?string $waiterId = null): array
             {
                 return [
                     ['points_deducted' => -15],
                 ];
             }
 
-            public function getSalesTarget(string $waiterId, string $month): ?array
+            public function getSalesTarget(string $waiterId, string $periodKey): ?array
             {
                 return ['target_amount' => 1000000];
             }
 
-            public function getMonthlyBonusSummary(string $waiterId, string $month): ?array
+            public function getBonusSummary(string $waiterId, string $periodKey): ?array
             {
                 return [
                     'service_points' => 30,
@@ -68,13 +68,18 @@ class BonusServiceTest extends TestCase
                 ];
             }
 
-            public function getLeaderboard(string $month): array
+            public function sumManualBonusForPeriod(string $waiterId, string $startDate, string $endDate): int
             {
-                return ['rankings' => []];
+                return 0;
+            }
+
+            public function getLeaderboard(?string $startDate = null, ?string $endDate = null): array
+            {
+                return ['rankings' => [], 'period_key' => '2026-05-01_2026-05-31', 'period_start' => '2026-05-01', 'period_end' => '2026-05-31'];
             }
         };
 
-        $progress = $service->getWaiterMonthlyProgress('waiter-1', '2026-05');
+        $progress = $service->getWaiterProgress('waiter-1', '2026-05-01', '2026-05-31');
 
         $this->assertSame(45, $progress['total_earned']);
         $this->assertSame(15, $progress['total_penalties']);
@@ -82,11 +87,12 @@ class BonusServiceTest extends TestCase
         $this->assertSame(30, $progress['service_points']);
         $this->assertSame(10, $progress['sales_points']);
         $this->assertSame(70, $progress['net_points']);
-        $this->assertSame(1170, $progress['theoretical_max']);
+        // 30 working days (period default): (35*30) + (5*30) + (5*30) = 1350
+        $this->assertSame(1350, $progress['theoretical_max']);
         $this->assertSame(1, $progress['perfect_days']);
         $this->assertSame(2, $progress['days_scored']);
-        // 70 / 1170 * 100 = 5.98... → 6.0
-        $this->assertSame(6.0, $progress['percentage']);
+        // 70 / 1350 * 100 = 5.185... → 5.2
+        $this->assertSame(5.2, $progress['percentage']);
     }
 
     public function test_save_auto_daily_score_skips_existing_admin_override(): void
@@ -174,17 +180,17 @@ class BonusServiceTest extends TestCase
 
         $service = new class($this->createMock(FirebaseService::class), $database) extends BonusService
         {
-            public function calculateMonthlyBonus(string $waiterId, string $month, ?int $monthlyServicePercentage = null, ?int $monthlySalesPercentage = null): array
+            public function calculateBonus(string $waiterId, string $startDate, string $endDate, ?int $servicePercentage = null, ?int $salesPercentage = null): array
             {
-                throw new \RuntimeException('calculateMonthlyBonus should not be called for an already finalized month');
+                throw new \RuntimeException('calculateBonus should not be called for an already finalized period');
             }
         };
 
-        $result = $service->finalizeMonthlyBonus('waiter-1', '2026-05');
+        $result = $service->finalizeBonus('waiter-1', '2026-05-01', '2026-05-31');
 
         $this->assertFalse($result['success']);
         $this->assertTrue($result['already_finalized']);
-        $this->assertSame('Bonus bulan ini sudah difinalisasi.', $result['message']);
+        $this->assertSame('Bonus periode ini sudah difinalisasi.', $result['message']);
         $this->assertFalse($transaction->setCalled);
     }
 
@@ -201,7 +207,7 @@ class BonusServiceTest extends TestCase
         // tidak perlu mock-up panjang Firebase reads.
         $service = new class($firebase, $this->createMock(Database::class)) extends BonusService
         {
-            public function getMonthlyBonusSummary(string $waiterId, string $month): ?array
+            public function getBonusSummary(string $waiterId, string $periodKey): ?array
             {
                 return match ($waiterId) {
                     'waiter-1' => [
@@ -219,9 +225,9 @@ class BonusServiceTest extends TestCase
             }
         };
 
-        $leaderboard = $service->getLeaderboard('2026-05');
+        $leaderboard = $service->getLeaderboard('2026-05-01', '2026-05-31');
 
-        $this->assertSame('2026-05', $leaderboard['month']);
+        $this->assertSame('2026-05-01_2026-05-31', $leaderboard['period_key']);
         $this->assertTrue($leaderboard['live'] ?? false);
         $this->assertSame(2, $leaderboard['total_waiters']);
         $this->assertSame(['waiter-1', 'waiter-3'], array_column($leaderboard['rankings'], 'waiter_id'));
@@ -237,9 +243,9 @@ class BonusServiceTest extends TestCase
 
         $service = new BonusService($firebase, $this->createMock(Database::class));
 
-        $leaderboard = $service->getLeaderboard('2026-06');
+        $leaderboard = $service->getLeaderboard('2026-06-01', '2026-06-30');
 
-        $this->assertSame('2026-06', $leaderboard['month']);
+        $this->assertSame('2026-06-01_2026-06-30', $leaderboard['period_key']);
         $this->assertSame(0, $leaderboard['total_waiters']);
         $this->assertSame([], $leaderboard['rankings']);
         $this->assertTrue($leaderboard['live'] ?? false);

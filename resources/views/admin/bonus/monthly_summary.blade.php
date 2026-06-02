@@ -1,6 +1,6 @@
 @extends('admin.layout')
 
-@section('title', '📋 Rekap Bonus Bulanan')
+@section('title', '📋 Rekap Bonus Per Periode')
 
 @section('content')
 @php
@@ -101,14 +101,14 @@
     <div class="monthly-summary-page">
         <div class="page-head">
             <div>
-                <h2>📋 Rekap Bonus Bulanan</h2>
+                <h2>📋 Rekap Bonus Per Periode</h2>
                 <p>Periode: <strong>{{ date('F Y', strtotime($month . '-01')) }}</strong></p>
             </div>
             <div class="month-nav">
-                <a href="?month={{ $prevMonth }}" class="nav-btn btn-secondary" aria-label="Bulan sebelumnya">&larr;</a>
+                <a href="?month={{ $prevMonth }}" class="nav-btn btn-secondary" aria-label="Periode sebelumnya">&larr;</a>
                 <input type="month" id="monthPicker" value="{{ $month }}">
-                <a href="?month={{ $nextMonth }}" class="nav-btn btn-secondary" aria-label="Bulan berikutnya">&rarr;</a>
-                <a href="?month={{ $currentMonth }}" class="btn btn-primary" style="margin-left: 8px;">Bulan Ini</a>
+                <a href="?month={{ $nextMonth }}" class="nav-btn btn-secondary" aria-label="Periode berikutnya">&rarr;</a>
+                <a href="?month={{ $currentMonth }}" class="btn btn-primary" style="margin-left: 8px;">Periode Ini</a>
             </div>
         </div>
 
@@ -136,7 +136,7 @@
     {{-- MONTHLY SCORING SECTION --}}
     <div class="monthly-scoring-section">
         <div class="scoring-section-header">
-            <h3>📝 Penilaian Bulanan — Pelayanan &amp; Penjualan</h3>
+            <h3>📝 Penilaian Per Periode — Pelayanan &amp; Penjualan</h3>
             <p class="scoring-section-desc">Input persentase (0-100%) untuk setiap karyawan. Poin dihitung: persentase × 5 × {{ $workingDays }} hari kerja. Max per kategori: {{ $monthlyServiceMax }} poin.</p>
         </div>
         <div class="scoring-table-wrap">

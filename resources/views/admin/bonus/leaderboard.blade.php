@@ -61,9 +61,9 @@
         </div>
         <div class="head-actions">
             <div class="month-nav">
-                <a href="?month={{ $prevMonth }}" class="nav-btn btn-secondary" aria-label="Bulan sebelumnya">&larr;</a>
+                <a href="?month={{ $prevMonth }}" class="nav-btn btn-secondary" aria-label="Periode sebelumnya">&larr;</a>
                 <input type="month" id="monthPicker" value="{{ $month }}">
-                <a href="?month={{ $nextMonth }}" class="nav-btn btn-secondary" aria-label="Bulan berikutnya">&rarr;</a>
+                <a href="?month={{ $nextMonth }}" class="nav-btn btn-secondary" aria-label="Periode berikutnya">&rarr;</a>
             </div>
             <button type="button" class="btn btn-primary" id="btnGenerate" style="margin-left: 8px;">Generate Leaderboard</button>
         </div>
@@ -73,7 +73,7 @@
         <div class="empty-state">
             <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
             <h3>Belum ada data</h3>
-            <p>Klik tombol 'Generate Leaderboard' untuk menghitung peringkat bulan ini.</p>
+            <p>Klik tombol 'Generate Leaderboard' untuk menghitung peringkat periode ini.</p>
         </div>
     @else
         <div class="podium-wrap">

@@ -4,6 +4,8 @@
 
 @section('content')
 @php
+    $templateRackIds = $templateRackIds ?? [];
+
     $racksJson = collect($racks)->map(fn ($r) => [
         'id' => (string) ($r['id'] ?? ''),
         'name' => (string) ($r['name'] ?? ''),
@@ -49,7 +51,7 @@
 
     <h2 style="margin: 0 0 6px; color: var(--color-text); font-size: clamp(22px, 5vw, 28px);">{{ isset($template) ? "Edit Template Cek Rak Otomatis" : "Buat Template Cek Rak Otomatis" }}</h2>
     <p style="margin: 0 0 16px; color: var(--color-text-muted); font-size: 14px; line-height: 1.6;">
-        Template ini akan membuat tugas cek rak otomatis sesuai jadwal. Petugas dipilih dari karyawan yang masuk kerja dan beban tugasnya paling ringan.
+        Template ini akan membuat tugas cek rak otomatis sesuai jadwal. Semua rak yang dipilih digabung dalam satu template.
     </p>
 
     @if($errors->any())
@@ -87,14 +89,20 @@
         @csrf
         @if(isset($template))
             @method('PUT')
-            {{-- Hidden rack_ids to pass validation. Controller reads rack_id from existing template. --}}
-            <input type="hidden" name="rack_ids[]" value="{{ $template['rack_id'] }}">
         @endif
 
         {{-- ============ STEP 1: Pilih Rak ============ --}}
         <div class="wiz-step" data-step="1" style="padding: 22px;">
             <h3 style="margin: 0 0 4px; color: var(--color-text); font-size: 18px;">Pilih rak yang akan dicek rutin</h3>
-            <p style="margin: 0 0 14px; color: var(--color-text-muted); font-size: 13px;">Pilih satu atau banyak rak. Setiap rak akan dibuatkan satu template terpisah.</p>
+            <p style="margin: 0 0 14px; color: var(--color-text-muted); font-size: 13px;">Pilih satu atau banyak rak. Semua rak digabung dalam satu template.</p>
+
+            {{-- Template name field --}}
+            <div style="margin-bottom: 14px;">
+                <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 6px;">Nama template (opsional)</label>
+                <input type="text" name="template_name" value="{{ isset($template) ? ($template['name'] ?? '') : '' }}" placeholder="Otomatis dari pilihan rak"
+                       style="width: 100%; padding: 10px 14px; border: 2px solid var(--color-border); border-radius: 8px; font-size: 14px;">
+                <p style="margin: 4px 0 0; font-size: 12px; color: var(--color-text-muted);">Kosongkan untuk auto-generate dari nama rak yang dipilih.</p>
+            </div>
 
             <div style="margin-bottom: 12px;">
                 <input type="text" id="rackSearch" placeholder="Cari nama rak atau barcode…"
@@ -103,14 +111,17 @@
 
             <div id="rackList" style="max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
                 @forelse($racksJson as $r)
+                    @php
+                        $isCheckedRack = isset($templateRackIds) && in_array($r['id'], $templateRackIds, true);
+                    @endphp
                     <label class="rack-item"
                            data-name="{{ strtolower($r['name']) }}"
                            data-location="{{ strtolower($r['location']) }}"
                            data-barcode="{{ strtolower($r['barcode']) }}"
                            style="display: flex; gap: 10px; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; align-items: flex-start; {{ $r['locked'] ? 'opacity: 0.5; cursor: not-allowed; background: #f8fafc;' : '' }}">
-                        <input type="checkbox" name="rack_ids[]" value="{{ $r['id'] }}" class="rack-cb"{{ (isset($template) && ($template['rack_id'] ?? '') === $r['id']) ? ' checked' : '' }}
+                        <input type="checkbox" name="rack_ids[]" value="{{ $r['id'] }}" class="rack-cb"{{ $isCheckedRack ? ' checked' : '' }}
                                style="margin-top: 3px; width: 16px; height: 16px; cursor: inherit;"
-                               {{ $r['locked'] || isset($template) ? 'disabled' : '' }}>
+                               {{ $r['locked'] ? 'disabled' : '' }}>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: 600; color: var(--color-text); font-size: 14px;">{{ $r['name'] ?: '—' }}</div>
                             <div style="font-size: 12px; color: var(--color-text-muted); line-height: 1.5;">
@@ -118,7 +129,7 @@
                                 @if($r['barcode']) Barcode: <code style="font-size: 11px;">{{ $r['barcode'] }}</code> @endif
                             </div>
                             @if($r['locked'])
-                                <div style="font-size: 11px; color: var(--color-warning); margin-top: 4px;">⚠ Sudah punya template aktif</div>
+                                <div style="font-size: 11px; color: var(--color-warning); margin-top: 4px;">⚠ Sudah punya template aktif lain</div>
                             @endif
                         </div>
                     </label>
@@ -649,7 +660,23 @@
     }
     form.querySelectorAll('.rack-cb').forEach(cb => cb.addEventListener('change', () => {
         rackCount.textContent = form.querySelectorAll('.rack-cb:checked').length;
+        sortRacksCheckedFirst();
     }));
+
+    // Sort: checked racks float to top
+    function sortRacksCheckedFirst() {
+        const list = document.getElementById('rackList');
+        if (!list) return;
+        const items = Array.from(list.querySelectorAll('.rack-item'));
+        items.sort((a, b) => {
+            const aChecked = a.querySelector('.rack-cb')?.checked ? 0 : 1;
+            const bChecked = b.querySelector('.rack-cb')?.checked ? 0 : 1;
+            return aChecked - bChecked;
+        });
+        items.forEach(el => list.appendChild(el));
+    }
+    // Initial sort on page load (for edit mode pre-checked)
+    sortRacksCheckedFirst();
 
     // Step 2: waiter count + role summary + per-role toggle
     const waiterCount = document.getElementById('waiterCount');
@@ -801,6 +828,11 @@
             return w ? w.name : id;
         });
 
+        const templateNameInput = form.querySelector('[name="template_name"]');
+        const templateName = templateNameInput && templateNameInput.value.trim()
+            ? templateNameInput.value.trim()
+            : (rackNames.length === 1 ? rackNames[0] : `Cek ${rackNames.length} Rak`);
+
         const recur = form.querySelector('[name="recurrence_type"]:checked').value;
         let recurLabel = 'Setiap hari';
         if (recur === 'weekly') {
@@ -822,11 +854,12 @@
         if (form.querySelector('[name="enable_empty_product_report"]').checked) proofs.push('Laporan produk kosong');
 
         let html = '';
-        html += `<div style="margin-bottom:10px;"><strong style="color:var(--color-text);">Rak:</strong></div>`;
+        html += `<div style="margin-bottom:12px;"><strong style="color:var(--color-text);font-size:15px;">📋 ${escapeHtml(templateName)}</strong></div>`;
+        html += `<div style="margin-bottom:10px;"><strong style="color:var(--color-text);">Rak (${rackNames.length}):</strong></div>`;
         html += `<ul style="margin:0 0 12px 20px;">`;
         rackNames.forEach(n => html += `<li>${escapeHtml(n)}</li>`);
         html += `</ul>`;
-        html += `<div style="margin-bottom:10px;"><strong style="color:var(--color-text);">Petugas:</strong></div>`;
+        html += `<div style="margin-bottom:10px;"><strong style="color:var(--color-text);">Petugas (${waiterNames.length}):</strong></div>`;
         html += `<ul style="margin:0 0 12px 20px;">`;
         waiterNames.forEach(n => html += `<li>${escapeHtml(n)}</li>`);
         html += `</ul>`;
@@ -869,6 +902,11 @@
 
     // Kalau restore membawa user ke step 4, build summary langsung
     if (currentStep === totalSteps) buildSummary();
+    @else
+    // Edit mode: sync counters from server-provided data
+    if (typeof refreshWaiterStats === 'function') refreshWaiterStats();
+    const rackCountEdit = document.getElementById('rackCount');
+    if (rackCountEdit) rackCountEdit.textContent = form.querySelectorAll('.rack-cb:checked').length;
     @endif
 
     renderStepper();

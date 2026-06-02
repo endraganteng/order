@@ -20,6 +20,7 @@ class StoreRackCheckTemplateRequest extends FormRequest
             'rack_ids.*' => 'required|string',
             'selected_waiter_ids' => 'required|array|min:1',
             'selected_waiter_ids.*' => 'required|string',
+            'template_name' => 'nullable|string|max:100',
             'assignment_strategy' => ['nullable', Rule::in(['simple_lowest_load', 'round_robin_simple'])],
             'recurrence_type' => ['required', Rule::in(['daily', 'weekly', 'every_n_days'])],
             'weekly_day' => 'nullable|integer|min:1|max:7',

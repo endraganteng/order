@@ -148,6 +148,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('templates/{id}/preview', [RackCheckTemplateController::class, 'preview'])->name('templates.preview');
             Route::post('templates/{id}/generate', [RackCheckTemplateController::class, 'generateNow'])->name('templates.generate');
             Route::post('templates/{id}/toggle', [RackCheckTemplateController::class, 'toggle'])->name('templates.toggle');
+            Route::post('overflows/{id}/assign', [RackCheckTemplateController::class, 'assignOverflow'])->name('overflows.assign');
+            Route::post('overflows/{id}/move-tomorrow', [RackCheckTemplateController::class, 'moveOverflowToTomorrow'])->name('overflows.move_tomorrow');
+            Route::post('overflows/{id}/move-next-shift', [RackCheckTemplateController::class, 'moveOverflowToNextShift'])->name('overflows.move_next_shift');
+            Route::post('overflows/{id}/ignore', [RackCheckTemplateController::class, 'ignoreOverflow'])->name('overflows.ignore');
             Route::delete('templates/{id}', [RackCheckTemplateController::class, 'destroy'])->name('templates.destroy');
         });
 

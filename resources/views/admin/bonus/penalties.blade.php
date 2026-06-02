@@ -57,7 +57,7 @@
     <div class="card mb-4">
         <form method="GET" class="filter-grid" id="filterForm">
             <div>
-                <label class="form-label" for="filterMonth">Bulan</label>
+                <label class="form-label" for="filterMonth">Periode</label>
                 <input type="month" id="filterMonth" name="month" value="{{ $month }}" class="form-control" required>
             </div>
             <div>

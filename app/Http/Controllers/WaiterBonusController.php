@@ -27,9 +27,9 @@ class WaiterBonusController extends Controller
     {
         $waiterId = session('waiter_id');
         $waiterName = session('waiter_name', 'Waiter');
-        $month = $request->get('month', date('Y-m'));
-        $progress = $this->bonus->getWaiterMonthlyProgress((string) $waiterId, $month);
-        $pointEvents = $this->bonus->getWaiterPointEvents((string) $waiterId, $month);
+        $progress = $this->bonus->getWaiterProgress((string) $waiterId);
+        $period = ['start' => $progress['period_start'], 'end' => $progress['period_end'], 'label' => $progress['period_label']];
+        $pointEvents = $this->bonus->getWaiterPointEvents((string) $waiterId, $progress['period_start'], $progress['period_end']);
 
         // Fetch waiter role for sales eligibility check in dashboard.
         $waiterRole = '';
@@ -74,7 +74,7 @@ class WaiterBonusController extends Controller
         }
         
         return view('waiter.bonus_dashboard', compact(
-            'waiterId', 'waiterName', 'waiterRole', 'month', 'config',
+            'waiterId', 'waiterName', 'waiterRole', 'period', 'config',
             'monthlyPoints', 'penalties', 'salesTarget', 'bonusSummary',
             'leaderboard', 'myRank', 'pointEvents',
             'totalEarned', 'totalPenalties', 'netPoints', 'daysScored', 'perfectDays',
@@ -89,9 +89,8 @@ class WaiterBonusController extends Controller
     public function apiData(Request $request)
     {
         $waiterId = session('waiter_id');
-        $month = $request->get('month', date('Y-m'));
-        $progress = $this->bonus->getWaiterMonthlyProgress((string) $waiterId, $month);
-        $pointEvents = $this->bonus->getWaiterPointEvents((string) $waiterId, $month);
+        $progress = $this->bonus->getWaiterProgress((string) $waiterId);
+        $pointEvents = $this->bonus->getWaiterPointEvents((string) $waiterId, $progress['period_start'], $progress['period_end']);
         
         return response()->json([
             'total_earned' => $progress['total_earned'],
@@ -126,10 +125,10 @@ class WaiterBonusController extends Controller
     {
         $waiterId = (string) session('waiter_id');
         $waiterName = (string) session('waiter_name', 'Waiter');
-        $month = date('Y-m');
+        $period = app(\App\Services\BonusService::class)->getCurrentPeriod();
 
         $campaigns = $this->campaign->getEligibleCampaignsForUser($waiterId);
-        $breakdown = $this->campaign->getUserCampaignBreakdown($waiterId, $month);
+        $breakdown = $this->campaign->getUserCampaignBreakdownByRange($waiterId, $period['start'], $period['end']);
 
         // Flatten products from all eligible campaigns + sort by points DESC.
         // sortedProducts: flat list (for autocomplete in claim modal).
@@ -208,7 +207,7 @@ class WaiterBonusController extends Controller
         });
 
         return view('waiter.bonus_produk', compact(
-            'waiterId', 'waiterName', 'month', 'campaigns', 'breakdown', 'sortedProducts', 'groupedProducts'
+            'waiterId', 'waiterName', 'period', 'campaigns', 'breakdown', 'sortedProducts', 'groupedProducts'
         ));
     }
 
@@ -300,8 +299,8 @@ class WaiterBonusController extends Controller
     public function claimHistory(Request $request)
     {
         $waiterId = (string) session('waiter_id');
-        $month = $request->get('month', date('Y-m'));
-        $claims = $this->campaign->getClaimsByUser($waiterId, $month);
+        $period = app(\App\Services\BonusService::class)->getCurrentPeriod();
+        $claims = $this->campaign->getClaimsByUser($waiterId, null, $period['start'], $period['end']);
 
         return response()->json(['success' => true, 'claims' => $claims]);
     }

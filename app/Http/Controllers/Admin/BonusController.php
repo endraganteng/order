@@ -147,6 +147,7 @@ class BonusController extends Controller
     {
         $date = $request->get('date', date('Y-m-d'));
         $month = substr($date, 0, 7);
+        $startDate = date('Y-m-d', strtotime('-29 days', strtotime($date)));
         $config = $this->bonus->getBonusConfig();
         $waiters = $this->firebase->getAllowedEmails(); // returns all waiters
         $existingScores = $this->firebase->getAllDailyPointsByDate($date);
@@ -155,7 +156,7 @@ class BonusController extends Controller
         $allAttendance = $this->firebase->getAllAttendanceByDate($date);       // 1 read
         $allTasks      = $this->firebase->getWaiterTasks();                    // 1 read
         $allReports    = $this->firebase->getWaiterActivityReportsByDate($date); // 1 read (via getWaiterActivityReports internally)
-        $allPenalties  = $this->bonus->getPenaltiesByMonth($month);            // 1 read
+        $allPenalties  = $this->bonus->getPenaltiesByPeriod($startDate, $date);  // period scope
 
         // Group tasks by waiter+date
         $tasksByWaiter = [];

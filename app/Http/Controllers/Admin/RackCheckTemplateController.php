@@ -49,6 +49,12 @@ class RackCheckTemplateController extends Controller
             }
         }
 
+        // Normalize racks for each template
+        foreach ($templates as &$tpl) {
+            $tpl['_racks'] = $this->firebase->normalizeTemplateRacks($tpl);
+        }
+        unset($tpl);
+
         // Sort: aktif dulu, lalu by created_at DESC
         usort($templates, function ($a, $b) {
             $aActive = ($a['is_active'] ?? true) ? 0 : 1;
@@ -59,7 +65,9 @@ class RackCheckTemplateController extends Controller
             return ($b['created_at'] ?? 0) <=> ($a['created_at'] ?? 0);
         });
 
-        return view('admin.rack_check.templates.index', compact('templates', 'waiterMap'));
+        $todayOverflows = $this->firebase->getRackCheckOverflows(date('Y-m-d'), 'pending');
+
+        return view('admin.rack_check.templates.index', compact('templates', 'waiterMap', 'waiters', 'todayOverflows'));
     }
 
     /**
@@ -81,15 +89,15 @@ class RackCheckTemplateController extends Controller
             if (empty($tpl['is_active'])) {
                 continue;
             }
-            $rid = (string) ($tpl['rack_id'] ?? '');
-            if ($rid === '') {
-                continue;
+            $tplRackIds = array_map(fn ($r) => (string) ($r['id'] ?? ''), $this->firebase->normalizeTemplateRacks($tpl));
+            foreach ($tplRackIds as $rid) {
+                if ($rid === '') continue;
+                $lockedRackMap[$rid] = [
+                    'template_id' => (string) ($tpl['id'] ?? ''),
+                    'strategy' => (string) ($tpl['assignment_strategy'] ?? ''),
+                    'rack_name' => (string) ($tpl['rack_name'] ?? $rid),
+                ];
             }
-            $lockedRackMap[$rid] = [
-                'template_id' => (string) ($tpl['id'] ?? ''),
-                'strategy' => (string) ($tpl['assignment_strategy'] ?? ''),
-                'rack_name' => (string) ($tpl['rack_name'] ?? $rid),
-            ];
         }
 
         return view('admin.rack_check.templates.create', compact('racks', 'waiters', 'lockedRackMap'));
@@ -120,24 +128,29 @@ class RackCheckTemplateController extends Controller
         $racks = $this->firebase->getActiveRacks();
         $waiters = $this->firebase->getActiveWaiters();
 
-        // Also build lockedRackMap (same as create() does) for the view
+        // Normalize racks from template (supports multi-rak and legacy)
+        $templateRacks = $this->firebase->normalizeTemplateRacks($template);
+        $templateRackIds = array_map(fn ($r) => (string) ($r['id'] ?? ''), $templateRacks);
+
+        // Build lockedRackMap: rak yang sudah punya template aktif LAIN
         $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
         $lockedRackMap = [];
         foreach ($allTemplates as $tpl) {
             if (($tpl['task_type'] ?? '') !== 'rack_check') continue;
             if (empty($tpl['is_active'])) continue;
-            $rid = (string) ($tpl['rack_id'] ?? '');
-            if ($rid === '') continue;
-            // Don't lock the rack that belongs to THIS template being edited
-            if ($rid === (string)($template['rack_id'] ?? '')) continue;
-            $lockedRackMap[$rid] = [
-                'template_id' => (string) ($tpl['id'] ?? ''),
-                'strategy' => (string) ($tpl['assignment_strategy'] ?? ''),
-                'rack_name' => (string) ($tpl['rack_name'] ?? $rid),
-            ];
+            if (($tpl['id'] ?? '') === $id) continue; // skip self
+            $tplRackIds = array_map(fn ($r) => (string) ($r['id'] ?? ''), $this->firebase->normalizeTemplateRacks($tpl));
+            foreach ($tplRackIds as $tplRack) {
+                if ($tplRack === '') continue;
+                $lockedRackMap[$tplRack] = [
+                    'template_id' => (string) ($tpl['id'] ?? ''),
+                    'strategy' => (string) ($tpl['assignment_strategy'] ?? ''),
+                    'rack_name' => (string) ($tpl['rack_name'] ?? $tplRack),
+                ];
+            }
         }
 
-        return view('admin.rack_check.templates.create', compact('template', 'racks', 'waiters', 'lockedRackMap'));
+        return view('admin.rack_check.templates.create', compact('template', 'racks', 'waiters', 'lockedRackMap', 'templateRackIds'));
     }
 
     /**
@@ -173,6 +186,64 @@ class RackCheckTemplateController extends Controller
             return back()->withErrors(['selected_waiter_ids' => 'Beberapa petugas tidak aktif.'])->withInput();
         }
 
+        // Rack IDs — rebuild racks array
+        $rackIds = array_values(array_unique(array_filter(
+            array_map(fn ($x) => trim((string) $x), (array) $request->input('rack_ids', [])),
+            fn ($x) => $x !== ''
+        )));
+
+        if (empty($rackIds)) {
+            return back()->withErrors(['rack_ids' => 'Pilih minimal satu rak.'])->withInput();
+        }
+
+        // Validate racks aktif
+        $activeRacks = $this->firebase->getActiveRacks();
+        $rackMap = [];
+        foreach ($activeRacks as $r) {
+            $rid = (string) ($r['id'] ?? '');
+            if ($rid !== '') {
+                $rackMap[$rid] = $r;
+            }
+        }
+
+        $invalidRacks = array_values(array_filter($rackIds, fn ($rid) => ! isset($rackMap[$rid])));
+        if (count($invalidRacks) > 0) {
+            return back()->withErrors(['rack_ids' => 'Beberapa rak tidak valid atau nonaktif.'])->withInput();
+        }
+
+        // Anti-duplikat: cek rak yang sudah punya template aktif lain
+        $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+        $lockedRacks = [];
+        foreach ($allTemplates as $tpl) {
+            if (($tpl['task_type'] ?? '') !== 'rack_check') continue;
+            if (empty($tpl['is_active'])) continue;
+            if (($tpl['id'] ?? '') === $id) continue; // skip self
+            $tplRackIds = array_map(fn ($r) => (string) ($r['id'] ?? ''), $this->firebase->normalizeTemplateRacks($tpl));
+            foreach ($tplRackIds as $tplRack) {
+                if ($tplRack !== '' && in_array($tplRack, $rackIds, true)) {
+                    $lockedRacks[$tplRack] = (string) ($tpl['rack_name'] ?? $tplRack);
+                }
+            }
+        }
+        if (count($lockedRacks) > 0) {
+            return back()
+                ->withErrors(['rack_ids' => 'Rak berikut sudah punya template aktif lain: '.implode(', ', array_values($lockedRacks))])
+                ->withInput();
+        }
+
+        // Build racks payload
+        $racksPayload = [];
+        foreach ($rackIds as $rid) {
+            $rack = $rackMap[$rid];
+            $racksPayload[] = [
+                'id' => $rid,
+                'name' => (string) ($rack['name'] ?? ''),
+                'location' => (string) ($rack['location'] ?? ''),
+                'barcode_value' => (string) ($rack['barcode_value'] ?? ''),
+                'rack_type' => (string) ($rack['rack_type'] ?? 'storage'),
+            ];
+        }
+
         $assignmentStrategy = (string) $request->input('assignment_strategy', 'simple_lowest_load');
         if (! in_array($assignmentStrategy, ['simple_lowest_load', 'round_robin_simple'], true)) {
             $assignmentStrategy = 'simple_lowest_load';
@@ -196,8 +267,19 @@ class RackCheckTemplateController extends Controller
             ? max(0, (int) $partialShiftCapRaw)
             : null;
 
+        // Template name
+        $templateName = trim((string) $request->input('template_name', ''));
+        if ($templateName === '') {
+            if (count($racksPayload) === 1) {
+                $templateName = $racksPayload[0]['name'] ?: 'Cek Rak';
+            } else {
+                $templateName = 'Cek '.count($racksPayload).' Rak';
+            }
+        }
+
         $this->firebase->updateRecurringWaiterTaskTemplate($id, [
-            'title' => (string) ($template['rack_name'] ?? $template['title'] ?? ''),
+            'title' => $templateName,
+            'name' => $templateName,
             'description' => (string) ($template['description'] ?? ''),
             'priority' => 'normal',
             'assignment_strategy' => $assignmentStrategy,
@@ -214,10 +296,19 @@ class RackCheckTemplateController extends Controller
             'weekly_day' => $weeklyDay,
             'interval_days' => $intervalDays,
             'recurrence_anchor_date' => $anchorDate,
+            // Multi-rak
+            'racks' => $racksPayload,
+            'rack_target_scope' => count($racksPayload) > 1 ? 'multi' : 'single',
+            'rack_id' => $racksPayload[0]['id'] ?? '',
+            'rack_name' => $racksPayload[0]['name'] ?? '',
+            'rack_location' => $racksPayload[0]['location'] ?? '',
+            'rack_barcode_value' => $racksPayload[0]['barcode_value'] ?? '',
+            'rack_type' => $racksPayload[0]['rack_type'] ?? 'storage',
             'updated_at' => time(),
         ]);
 
         $this->firebase->logAuditAction('update', 'rack_check_template_simple', $id, [
+            'rack_count' => count($rackIds),
             'waiter_count' => count($waiterIds),
             'recurrence_type' => $recurrenceType,
             'strategy' => $assignmentStrategy,
@@ -272,9 +363,12 @@ class RackCheckTemplateController extends Controller
             if (empty($tpl['is_active'])) {
                 continue;
             }
-            $tplRack = (string) ($tpl['rack_id'] ?? '');
-            if ($tplRack !== '' && in_array($tplRack, $rackIds, true)) {
-                $lockedRacks[$tplRack] = (string) ($tpl['rack_name'] ?? $tplRack);
+            // Check both new format (racks[]) and old format (rack_id)
+            $tplRackIds = array_map(fn ($r) => (string) ($r['id'] ?? ''), $this->firebase->normalizeTemplateRacks($tpl));
+            foreach ($tplRackIds as $tplRack) {
+                if ($tplRack !== '' && in_array($tplRack, $rackIds, true)) {
+                    $lockedRacks[$tplRack] = (string) ($tpl['rack_name'] ?? $tplRack);
+                }
             }
         }
         if (count($lockedRacks) > 0) {
@@ -287,14 +381,11 @@ class RackCheckTemplateController extends Controller
 
         // Validate waiters aktif
         $invalidWaiters = [];
-        $resolvedWaiters = [];
         foreach ($waiterIds as $wid) {
             $w = $this->firebase->getWaiterById($wid);
             if (! $w || ($w['is_active'] ?? true) === false) {
                 $invalidWaiters[] = $wid;
-                continue;
             }
-            $resolvedWaiters[] = $w;
         }
         if (count($invalidWaiters) > 0) {
             return back()
@@ -302,7 +393,7 @@ class RackCheckTemplateController extends Controller
                 ->withInput();
         }
 
-        // Mode pembagian (default: simple_lowest_load untuk backward compat)
+        // Mode pembagian
         $assignmentStrategy = (string) $request->input('assignment_strategy', 'simple_lowest_load');
         if (! in_array($assignmentStrategy, ['simple_lowest_load', 'round_robin_simple'], true)) {
             $assignmentStrategy = 'simple_lowest_load';
@@ -318,10 +409,8 @@ class RackCheckTemplateController extends Controller
             : null;
         $anchorDate = (string) $request->input('recurrence_anchor_date', date('Y-m-d'));
 
-        // Jam & deadline mengikuti shift waiter (set per task saat generate),
-        // template hanya menyimpan placeholder default supaya kompatibel skema lama.
-        $scheduleTime = '08:00';        // placeholder, akan di-override per shift waiter
-        $timeLimitMinutes = 480;        // placeholder
+        $scheduleTime = '08:00';
+        $timeLimitMinutes = 480;
 
         $requiresBarcodeScan = (bool) $request->boolean('requires_barcode_scan', true);
         $requiresPhotoBefore = (bool) $request->boolean('requires_photo_before', true);
@@ -329,8 +418,6 @@ class RackCheckTemplateController extends Controller
         $allowNote = (bool) $request->boolean('allow_note', true);
         $enableEmptyProductReport = (bool) $request->boolean('enable_empty_product_report', true);
 
-        // Custom daily cap per shift type (wizard setting).
-        // null = use hardcoded defaults; 0 = exclude from rack_check entirely.
         $fullShiftCapRaw = $request->input('full_shift_daily_cap');
         $fullShiftDailyCap = ($fullShiftCapRaw !== null && $fullShiftCapRaw !== '')
             ? max(0, (int) $fullShiftCapRaw)
@@ -340,79 +427,95 @@ class RackCheckTemplateController extends Controller
             ? max(0, (int) $partialShiftCapRaw)
             : null;
 
-        $createdTemplates = 0;
-        $errors = [];
-
+        // Build racks array (multi-rak in single template)
+        $racksPayload = [];
         foreach ($rackIds as $rid) {
             $rack = $rackMap[$rid];
-            try {
-                $this->firebase->createRecurringWaiterTaskTemplate([
-                    'title' => (string) ($rack['name'] ?? 'Rak'),
-                    'description' => '',
-                    'priority' => 'normal',
-                    'assigned_by' => 'Supervisor',
-                    'task_type' => 'rack_check',
-                    'category_id' => null,
-                    'category_name' => null,
-                    'requires_barcode_scan' => $requiresBarcodeScan,
-                    'requires_photo_proof' => $requiresPhotoProof,
-                    'requires_photo_before' => $requiresPhotoBefore,
-                    'rack_target_scope' => 'single',
-                    'rack_id' => $rid,
-                    'rack_name' => (string) ($rack['name'] ?? ''),
-                    'rack_location' => (string) ($rack['location'] ?? ''),
-                    'rack_barcode_value' => (string) ($rack['barcode_value'] ?? ''),
-                    'rack_type' => (string) ($rack['rack_type'] ?? 'storage'),
+            $racksPayload[] = [
+                'id' => $rid,
+                'name' => (string) ($rack['name'] ?? ''),
+                'location' => (string) ($rack['location'] ?? ''),
+                'barcode_value' => (string) ($rack['barcode_value'] ?? ''),
+                'rack_type' => (string) ($rack['rack_type'] ?? 'storage'),
+            ];
+        }
 
-                    // Mode baru
-                    'assignment_type' => 'role',
-                    'assignment_strategy' => $assignmentStrategy,
-                    'assigned_waiter_id' => null,
-                    'assigned_waiter_role' => null,
-                    'selected_waiter_ids' => $waiterIds,
-
-                    // Schedule (mengikuti shift waiter saat task di-generate)
-                    'schedule_mode' => 'shift_relative',
-                    'schedule_time' => $scheduleTime,
-                    'time_limit_minutes' => $timeLimitMinutes,
-                    'deadline_mode' => 'before_shift_end',
-                    'deadline_before_end_minutes' => 0,
-                    'shift_offset_minutes' => 0,
-
-                    // Recurrence
-                    'recurrence_type' => $recurrenceType,
-                    'weekly_day' => $weeklyDay,
-                    'interval_days' => $intervalDays,
-                    'recurrence_anchor_date' => $anchorDate,
-
-                    // Disable rolling lama
-                    'rolling_enabled' => false,
-                    'rolling_period' => 'daily',
-                    'rolling_waiter_ids' => [],
-                    'rolling_anchor_date' => '',
-
-                    'target_shift_id' => '',
-
-                    // Flags simple-lowest-load (digunakan saat strategy = simple_lowest_load)
-                    'simple_lowest_load_enabled' => $assignmentStrategy === 'simple_lowest_load',
-                    'skip_when_no_eligible_waiter' => true,
-                    'daily_cap_mode' => 'shift_aware',
-                    'allow_note' => $allowNote,
-                    'enable_empty_product_report' => $enableEmptyProductReport,
-                    // Custom daily cap overrides (null = fallback ke hardcoded: full=2, partial=1)
-                    'full_shift_daily_cap' => $fullShiftDailyCap,
-                    'partial_shift_daily_cap' => $partialShiftDailyCap,
-                ]);
-                $createdTemplates++;
-            } catch (\Throwable $e) {
-                report($e);
-                $errors[] = ($rack['name'] ?? $rid).': '.$e->getMessage();
+        // Template name (auto-generate jika kosong)
+        $templateName = trim((string) $request->input('template_name', ''));
+        if ($templateName === '') {
+            if (count($racksPayload) === 1) {
+                $templateName = $racksPayload[0]['name'] ?: 'Cek Rak';
+            } else {
+                $templateName = 'Cek '.count($racksPayload).' Rak';
             }
         }
 
-        if ($createdTemplates === 0) {
+        try {
+            $this->firebase->createRecurringWaiterTaskTemplate([
+                'title' => $templateName,
+                'name' => $templateName,
+                'description' => '',
+                'priority' => 'normal',
+                'assigned_by' => 'Supervisor',
+                'task_type' => 'rack_check',
+                'category_id' => null,
+                'category_name' => null,
+                'requires_barcode_scan' => $requiresBarcodeScan,
+                'requires_photo_proof' => $requiresPhotoProof,
+                'requires_photo_before' => $requiresPhotoBefore,
+
+                // Multi-rak
+                'racks' => $racksPayload,
+                'rack_target_scope' => count($racksPayload) > 1 ? 'multi' : 'single',
+                // Backward-compat flat fields (first rack)
+                'rack_id' => $racksPayload[0]['id'] ?? '',
+                'rack_name' => $racksPayload[0]['name'] ?? '',
+                'rack_location' => $racksPayload[0]['location'] ?? '',
+                'rack_barcode_value' => $racksPayload[0]['barcode_value'] ?? '',
+                'rack_type' => $racksPayload[0]['rack_type'] ?? 'storage',
+
+                // Mode
+                'assignment_type' => 'role',
+                'assignment_strategy' => $assignmentStrategy,
+                'assigned_waiter_id' => null,
+                'assigned_waiter_role' => null,
+                'selected_waiter_ids' => $waiterIds,
+
+                // Schedule
+                'schedule_mode' => 'shift_relative',
+                'schedule_time' => $scheduleTime,
+                'time_limit_minutes' => $timeLimitMinutes,
+                'deadline_mode' => 'before_shift_end',
+                'deadline_before_end_minutes' => 0,
+                'shift_offset_minutes' => 0,
+
+                // Recurrence
+                'recurrence_type' => $recurrenceType,
+                'weekly_day' => $weeklyDay,
+                'interval_days' => $intervalDays,
+                'recurrence_anchor_date' => $anchorDate,
+
+                // Disable rolling lama
+                'rolling_enabled' => false,
+                'rolling_period' => 'daily',
+                'rolling_waiter_ids' => [],
+                'rolling_anchor_date' => '',
+
+                'target_shift_id' => '',
+
+                // Flags
+                'simple_lowest_load_enabled' => $assignmentStrategy === 'simple_lowest_load',
+                'skip_when_no_eligible_waiter' => true,
+                'daily_cap_mode' => 'shift_aware',
+                'allow_note' => $allowNote,
+                'enable_empty_product_report' => $enableEmptyProductReport,
+                'full_shift_daily_cap' => $fullShiftDailyCap,
+                'partial_shift_daily_cap' => $partialShiftDailyCap,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
             return back()
-                ->withErrors(['rack_ids' => 'Gagal membuat template: '.implode('; ', $errors)])
+                ->withErrors(['rack_ids' => 'Gagal membuat template: '.$e->getMessage()])
                 ->withInput();
         }
 
@@ -420,13 +523,10 @@ class RackCheckTemplateController extends Controller
             'rack_count' => count($rackIds),
             'waiter_count' => count($waiterIds),
             'recurrence_type' => $recurrenceType,
-            'created' => $createdTemplates,
+            'strategy' => $assignmentStrategy,
         ]);
 
-        $message = "Template cek rak otomatis berhasil dibuat ({$createdTemplates} rak).";
-        if (! empty($errors)) {
-            $message .= ' Catatan: '.count($errors).' rak gagal diproses.';
-        }
+        $message = "Template cek rak otomatis berhasil dibuat (".count($rackIds)." rak).";
 
         return redirect()
             ->route('admin.rack_check.templates.index')
@@ -454,12 +554,18 @@ class RackCheckTemplateController extends Controller
             return back()->with('error', 'Template tidak aktif. Aktifkan dulu sebelum generate.');
         }
 
+        $racks = $this->firebase->normalizeTemplateRacks($template);
+        $rackCount = count($racks);
+        $templateName = (string) ($template['name'] ?? $template['rack_name'] ?? 'template ini');
+
         $today = date('Y-m-d');
         try {
             if ($strategy === 'round_robin_simple') {
                 $result = $this->firebase->processRoundRobinSimpleTemplate($template, $today, false, true);
             } else {
-                $result = $this->firebase->processSimpleLowestLoadTemplate($template, $today, false, true);
+                $inMemoryCounter = [];
+                $inMemoryAssignedRacks = [];
+                $result = $this->firebase->processSimpleLowestLoadTemplate($template, $today, false, true, $inMemoryCounter, $inMemoryAssignedRacks);
             }
         } catch (\Throwable $e) {
             report($e);
@@ -468,32 +574,34 @@ class RackCheckTemplateController extends Controller
 
         $generated = (int) ($result['generated_count'] ?? 0);
         $status = (string) ($result['status'] ?? '');
-        $rackName = (string) ($template['rack_name'] ?? 'rak ini');
+        $rackResults = $result['rack_results'] ?? [];
 
         if ($generated > 0) {
-            $waiterId = (string) ($result['assigned_waiter_id'] ?? '');
-            $waiterName = '';
-            if ($waiterId !== '') {
-                $waiter = $this->firebase->getWaiterById($waiterId);
-                $waiterName = (string) ($waiter['name'] ?? '');
+            $msg = "✓ {$generated} task berhasil dibuat untuk {$templateName}";
+            if ($rackCount > 1) {
+                $msg .= " ({$generated}/{$rackCount} rak)";
             }
-            $msg = "✓ Task berhasil dibuat untuk {$rackName}";
-            if ($waiterName !== '') {
-                $msg .= " → ditugaskan ke {$waiterName}";
+            // Show assigned waiter for single-rak
+            if ($generated === 1 && ! empty($result['assigned_waiter_id'])) {
+                $waiter = $this->firebase->getWaiterById($result['assigned_waiter_id']);
+                $waiterName = (string) ($waiter['name'] ?? '');
+                if ($waiterName !== '') {
+                    $msg .= " → {$waiterName}";
+                }
             }
             return back()->with('success', $msg.'.');
         }
 
         if ($status === 'skipped_no_eligible_waiter') {
-            return back()->with('error', "Tidak ada petugas eligible untuk {$rackName} hari ini (libur/hit cap).");
+            return back()->with('error', "Tidak ada petugas eligible untuk {$templateName} hari ini (libur/hit cap).");
         }
         if ($status === 'lock_exists') {
             $lockReason = (string) ($result['reason'] ?? '');
             if ($lockReason === 'generated') {
-                return back()->with('success', "Task untuk {$rackName} sudah dibuat sebelumnya hari ini.");
+                return back()->with('success', "Task untuk {$templateName} sudah dibuat sebelumnya hari ini.");
             }
             if ($lockReason === 'cancelled_by_admin') {
-                return back()->with('error', "Task untuk {$rackName} hari ini dibatalkan admin. Tidak akan diregenerasi otomatis.");
+                return back()->with('error', "Task untuk {$templateName} hari ini dibatalkan admin. Tidak akan diregenerasi otomatis.");
             }
             return back()->with('error', "Generate diblokir: status lock = {$lockReason}.");
         }
@@ -571,6 +679,79 @@ class RackCheckTemplateController extends Controller
         return back()->with('success', $newActive
             ? 'Template diaktifkan kembali.'
             : 'Template dinonaktifkan. Cron tidak akan generate task baru.');
+    }
+
+    public function assignOverflow(Request $request, $id)
+    {
+        $data = $request->validate([
+            'waiter_id' => ['required', 'string'],
+            'override_cap' => ['nullable', 'boolean'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $result = $this->firebase->assignRackCheckOverflow(
+                (string) $id,
+                (string) $data['waiter_id'],
+                (bool) $request->boolean('override_cap'),
+                $data['note'] ?? null
+            );
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Gagal assign overflow: '.$e->getMessage());
+        }
+
+        return back()->with(($result['success'] ?? false) ? 'success' : 'error', (string) ($result['message'] ?? 'Aksi selesai.'));
+    }
+
+    public function moveOverflowToTomorrow(Request $request, $id)
+    {
+        $data = $request->validate([
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $result = $this->firebase->moveRackCheckOverflowToTomorrow((string) $id, $data['note'] ?? null);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Gagal pindah overflow: '.$e->getMessage());
+        }
+
+        return back()->with(($result['success'] ?? false) ? 'success' : 'error', (string) ($result['message'] ?? 'Aksi selesai.'));
+    }
+
+    public function moveOverflowToNextShift(Request $request, $id)
+    {
+        $data = $request->validate([
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $result = $this->firebase->moveRackCheckOverflowToNextShift((string) $id, $data['note'] ?? null);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Gagal pindah overflow: '.$e->getMessage());
+        }
+
+        return back()->with(($result['success'] ?? false) ? 'success' : 'error', (string) ($result['message'] ?? 'Aksi selesai.'));
+    }
+
+    public function ignoreOverflow(Request $request, $id)
+    {
+        $data = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ], [
+            'reason.required' => 'Alasan wajib diisi.',
+        ]);
+
+        try {
+            $result = $this->firebase->ignoreRackCheckOverflow((string) $id, (string) $data['reason']);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'Gagal abaikan overflow: '.$e->getMessage());
+        }
+
+        return back()->with(($result['success'] ?? false) ? 'success' : 'error', (string) ($result['message'] ?? 'Aksi selesai.'));
     }
 
     /**

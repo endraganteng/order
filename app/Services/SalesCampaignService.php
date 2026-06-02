@@ -282,7 +282,7 @@ class SalesCampaignService
         return $claims;
     }
 
-    public function getClaimsByUser(string $userId, ?string $month = null): array
+    public function getClaimsByUser(string $userId, ?string $month = null, ?string $startDate = null, ?string $endDate = null): array
     {
         $snapshot = $this->database->getReference('sales_campaign_claims')->getSnapshot();
 
@@ -298,7 +298,13 @@ class SalesCampaignService
             if (($claim['waiter_id'] ?? '') !== $userId) {
                 continue;
             }
-            if ($month && substr($claim['date'] ?? '', 0, 7) !== $month) {
+            $claimDate = (string) ($claim['date'] ?? '');
+            // Date range filter (takes priority over month)
+            if ($startDate !== null && $endDate !== null) {
+                if ($claimDate < $startDate || $claimDate > $endDate) {
+                    continue;
+                }
+            } elseif ($month && substr($claimDate, 0, 7) !== $month) {
                 continue;
             }
             $claim['id'] = $id;
@@ -308,6 +314,61 @@ class SalesCampaignService
         usort($claims, fn($a, $b) => ($b['submitted_at'] ?? 0) <=> ($a['submitted_at'] ?? 0));
 
         return $claims;
+    }
+
+    /**
+     * Get total approved campaign points for a user in a date range.
+     */
+    public function getUserCampaignPointsByRange(string $userId, string $startDate, string $endDate): int
+    {
+        $claims = $this->getClaimsByUser($userId, null, $startDate, $endDate);
+        $total = 0;
+
+        foreach ($claims as $claim) {
+            if (($claim['status'] ?? '') === 'approved') {
+                $total += (int) ($claim['points_claimed'] ?? 0);
+            }
+        }
+
+        return $total;
+    }
+
+    /**
+     * Get campaign points breakdown for a user in a date range.
+     */
+    public function getUserCampaignBreakdownByRange(string $userId, string $startDate, string $endDate): array
+    {
+        $claims = $this->getClaimsByUser($userId, null, $startDate, $endDate);
+
+        $approved = 0;
+        $pending = 0;
+        $rejected = 0;
+        $approvedClaims = [];
+        $pendingClaims = [];
+
+        foreach ($claims as $claim) {
+            $status = $claim['status'] ?? '';
+            $points = (int) ($claim['points_claimed'] ?? 0);
+
+            if ($status === 'approved') {
+                $approved += $points;
+                $approvedClaims[] = $claim;
+            } elseif ($status === 'pending') {
+                $pending += $points;
+                $pendingClaims[] = $claim;
+            } else {
+                $rejected += $points;
+            }
+        }
+
+        return [
+            'total_approved' => $approved,
+            'total_pending' => $pending,
+            'total_rejected' => $rejected,
+            'approved_claims' => $approvedClaims,
+            'pending_claims' => $pendingClaims,
+            'all_claims' => $claims,
+        ];
     }
 
     public function verifyClaim(string $claimId, string $status, string $verifiedBy, ?string $reason = null): array

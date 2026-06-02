@@ -5,7 +5,7 @@
 <div class="bonus-summary-mini" id="bonusSummaryMini" data-lazy="{{ $lazyLoad ? '1' : '0' }}">
     @if(!$lazyLoad)
         <div class="bsm-header">
-            <h3 class="bsm-title">🏆 Bonus Bulan Ini</h3>
+            <h3 class="bsm-title">🏆 Bonus 30 Hari Ini</h3>
             <a href="{{ route('waiter.bonus') }}" class="bsm-link">Lihat detail →</a>
         </div>
         <div class="bsm-grid">
@@ -25,7 +25,7 @@
     @else
         {{-- Skeleton state, populated by JS via AJAX --}}
         <div class="bsm-header">
-            <h3 class="bsm-title">🏆 Bonus Bulan Ini</h3>
+            <h3 class="bsm-title">🏆 Bonus 30 Hari Ini</h3>
             <a href="{{ route('waiter.bonus') }}" class="bsm-link">Lihat detail →</a>
         </div>
         <div class="bsm-grid">

@@ -856,10 +856,11 @@ class WaiterController extends Controller
                 try {
                     $bonusService = app(\App\Services\BonusService::class);
                     $today = date('Y-m-d');
-                    $month = substr($today, 0, 7);
+                    $periodStart = date('Y-m-d', strtotime('-29 days'));
+                    $periodEnd = date('Y-m-d');
 
                     // Check if penalty already exists for today's late
-                    $existingPenalties = $bonusService->getPenaltiesByMonth($month, $waiterId);
+                    $existingPenalties = $bonusService->getPenaltiesByPeriod($periodStart, $periodEnd, $waiterId);
                     $alreadyHasLatePenalty = false;
                     foreach ($existingPenalties as $p) {
                         if (($p['penalty_type'] ?? '') === 'late_arrival' && ($p['date'] ?? '') === $today) {

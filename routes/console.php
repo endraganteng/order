@@ -107,11 +107,11 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
     $firebase = app(FirebaseService::class);
     $bonus = app(BonusService::class);
     $date = $date ?: date('Y-m-d');
-    $month = substr($date, 0, 7);
+    $periodStart = date('Y-m-d', strtotime('-29 days', strtotime($date)));
     $now = time();
     $markedAbsent = 0;
     $penaltiesApplied = 0;
-    $allPenalties = $bonus->getPenaltiesByMonth($month);
+    $allPenalties = $bonus->getPenaltiesByPeriod($periodStart, $date);
     $penaltyKeys = [];
 
     foreach ($allPenalties as $penalty) {
@@ -423,21 +423,21 @@ Artisan::command('firebase:reconcile-stock {--days=7 : Window dalam hari}', func
     }
 })->purpose('Rekonsiliasi stok mingguan dari ledger vs snapshot rak');
 
-Artisan::command('bonus:generate-leaderboard {month? : Format Y-m, default bulan ini}', function (?string $month = null) {
+Artisan::command('bonus:generate-leaderboard {start_date? : Format Y-m-d} {end_date? : Format Y-m-d}', function (?string $start_date = null, ?string $end_date = null) {
     $bonus = app(BonusService::class);
-    $month = $month ?: date('Y-m');
 
     try {
-        $leaderboard = $bonus->generateLeaderboard($month);
+        $leaderboard = $bonus->generateLeaderboard($start_date, $end_date);
         $count = is_array($leaderboard['rankings'] ?? null) ? count($leaderboard['rankings']) : 0;
-        $this->info("Leaderboard generated for {$month}: {$count} entries.");
+        $periodLabel = $leaderboard['period_label'] ?? 'current';
+        $this->info("Leaderboard generated for {$periodLabel}: {$count} entries.");
     } catch (\Throwable $e) {
         $this->error('Failed: '.$e->getMessage());
         report($e);
         return 1;
     }
     return 0;
-})->purpose('Auto-regenerate bonus leaderboard for current month');
+})->purpose('Auto-generate bonus leaderboard for current 30-day period');
 
 Artisan::command('bonus:reconcile-pending', function () {
     $firebase = app(FirebaseService::class);
@@ -597,6 +597,52 @@ Artisan::command('waiter:cancel-pending-today {--date= : Tanggal (Y-m-d), defaul
     $cancelled = $firebase->bulkCancelWaiterTasks($pendingIds, 'Dibatalkan admin (bulk cancel pending ' . $date . ')');
     $this->info("{$cancelled} task pending berhasil dibatalkan untuk {$date}.");
 })->purpose('Cancel semua task pending untuk tanggal tertentu (default hari ini)');
+
+Artisan::command('rack-check:cleanup-legacy', function () {
+    $firebase = app(FirebaseService::class);
+    $allTemplates = $firebase->getRecurringWaiterTaskTemplates();
+
+    $legacy = array_filter($allTemplates, function ($tpl) {
+        return ($tpl['task_type'] ?? '') === 'rack_check'
+            && ($tpl['assignment_strategy'] ?? '') === 'role_round_robin'
+            && !empty($tpl['is_active']);
+    });
+
+    if (empty($legacy)) {
+        $this->info('Tidak ada template rack_check legacy (role_round_robin) yang aktif.');
+        return;
+    }
+
+    $this->info('Ditemukan ' . count($legacy) . ' template legacy aktif. Menonaktifkan...');
+
+    $deactivated = 0;
+    foreach ($legacy as $tpl) {
+        $id = (string) ($tpl['id'] ?? '');
+        if ($id === '') continue;
+
+        try {
+            $firebase->updateRecurringWaiterTaskTemplate($id, [
+                'title' => (string) ($tpl['title'] ?? 'Rak'),
+                'description' => (string) ($tpl['description'] ?? ''),
+                'priority' => (string) ($tpl['priority'] ?? 'normal'),
+                'schedule_time' => (string) ($tpl['schedule_time'] ?? '09:00'),
+                'time_limit_minutes' => (int) ($tpl['time_limit_minutes'] ?? 60),
+                'recurrence_type' => (string) ($tpl['recurrence_type'] ?? 'daily'),
+                'weekly_day' => $tpl['weekly_day'] ?? null,
+                'interval_days' => $tpl['interval_days'] ?? null,
+                'is_active' => false,
+            ]);
+            $rackName = $tpl['rack_name'] ?? $tpl['title'] ?? $id;
+            $this->line("  ✓ Nonaktifkan: {$rackName} ({$id})");
+            $deactivated++;
+        } catch (\Throwable $e) {
+            $this->error("  ✗ Gagal: {$id} — " . $e->getMessage());
+        }
+    }
+
+    $this->info("Selesai. {$deactivated} template legacy dinonaktifkan.");
+    $this->info('Template baru gunakan /admin/rack-check/templates (simple_lowest_load / round_robin_simple).');
+})->purpose('Nonaktifkan semua template rack_check legacy (role_round_robin) yang sudah digantikan wizard baru');
 
 Schedule::command('waiter:process-tasks')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();

@@ -18,6 +18,77 @@ class BonusService
     }
 
     // =========================================================================
+    //  PERIOD HELPERS
+    // =========================================================================
+
+    /**
+     * Get the current rolling 30-day period.
+     *
+     * @return array{start:string, end:string, key:string, label:string}
+     */
+    public function getCurrentPeriod(): array
+    {
+        $today = date('Y-m-d');
+        $end = $today;
+        $start = date('Y-m-d', strtotime('-29 days', strtotime($today)));
+        $key = $start . '_' . $end;
+
+        return [
+            'start' => $start,
+            'end'   => $end,
+            'key'   => $key,
+            'label' => date('d/m', strtotime($start)) . ' - ' . date('d/m/Y', strtotime($end)),
+        ];
+    }
+
+    /**
+     * Convert a Y-m month string to a date range covering that calendar month.
+     * Backward compatibility for callers still passing $month.
+     *
+     * @return array{start:string, end:string, key:string}
+     */
+    public function monthToPeriod(string $month): array
+    {
+        $start = $month . '-01';
+        $end = $month . '-31';
+        $key = $start . '_' . $end;
+
+        return ['start' => $start, 'end' => $end, 'key' => $key];
+    }
+
+    /**
+     * Resolve period from optional start/end dates or fall back to current period.
+     *
+     * @return array{start:string, end:string, key:string}
+     */
+    public function resolvePeriod(?string $startDate = null, ?string $endDate = null): array
+    {
+        if ($startDate !== null && $endDate !== null) {
+            return ['start' => $startDate, 'end' => $endDate, 'key' => $startDate . '_' . $endDate];
+        }
+
+        return $this->getCurrentPeriod();
+    }
+
+    /**
+     * Get the configured period working days (default 30 for rolling 30-day window).
+     */
+    public function getPeriodWorkingDays(?array $config = null): int
+    {
+        $config ??= $this->getBonusConfig();
+
+        return (int) ($config['working_days_per_period'] ?? $config['working_days_per_month'] ?? 30);
+    }
+
+    /**
+     * Format period dates into a human-readable label.
+     */
+    public function formatPeriodLabel(string $startDate, string $endDate): string
+    {
+        return date('d/m', strtotime($startDate)) . ' - ' . date('d/m/Y', strtotime($endDate));
+    }
+
+    // =========================================================================
     //  CONFIG
     // =========================================================================
 
@@ -57,11 +128,12 @@ class BonusService
     public function getDefaultConfig(): array
     {
         return [
-            'is_active' => true,
-            'working_days_per_month' => 26,
-            'total_bonus_pool' => 500000,
-            'perfect_day_bonus' => 5,
-            'daily_max_points' => 30,
+            'is_active'               => true,
+            'working_days_per_month'   => 26,  // backward compat — prefer working_days_per_period
+            'working_days_per_period'  => 30,  // rolling 30-day window
+            'total_bonus_pool'         => 500000,
+            'perfect_day_bonus'        => 5,
+            'daily_max_points'         => 30,
 
             'point_categories' => [
                 'discipline'   => ['name' => 'Disiplin', 'max_daily_points' => 5, 'sort_order' => 1, 'scoring_type' => 'daily'],
@@ -108,47 +180,70 @@ class BonusService
     }
 
     /**
-     * Build the canonical monthly points capacity breakdown.
+     * Build the canonical period points capacity breakdown.
+     *
+     * @param int|null $workingDays  Override working days; defaults to config value.
      */
-    public function getMonthlyPointsCapacity(?array $config = null): array
+    public function getPeriodPointsCapacity(?array $config = null, ?int $workingDays = null): array
     {
         $config ??= $this->getBonusConfig();
 
-        $workingDays = (int) ($config['working_days_per_month'] ?? 26);
+        $workingDays ??= $this->getPeriodWorkingDays($config);
         $dailyMaxPoints = (int) ($config['daily_max_points'] ?? 20);
         $perfectDayBonus = (int) ($config['perfect_day_bonus'] ?? 5);
         $dailyMaxWithPerfect = $dailyMaxPoints + $perfectDayBonus;
-        $monthlyServiceMaxPerDay = $this->getCategoryMaxPoints($config, 'service', 5);
-        $monthlySalesMaxPerDay = $this->getCategoryMaxPoints($config, 'sales', 5);
-        $monthlyServiceMax = $monthlyServiceMaxPerDay * $workingDays;
-        $monthlySalesMax = $monthlySalesMaxPerDay * $workingDays;
+        $serviceMaxPerDay = $this->getCategoryMaxPoints($config, 'service', 5);
+        $salesMaxPerDay = $this->getCategoryMaxPoints($config, 'sales', 5);
+        $serviceMax = $serviceMaxPerDay * $workingDays;
+        $salesMax = $salesMaxPerDay * $workingDays;
 
         return [
-            'working_days' => $workingDays,
-            'daily_max_points' => $dailyMaxPoints,
-            'perfect_day_bonus' => $perfectDayBonus,
-            'daily_max_with_perfect' => $dailyMaxWithPerfect,
-            'monthly_service_max_per_day' => $monthlyServiceMaxPerDay,
-            'monthly_sales_max_per_day' => $monthlySalesMaxPerDay,
-            'monthly_service_max' => $monthlyServiceMax,
-            'monthly_sales_max' => $monthlySalesMax,
-            'theoretical_max' => ($dailyMaxWithPerfect * $workingDays) + $monthlyServiceMax + $monthlySalesMax,
+            'working_days'                => $workingDays,
+            'daily_max_points'            => $dailyMaxPoints,
+            'perfect_day_bonus'           => $perfectDayBonus,
+            'daily_max_with_perfect'      => $dailyMaxWithPerfect,
+            'monthly_service_max_per_day' => $serviceMaxPerDay,
+            'monthly_sales_max_per_day'   => $salesMaxPerDay,
+            'monthly_service_max'         => $serviceMax,
+            'monthly_sales_max'           => $salesMax,
+            'theoretical_max'             => ($dailyMaxWithPerfect * $workingDays) + $serviceMax + $salesMax,
         ];
     }
 
-    /**
-     * Build canonical waiter-facing monthly progress data.
-     */
-    public function getWaiterMonthlyProgress(string $waiterId, string $month): array
+    // backward compat
+    public function getMonthlyPointsCapacity(?array $config = null): array
     {
+        return $this->getPeriodPointsCapacity($config, null);
+    }
+
+    /**
+     * Build canonical waiter-facing progress data for a date range.
+     *
+     * @param  string       $waiterId
+     * @param  string|null  $startDate  Format 'Y-m-d', default = 30 days ago
+     * @param  string|null  $endDate    Format 'Y-m-d', default = today
+     * @return array
+     */
+    public function getWaiterProgress(string $waiterId, ?string $startDate = null, ?string $endDate = null): array
+    {
+        $period = $this->resolvePeriod($startDate, $endDate);
+        $startDate = $period['start'];
+        $endDate = $period['end'];
+        $periodKey = $period['key'];
+
         $config = $this->getBonusConfig();
-        $capacity = $this->getMonthlyPointsCapacity($config);
-        $monthlyPoints = $this->getMonthlyDailyPoints($waiterId, $month);
-        $penalties = $this->getPenaltiesByMonth($month, $waiterId);
-        $salesTarget = $this->getSalesTarget($waiterId, $month);
-        $bonusSummary = $this->getMonthlyBonusSummary($waiterId, $month);
-        $leaderboard = $this->getLeaderboard($month);
-        $manualBonusTotal = $this->sumManualBonusForMonth($waiterId, $month);
+        $workingDays = $this->getPeriodWorkingDays($config);
+        $capacity = $this->getPeriodPointsCapacity($config, $workingDays);
+
+        $periodPoints = $this->getDailyPointsInRange($waiterId, $startDate, $endDate);
+        $penalties = $this->getPenaltiesByPeriod($startDate, $endDate, $waiterId);
+        $bonusSummary = $this->getBonusSummary($waiterId, $periodKey);
+        $leaderboard = $this->getLeaderboard($startDate, $endDate);
+        $manualBonusTotal = $this->sumManualBonusForPeriod($waiterId, $startDate, $endDate);
+
+        // Sales target: tetap pakai bulan kalender dari endDate untuk backward compat
+        $salesTargetMonth = substr($endDate, 0, 7);
+        $salesTarget = $this->getSalesTarget($waiterId, $salesTargetMonth);
 
         $totalEarned = 0;
         $penaltySignedTotal = 0;
@@ -156,7 +251,7 @@ class BonusService
         $daysScored = 0;
         $perfectDays = 0;
 
-        foreach ($monthlyPoints as $record) {
+        foreach ($periodPoints as $record) {
             $record = (array) $record;
             $totalEarned += (int) ($record['daily_total'] ?? 0);
             $daysScored++;
@@ -175,46 +270,55 @@ class BonusService
         $servicePoints = (int) ($bonusSummary['service_points'] ?? 0);
         $salesPoints = (int) ($bonusSummary['sales_points'] ?? 0);
 
-        // BUG FIX (#4): Include approved campaign points so waiter dashboard
-        // matches admin summary. Previously campaignPoints were only counted
-        // in calculateMonthlyBonus (admin) but not here (waiter view), causing
-        // a discrepancy: waiter sees lower total than what admin pays out.
         $campaignPoints = 0;
         $campaignBreakdown = ['total_approved' => 0, 'total_pending' => 0, 'total_rejected' => 0, 'approved_claims' => [], 'pending_claims' => [], 'all_claims' => []];
         try {
             $campaignService = app(\App\Services\SalesCampaignService::class);
-            $campaignPoints = (int) $campaignService->getUserCampaignPoints($waiterId, $month);
-            $campaignBreakdown = $campaignService->getUserCampaignBreakdown($waiterId, $month);
+            $campaignPoints = (int) $campaignService->getUserCampaignPointsByRange($waiterId, $startDate, $endDate);
+            $campaignBreakdown = $campaignService->getUserCampaignBreakdownByRange($waiterId, $startDate, $endDate);
         } catch (\Throwable $e) {
             // Fail open: if campaign service unavailable, treat as 0 points
         }
 
-        // Manual bonus (signed) ikut dihitung agar konsisten dengan calculateMonthlyBonus
-        // — supaya yang waiter lihat di dashboard match dengan summary bulan admin.
         $netPoints = max(0, $totalEarned + $servicePoints + $salesPoints + $penaltySignedTotal + $manualBonusTotal + $campaignPoints);
         $theoreticalMax = (int) $capacity['theoretical_max'];
         $percentage = $theoreticalMax > 0 ? round(($netPoints / $theoreticalMax) * 100, 1) : 0.0;
 
         return [
-            'config' => $config,
-            'monthly_points' => $monthlyPoints,
-            'penalties' => $penalties,
-            'sales_target' => $salesTarget,
-            'bonus_summary' => $bonusSummary,
-            'leaderboard' => $leaderboard,
-            'total_earned' => $totalEarned,
-            'total_penalties' => $totalPenalties,
-            'penalty_signed_total' => $penaltySignedTotal,
-            'service_points' => $servicePoints,
-            'sales_points' => $salesPoints,
-            'manual_bonus_total' => $manualBonusTotal,
-            'campaign_points' => $campaignPoints,
-            'campaign_breakdown' => $campaignBreakdown,
-            'net_points' => $netPoints,
-            'days_scored' => $daysScored,
-            'perfect_days' => $perfectDays,
-            'percentage' => $percentage,
+            'config'               => $config,
+            'monthly_points'        => $periodPoints,  // keep key name for view compat
+            'penalties'             => $penalties,
+            'sales_target'          => $salesTarget,
+            'bonus_summary'         => $bonusSummary,
+            'leaderboard'           => $leaderboard,
+            'total_earned'          => $totalEarned,
+            'total_penalties'        => $totalPenalties,
+            'penalty_signed_total'   => $penaltySignedTotal,
+            'service_points'         => $servicePoints,
+            'sales_points'           => $salesPoints,
+            'manual_bonus_total'     => $manualBonusTotal,
+            'campaign_points'        => $campaignPoints,
+            'campaign_breakdown'     => $campaignBreakdown,
+            'net_points'             => $netPoints,
+            'days_scored'            => $daysScored,
+            'perfect_days'           => $perfectDays,
+            'percentage'             => $percentage,
+            'period_start'           => $startDate,
+            'period_end'             => $endDate,
+            'period_key'             => $periodKey,
+            'period_label'           => $this->formatPeriodLabel($startDate, $endDate),
         ] + $capacity;
+    }
+
+    /**
+     * Backward compat: getWaiterMonthlyProgress accepts Y-m month string.
+     * Converts to date range and delegates to getWaiterProgress.
+     */
+    public function getWaiterMonthlyProgress(string $waiterId, string $month): array
+    {
+        $period = $this->monthToPeriod($month);
+
+        return $this->getWaiterProgress($waiterId, $period['start'], $period['end']);
     }
 
     /**
@@ -238,7 +342,7 @@ class BonusService
      * - attitude (max 5)
      * - rack_recheck (max 10) — manual from Finance review
      *
-     * Service and Sales are scored monthly (percentage) at finalization time.
+     * Service and Sales are scored per period (percentage) at finalization time.
      * Monthly categories (service, sales) are excluded from daily records.
      *
      * @param  string  $waiterId
@@ -339,15 +443,6 @@ class BonusService
 
     /**
      * Targeted merge of `rack_recheck` category into the existing daily record.
-     *
-     * Sengaja BUKAN lewat scoreDailyPoints — Finance recheck harus tetap menulis
-     * poin rak meskipun supervisor sudah pernah save manual (admin_override=true)
-     * di hari yang sama. Tanpa method ini, review Finance silently di-skip.
-     *
-     * Yang di-preserve: discipline/operational/attitude (manual maupun auto),
-     * admin_override flag, score_source, created_at.
-     * Yang di-overwrite: categories[rack_recheck], raw_total, perfect_day_bonus,
-     * daily_total, auto_details[rack_recheck_*], updated_at, scored_at, notes.
      */
     public function mergeRackRecheckPoints(
         string $waiterId,
@@ -373,8 +468,6 @@ class BonusService
         $existing = $this->getDailyPoints($waiterId, $date);
         $existingCategories = is_array($existing['categories'] ?? null) ? $existing['categories'] : [];
 
-        // Build the daily-scored category map: keep all existing daily values,
-        // override just rack_recheck.
         $merged = [];
         foreach ($categories as $key => $meta) {
             if (($meta['scoring_type'] ?? 'daily') === 'monthly') {
@@ -392,7 +485,6 @@ class BonusService
         $existingAutoDetails = is_array($existing['auto_details'] ?? null) ? $existing['auto_details'] : [];
         $mergedAutoDetails = $existingAutoDetails;
         foreach ($autoDetails as $k => $v) {
-            // Hanya merge field rack_recheck_* supaya tidak menimpa reason kategori lain.
             if (str_starts_with((string) $k, 'rack_recheck_')) {
                 $mergedAutoDetails[$k] = $v;
             }
@@ -409,7 +501,6 @@ class BonusService
             'notes'             => $notes !== '' ? $notes : (string) ($existing['notes'] ?? ''),
             'scored_at'         => $now,
             'updated_at'        => $now,
-            // Preserve provenance: kalau record ada, jangan ubah source/admin_override.
             'score_source'      => (string) ($existing['score_source'] ?? 'auto'),
             'admin_override'    => (bool) ($existing['admin_override'] ?? false),
             'auto_details'      => $mergedAutoDetails,
@@ -443,19 +534,15 @@ class BonusService
     }
 
     /**
-     * Get all daily points for a waiter in a given month.
+     * Get all daily points for a waiter in a date range.
      *
      * @param  string  $waiterId
-     * @param  string  $month  Format 'Y-m' e.g. '2025-07'
+     * @param  string  $startDate  Format 'Y-m-d'
+     * @param  string  $endDate    Format 'Y-m-d'
      * @return array  date => daily_record
      */
-    public function getMonthlyDailyPoints(string $waiterId, string $month): array
+    public function getDailyPointsInRange(string $waiterId, string $startDate, string $endDate): array
     {
-        // Use startAt/endAt on date keys to avoid reading all months
-        // Keys are formatted as 'YYYY-MM-DD', so we can range query
-        $startDate = $month . '-01';
-        $endDate = $month . '-31'; // Safe upper bound (Firebase string comparison)
-
         // Respect SOP launch date: skip records before effective_from.
         $effectiveFrom = $this->getEffectiveFromDate();
         if ($effectiveFrom !== null && $effectiveFrom > $startDate) {
@@ -486,6 +573,17 @@ class BonusService
     }
 
     /**
+     * Backward compat: get monthly daily points from Y-m string.
+     */
+    public function getMonthlyDailyPoints(string $waiterId, string $month): array
+    {
+        $startDate = $month . '-01';
+        $endDate = $month . '-31';
+
+        return $this->getDailyPointsInRange($waiterId, $startDate, $endDate);
+    }
+
+    /**
      * Resolve the effective SOP launch date.
      * Returns null when scoring is "always live" (no launch threshold).
      */
@@ -498,7 +596,6 @@ class BonusService
         }
 
         $value = trim($value);
-        // Validate strict YYYY-MM-DD shape; reject anything else as "no threshold".
         if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
             return null;
         }
@@ -525,29 +622,12 @@ class BonusService
 
     /**
      * Auto-calculate daily scores for a waiter based on PRE-FETCHED data.
-     *
-     * Daily auto-scored categories:
-     * - discipline (max 5): from attendance record
-     * - operational (max 10): from non-rack_check task completion ratio
-     * - attitude (max 5): from activity report submission
-     * - rack_recheck (max 10): from sum of Finance recheck_points on rack_check tasks
-     *
-     * Service and Sales are scored monthly (percentage) at finalization time.
-     *
-     * @param  string      $waiterId
-     * @param  string      $date        Format 'Y-m-d'
-     * @param  array|null  $attendance  Pre-fetched attendance record (null = no record)
-     * @param  array       $waiterTasks Pre-fetched tasks for this waiter on this date
-     * @param  array       $waiterReports Pre-fetched activity reports for this waiter on this date
-     * @return array
      */
     public function autoScoreDailyPoints(string $waiterId, string $date, ?array $attendance = null, array $waiterTasks = [], array $waiterReports = []): array
     {
         $config = $this->getBonusConfig();
 
-        // -----------------------------------------------------------------
-        //  DISCIPLINE (max 5) — from attendance
-        // -----------------------------------------------------------------
+        // DISCIPLINE (max 5)
         $disciplineScore = 0;
         $disciplineReason = 'Tidak ada data absensi';
 
@@ -568,10 +648,7 @@ class BonusService
             }
         }
 
-        // -----------------------------------------------------------------
-        //  OPERATIONAL (max 10) — from non-rack_check task completion
-        //  rack_check tasks are scored separately via Finance recheck.
-        // -----------------------------------------------------------------
+        // OPERATIONAL (max 10)
         $operationalMax = (int) ($config['point_categories']['operational']['max_daily_points'] ?? 10);
         $nonRackTasks = array_values(array_filter($waiterTasks, function ($task) {
             return ($task['task_type'] ?? 'general') !== 'rack_check';
@@ -586,14 +663,11 @@ class BonusService
             $operationalScore = (int) round(($completedTasks / $totalTasks) * $operationalMax);
             $operationalReason = $completedTasks . '/' . $totalTasks . ' tugas umum selesai';
         } else {
-            // Tidak ada task umum dijadwalkan = waiter tidak bisa kontrol; default full poin agar fair.
             $operationalScore = $operationalMax;
             $operationalReason = 'Tidak ada tugas umum dijadwalkan (default poin penuh)';
         }
 
-        // -----------------------------------------------------------------
-        //  ATTITUDE (max 5) — from activity report
-        // -----------------------------------------------------------------
+        // ATTITUDE (max 5)
         $attitudeScore = 0;
         $attitudeReason = 'Belum submit laporan';
 
@@ -602,9 +676,7 @@ class BonusService
             $attitudeReason = 'Laporan kegiatan disubmit';
         }
 
-        // -----------------------------------------------------------------
-        //  RACK_RECHECK (max 10) — sum of Finance recheck_points on rack_check tasks
-        // -----------------------------------------------------------------
+        // RACK_RECHECK (max 10)
         $rackRecheckMax = (int) ($config['point_categories']['rack_recheck']['max_daily_points'] ?? 10);
         $rackTasks = array_values(array_filter($waiterTasks, function ($task) {
             return ($task['task_type'] ?? 'general') === 'rack_check';
@@ -617,8 +689,6 @@ class BonusService
                     return false;
                 }
 
-                // Firebase REST kadang me-return boolean sebagai string ("false"/"true").
-                // empty("false") === false → menganggap masih pending. Pakai parser eksplisit.
                 $pending = $task['recheck_pending'] ?? null;
                 if ($pending === null || $pending === false || $pending === 0 || $pending === '0' || $pending === '') {
                     return true;
@@ -630,13 +700,10 @@ class BonusService
             $totalRackTasks = count($rackTasks);
             $reviewedCount = count($reviewedRackTasks);
             if ($reviewedCount > 0) {
-                // Average poin per rak yang sudah direview, di-scale ke max 10
                 $sumPoints = 0;
                 foreach ($reviewedRackTasks as $rt) {
                     $sumPoints += max(0, min(10, (int) ($rt['recheck_points'] ?? 0)));
                 }
-                // Average yang sudah direview, lalu pro-rate dengan total rak hari itu
-                // Supaya kalau Finance baru review 2 dari 5 rak, waiter dapat sebagian.
                 $avgPoints = $sumPoints / $reviewedCount;
                 $rackRecheckScore = (int) round($avgPoints * ($reviewedCount / $totalRackTasks));
                 $rackRecheckScore = max(0, min($rackRecheckMax, $rackRecheckScore));
@@ -666,9 +733,6 @@ class BonusService
 
     /**
      * Apply a penalty to a waiter.
-     *
-     * @param  array  $data  Keys: waiter_id, waiter_name, penalty_type, date, reason, evidence_photo_url, related_task_id
-     * @return array
      */
     public function applyPenalty(array $data): array
     {
@@ -688,10 +752,6 @@ class BonusService
         $waiterId = (string) ($data['waiter_id'] ?? '');
         $relatedTaskId = (string) ($data['related_task_id'] ?? '');
 
-        // BUG FIX (#1): For mandatory_task_missed, dedupe by taskId only
-        // (without date) so a task overdue across multiple days doesn't get
-        // multiple penalties. The penalty is "missing this task" (one event),
-        // not "missing today" (recurring event).
         if ($penaltyType === 'mandatory_task_missed' && $relatedTaskId !== '') {
             $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $relatedTaskId]));
         } else {
@@ -712,11 +772,6 @@ class BonusService
         $claimed = false;
         $indexRecord = null;
 
-        // BUG FIX (#3): Pre-generate Firebase push key (client-side, no network)
-        // so we can write index + record atomically in single multi-path update.
-        // Previously, transaction wrote index with penalty_id=null, then later
-        // pushed record + updated index. If crash happened between, index
-        // permanently locked with null ID, blocking all future applies.
         $penaltyKey = $this->database->getReference('waiter_penalties')->push()->getKey();
 
         try {
@@ -745,7 +800,6 @@ class BonusService
                 $indexRecord = $newRecord;
             });
         } catch (TransactionFailed $e) {
-            // Lost the race — re-read so the deduplication branch below can use it.
             $indexRecord = $indexRef->getValue();
         }
 
@@ -772,13 +826,8 @@ class BonusService
             'created_at'         => time(),
         ];
 
-        // BUG FIX (#3): Write penalty record at pre-generated key.
-        // Index already has penalty_id pointing here (set in transaction above).
         $this->database->getReference('waiter_penalties/' . $penaltyKey)->set($record);
         $penaltyId = $penaltyKey;
-
-        // BUG FIX (#3): Index already has correct penalty_id from transaction.
-        // No second update needed — eliminates the orphan window.
 
         return [
             'success'         => true,
@@ -788,18 +837,20 @@ class BonusService
     }
 
     /**
-     * Get penalties filtered by month and optionally by waiter.
+     * Get penalties filtered by date range and optionally by waiter.
      *
-     * @param  string       $month     Format 'Y-m'
+     * @param  string       $startDate  Format 'Y-m-d'
+     * @param  string       $endDate    Format 'Y-m-d'
      * @param  string|null  $waiterId
      * @return array
      */
-    public function getPenaltiesByMonth(string $month, ?string $waiterId = null): array
+    public function getPenaltiesByPeriod(string $startDate, string $endDate, ?string $waiterId = null): array
     {
-        // Use Firebase query on 'month' index instead of reading entire node
+        // Query by date range using startAt/endAt on the 'date' child key
         $reference = $this->database->getReference('waiter_penalties')
-            ->orderByChild('month')
-            ->equalTo($month);
+            ->orderByChild('date')
+            ->startAt($startDate)
+            ->endAt($endDate);
         $snapshot = $reference->getSnapshot();
 
         if (! $snapshot->exists()) {
@@ -816,7 +867,6 @@ class BonusService
                 continue;
             }
 
-            // Respect SOP launch date: skip penalties created before effective_from.
             if ($effectiveFrom !== null) {
                 $penaltyDate = (string) ($penalty['date'] ?? '');
                 if ($penaltyDate !== '' && $penaltyDate < $effectiveFrom) {
@@ -835,15 +885,15 @@ class BonusService
     }
 
     /**
+     * Backward compat: get penalties by Y-m month.
+     */
+    public function getPenaltiesByMonth(string $month, ?string $waiterId = null): array
+    {
+        return $this->getPenaltiesByPeriod($month . '-01', $month . '-31', $waiterId);
+    }
+
+    /**
      * Delete a penalty record AND its dedupe index entry.
-     *
-     * BUG FIX (#2): Previously only deleted the penalty record but left
-     * waiter_penalties_index/{dedupKey} orphan. This caused future
-     * applyPenalty() calls to return "deduplicated" with empty penalty_id
-     * because the stale index still claimed the slot, blocking re-creation.
-     *
-     * Now we load the penalty first, compute dedupKey, and remove BOTH
-     * the index entry and the penalty record atomically via multi-path update.
      */
     public function deletePenalty(string $penaltyId): void
     {
@@ -851,7 +901,6 @@ class BonusService
         $penalty = $penaltyRef->getValue();
 
         if (! is_array($penalty)) {
-            // Record sudah tidak ada — nothing to do
             return;
         }
 
@@ -863,7 +912,6 @@ class BonusService
         if ($penaltyType !== '' && $waiterId !== '' && $date !== '') {
             $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $date, $relatedTaskId]));
 
-            // Atomic delete via multi-path update
             $this->database->getReference()->update([
                 'waiter_penalties/' . $penaltyId => null,
                 'waiter_penalties_index/' . $dedupKey => null,
@@ -872,35 +920,15 @@ class BonusService
             return;
         }
 
-        // Fallback: malformed penalty record — just delete the record
         $penaltyRef->remove();
     }
 
     // ========================================================================
-    // MANUAL BONUS POINTS (supervisor adjustment, additive ke daily/monthly)
+    // MANUAL BONUS POINTS (supervisor adjustment, additive ke daily/period)
     // ========================================================================
-    //
-    // Schema Firebase: waiter_manual_bonuses/{bonusId} = {
-    //   waiter_id: string,
-    //   waiter_name: string,
-    //   month: 'YYYY-MM',
-    //   date: 'YYYY-MM-DD',
-    //   points: int (boleh + atau -),
-    //   reason: string,
-    //   category: 'manual_bonus' | 'manual_deduction',
-    //   created_by: string (admin email/id),
-    //   created_at: timestamp,
-    // }
-    //
-    // Bedanya dengan penalty: penalty terikat dedup key (per task), manual bonus
-    // adalah adjustment bebas oleh supervisor. Tidak dedup, bisa ada banyak per
-    // hari per karyawan (akumulatif).
 
     /**
      * Apply 1 manual bonus untuk 1 karyawan.
-     *
-     * @param  array{waiter_id:string, waiter_name?:string, points:int, reason:string, date?:string, created_by?:string}  $data
-     * @return array{success:bool, bonus_id?:string, message?:string, points?:int}
      */
     public function applyManualBonus(array $data): array
     {
@@ -933,32 +961,29 @@ class BonusService
         $ref = $this->database->getReference('waiter_manual_bonuses')->push();
         $bonusId = $ref->getKey();
         $record = [
-            'bonus_id' => $bonusId,
-            'waiter_id' => $waiterId,
+            'bonus_id'    => $bonusId,
+            'waiter_id'   => $waiterId,
             'waiter_name' => $waiterName,
-            'month' => $month,
-            'date' => $date,
-            'points' => $points,
-            'reason' => $reason,
-            'category' => $points >= 0 ? 'manual_bonus' : 'manual_deduction',
-            'created_by' => $createdBy,
-            'created_at' => time(),
+            'month'       => $month,
+            'date'        => $date,
+            'points'      => $points,
+            'reason'      => $reason,
+            'category'    => $points >= 0 ? 'manual_bonus' : 'manual_deduction',
+            'created_by'  => $createdBy,
+            'created_at'  => time(),
         ];
         $ref->set($record);
 
         return [
-            'success' => true,
+            'success'  => true,
             'bonus_id' => $bonusId,
-            'points' => $points,
-            'message' => 'Manual bonus tersimpan.',
+            'points'   => $points,
+            'message'  => 'Manual bonus tersimpan.',
         ];
     }
 
     /**
      * Apply manual bonus ke banyak karyawan sekaligus.
-     *
-     * @param  array<int, string>  $waiterIds
-     * @return array{success:bool, applied:int, failed:int, results:array<int, array>}
      */
     public function applyManualBonusBulk(array $waiterIds, int $points, string $reason, string $date, string $createdBy = 'supervisor'): array
     {
@@ -966,7 +991,6 @@ class BonusService
         $failed = 0;
         $results = [];
 
-        // Pre-fetch waiter names supaya hemat read.
         $allWaiters = $this->firebase->getAllowedEmails();
         $waiterMap = [];
         foreach ($allWaiters as $w) {
@@ -982,12 +1006,12 @@ class BonusService
                 continue;
             }
             $r = $this->applyManualBonus([
-                'waiter_id' => $wid,
+                'waiter_id'   => $wid,
                 'waiter_name' => $waiterMap[$wid] ?? '',
-                'points' => $points,
-                'reason' => $reason,
-                'date' => $date,
-                'created_by' => $createdBy,
+                'points'      => $points,
+                'reason'      => $reason,
+                'date'        => $date,
+                'created_by'  => $createdBy,
             ]);
             if ($r['success']) {
                 $applied++;
@@ -995,31 +1019,29 @@ class BonusService
                 $failed++;
             }
             $results[] = [
-                'waiter_id' => $wid,
+                'waiter_id'   => $wid,
                 'waiter_name' => $waiterMap[$wid] ?? '',
-                'success' => $r['success'],
-                'message' => $r['message'] ?? '',
-                'bonus_id' => $r['bonus_id'] ?? null,
+                'success'     => $r['success'],
+                'message'     => $r['message'] ?? '',
+                'bonus_id'    => $r['bonus_id'] ?? null,
             ];
         }
 
         return [
             'success' => $applied > 0,
             'applied' => $applied,
-            'failed' => $failed,
+            'failed'  => $failed,
             'results' => $results,
         ];
     }
 
     /**
-     * Get manual bonuses untuk satu bulan.
+     * Get manual bonuses filtered by date range.
+     * Read full node + filter PHP-side (low volume).
      *
-     * Catatan: TIDAK pakai orderByChild('month') untuk hindari Firebase index requirement.
-     * Read full node + filter PHP-side. Aman karena volume rendah (manual entry, ratusan per bulan max).
-     *
-     * @return array<int, array>  list of bonus records, sorted by date desc
+     * @return array<int, array>
      */
-    public function getManualBonusesByMonth(string $month, ?string $waiterId = null): array
+    public function getManualBonusesByPeriod(string $startDate, string $endDate, ?string $waiterId = null): array
     {
         $snapshot = $this->database->getReference('waiter_manual_bonuses')->getSnapshot();
 
@@ -1030,7 +1052,8 @@ class BonusService
         $items = [];
         foreach ((array) $snapshot->getValue() as $id => $row) {
             $row = (array) $row;
-            if (($row['month'] ?? '') !== $month) {
+            $rowDate = (string) ($row['date'] ?? '');
+            if ($rowDate < $startDate || $rowDate > $endDate) {
                 continue;
             }
             if ($waiterId !== null && ($row['waiter_id'] ?? '') !== $waiterId) {
@@ -1040,7 +1063,6 @@ class BonusService
             $items[] = $row;
         }
 
-        // Sort by date desc, fallback ke created_at
         usort($items, function ($a, $b) {
             $dateCmp = strcmp((string) ($b['date'] ?? ''), (string) ($a['date'] ?? ''));
             if ($dateCmp !== 0) {
@@ -1054,17 +1076,33 @@ class BonusService
     }
 
     /**
-     * Sum total manual bonus poin untuk waiter di bulan tertentu.
+     * Backward compat: get manual bonuses by Y-m month.
      */
-    public function sumManualBonusForMonth(string $waiterId, string $month): int
+    public function getManualBonusesByMonth(string $month, ?string $waiterId = null): array
     {
-        $items = $this->getManualBonusesByMonth($month, $waiterId);
+        return $this->getManualBonusesByPeriod($month . '-01', $month . '-31', $waiterId);
+    }
+
+    /**
+     * Sum total manual bonus poin untuk waiter dalam date range.
+     */
+    public function sumManualBonusForPeriod(string $waiterId, string $startDate, string $endDate): int
+    {
+        $items = $this->getManualBonusesByPeriod($startDate, $endDate, $waiterId);
         $total = 0;
         foreach ($items as $b) {
             $total += (int) ($b['points'] ?? 0);
         }
 
         return $total;
+    }
+
+    /**
+     * Backward compat: sum manual bonus by Y-m month.
+     */
+    public function sumManualBonusForMonth(string $waiterId, string $month): int
+    {
+        return $this->sumManualBonusForPeriod($waiterId, $month . '-01', $month . '-31');
     }
 
     /**
@@ -1089,40 +1127,21 @@ class BonusService
     // =========================================================================
 
     /**
-     * Bangun timeline kronologis "kapan poin masuk" untuk satu waiter di satu
-     * bulan. Gabungan dari 3 sumber yang menambah poin (atau mengurangi):
+     * Bangun timeline kronologis "kapan poin masuk" untuk satu waiter dalam date
+     * range. Gabungan dari 3 sumber: rack_recheck, manual_bonus, penalty.
      *
-     *   - rack_recheck : task rack_check yang sudah direview Finance
-     *                    → tipe='rack_recheck', points = recheck_points,
-     *                      created_at = recheck_at
-     *   - manual_bonus : penambahan poin manual oleh supervisor
-     *                    → tipe='manual_bonus' / 'manual_deduction'
-     *   - penalty      : pengurangan poin oleh sistem/admin
-     *                    → tipe='penalty', points negatif
-     *
-     * Sort: terbaru di atas (created_at desc, fallback date desc).
-     *
-     * @return array<int, array{
-     *   type: string,
-     *   points: int,
-     *   label: string,
-     *   reason: string,
-     *   date: string,
-     *   created_at: int,
-     *   actor: string,
-     *   ref_id: string,
-     * }>
+     * @param  string  $waiterId
+     * @param  string  $startDate  Format 'Y-m-d'
+     * @param  string  $endDate    Format 'Y-m-d'
+     * @return array<int, array>
      */
-    public function getWaiterPointEvents(string $waiterId, string $month): array
+    public function getWaiterPointEvents(string $waiterId, string $startDate, string $endDate): array
     {
         $events = [];
 
         // --- 1. rack_recheck events ---
-        // Ambil semua waiter_tasks lalu filter PHP-side. Volume rendah (≤ ratusan
-        // task aktif per bulan), dan kita tidak punya index `recheck_at` di Firebase.
         $candidates = [];
 
-        // 1a. Query by assigned_waiter_id (single + role-based yang sudah resolve)
         try {
             $snapshot = $this->database->getReference('waiter_tasks')
                 ->orderByChild('assigned_waiter_id')
@@ -1135,9 +1154,6 @@ class BonusService
             report($e);
         }
 
-        // 1b. Query by completed_by_waiter_id (catch task role-based yang
-        // assigned_waiter_id-nya null). Kalau index tidak ada di Firebase rules,
-        // skip silently — query 1a sudah cover sebagian besar kasus.
         try {
             $snapshotCompl = $this->database->getReference('waiter_tasks')
                 ->orderByChild('completed_by_waiter_id')
@@ -1151,8 +1167,6 @@ class BonusService
                 }
             }
         } catch (\Throwable $e) {
-            // Index missing on Firebase = ok, lanjut tanpa data tambahan.
-            // Log untuk awareness saja.
             \Log::debug('point-events: completed_by_waiter_id index missing, skipping query 1b', [
                 'waiter_id' => $waiterId,
                 'error' => $e->getMessage(),
@@ -1174,8 +1188,8 @@ class BonusService
                     continue;
                 }
 
-                $taskMonth = (string) (substr((string) ($task['scheduled_for_date'] ?? ''), 0, 7));
-                if ($taskMonth !== $month) {
+                $taskDate = (string) (substr((string) ($task['scheduled_for_date'] ?? ''), 0, 10));
+                if ($taskDate < $startDate || $taskDate > $endDate) {
                     continue;
                 }
 
@@ -1198,7 +1212,7 @@ class BonusService
 
         // --- 2. manual_bonus events ---
         try {
-            $bonuses = $this->getManualBonusesByMonth($month, $waiterId);
+            $bonuses = $this->getManualBonusesByPeriod($startDate, $endDate, $waiterId);
             foreach ($bonuses as $b) {
                 $points = (int) ($b['points'] ?? 0);
                 $events[] = [
@@ -1218,7 +1232,7 @@ class BonusService
 
         // --- 3. penalty events ---
         try {
-            $penalties = $this->getPenaltiesByMonth($month, $waiterId);
+            $penalties = $this->getPenaltiesByPeriod($startDate, $endDate, $waiterId);
             foreach ($penalties as $p) {
                 $events[] = [
                     'type'       => 'penalty',
@@ -1235,7 +1249,6 @@ class BonusService
             report($e);
         }
 
-        // Sort terbaru di atas
         usort($events, function ($a, $b) {
             $cmp = ($b['created_at'] ?? 0) <=> ($a['created_at'] ?? 0);
             if ($cmp !== 0) {
@@ -1248,13 +1261,8 @@ class BonusService
         return $events;
     }
 
-
     /**
-     * Wipe ALL bonus-related historical data: daily points, penalties, monthly summaries,
-     * leaderboards, sales targets. Used when supervisor wants to mark a fresh SOP launch.
-     *
-     * Returns counts of removed entries per node, plus the totals removed.
-     * Bonus_config is preserved (only data is wiped, not the config).
+     * Wipe ALL bonus-related historical data.
      */
     public function resetBonusData(): array
     {
@@ -1290,27 +1298,12 @@ class BonusService
     }
 
     /**
-     * Auto-apply penalties based on PRE-FETCHED data for a given waiter and date.
-     *
-     * Automatically detects:
-     * 1. late_arrival — from attendance record (late_minutes > 0)
-     * 2. mandatory_task_missed — from tasks with status 'overdue' on that date
-     *
-     * Skips if penalty already exists for same waiter + type + date.
-     *
-     * @param  string      $waiterId
-     * @param  string      $waiterName
-     * @param  string      $date             Format 'Y-m-d'
-     * @param  array|null  $attendance       Pre-fetched attendance record
-     * @param  array       $waiterTasks      Pre-fetched tasks for this waiter on this date
-     * @param  array       $existingPenalties Pre-fetched penalties for this waiter this month
-     * @return array   List of penalties applied
+     * Auto-apply penalties based on PRE-FETCHED data.
      */
     public function autoApplyPenalties(string $waiterId, string $waiterName, string $date, ?array $attendance = null, array $waiterTasks = [], array $existingPenalties = []): array
     {
         $applied = [];
 
-        // Build existing keys to avoid duplicates
         $existingKeys = [];
         foreach ($existingPenalties as $p) {
             if (($p['date'] ?? '') === $date) {
@@ -1318,11 +1311,7 @@ class BonusService
             }
         }
 
-        // -----------------------------------------------------------------
-        //  1. LATE ARRIVAL — from attendance
-        //  BUG FIX (#9): Skip late_arrival if status is already 'absent'
-        //  to prevent double penalty (-5 late + -15 absent = -20 unfair)
-        // -----------------------------------------------------------------
+        // 1. LATE ARRIVAL
         $attendanceStatus = (string) ($attendance['status'] ?? '');
         if ($attendance && ((int) ($attendance['late_minutes'] ?? 0)) > 0 && $attendanceStatus !== 'absent') {
             $key = 'late_arrival_';
@@ -1342,9 +1331,7 @@ class BonusService
             }
         }
 
-        // -----------------------------------------------------------------
-        //  2. ABSENT / NO-SHOW — from explicit attendance status
-        // -----------------------------------------------------------------
+        // 2. ABSENT
         if ($attendanceStatus === 'absent') {
             $key = 'absent_';
             if (! in_array($key, $existingKeys, true)) {
@@ -1362,11 +1349,7 @@ class BonusService
             }
         }
 
-        // -----------------------------------------------------------------
-        //  3. MANDATORY TASK MISSED — from overdue tasks
-        //  BUG FIX (#10): Skip mandatory_task_missed if waiter status is
-        //  'sick' or 'day_off' — they have valid excuse for not completing.
-        // -----------------------------------------------------------------
+        // 3. MANDATORY TASK MISSED
         if (in_array($attendanceStatus, ['sick', 'day_off'], true)) {
             return $applied;
         }
@@ -1401,16 +1384,16 @@ class BonusService
     // =========================================================================
 
     /**
-     * Set a monthly sales target for a waiter.
+     * Set a period sales target for a waiter.
      *
      * @param  string  $waiterId
-     * @param  string  $month         Format 'Y-m'
-     * @param  int     $targetAmount  Target in Rupiah
-     * @param  string  $role          e.g. 'bird_specialist', 'fishing_specialist'
+     * @param  string  $periodKey   Format 'Y-m-d_Y-m-d' (or Y-m for backward compat)
+     * @param  int     $targetAmount
+     * @param  string  $role
      */
-    public function setSalesTarget(string $waiterId, string $month, int $targetAmount, string $role): void
+    public function setSalesTarget(string $waiterId, string $periodKey, int $targetAmount, string $role): void
     {
-        $path = 'waiter_sales_targets/' . $waiterId . '/' . $month;
+        $path = 'waiter_sales_targets/' . $waiterId . '/' . $periodKey;
 
         $existing = $this->database->getReference($path)->getSnapshot();
         $currentAchievement = 0;
@@ -1424,7 +1407,7 @@ class BonusService
 
         $this->database->getReference($path)->set([
             'waiter_id'           => $waiterId,
-            'month'               => $month,
+            'period_key'          => $periodKey,
             'target_amount'       => $targetAmount,
             'role'                => $role,
             'current_achievement' => $currentAchievement,
@@ -1435,13 +1418,24 @@ class BonusService
 
     /**
      * Record daily sales for a waiter and update cumulative achievement.
+     *
+     * Uses the current period key derived from the date.
      */
     public function recordDailySales(string $waiterId, string $date, int $amount, int $itemsSold = 0): void
     {
-        $month = substr($date, 0, 7);
-        $path = 'waiter_sales_targets/' . $waiterId . '/' . $month;
+        $period = $this->getCurrentPeriod();
+        $periodKey = $period['key'];
 
+        // Try current period first, fallback to month-based lookup
+        $path = 'waiter_sales_targets/' . $waiterId . '/' . $periodKey;
         $snapshot = $this->database->getReference($path)->getSnapshot();
+
+        // If no period-based target, try month-based for backward compat
+        if (! $snapshot->exists()) {
+            $month = substr($date, 0, 7);
+            $path = 'waiter_sales_targets/' . $waiterId . '/' . $month;
+            $snapshot = $this->database->getReference($path)->getSnapshot();
+        }
 
         if (! $snapshot->exists()) {
             return;
@@ -1458,7 +1452,6 @@ class BonusService
 
         $this->database->getReference($path . '/daily_sales/' . $date)->set($dailySalesRecord);
 
-        // Recalculate current achievement from all daily sales
         $allDailySalesSnapshot = $this->database->getReference($path . '/daily_sales')->getSnapshot();
         $totalAchievement = 0;
 
@@ -1475,19 +1468,19 @@ class BonusService
     }
 
     /**
-     * Get sales target and achievement for a waiter in a month.
+     * Get sales target and achievement for a waiter in a period/month.
      */
-    public function getSalesTarget(string $waiterId, string $month): ?array
+    public function getSalesTarget(string $waiterId, string $periodKey): ?array
     {
-        $snapshot = $this->database->getReference('waiter_sales_targets/' . $waiterId . '/' . $month)->getSnapshot();
+        $snapshot = $this->database->getReference('waiter_sales_targets/' . $waiterId . '/' . $periodKey)->getSnapshot();
 
         return $snapshot->exists() ? (array) $snapshot->getValue() : null;
     }
 
     /**
-     * Get all waiters' sales targets for a given month.
+     * Get all waiters' sales targets for a given period/month.
      */
-    public function getAllSalesTargets(string $month): array
+    public function getAllSalesTargets(string $periodKey): array
     {
         $snapshot = $this->database->getReference('waiter_sales_targets')->getSnapshot();
 
@@ -1497,74 +1490,62 @@ class BonusService
 
         $results = [];
 
-        foreach ((array) $snapshot->getValue() as $waiterId => $months) {
-            if (! is_array($months) || ! isset($months[$month])) {
+        foreach ((array) $snapshot->getValue() as $waiterId => $keys) {
+            if (! is_array($keys) || ! isset($keys[$periodKey])) {
                 continue;
             }
 
-            $results[$waiterId] = (array) $months[$month];
+            $results[$waiterId] = (array) $keys[$periodKey];
         }
 
         return $results;
     }
 
     // =========================================================================
-    //  MONTHLY BONUS CALCULATION
+    //  PERIOD BONUS CALCULATION
     // =========================================================================
 
     /**
-     * Calculate the full monthly bonus for a waiter.
+     * Calculate the full period bonus for a waiter.
      *
-     * Steps:
-     *  1. Load config (working_days, tiers)
-     *  2. Sum all daily points for the month (3 auto categories only)
-     *  3. Sum all penalties for the month
-     *  4. Read monthly service/sales percentages (from bonus summary node)
-     *  5. Calculate service_points = (service_pct/100) × 5 × working_days
-     *  6. Calculate sales_points = (sales_pct/100) × 5 × working_days
-     *  7. Net points = daily_earned + service_points + sales_points + penalties
-     *  8. Theoretical max = (daily_max_with_perfect × working_days) + (5 × working_days) + (5 × working_days)
-     *  9. Percentage = net_points / theoretical_max × 100
-     * 10. Resolve points tier → points_bonus
-     * 11. Get sales target → achievement percentage → sales_bonus
-     * 12. total_bonus = points_bonus + sales_bonus (capped at max_bonus_total)
-     *
-     * @param  int|null  $monthlyServicePercentage  0-100, null = read from existing summary
-     * @param  int|null  $monthlySalesPercentage    0-100, null = read from existing summary
-     * @return array  Full summary matching waiter_bonus_summary Firebase structure
+     * @param  string    $waiterId
+     * @param  string    $startDate                 Format 'Y-m-d'
+     * @param  string    $endDate                   Format 'Y-m-d'
+     * @param  int|null  $servicePercentage  0-100
+     * @param  int|null  $salesPercentage    0-100
+     * @return array
      */
-    public function calculateMonthlyBonus(string $waiterId, string $month, ?int $monthlyServicePercentage = null, ?int $monthlySalesPercentage = null): array
+    public function calculateBonus(string $waiterId, string $startDate, string $endDate, ?int $servicePercentage = null, ?int $salesPercentage = null): array
     {
+        $periodKey = $startDate . '_' . $endDate;
         $config = $this->getBonusConfig();
-        $capacity = $this->getMonthlyPointsCapacity($config);
-        $workingDays = (int) $capacity['working_days'];
+        $workingDays = $this->getPeriodWorkingDays($config);
+        $capacity = $this->getPeriodPointsCapacity($config, $workingDays);
         $maxBonusTotal = (int) ($config['total_bonus_pool'] ?? 500000);
 
-        $monthlyServiceMaxPerDay = (int) $capacity['monthly_service_max_per_day'];
-        $monthlySalesMaxPerDay = (int) $capacity['monthly_sales_max_per_day'];
+        $serviceMaxPerDay = (int) $capacity['monthly_service_max_per_day'];
+        $salesMaxPerDay = (int) $capacity['monthly_sales_max_per_day'];
         $theoreticalMax = (int) $capacity['theoretical_max'];
 
-        // --- Read existing monthly percentages from summary if not provided ---
-        if ($monthlyServicePercentage === null || $monthlySalesPercentage === null) {
-            $existingSummary = $this->getMonthlyBonusSummary($waiterId, $month);
-            if ($monthlyServicePercentage === null) {
-                $monthlyServicePercentage = (int) ($existingSummary['monthly_service_percentage'] ?? 0);
+        // Read existing percentages from summary if not provided
+        if ($servicePercentage === null || $salesPercentage === null) {
+            $existingSummary = $this->getBonusSummary($waiterId, $periodKey);
+            if ($servicePercentage === null) {
+                $servicePercentage = (int) ($existingSummary['period_service_percentage'] ?? $existingSummary['monthly_service_percentage'] ?? 0);
             }
-            if ($monthlySalesPercentage === null) {
-                $monthlySalesPercentage = (int) ($existingSummary['monthly_sales_percentage'] ?? 0);
+            if ($salesPercentage === null) {
+                $salesPercentage = (int) ($existingSummary['period_sales_percentage'] ?? $existingSummary['monthly_sales_percentage'] ?? 0);
             }
         }
 
-        // Clamp percentages to 0-100
-        $monthlyServicePercentage = max(0, min(100, $monthlyServicePercentage));
-        $monthlySalesPercentage = max(0, min(100, $monthlySalesPercentage));
+        $servicePercentage = max(0, min(100, $servicePercentage));
+        $salesPercentage = max(0, min(100, $salesPercentage));
 
-        // --- Calculate monthly category points ---
-        $servicePoints = (int) round(($monthlyServicePercentage / 100) * $monthlyServiceMaxPerDay * $workingDays);
-        $salesPoints = (int) round(($monthlySalesPercentage / 100) * $monthlySalesMaxPerDay * $workingDays);
+        $servicePoints = (int) round(($servicePercentage / 100) * $serviceMaxPerDay * $workingDays);
+        $salesPoints = (int) round(($salesPercentage / 100) * $salesMaxPerDay * $workingDays);
 
-        // --- Daily points ---
-        $dailyPoints = $this->getMonthlyDailyPoints($waiterId, $month);
+        // Daily points
+        $dailyPoints = $this->getDailyPointsInRange($waiterId, $startDate, $endDate);
         $totalEarned = 0;
         $daysScored = 0;
         $perfectDays = 0;
@@ -1578,8 +1559,8 @@ class BonusService
             }
         }
 
-        // --- Penalties ---
-        $penalties = $this->getPenaltiesByMonth($month, $waiterId);
+        // Penalties
+        $penalties = $this->getPenaltiesByPeriod($startDate, $endDate, $waiterId);
         $totalPenalties = 0;
         $penaltyCount = count($penalties);
 
@@ -1587,20 +1568,19 @@ class BonusService
             $totalPenalties += (int) ($penalty['points_deducted'] ?? 0);
         }
 
-        // --- Manual bonus (supervisor adjustment) ---
-        $manualBonuses = $this->getManualBonusesByMonth($month, $waiterId);
+        // Manual bonus
+        $manualBonuses = $this->getManualBonusesByPeriod($startDate, $endDate, $waiterId);
         $totalManualBonus = 0;
         $manualBonusCount = count($manualBonuses);
         foreach ($manualBonuses as $mb) {
             $totalManualBonus += (int) ($mb['points'] ?? 0);
         }
 
-        // --- Net points & percentage ---
-        // Net = daily auto points + monthly service/sales points + penalties (negative) + manual bonus + campaign bonus
+        // Campaign points
         $campaignPoints = 0;
         try {
             $campaignService = app(SalesCampaignService::class);
-            $campaignPoints = $campaignService->getUserCampaignPoints($waiterId, $month);
+            $campaignPoints = $campaignService->getUserCampaignPointsByRange($waiterId, $startDate, $endDate);
         } catch (\Throwable $e) {
             // SalesCampaignService not available — skip
         }
@@ -1611,12 +1591,15 @@ class BonusService
             ? round(($netPoints / $theoreticalMax) * 100, 2)
             : 0;
 
-        // --- Points tier ---
         $pointsTierResult = $this->resolvePointsTier($pointsPercentage, $config);
         $pointsBonus = (int) ($pointsTierResult['bonus_amount'] ?? 0);
 
-        // --- Sales target ---
-        $salesTarget = $this->getSalesTarget($waiterId, $month);
+        // Sales target — try period key first, fall back to month
+        $salesTarget = $this->getSalesTarget($waiterId, $periodKey);
+        if ($salesTarget === null) {
+            $month = substr($endDate, 0, 7);
+            $salesTarget = $this->getSalesTarget($waiterId, $month);
+        }
         $salesTargetAmount = 0;
         $salesAchievement = 0;
         $salesPercentage = 0.0;
@@ -1635,17 +1618,18 @@ class BonusService
             $salesBonus = (int) ($salesTierResult['bonus_amount'] ?? 0);
         }
 
-        // --- Total bonus ---
         $totalBonus = min($pointsBonus + $salesBonus, $maxBonusTotal);
 
-        // --- Waiter info ---
         $waiter = $this->firebase->getWaiterById($waiterId);
 
         return [
             'waiter_id'              => $waiterId,
             'waiter_name'            => (string) ($waiter['name'] ?? ''),
             'waiter_email'           => (string) ($waiter['email'] ?? ''),
-            'month'                  => $month,
+            'period_key'             => $periodKey,
+            'period_start'           => $startDate,
+            'period_end'             => $endDate,
+            'period_label'           => $this->formatPeriodLabel($startDate, $endDate),
 
             'working_days'           => $workingDays,
             'days_scored'            => $daysScored,
@@ -1659,9 +1643,8 @@ class BonusService
             'total_manual_bonus'     => $totalManualBonus,
             'campaign_points'        => $campaignPoints,
 
-            // Monthly scoring percentages
-            'monthly_service_percentage' => $monthlyServicePercentage,
-            'monthly_sales_percentage'   => $monthlySalesPercentage,
+            'period_service_percentage' => $servicePercentage,
+            'period_sales_percentage'   => $salesPercentage,
             'service_points'             => $servicePoints,
             'sales_points'               => $salesPoints,
 
@@ -1688,18 +1671,31 @@ class BonusService
     }
 
     /**
-     * Calculate and finalize the monthly bonus, saving to Firebase.
-     *
-     * @param  int|null  $monthlyServicePercentage  0-100
-     * @param  int|null  $monthlySalesPercentage    0-100
+     * Backward compat: calculate bonus by Y-m month.
      */
-    public function finalizeMonthlyBonus(string $waiterId, string $month, ?int $monthlyServicePercentage = null, ?int $monthlySalesPercentage = null): array
+    public function calculateMonthlyBonus(string $waiterId, string $month, ?int $monthlyServicePercentage = null, ?int $monthlySalesPercentage = null): array
     {
-        $path = 'waiter_bonus_summary/' . $waiterId . '/' . $month;
+        return $this->calculateBonus($waiterId, $month . '-01', $month . '-31', $monthlyServicePercentage, $monthlySalesPercentage);
+    }
+
+    /**
+     * Calculate and finalize the period bonus, saving to Firebase.
+     *
+     * @param  string    $waiterId
+     * @param  string    $startDate          Format 'Y-m-d'
+     * @param  string    $endDate            Format 'Y-m-d'
+     * @param  int|null  $servicePercentage  0-100
+     * @param  int|null  $salesPercentage    0-100
+     * @return array
+     */
+    public function finalizeBonus(string $waiterId, string $startDate, string $endDate, ?int $servicePercentage = null, ?int $salesPercentage = null): array
+    {
+        $periodKey = $startDate . '_' . $endDate;
+        $path = 'waiter_bonus_summary/' . $waiterId . '/' . $periodKey;
         $finalizedSummary = null;
         $alreadyFinalized = false;
 
-        $this->database->runTransaction(function ($transaction) use ($path, $waiterId, $month, $monthlyServicePercentage, $monthlySalesPercentage, &$finalizedSummary, &$alreadyFinalized) {
+        $this->database->runTransaction(function ($transaction) use ($path, $waiterId, $startDate, $endDate, $servicePercentage, $salesPercentage, &$finalizedSummary, &$alreadyFinalized) {
             $reference = $this->database->getReference($path);
             $snapshot = $transaction->snapshot($reference);
             $existing = $snapshot->exists() ? (array) $snapshot->getValue() : null;
@@ -1711,7 +1707,7 @@ class BonusService
                 return;
             }
 
-            $summary = $this->calculateMonthlyBonus($waiterId, $month, $monthlyServicePercentage, $monthlySalesPercentage);
+            $summary = $this->calculateBonus($waiterId, $startDate, $endDate, $servicePercentage, $salesPercentage);
             $summary['status'] = 'finalized';
             $summary['finalized_at'] = time();
             $transaction->set($reference, $summary);
@@ -1722,16 +1718,15 @@ class BonusService
             return array_merge($finalizedSummary ?? [], [
                 'success' => false,
                 'already_finalized' => true,
-                'message' => 'Bonus bulan ini sudah difinalisasi.',
+                'message' => 'Bonus periode ini sudah difinalisasi.',
             ]);
         }
 
-        // Auto-credit ke saldo payroll kalau karyawan eligible.
         $totalBonus = (int) ($finalizedSummary['total_bonus'] ?? 0);
         if ($totalBonus > 0) {
             try {
                 $payroll = app(\App\Services\PayrollService::class);
-                $payroll->creditMonthlyBonusIfEligible($waiterId, $month, $totalBonus);
+                $payroll->creditBonusIfEligible($waiterId, $periodKey, $totalBonus, $startDate, $endDate);
             } catch (\Throwable $e) {
                 report($e);
             }
@@ -1741,11 +1736,19 @@ class BonusService
     }
 
     /**
-     * Override the bonus amount for a waiter in a given month.
+     * Backward compat: finalize bonus by Y-m month.
      */
-    public function overrideBonus(string $waiterId, string $month, int $amount, string $reason): void
+    public function finalizeMonthlyBonus(string $waiterId, string $month, ?int $monthlyServicePercentage = null, ?int $monthlySalesPercentage = null): array
     {
-        $path = 'waiter_bonus_summary/' . $waiterId . '/' . $month;
+        return $this->finalizeBonus($waiterId, $month . '-01', $month . '-31', $monthlyServicePercentage, $monthlySalesPercentage);
+    }
+
+    /**
+     * Override the bonus amount for a waiter in a given period.
+     */
+    public function overrideBonus(string $waiterId, string $periodKey, int $amount, string $reason): void
+    {
+        $path = 'waiter_bonus_summary/' . $waiterId . '/' . $periodKey;
 
         $this->database->getReference($path)->update([
             'admin_override'  => true,
@@ -1757,19 +1760,27 @@ class BonusService
     }
 
     /**
-     * Get the stored monthly bonus summary for a waiter.
+     * Get the stored period bonus summary for a waiter.
      */
-    public function getMonthlyBonusSummary(string $waiterId, string $month): ?array
+    public function getBonusSummary(string $waiterId, string $periodKey): ?array
     {
-        $snapshot = $this->database->getReference('waiter_bonus_summary/' . $waiterId . '/' . $month)->getSnapshot();
+        $snapshot = $this->database->getReference('waiter_bonus_summary/' . $waiterId . '/' . $periodKey)->getSnapshot();
 
         return $snapshot->exists() ? (array) $snapshot->getValue() : null;
     }
 
     /**
-     * Get all waiters' bonus summaries for a given month.
+     * Backward compat: get summary by Y-m month.
      */
-    public function getAllMonthlyBonusSummaries(string $month): array
+    public function getMonthlyBonusSummary(string $waiterId, string $month): ?array
+    {
+        return $this->getBonusSummary($waiterId, $month . '-01_' . $month . '-31');
+    }
+
+    /**
+     * Get all waiters' bonus summaries for a given period key.
+     */
+    public function getAllBonusSummaries(string $periodKey): array
     {
         $snapshot = $this->database->getReference('waiter_bonus_summary')->getSnapshot();
 
@@ -1779,15 +1790,23 @@ class BonusService
 
         $results = [];
 
-        foreach ((array) $snapshot->getValue() as $waiterId => $months) {
-            if (! is_array($months) || ! isset($months[$month])) {
+        foreach ((array) $snapshot->getValue() as $waiterId => $keys) {
+            if (! is_array($keys) || ! isset($keys[$periodKey])) {
                 continue;
             }
 
-            $results[$waiterId] = (array) $months[$month];
+            $results[$waiterId] = (array) $keys[$periodKey];
         }
 
         return $results;
+    }
+
+    /**
+     * Backward compat: get all summaries by Y-m month.
+     */
+    public function getAllMonthlyBonusSummaries(string $month): array
+    {
+        return $this->getAllBonusSummaries($month . '-01_' . $month . '-31');
     }
 
     // =========================================================================
@@ -1795,10 +1814,15 @@ class BonusService
     // =========================================================================
 
     /**
-     * Generate and save a leaderboard for all active waiters in a month.
+     * Generate and save a leaderboard for all active waiters in a date range.
      */
-    public function generateLeaderboard(string $month): array
+    public function generateLeaderboard(?string $startDate = null, ?string $endDate = null): array
     {
+        $period = $this->resolvePeriod($startDate, $endDate);
+        $startDate = $period['start'];
+        $endDate = $period['end'];
+        $periodKey = $period['key'];
+
         $waiters = $this->firebase->getActiveWaiters();
         $entries = [];
 
@@ -1808,10 +1832,9 @@ class BonusService
                 continue;
             }
 
-            // Prefer finalized summary; fall back to live calculation
-            $summary = $this->getMonthlyBonusSummary($waiterId, $month);
+            $summary = $this->getBonusSummary($waiterId, $periodKey);
             if ($summary === null) {
-                $summary = $this->calculateMonthlyBonus($waiterId, $month);
+                $summary = $this->calculateBonus($waiterId, $startDate, $endDate);
             }
 
             $entries[] = [
@@ -1827,7 +1850,6 @@ class BonusService
             ];
         }
 
-        // Sort by total_points descending, then by perfect_days descending as tiebreaker
         usort($entries, function ($a, $b) {
             $cmp = $b['total_points'] <=> $a['total_points'];
             if ($cmp !== 0) {
@@ -1837,7 +1859,6 @@ class BonusService
             return $b['perfect_days'] <=> $a['perfect_days'];
         });
 
-        // Assign ranks
         $ranked = [];
         foreach ($entries as $index => $entry) {
             $entry['rank'] = $index + 1;
@@ -1845,13 +1866,16 @@ class BonusService
         }
 
         $leaderboard = [
-            'month'        => $month,
-            'generated_at' => time(),
+            'period_key'    => $periodKey,
+            'period_start'  => $startDate,
+            'period_end'    => $endDate,
+            'period_label'  => $this->formatPeriodLabel($startDate, $endDate),
+            'generated_at'  => time(),
             'total_waiters' => count($ranked),
-            'rankings'     => $ranked,
+            'rankings'      => $ranked,
         ];
 
-        $this->database->getReference('waiter_leaderboard/' . $month)->set($leaderboard);
+        $this->database->getReference('waiter_leaderboard/' . $periodKey)->set($leaderboard);
 
         return $leaderboard;
     }
@@ -1859,17 +1883,16 @@ class BonusService
     /**
      * Live leaderboard: hitung dari scratch setiap call.
      *
-     * Sebelumnya leaderboard di-snapshot sekali sehari (cron 06:00). Akibatnya
-     * manual_bonus / rack_recheck / penalty yang masuk siang/sore tidak terlihat
-     * sampai keesokan harinya. Sekarang dihitung live agar selalu match dengan
-     * angka yang waiter lihat di dashboard.
-     *
-     * Volume: ~8 waiter aktif × ~6 firebase reads = acceptable per page load.
-     * Snapshot di /waiter_leaderboard/{month} tetap dibuat oleh cron untuk
-     * audit history bulanan, tapi BUKAN dipakai untuk display.
+     * @param  string|null  $startDate  Format 'Y-m-d', default = 30 days ago
+     * @param  string|null  $endDate    Format 'Y-m-d', default = today
      */
-    public function getLeaderboard(string $month): array
+    public function getLeaderboard(?string $startDate = null, ?string $endDate = null): array
     {
+        $period = $this->resolvePeriod($startDate, $endDate);
+        $startDate = $period['start'];
+        $endDate = $period['end'];
+        $periodKey = $period['key'];
+
         $waiters = $this->firebase->getActiveWaiters();
         $rankings = [];
 
@@ -1879,10 +1902,9 @@ class BonusService
                 continue;
             }
 
-            // Prefer finalized summary; fall back to live calculation.
-            $summary = $this->getMonthlyBonusSummary($waiterId, $month);
+            $summary = $this->getBonusSummary($waiterId, $periodKey);
             if ($summary === null) {
-                $summary = $this->calculateMonthlyBonus($waiterId, $month);
+                $summary = $this->calculateBonus($waiterId, $startDate, $endDate);
             }
 
             $rankings[] = [
@@ -1898,7 +1920,6 @@ class BonusService
             ];
         }
 
-        // Sort by total_points desc, perfect_days desc tiebreaker.
         usort($rankings, function ($a, $b) {
             $cmp = $b['total_points'] <=> $a['total_points'];
             if ($cmp !== 0) {
@@ -1914,7 +1935,10 @@ class BonusService
         unset($entry);
 
         return [
-            'month'         => $month,
+            'period_key'    => $periodKey,
+            'period_start'  => $startDate,
+            'period_end'    => $endDate,
+            'period_label'  => $this->formatPeriodLabel($startDate, $endDate),
             'generated_at'  => time(),
             'total_waiters' => count($rankings),
             'rankings'      => $rankings,
@@ -1928,14 +1952,11 @@ class BonusService
 
     /**
      * Resolve the points bonus tier based on percentage of theoretical max.
-     *
-     * @return array  ['tier' => string, 'bonus_amount' => int]
      */
     public function resolvePointsTier(float $percentage, array $config): array
     {
         $tiers = $config['point_bonus_tiers'] ?? $this->getDefaultConfig()['point_bonus_tiers'];
 
-        // Tiers are checked from highest to lowest min_percentage
         $sorted = $tiers;
         uasort($sorted, function ($a, $b) {
             return ((int) ($b['min_percentage'] ?? 0)) <=> ((int) ($a['min_percentage'] ?? 0));
@@ -1950,7 +1971,6 @@ class BonusService
             }
         }
 
-        // Fallback: lowest tier
         return [
             'tier'         => 'tier_4',
             'bonus_amount' => 0,
@@ -1959,8 +1979,6 @@ class BonusService
 
     /**
      * Resolve the sales bonus tier based on achievement percentage.
-     *
-     * @return array  ['tier' => string, 'bonus_amount' => int]
      */
     public function resolveSalesTier(float $percentage, array $config): array
     {
@@ -1988,12 +2006,6 @@ class BonusService
 
     /**
      * Calculate perfect day bonus.
-     * Awards bonus points when ALL daily-scored categories have a value > 0.
-     * Monthly categories (service, sales) are excluded from perfect day check.
-     *
-     * Special case: rack_recheck is excluded from perfect day check if waiter
-     * had ZERO rack_check tasks that day (kategori tidak relevan untuk waiter
-     * tersebut, mis. role kasir/finance).
      */
     public function calculatePerfectDayBonus(array $categoryScores, array $config): int
     {
@@ -2001,11 +2013,9 @@ class BonusService
         $bonus = (int) ($config['perfect_day_bonus'] ?? 5);
 
         foreach ($categories as $key => $meta) {
-            // Skip monthly-scored categories
             if (($meta['scoring_type'] ?? 'daily') === 'monthly') {
                 continue;
             }
-            // Skip rack_recheck kalau tidak ada di scores (waiter tanpa task rack_check)
             if ($key === 'rack_recheck' && ! isset($categoryScores[$key])) {
                 continue;
             }

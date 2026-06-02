@@ -39,7 +39,7 @@
             <a href="?month={{ $prevMonth }}" class="btn btn-sm btn-light">&larr;</a>
             <input type="month" id="monthPicker" class="form-control" value="{{ $month }}">
             <a href="?month={{ $nextMonth }}" class="btn btn-sm btn-light">&rarr;</a>
-            <a href="?month={{ $currentMonth }}" class="btn btn-primary btn-sm ms-2">Bulan Ini</a>
+            <a href="?month={{ $currentMonth }}" class="btn btn-primary btn-sm ms-2">Periode Ini</a>
         </div>
     </div>
 
@@ -59,7 +59,7 @@
     </div>
 
     <div class="card mb-4">
-        <h3 class="section-title">Set Target Bulanan</h3>
+        <h3 class="section-title">Set Target Per Periode</h3>
 
         <div class="desktop-only">
             <div class="table-scroll">

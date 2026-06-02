@@ -10,7 +10,7 @@
             <p class="muted small mb-0">Supervisor bisa menambah / mengurangi point ke beberapa karyawan sekaligus dengan alasan kustom.</p>
         </div>
         <form method="GET" style="display:flex; gap:8px; align-items:center;">
-            <label class="small fw-bold" style="font-weight:600;">Bulan:</label>
+            <label class="small fw-bold" style="font-weight:600;">Periode:</label>
             <input type="month" name="month" value="{{ $month }}" onchange="this.form.submit()" style="padding:6px 8px; border:1px solid var(--color-border); border-radius:6px;">
         </form>
     </div>
@@ -58,7 +58,7 @@
                             </div>
                             @if($totalSoFar !== 0)
                                 <span style="font-size:11px; padding:2px 8px; border-radius:10px; background:{{ $totalSoFar > 0 ? '#dcfce7' : '#fef2f2' }}; color:{{ $totalSoFar > 0 ? '#15803d' : '#dc2626' }}; font-weight:600;">
-                                    {{ $totalSoFar > 0 ? '+' : '' }}{{ $totalSoFar }} pt bulan ini
+                                    {{ $totalSoFar > 0 ? '+' : '' }}{{ $totalSoFar }} pt periode ini
                                 </span>
                             @endif
                         </label>
@@ -75,12 +75,12 @@
         </form>
     </div>
 
-    {{-- ── RIWAYAT BONUS BULAN INI ── --}}
+    {{-- ── RIWAYAT BONUS PERIODE INI ── --}}
     <div class="card" style="background:#fff; border-radius:10px; box-shadow:var(--shadow-sm); padding:18px;">
-        <h3 style="margin:0 0 14px; font-size:15px;">📜 Riwayat Bulan {{ $month }} ({{ count($bonuses) }} entri)</h3>
+        <h3 style="margin:0 0 14px; font-size:15px;">📜 Riwayat Periode {{ $month }} ({{ count($bonuses) }} entri)</h3>
 
         @if(count($bonuses) === 0)
-            <p class="muted" style="text-align:center; padding:24px;">Belum ada bonus manual untuk bulan ini.</p>
+            <p class="muted" style="text-align:center; padding:24px;">Belum ada bonus manual untuk periode ini.</p>
         @else
             <div style="overflow-x:auto;">
                 <table style="width:100%; border-collapse:collapse; font-size:13px;">

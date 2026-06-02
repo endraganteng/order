@@ -530,7 +530,7 @@
             <div class="summary-hero">
                 <div class="summary-hero-icon">🏆</div>
                 <div class="summary-hero-content">
-                    <div class="summary-hero-label">Total Poin Bonus Penjualan Bulan {{ date('M Y', strtotime($month . '-01')) }}</div>
+                    <div class="summary-hero-label">Total Poin Bonus Penjualan Periode {{ $period['label'] ?? date('d/m/Y', strtotime('-29 days')) . ' - ' . date('d/m/Y') }}</div>
                     <div class="summary-hero-value">+{{ $breakdown['total_approved'] ?? 0 }} <span class="summary-hero-unit">poin</span></div>
                     @if(($breakdown['total_pending'] ?? 0) > 0)
                         <div class="summary-hero-pending">+{{ $breakdown['total_pending'] }} pending menunggu verifikasi</div>

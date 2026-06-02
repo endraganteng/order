@@ -510,7 +510,23 @@ class PayrollService
             ];
         }
 
-        return DB::transaction(function () use ($waiterId, $waiter, $amount, $cashAccountId, $account, $note, $paidBy) {
+        // Auto-reject pending withdrawals BEFORE opening transaction.
+        // Kalau waiter sudah mengajukan tarik gaji lalu supervisor bayar tunai,
+        // withdrawal harus ditutup otomatis supaya tidak double-deduct saat approve nanti.
+        $autoRejectedCount = DB::table('payroll_transactions')
+            ->where('waiter_id', $waiterId)
+            ->where('type', 'withdrawal')
+            ->where('status', 'pending')
+            ->update([
+                'status'         => 'rejected',
+                'reject_reason'  => 'Otomatis ditolak: gaji sudah dibayar tunai.',
+                'processed_at'   => now(),
+                'processed_by'   => $paidBy,
+                'approval_token' => null,
+                'updated_at'     => now(),
+            ]);
+
+        $result = DB::transaction(function () use ($waiterId, $waiter, $amount, $cashAccountId, $account, $note, $paidBy) {
             // Lock cash account row to prevent concurrent overdraft
             $locked = DB::table('cash_accounts')->where('id', $cashAccountId)->lockForUpdate()->first();
             if (! $locked || (int) $locked->balance < $amount) {
@@ -562,18 +578,29 @@ class PayrollService
                 'updated_at'          => now(),
             ]);
 
-            // 5. Trigger flag + notif ke karyawan
-            $this->triggerWaiterFlag($waiterId);
-            $this->notifyWaiterCashPayout($waiterId, $amount, $newBalance, $account->name);
-
             return [
-                'success'       => true,
-                'tx_id'         => $txId,
-                'balance_after' => $newBalance,
-                'cash_balance_after' => $newCashBalance,
-                'message'       => 'Pembayaran tunai berhasil: Rp ' . number_format($amount, 0, ',', '.'),
+                'success'             => true,
+                'tx_id'               => $txId,
+                'balance_after'       => $newBalance,
+                'cash_balance_after'  => $newCashBalance,
+                'message'             => 'Pembayaran tunai berhasil: Rp ' . number_format($amount, 0, ',', '.'),
             ];
         });
+
+        // Pindahkan notif WA + Firebase flag keluar dari transaction (jangan blocking)
+        $this->triggerWaiterFlag($waiterId);
+        $this->notifyWaiterCashPayout($waiterId, $amount, $result['balance_after'], $account->name);
+
+        // Notif WA ke waiter yang withdrawal-nya kena auto-reject
+        if ($autoRejectedCount > 0) {
+            try {
+                $this->notifyWaiterWithdrawalAutoRejected($waiterId);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return array_merge($result, ['pending_rejected' => $autoRejectedCount]);
     }
 
     protected function notifyWaiterCashPayout(string $waiterId, int $amount, int $balanceAfter, string $accountName): void
@@ -587,6 +614,27 @@ class PayrollService
         $msg .= "Rp " . number_format($amount, 0, ',', '.') . "\n";
         $msg .= "Sumber: " . $accountName . "\n\n";
         $msg .= "Saldo gaji setelah bayar: Rp " . number_format($balanceAfter, 0, ',', '.');
+
+        try {
+            $this->fonnte?->sendMessage($phone, $msg);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Notifikasi ke waiter: pengajuan tarik gaji otomatis ditolak karena sudah dibayar tunai.
+     */
+    protected function notifyWaiterWithdrawalAutoRejected(string $waiterId): void
+    {
+        $waiter = $this->firebase->getWaiterById($waiterId);
+        $phone = trim((string) ($waiter['phone'] ?? ''));
+        if ($phone === '') return;
+
+        $msg = "ℹ️ *Penarikan Gaji Otomatis Ditolak*\n\n";
+        $msg .= "Permintaan tarik gaji Anda otomatis ditolak karena supervisor sudah melakukan pembayaran tunai.\n\n";
+        $publicUrl = $this->getPublicBaseUrl();
+        $msg .= $publicUrl !== '' ? "Cek portal Gaji Saya:\n" . $publicUrl . "/waiter/payroll" : "Cek portal Gaji Saya.";
 
         try {
             $this->fonnte?->sendMessage($phone, $msg);
@@ -681,6 +729,21 @@ class PayrollService
 
     public function creditMonthlyBonusIfEligible(string $waiterId, string $month, int $totalBonusAmount): array
     {
+        return $this->creditBonusIfEligible($waiterId, $month, $totalBonusAmount, null, null);
+    }
+
+    /**
+     * Credit finalized bonus to payroll balance (period-based).
+     *
+     * @param  string       $waiterId
+     * @param  string       $periodKey   Format 'Y-m-d_Y-m-d'
+     * @param  int          $totalBonusAmount
+     * @param  string|null  $startDate   For label
+     * @param  string|null  $endDate     For label
+     * @return array
+     */
+    public function creditBonusIfEligible(string $waiterId, string $periodKey, int $totalBonusAmount, ?string $startDate = null, ?string $endDate = null): array
+    {
         if ($totalBonusAmount <= 0) {
             return ['success' => false, 'reason' => 'amount<=0'];
         }
@@ -688,10 +751,17 @@ class PayrollService
         if (! $waiter || empty($waiter['payroll_enabled'])) {
             return ['success' => false, 'reason' => 'not_enabled'];
         }
-        $idempKey = $waiterId . '_bonus_' . $month;
-        $result = $this->creditIfAbsent($waiterId, $totalBonusAmount, 'bonus_credit', $month, 'Bonus bulanan ' . $month, $idempKey);
+
+        $label = $periodKey;
+        if ($startDate !== null && $endDate !== null) {
+            $label = date('d/m', strtotime($startDate)) . ' - ' . date('d/m/Y', strtotime($endDate));
+        }
+        $description = 'Bonus periode ' . $label;
+
+        $idempKey = $waiterId . '_bonus_' . $periodKey;
+        $result = $this->creditIfAbsent($waiterId, $totalBonusAmount, 'bonus_credit', $periodKey, $description, $idempKey);
         if (! empty($result['created'])) {
-            $this->notifyWaiterBonusCredited($waiterId, $totalBonusAmount, $month, $result['balance_after']);
+            $this->notifyWaiterBonusCredited($waiterId, $totalBonusAmount, $label, $result['balance_after']);
         }
         return ['success' => true] + $result;
     }
@@ -787,13 +857,13 @@ class PayrollService
         }
     }
 
-    protected function notifyWaiterBonusCredited(string $waiterId, int $amount, string $month, int $balanceAfter): void
+    protected function notifyWaiterBonusCredited(string $waiterId, int $amount, string $label, int $balanceAfter): void
     {
         $waiter = $this->firebase->getWaiterById($waiterId);
         $phone = trim((string) ($waiter['phone'] ?? ''));
         if ($phone === '') return;
 
-        $msg = "Bonus Bulan {$month} Masuk\n\n";
+        $msg = "Bonus Periode {$label} Masuk\n\n";
         $msg .= "Nominal: Rp " . number_format($amount, 0, ',', '.') . "\n";
         $msg .= "Saldo Anda: Rp " . number_format($balanceAfter, 0, ',', '.') . "\n\n";
         $publicUrl = $this->getPublicBaseUrl();

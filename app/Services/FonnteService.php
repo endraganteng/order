@@ -450,6 +450,45 @@ class FonnteService
         }
     }
 
+    public function notifyRackCheckOverflow(array $overflow): bool
+    {
+        $rackName = (string) ($overflow['rack_name'] ?? 'Rak');
+        $date = (string) ($overflow['target_date'] ?? date('Y-m-d'));
+        $reason = (string) ($overflow['reason'] ?? 'overflow');
+        $rejected = is_array($overflow['rejected_candidates'] ?? null) ? $overflow['rejected_candidates'] : [];
+
+        $message = "🚨 *OVERFLOW CEK RAK*\n\n";
+        $message .= "Rak: {$rackName}\n";
+        $message .= "Tanggal: {$date}\n";
+        $message .= "Alasan: {$reason}\n\n";
+
+        if (! empty($rejected)) {
+            $message .= "Kandidat tertolak:\n";
+            foreach (array_slice($rejected, 0, 5) as $candidate) {
+                $name = (string) ($candidate['name'] ?? $candidate['waiter_id'] ?? '-');
+                $candidateReason = (string) ($candidate['reason'] ?? '-');
+                $message .= "• {$name}: {$candidateReason}\n";
+            }
+        }
+
+        $message .= "\nAksi supervisor: assign manual, pindah jadwal, atau abaikan dengan alasan.";
+
+        $sent = false;
+        $reportPhone = $this->getReportPhone();
+        if ($reportPhone !== null && $this->isEnabled()) {
+            $result = $this->sendMessage($reportPhone, $message);
+            $sent = is_array($result) && (bool) ($result['status'] ?? false);
+        }
+
+        try {
+            $result = app(TelegramService::class)->sendToHrd($message);
+            return $sent || (bool) ($result['success'] ?? false);
+        } catch (\Throwable $e) {
+            report($e);
+            return $sent;
+        }
+    }
+
     protected function resolveClockInTimestamp(?array $attendance, string $date): ?int
     {
         if (! $attendance) {

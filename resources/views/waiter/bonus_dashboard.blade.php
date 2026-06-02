@@ -649,7 +649,7 @@
         </div>
         <div class="header-meta">
             <span class="header-name">{{ $waiterName }}</span>
-            <input type="month" class="month-picker" id="monthPicker" value="{{ $month }}">
+            <input type="month" class="month-picker" id="monthPicker" value="{{ $period['start'] ? substr($period['start'], 0, 7) : date('Y-m') }}">
         </div>
     </div>
 
@@ -661,7 +661,7 @@
 
         @if(!empty($bonusSummary) && ($bonusSummary['status'] ?? '') === 'finalized')
         <div class="finalized-banner">
-            <div class="finalized-label">Bonus Final Bulan Ini</div>
+            <div class="finalized-label">Bonus Final Periode Ini</div>
             <div class="finalized-amount">Rp {{ number_format($bonusSummary['bonus_amount'] ?? 0, 0, ',', '.') }}</div>
             <div class="finalized-status">✓ Sudah Difinalisasi</div>
         </div>
