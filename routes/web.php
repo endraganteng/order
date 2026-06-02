@@ -143,6 +143,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('templates', [RackCheckTemplateController::class, 'index'])->name('templates.index');
             Route::get('templates/create', [RackCheckTemplateController::class, 'create'])->name('templates.create');
             Route::post('templates', [RackCheckTemplateController::class, 'store'])->name('templates.store');
+            Route::get('templates/{id}/edit', [RackCheckTemplateController::class, 'edit'])->name('templates.edit');
+            Route::put('templates/{id}', [RackCheckTemplateController::class, 'update'])->name('templates.update');
             Route::get('templates/{id}/preview', [RackCheckTemplateController::class, 'preview'])->name('templates.preview');
             Route::post('templates/{id}/generate', [RackCheckTemplateController::class, 'generateNow'])->name('templates.generate');
             Route::post('templates/{id}/toggle', [RackCheckTemplateController::class, 'toggle'])->name('templates.toggle');

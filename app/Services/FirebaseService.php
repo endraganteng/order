@@ -3697,8 +3697,47 @@ class FirebaseService
         if (array_key_exists('rolling_anchor_date', $data)) {
             $updates['rolling_anchor_date'] = (string) $data['rolling_anchor_date'];
         }
-        if (array_key_exists('target_shift_id', $data)) {
+                if (array_key_exists('target_shift_id', $data)) {
             $updates['target_shift_id'] = (string) $data['target_shift_id'];
+        }
+
+        // ── Rack Check Wizard fields ──────────────────────────────────────
+        // These are optional — only set when editing rack_check templates
+        // from the new wizard (RackCheckTemplateController).
+        $rackCheckFields = [
+            'requires_barcode_scan',
+            'requires_photo_before',
+            'requires_photo_proof',
+            'allow_note',
+            'enable_empty_product_report',
+            'assignment_strategy',
+            'simple_lowest_load_enabled',
+            'assigned_waiter_id',
+            'assigned_waiter_role',
+            'selected_waiter_ids',
+            'rack_id',
+            'rack_name',
+            'rack_location',
+            'rack_barcode_value',
+            'rack_type',
+            'rack_target_scope',
+            'assignment_type',
+            'schedule_mode',
+            'deadline_mode',
+            'deadline_before_end_minutes',
+            'shift_offset_minutes',
+            'skip_when_no_eligible_waiter',
+            'daily_cap_mode',
+            'full_shift_daily_cap',
+            'partial_shift_daily_cap',
+            'weekly_day',
+            'interval_days',
+            'updated_at',
+        ];
+        foreach ($rackCheckFields as $field) {
+            if (array_key_exists($field, $data)) {
+                $updates[$field] = $data[$field];
+            }
         }
 
         $this->database->getReference('waiter_task_templates/'.$id)->update($updates);
@@ -4351,13 +4390,13 @@ class FirebaseService
                 // SHIFT-AWARE DAILY CAP: filter waiters yang sudah hit max rack_check hari ini.
                 // FULL shift (14j+) max 2, PAGI/SORE (8-10j) max 1, LIBUR auto-skipped via line 4148.
                 // Mencegah 1 waiter di-assign 5+ task sekaligus.
-                $cappedWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($rackCheckAssignmentCount, $effectiveTargetDate) {
+                $cappedWaiters = array_values(array_filter($targetWaiters, function ($waiter) use ($rackCheckAssignmentCount, $effectiveTargetDate, $template) {
                     $wId = (string) ($waiter['id'] ?? '');
                     if ($wId === '') {
                         return true;
                     }
                     $assigned = (int) ($rackCheckAssignmentCount[$wId] ?? 0);
-                    $cap = $this->getRackCheckDailyCap($wId, $effectiveTargetDate);
+                    $cap = $this->getRackCheckDailyCap($wId, $effectiveTargetDate, $template);
                     return $assigned < $cap;
                 }));
                 if (! empty($cappedWaiters)) {
@@ -10545,17 +10584,39 @@ class FirebaseService
      *
      * Used by generateRecurringTasksForDate() to prevent overloading single waiter.
      */
-    private function getRackCheckDailyCap(string $waiterId, string $date): int
+    /**
+     * @param array|null $template Optional template with full_shift_daily_cap / partial_shift_daily_cap overrides.
+     */
+    private function getRackCheckDailyCap(string $waiterId, string $date, ?array $template = null): int
     {
         // Quick early-out: not working today = no rack tasks
         if (! $this->isWorkingDay($waiterId, $date)) {
             return 0;
         }
 
+        // Resolve custom caps from template (wizard setting), fallback ke hardcoded.
+        $fullCap = null;
+        $partialCap = null;
+        if ($template !== null) {
+            if (array_key_exists('full_shift_daily_cap', $template)) {
+                $v = $template['full_shift_daily_cap'];
+                if ($v !== null && $v !== '') {
+                    $fullCap = max(0, (int) $v);
+                }
+            }
+            if (array_key_exists('partial_shift_daily_cap', $template)) {
+                $v = $template['partial_shift_daily_cap'];
+                if ($v !== null && $v !== '') {
+                    $partialCap = max(0, (int) $v);
+                }
+            }
+        }
+
         try {
             $shift = $this->getWaiterShiftForDate($waiterId, $date);
             if (! $shift || empty($shift['clock_in_time']) || empty($shift['clock_out_time'])) {
-                return 1; // unknown shift -> default conservative
+                // unknown shift: gunakan partial cap jika ada, else 1
+                return $partialCap ?? 1;
             }
 
             // Compute shift duration in hours
@@ -10566,10 +10627,12 @@ class FirebaseService
             }
             $durationHours = ($end - $start) / 3600.0;
 
-            // FULL shift (>=12 jam) = 2 tasks; partial shift = 1 task
-            return $durationHours >= 12 ? 2 : 1;
+            if ($durationHours >= 12) {
+                return $fullCap ?? 2; // full shift: custom cap atau default 2
+            }
+            return $partialCap ?? 1; // partial shift: custom cap atau default 1
         } catch (\Throwable $e) {
-            return 1;
+            return $partialCap ?? 1;
         }
     }
 
@@ -10917,7 +10980,7 @@ class FirebaseService
         foreach ($candidates as $waiter) {
             $waiterId = (string) ($waiter['id'] ?? '');
             $isWorking = $waiterId !== '' ? $this->isWorkingDay($waiterId, $targetDate) : false;
-            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($waiterId, $targetDate) : 0;
+            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($waiterId, $targetDate, $template) : 0;
             $todayCount = $waiterId !== ''
                 ? $this->countRackCheckTasksForWaiterOnDate($waiterId, $targetDate)
                 : 0;
@@ -11302,7 +11365,7 @@ class FirebaseService
             }
 
             $isWorking = $this->isWorkingDay($candidateId, $targetDate);
-            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($candidateId, $targetDate) : 0;
+            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($candidateId, $targetDate, $template) : 0;
             $todayCount = $this->countRackCheckTasksForWaiterOnDate($candidateId, $targetDate);
 
             if (! $isWorking) {
@@ -11470,7 +11533,7 @@ class FirebaseService
             }
 
             $isWorking = $this->isWorkingDay($candidateId, $targetDate);
-            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($candidateId, $targetDate) : 0;
+            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($candidateId, $targetDate, $template) : 0;
             $todayCount = $this->countRackCheckTasksForWaiterOnDate($candidateId, $targetDate);
 
             if (! $isWorking) {

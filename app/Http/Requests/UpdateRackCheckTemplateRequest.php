@@ -6,7 +6,7 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class StoreRackCheckTemplateRequest extends FormRequest
+class UpdateRackCheckTemplateRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -16,11 +16,9 @@ class StoreRackCheckTemplateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'rack_ids' => 'required|array|min:1',
-            'rack_ids.*' => 'required|string',
             'selected_waiter_ids' => 'required|array|min:1',
             'selected_waiter_ids.*' => 'required|string',
-            'assignment_strategy' => ['nullable', Rule::in(['simple_lowest_load', 'round_robin_simple'])],
+            'assignment_strategy' => ['required', Rule::in(['simple_lowest_load', 'round_robin_simple'])],
             'recurrence_type' => ['required', Rule::in(['daily', 'weekly', 'every_n_days'])],
             'weekly_day' => 'nullable|integer|min:1|max:7',
             'interval_days' => 'nullable|integer|min:1|max:365',
@@ -38,8 +36,6 @@ class StoreRackCheckTemplateRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'rack_ids.required' => 'Pilih minimal satu rak.',
-            'rack_ids.min' => 'Pilih minimal satu rak.',
             'selected_waiter_ids.required' => 'Pilih minimal satu petugas rotasi.',
             'selected_waiter_ids.min' => 'Pilih minimal satu petugas rotasi.',
             'recurrence_type.required' => 'Pilih pola pengulangan.',

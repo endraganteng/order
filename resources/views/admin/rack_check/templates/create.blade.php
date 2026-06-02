@@ -1,6 +1,6 @@
 @extends('admin.layout')
 
-@section('title', 'Buat Template Cek Rak Otomatis - Admin')
+@section('title', (isset($template) ? 'Edit Template Cek Rak Otomatis' : 'Buat Template Cek Rak Otomatis').' - Admin')
 
 @section('content')
 @php
@@ -47,7 +47,7 @@
            style="color: var(--color-text-muted); text-decoration: none; font-size: 13px;">← Kembali ke daftar template</a>
     </div>
 
-    <h2 style="margin: 0 0 6px; color: var(--color-text); font-size: clamp(22px, 5vw, 28px);">Buat Template Cek Rak Otomatis</h2>
+    <h2 style="margin: 0 0 6px; color: var(--color-text); font-size: clamp(22px, 5vw, 28px);">{{ isset($template) ? "Edit Template Cek Rak Otomatis" : "Buat Template Cek Rak Otomatis" }}</h2>
     <p style="margin: 0 0 16px; color: var(--color-text-muted); font-size: 14px; line-height: 1.6;">
         Template ini akan membuat tugas cek rak otomatis sesuai jadwal. Petugas dipilih dari karyawan yang masuk kerja dan beban tugasnya paling ringan.
     </p>
@@ -82,9 +82,14 @@
         @endforeach
     </div>
 
-    <form id="wizardForm" method="POST" action="{{ route('admin.rack_check.templates.store') }}"
+    <form id="wizardForm" method="POST" action="{{ isset($template) ? route('admin.rack_check.templates.update', $template['id']) : route('admin.rack_check.templates.store') }}"
           style="background: white; border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-sm);">
         @csrf
+        @if(isset($template))
+            @method('PUT')
+            {{-- Hidden rack_ids to pass validation. Controller reads rack_id from existing template. --}}
+            <input type="hidden" name="rack_ids[]" value="{{ $template['rack_id'] }}">
+        @endif
 
         {{-- ============ STEP 1: Pilih Rak ============ --}}
         <div class="wiz-step" data-step="1" style="padding: 22px;">
@@ -103,9 +108,9 @@
                            data-location="{{ strtolower($r['location']) }}"
                            data-barcode="{{ strtolower($r['barcode']) }}"
                            style="display: flex; gap: 10px; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer; align-items: flex-start; {{ $r['locked'] ? 'opacity: 0.5; cursor: not-allowed; background: #f8fafc;' : '' }}">
-                        <input type="checkbox" name="rack_ids[]" value="{{ $r['id'] }}" class="rack-cb"
+                        <input type="checkbox" name="rack_ids[]" value="{{ $r['id'] }}" class="rack-cb"{{ (isset($template) && ($template['rack_id'] ?? '') === $r['id']) ? ' checked' : '' }}
                                style="margin-top: 3px; width: 16px; height: 16px; cursor: inherit;"
-                               {{ $r['locked'] ? 'disabled' : '' }}>
+                               {{ $r['locked'] || isset($template) ? 'disabled' : '' }}>
                         <div style="flex: 1; min-width: 0;">
                             <div style="font-weight: 600; color: var(--color-text); font-size: 14px;">{{ $r['name'] ?: '—' }}</div>
                             <div style="font-size: 12px; color: var(--color-text-muted); line-height: 1.5;">
@@ -162,7 +167,7 @@
                             <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;">
                                 @foreach($roleWaiters as $w)
                                     <label style="display: flex; gap: 10px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 7px; cursor: pointer; align-items: center; transition: background 0.1s;">
-                                        <input type="checkbox" name="selected_waiter_ids[]" value="{{ $w['id'] }}" class="waiter-cb"
+                                        <input type="checkbox" name="selected_waiter_ids[]" value="{{ $w['id'] }}" class="waiter-cb"{{ (isset($template) && in_array($w['id'], (array)($template['selected_waiter_ids'] ?? []), true)) ? ' checked' : '' }}
                                                data-role="{{ $roleKey }}"
                                                style="width: 16px; height: 16px; cursor: inherit;">
                                         <div style="flex: 1; min-width: 0;">
@@ -196,7 +201,7 @@
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                     <label class="mode-option" data-mode="simple_lowest_load"
                            style="display: flex; gap: 10px; padding: 12px; border: 2px solid var(--color-primary); border-radius: 8px; cursor: pointer; align-items: flex-start; background: var(--color-primary-bg);">
-                        <input type="radio" name="assignment_strategy" value="simple_lowest_load" checked
+                        <input type="radio" name="assignment_strategy" value="simple_lowest_load"{{ isset($template) && ($template['assignment_strategy'] ?? '') === 'simple_lowest_load' ? ' checked' : '' }}{{ !isset($template) ? ' checked' : '' }}
                                style="margin-top: 3px; width: 16px; height: 16px;">
                         <div style="flex: 1;">
                             <div style="font-weight: 700; color: var(--color-primary); font-size: 14px; display: flex; align-items: center; gap: 8px;">
@@ -211,8 +216,7 @@
 
                     <label class="mode-option" data-mode="round_robin_simple"
                            style="display: flex; gap: 10px; padding: 12px; border: 2px solid var(--color-border); border-radius: 8px; cursor: pointer; align-items: flex-start;">
-                        <input type="radio" name="assignment_strategy" value="round_robin_simple"
-                               style="margin-top: 3px; width: 16px; height: 16px;">
+                        <input type="radio" name="assignment_strategy" value="round_robin_simple"{{ isset($template) && ($template['assignment_strategy'] ?? '') === 'round_robin_simple' ? ' checked' : '' }} style="margin-top: 3px; width: 16px; height: 16px;">
                         <div style="flex: 1;">
                             <div style="font-weight: 700; color: var(--color-text); font-size: 14px;">Giliran Tetap</div>
                             <div style="font-size: 12px; color: var(--color-text-secondary); margin-top: 3px; line-height: 1.5;">
@@ -231,7 +235,7 @@
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px;">
                 <div>
                     <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 6px;">Tanggal mulai</label>
-                    <input type="date" name="recurrence_anchor_date" value="{{ $defaultAnchor }}" required
+                    <input type="date" name="recurrence_anchor_date" value="{{ isset($template) ? ($template['recurrence_anchor_date'] ?? $defaultAnchor) : $defaultAnchor }}" required
                            style="width: 100%; padding: 10px 12px; border: 2px solid var(--color-border); border-radius: 8px; font-size: 14px;">
                 </div>
             </div>
@@ -240,13 +244,13 @@
                 <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 8px;">Pengulangan</label>
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <label class="recurrence-pill" data-recur="daily" style="padding: 8px 14px; border: 2px solid var(--color-primary); border-radius: 8px; cursor: pointer; background: var(--color-primary-bg); color: var(--color-primary); font-weight: 600; font-size: 13px;">
-                        <input type="radio" name="recurrence_type" value="daily" checked style="display: none;"> Setiap hari
+                        <input type="radio" name="recurrence_type" value="daily"{{ isset($template) && ($template['recurrence_type'] ?? '') === 'daily' ? ' checked' : '' }}{{ !isset($template) ? ' checked' : '' }} style="display: none;"> Setiap hari
                     </label>
                     <label class="recurrence-pill" data-recur="weekly" style="padding: 8px 14px; border: 2px solid var(--color-border); border-radius: 8px; cursor: pointer; color: var(--color-text-secondary); font-weight: 600; font-size: 13px;">
-                        <input type="radio" name="recurrence_type" value="weekly" style="display: none;"> Setiap minggu
+                        <input type="radio" name="recurrence_type" value="weekly"{{ isset($template) && ($template['recurrence_type'] ?? '') === 'weekly' ? ' checked' : '' }} style="display: none;"> Setiap minggu
                     </label>
                     <label class="recurrence-pill" data-recur="every_n_days" style="padding: 8px 14px; border: 2px solid var(--color-border); border-radius: 8px; cursor: pointer; color: var(--color-text-secondary); font-weight: 600; font-size: 13px;">
-                        <input type="radio" name="recurrence_type" value="every_n_days" style="display: none;"> Setiap beberapa hari
+                        <input type="radio" name="recurrence_type" value="every_n_days"{{ isset($template) && ($template['recurrence_type'] ?? '') === 'every_n_days' ? ' checked' : '' }} style="display: none;"> Setiap beberapa hari
                     </label>
                 </div>
             </div>
@@ -254,19 +258,19 @@
             <div id="weeklyDayWrapper" style="display: none; margin-bottom: 16px;">
                 <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 6px;">Hari (mode mingguan)</label>
                 <select name="weekly_day" style="width: 240px; max-width: 100%; padding: 10px 12px; border: 2px solid var(--color-border); border-radius: 8px; font-size: 14px;">
-                    <option value="1">Senin</option>
-                    <option value="2">Selasa</option>
-                    <option value="3">Rabu</option>
-                    <option value="4">Kamis</option>
-                    <option value="5">Jumat</option>
-                    <option value="6">Sabtu</option>
-                    <option value="7">Minggu</option>
+                    <option value="1"{{ isset($template) && (int)($template['weekly_day'] ?? 0) === 1 ? ' selected' : '' }}>Senin</option>
+                    <option value="2"{{ isset($template) && (int)($template['weekly_day'] ?? 0) === 2 ? ' selected' : '' }}>Selasa</option>
+                    <option value="3"{{ isset($template) && (int)($template['weekly_day'] ?? 0) === 3 ? ' selected' : '' }}>Rabu</option>
+                    <option value="4"{{ isset($template) && (int)($template['weekly_day'] ?? 0) === 4 ? ' selected' : '' }}>Kamis</option>
+                    <option value="5"{{ isset($template) && (int)($template['weekly_day'] ?? 0) === 5 ? ' selected' : '' }}>Jumat</option>
+                    <option value="6"{{ isset($template) && (int)($template['weekly_day'] ?? 0) === 6 ? ' selected' : '' }}>Sabtu</option>
+                    <option value="7"{{ isset($template) && (int)($template['weekly_day'] ?? 0) === 7 ? ' selected' : '' }}>Minggu</option>
                 </select>
             </div>
 
             <div id="intervalDaysWrapper" style="display: none; margin-bottom: 16px;">
                 <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 6px;">Interval hari</label>
-                <input type="number" name="interval_days" value="2" min="1" max="365"
+                <input type="number" name="interval_days" value="{{ isset($template) ? ($template['interval_days'] ?? '2') : '2' }}" min="1" max="365"
                        style="width: 240px; max-width: 100%; padding: 10px 12px; border: 2px solid var(--color-border); border-radius: 8px; font-size: 14px;">
             </div>
 
@@ -274,19 +278,19 @@
                 <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 8px;">Bukti yang diminta dari petugas</label>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                     <label style="display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-secondary);">
-                        <input type="checkbox" name="requires_barcode_scan" value="1" checked style="width: 16px; height: 16px;"> Wajib scan barcode rak
+                        <input type="checkbox" name="requires_barcode_scan" value="1"{{ isset($template) ? ($template['requires_barcode_scan'] ?? true ? ' checked' : '') : ' checked' }} style="width: 16px; height: 16px;"> Wajib scan barcode rak
                     </label>
                     <label style="display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-secondary);">
-                        <input type="checkbox" name="requires_photo_before" value="1" checked style="width: 16px; height: 16px;"> Foto sebelum
+                        <input type="checkbox" name="requires_photo_before" value="1"{{ isset($template) ? ($template['requires_photo_before'] ?? true ? ' checked' : '') : ' checked' }} style="width: 16px; height: 16px;"> Foto sebelum
                     </label>
                     <label style="display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-secondary);">
-                        <input type="checkbox" name="requires_photo_proof" value="1" checked style="width: 16px; height: 16px;"> Foto sesudah
+                        <input type="checkbox" name="requires_photo_proof" value="1"{{ isset($template) ? ($template['requires_photo_proof'] ?? true ? ' checked' : '') : ' checked' }} style="width: 16px; height: 16px;"> Foto sesudah
                     </label>
                     <label style="display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-secondary);">
-                        <input type="checkbox" name="allow_note" value="1" checked style="width: 16px; height: 16px;"> Petugas boleh menulis catatan
+                        <input type="checkbox" name="allow_note" value="1"{{ isset($template) ? ($template['allow_note'] ?? true ? ' checked' : '') : ' checked' }} style="width: 16px; height: 16px;"> Petugas boleh menulis catatan
                     </label>
                     <label style="display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--color-text-secondary);">
-                        <input type="checkbox" name="enable_empty_product_report" value="1" checked style="width: 16px; height: 16px;"> Aktifkan laporan produk kosong
+                        <input type="checkbox" name="enable_empty_product_report" value="1"{{ isset($template) ? ($template['enable_empty_product_report'] ?? true ? ' checked' : '') : ' checked' }} style="width: 16px; height: 16px;"> Aktifkan laporan produk kosong
                     </label>
                 </div>
             </div>
@@ -295,10 +299,30 @@
                 <div style="font-weight: 700; margin-bottom: 6px;">Aturan mode Beban Paling Ringan</div>
                 <ul style="margin: 0; padding-left: 18px; line-height: 1.6;">
                     <li>Libur = 0 task</li>
-                    <li>Shift pendek = maksimal 1 task</li>
-                    <li>Full shift = maksimal 2 task</li>
+                    <li>Shift pendek = maksimal <strong id="capPartialDisplay">1</strong> task</li>
+                    <li>Full shift (≥12j) = maksimal <strong id="capFullDisplay">2</strong> task</li>
                     <li>Jika tidak ada petugas tersedia, task tidak dibuat dan ditandai skipped</li>
                 </ul>
+            </div>
+
+            {{-- Custom daily cap inputs (muncul hanya saat Beban Paling Ringan) --}}
+            <div id="capInputsBox" style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; margin-top: 14px;">
+                <div style="font-weight: 700; color: var(--color-text); font-size: 13px; margin-bottom: 10px;">⚙️ Batas Maksimal Task per Hari (opsional)</div>
+                <p style="margin: 0 0 12px; font-size: 12px; color: var(--color-text-muted);">Kosongkan untuk pakai default (full=2, partial=1). Isi 0 untuk meniadakan task pada shift tersebut.</p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                    <div>
+                        <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 4px;">Full Shift (≥12 jam)</label>
+                        <input type="number" name="full_shift_daily_cap" id="fullShiftCap" value="{{ isset($template) ? ($template['full_shift_daily_cap'] ?? '') : '' }}"
+                               placeholder="2 (default)" min="0" max="99"
+                               style="width: 100%; padding: 10px 12px; border: 2px solid var(--color-border); border-radius: 8px; font-size: 14px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 600; color: var(--color-text); font-size: 13px; margin-bottom: 4px;">Partial Shift (&lt;12 jam)</label>
+                        <input type="number" name="partial_shift_daily_cap" id="partialShiftCap" value="{{ isset($template) ? ($template['partial_shift_daily_cap'] ?? '') : '' }}"
+                               placeholder="1 (default)" min="0" max="99"
+                               style="width: 100%; padding: 10px 12px; border: 2px solid var(--color-border); border-radius: 8px; font-size: 14px;">
+                    </div>
+                </div>
             </div>
 
             <div id="modeInfoRoundRobin" style="display: none; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #166534;">
@@ -306,7 +330,7 @@
                 <ul style="margin: 0; padding-left: 18px; line-height: 1.6;">
                     <li>Petugas dapat task bergiliran sesuai urutan daftar</li>
                     <li>Petugas libur otomatis dilewati ke giliran berikutnya</li>
-                    <li>Shift pendek tetap maksimal 1 task; full shift maksimal 2 task</li>
+                    <li>Batas task mengikuti pengaturan di atas (full shift / partial shift)</li>
                     <li>Jika seluruh giliran libur, task tidak dibuat (skipped)</li>
                 </ul>
             </div>
@@ -325,8 +349,8 @@
                 <strong>Aturan otomatis:</strong>
                 <ul style="margin: 6px 0 0; padding-left: 18px; line-height: 1.6;">
                     <li>Petugas libur otomatis dilewati</li>
-                    <li>Full shift maksimal 2 task cek rak per hari</li>
-                    <li>Shift pendek maksimal 1 task cek rak per hari</li>
+                    <li>Full shift maksimal <strong id="summaryFullCap">2</strong> task cek rak per hari</li>
+                    <li>Shift pendek maksimal <strong id="summaryPartialCap">1</strong> task cek rak per hari</li>
                     <li>Jika tidak ada petugas tersedia, task tidak dibuat</li>
                     <li>Task yang dicancel admin tidak dibuat ulang otomatis</li>
                 </ul>
@@ -345,7 +369,7 @@
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <button type="button" id="btnNext" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;">Lanjut →</button>
-                <button type="submit" id="btnSubmit" style="display: none; background: var(--color-success); color: white; border: none; padding: 10px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;">💾 Simpan Template</button>
+                <button type="submit" id="btnSubmit" style="display: none; background: var(--color-success); color: white; border: none; padding: 10px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;">{{ isset($template) ? '💾 Perbarui Template' : '💾 Simpan Template' }}</button>
             </div>
         </div>
     </form>
@@ -391,6 +415,8 @@
             requires_photo_proof: !!form.querySelector('[name="requires_photo_proof"]')?.checked,
             allow_note: !!form.querySelector('[name="allow_note"]')?.checked,
             enable_empty_product_report: !!form.querySelector('[name="enable_empty_product_report"]')?.checked,
+            full_shift_daily_cap: form.querySelector('[name="full_shift_daily_cap"]')?.value || '',
+            partial_shift_daily_cap: form.querySelector('[name="partial_shift_daily_cap"]')?.value || '',
         };
     }
 
@@ -474,6 +500,16 @@
             if (el && typeof draft[k] === 'boolean') el.checked = draft[k];
         });
 
+        // Restore custom caps
+        if (draft.full_shift_daily_cap !== undefined) {
+            const fullCapEl = form.querySelector('[name="full_shift_daily_cap"]');
+            if (fullCapEl) fullCapEl.value = draft.full_shift_daily_cap;
+        }
+        if (draft.partial_shift_daily_cap !== undefined) {
+            const partialCapEl = form.querySelector('[name="partial_shift_daily_cap"]');
+            if (partialCapEl) partialCapEl.value = draft.partial_shift_daily_cap;
+        }
+
         // Restore mode pembagian
         const validModes = ['simple_lowest_load', 'round_robin_simple'];
         if (validModes.includes(draft.assignment_strategy)) {
@@ -510,12 +546,14 @@
         });
     }
 
-    // Hook autosave on any form change
+    @if(!isset($template))
+    // Hook autosave on any form change (skip in edit mode)
     form.addEventListener('change', saveDraft);
     form.addEventListener('input', saveDraft);
 
     // Clear draft when form successfully submitted
     form.addEventListener('submit', clearDraft);
+    @endif
 
     function renderStepper() {
         stepperItems.forEach(el => {
@@ -708,6 +746,11 @@
         });
         if (modeInfoLowestLoad) modeInfoLowestLoad.style.display = val === 'simple_lowest_load' ? 'block' : 'none';
         if (modeInfoRoundRobin) modeInfoRoundRobin.style.display = val === 'round_robin_simple' ? 'block' : 'none';
+        // Show/hide custom cap inputs
+        const capInputsBox = document.getElementById('capInputsBox');
+        if (capInputsBox) capInputsBox.style.display = (val === 'simple_lowest_load' || val === 'round_robin_simple') ? 'block' : 'none';
+        // Update dynamic cap displays
+        updateCapDisplays();
     }
 
     modeOptions.forEach(opt => {
@@ -719,6 +762,25 @@
         });
     });
     syncModeUI();
+
+    // Hook cap input changes → update displays + summary
+    const fullShiftCap = document.getElementById('fullShiftCap');
+    const partialShiftCap = document.getElementById('partialShiftCap');
+    if (fullShiftCap) fullShiftCap.addEventListener('input', updateCapDisplays);
+    if (partialShiftCap) partialShiftCap.addEventListener('input', updateCapDisplays);
+
+    function updateCapDisplays() {
+        const fullVal = fullShiftCap?.value || '2';
+        const partialVal = partialShiftCap?.value || '1';
+        const capFullDisp = document.getElementById('capFullDisplay');
+        const capPartialDisp = document.getElementById('capPartialDisplay');
+        const summaryFull = document.getElementById('summaryFullCap');
+        const summaryPartial = document.getElementById('summaryPartialCap');
+        if (capFullDisp) capFullDisp.textContent = fullVal;
+        if (capPartialDisp) capPartialDisp.textContent = partialVal;
+        if (summaryFull) summaryFull.textContent = fullVal;
+        if (summaryPartial) summaryPartial.textContent = partialVal;
+    }
 
     function escapeHtml(s) {
         return String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -784,10 +846,20 @@
         };
         html += `<div style="margin-top:10px;"><strong style="color:var(--color-text);">Mode pembagian:</strong> ${escapeHtml(modeLabels[modeVal] || modeVal)}</div>`;
 
+        // Custom cap summary
+        const fullCapVal = form.querySelector('[name="full_shift_daily_cap"]')?.value || '';
+        const partialCapVal = form.querySelector('[name="partial_shift_daily_cap"]')?.value || '';
+        const capParts = [];
+        if (fullCapVal !== '') capParts.push(`Full shift: ${fullCapVal} task/hari`);
+        if (partialCapVal !== '') capParts.push(`Partial shift: ${partialCapVal} task/hari`);
+        const capSummary = capParts.length > 0 ? capParts.join(', ') : 'Default (full=2, partial=1)';
+        html += `<div style="margin-top:6px;"><strong style="color:var(--color-text);">Batas task/hari:</strong> ${escapeHtml(capSummary)}</div>`;
+
         box.innerHTML = html;
     }
 
-    // Restore draft sebelum render UI awal
+    // Restore draft sebelum render UI awal (skip jika edit mode — data dari server)
+    @if(!isset($template))
     restoreDraft();
 
     // Sync UI counters setelah restore
@@ -797,6 +869,7 @@
 
     // Kalau restore membawa user ke step 4, build summary langsung
     if (currentStep === totalSteps) buildSummary();
+    @endif
 
     renderStepper();
 })();

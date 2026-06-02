@@ -142,6 +142,11 @@
                     </div>
 
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--color-border);">
+                        <a href="{{ route('admin.rack_check.templates.edit', $tpl['id']) }}"
+                           style="background: var(--color-bg); color: var(--color-text-secondary); border: 1px solid var(--color-border); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                            ✏️ Edit
+                        </a>
+
                         <button type="button"
                                 onclick="previewTemplate('{{ $tpl['id'] }}', @js($tpl['rack_name'] ?? ''))"
                                 style="background: var(--color-info-bg); color: var(--color-info); border: 1px solid var(--color-info-border); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
