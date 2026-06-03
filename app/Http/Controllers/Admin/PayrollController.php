@@ -72,14 +72,8 @@ class PayrollController extends Controller
         $kasbonService = app(KasbonService::class);
         $kasbonSettings = $kasbonService->getWaiterKasbonSettings($waiterId);
 
-        // Cash accounts untuk fitur Bayar Tunai
-        $cashAccounts = \Illuminate\Support\Facades\DB::table('cash_accounts')
-            ->where('is_active', 1)
-            ->orderBy('name')
-            ->get(['id', 'name', 'balance']);
-
         return view('admin.payroll.show', compact(
-            'waiter', 'settings', 'balance', 'transactions', 'kasbonSettings', 'cashAccounts'
+            'waiter', 'settings', 'balance', 'transactions', 'kasbonSettings'
         ));
     }
 
@@ -219,18 +213,34 @@ class PayrollController extends Controller
             return back()->withErrors(['withdrawal' => 'PIN supervisor salah.']);
         }
 
+        $data = $request->validate([
+            'cash_account_id' => 'required|integer',
+            'note'            => 'nullable|string|max:200',
+        ]);
+
         $admin = (string) (session('admin_name') ?? 'Supervisor');
-        $result = $this->payroll->approveWithdrawal((int) $txId, $admin);
+        $result = $this->payroll->approveWithdrawalWithCash(
+            (int) $txId,
+            (int) $data['cash_account_id'],
+            trim((string) ($data['note'] ?? '')),
+            $admin
+        );
 
         if (! ($result['success'] ?? false)) {
             return back()->withErrors(['withdrawal' => $result['message'] ?? 'Gagal approve']);
         }
 
         $this->firebase->logAuditAction('payroll_withdrawal_approve', 'transaction', $txId, [
-            'balance_after' => $result['balance_after'] ?? null,
+            'balance_after'       => $result['balance_after'] ?? null,
+            'cash_balance_after'  => $result['cash_balance_after'] ?? null,
+            'cash_account'        => $result['cash_account_name'] ?? '',
+            'cash_account_id'     => (int) $data['cash_account_id'],
         ]);
 
-        return back()->with('success', 'Penarikan disetujui. Saldo karyawan dipotong.');
+        return back()->with(
+            'success',
+            'Penarikan disetujui. Saldo karyawan dipotong. Kas: ' . ($result['cash_account_name'] ?? '?') . '.'
+        );
     }
 
     public function rejectWithdrawal(string $txId, Request $request)

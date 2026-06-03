@@ -106,44 +106,6 @@
             </form>
         </div>
 
-        {{-- Bayar Tunai dari Kas Fisik --}}
-        <div class="card" style="padding: 16px;">
-            <h3 style="margin-top: 0;">💵 Bayar Tunai dari Kas</h3>
-            <p style="color:#64748b; font-size:12px; margin-top:0; margin-bottom:12px;">
-                Bayar gaji/bonus langsung dari kas fisik. Saldo wallet karyawan akan kepotong sebesar nominal ini.
-                Saldo wallet saat ini: <strong style="color:#0f172a;">Rp {{ number_format($balance, 0, ',', '.') }}</strong>
-            </p>
-            <form method="POST" action="{{ route('admin.payroll.cash_payout', $waiter['id'] ?? '') }}" id="cashPayoutForm">
-                @csrf
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Sumber Kas</label>
-                    <select name="cash_account_id" required class="form-control" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
-                        <option value="">-- Pilih akun kas --</option>
-                        @foreach($cashAccounts ?? [] as $ca)
-                            <option value="{{ $ca->id }}">{{ $ca->name }} (Saldo Rp {{ number_format($ca->balance, 0, ',', '.') }})</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Nominal</label>
-                    <div style="position: relative;">
-                        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #475569; font-weight: 600; pointer-events: none;">Rp</span>
-                        <input type="text" id="payoutDisplay" inputmode="numeric" autocomplete="off" required class="form-control rupiah-input" placeholder="0" style="width: 100%; padding: 8px 12px 8px 36px; border: 1px solid #cbd5e1; border-radius: 6px;">
-                    </div>
-                    <input type="hidden" name="amount" id="payoutRaw">
-                    <small style="color:#64748b; font-size:11px;">Maks Rp {{ number_format($balance, 0, ',', '.') }}</small>
-                </div>
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Catatan</label>
-                    <input type="text" name="note" maxlength="200" class="form-control" placeholder="Bayar gaji Mei 2026 / Bayar bonus / dst" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
-                </div>
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">PIN Supervisor</label>
-                    <input type="password" name="supervisor_pin" maxlength="32" required autocomplete="new-password" class="form-control" placeholder="••••" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
-                </div>
-                <button type="submit" class="btn" style="background: #f59e0b; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;">💵 Konfirmasi Bayar Tunai</button>
-            </form>
-        </div>
     </div>
 
     {{-- Transaction history --}}
@@ -245,7 +207,6 @@
     document.addEventListener('DOMContentLoaded', function () {
         attachRupiahInput('salaryDisplay', 'salaryRaw');
         attachRupiahInput('creditDisplay', 'creditRaw');
-        attachRupiahInput('payoutDisplay', 'payoutRaw');
 
         // Block manual credit submit kalau amount kosong/0.
         var creditDisplay = document.getElementById('creditDisplay');
@@ -264,33 +225,6 @@
             }
         }
 
-        // Block cash payout submit kalau amount kosong/0 atau lebih dari saldo wallet.
-        var payoutDisplay = document.getElementById('payoutDisplay');
-        var payoutRaw = document.getElementById('payoutRaw');
-        var maxBalance = {{ (int) $balance }};
-        if (payoutDisplay && payoutRaw) {
-            var payoutForm = document.getElementById('cashPayoutForm');
-            if (payoutForm) {
-                payoutForm.addEventListener('submit', function (e) {
-                    var v = parseInt(payoutRaw.value || '0', 10);
-                    if (v <= 0) {
-                        e.preventDefault();
-                        alert('Nominal harus lebih dari 0.');
-                        payoutDisplay.focus();
-                        return;
-                    }
-                    if (v > maxBalance) {
-                        e.preventDefault();
-                        alert('Nominal melebihi saldo wallet karyawan (Rp ' + maxBalance.toLocaleString('id-ID') + ').');
-                        payoutDisplay.focus();
-                        return;
-                    }
-                    if (! window.confirm('Konfirmasi bayar tunai sebesar Rp ' + v.toLocaleString('id-ID') + '?\n\nSaldo wallet karyawan akan kepotong + saldo kas akan kepotong.')) {
-                        e.preventDefault();
-                    }
-                });
-            }
-        }
     });
 })();
 </script>

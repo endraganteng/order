@@ -3286,8 +3286,17 @@ class TaskController extends Controller
     {
         $waiters = $this->firebase->getActiveWaiters();
         $today = now()->format('Y-m-d');
+        $waiterDayOffMap = [];
 
-        return view('admin.tasks.live', compact('waiters', 'today'));
+        foreach ($waiters as $waiter) {
+            $waiterId = (string) ($waiter['id'] ?? '');
+            if ($waiterId === '') {
+                continue;
+            }
+            $waiterDayOffMap[$waiterId] = ! $this->firebase->isWorkingDay($waiterId, $today);
+        }
+
+        return view('admin.tasks.live', compact('waiters', 'today', 'waiterDayOffMap'));
     }
 
     /**

@@ -355,13 +355,110 @@ class PayrollService
             'updated_at'     => now(),
         ]);
 
-        // Integrate with finance: record cash_mutation as expense
-        $this->recordWithdrawalToFinance($tx, $newBalance);
-
         $this->triggerWaiterFlag($waiterId);
         $this->notifyWaiterWithdrawalApproved($waiterId, $amount, $newBalance);
 
         return ['success' => true, 'balance_after' => $newBalance];
+    }
+
+    /**
+     * Approve withdrawal dengan pilih sumber kas.
+     * Gabungan approve + potong cash account + catat cash_mutation.
+     *
+     * @param  int     $txId
+     * @param  int     $cashAccountId
+     * @param  string|null  $note  Catatan opsional dari supervisor
+     * @param  string  $approvedBy
+     * @return array
+     */
+    public function approveWithdrawalWithCash(int $txId, int $cashAccountId, ?string $note, string $approvedBy = 'Supervisor'): array
+    {
+        $tx = $this->getTransaction($txId);
+        if (! $tx) return ['success' => false, 'message' => 'Transaksi tidak ditemukan.'];
+        if (($tx['type'] ?? '') !== 'withdrawal') return ['success' => false, 'message' => 'Bukan transaksi penarikan.'];
+        if (($tx['status'] ?? '') !== 'pending') return ['success' => false, 'message' => 'Transaksi tidak dalam status pending.'];
+
+        $waiterId = (string) $tx['waiter_id'];
+        $amount = (int) $tx['amount'];
+        $balance = $this->getBalance($waiterId);
+        if ($amount > $balance) {
+            return ['success' => false, 'message' => 'Saldo karyawan tidak cukup saat ini.'];
+        }
+
+        // Validasi cash account
+        $account = DB::table('cash_accounts')->where('id', $cashAccountId)->first();
+        if (! $account) {
+            return ['success' => false, 'message' => 'Akun kas tidak ditemukan.'];
+        }
+        if (! ($account->is_active ?? true)) {
+            return ['success' => false, 'message' => 'Akun kas tidak aktif.'];
+        }
+        $cashBalance = (int) $account->balance;
+        if ($amount > $cashBalance) {
+            return [
+                'success' => false,
+                'message' => "Saldo kas '{$account->name}' tidak cukup. Tersedia: Rp "
+                    . number_format($cashBalance, 0, ',', '.'),
+            ];
+        }
+
+        $description = 'Penarikan gaji: ' . ($tx['waiter_name'] ?? $waiterId)
+            . ($note ? ' — ' . $note : '');
+
+        return DB::transaction(function () use ($txId, $waiterId, $amount, $cashAccountId, $account, $description, $approvedBy, $tx) {
+            // Lock cash account row
+            $locked = DB::table('cash_accounts')->where('id', $cashAccountId)->lockForUpdate()->first();
+            if (! $locked || (int) $locked->balance < $amount) {
+                return [
+                    'success' => false,
+                    'message' => 'Saldo kas tidak cukup saat memproses (race). Coba lagi.',
+                ];
+            }
+
+            // 1. Kurangi wallet karyawan
+            $newBalance = $this->adjustBalance($waiterId, -$amount);
+
+            // 2. Update status withdrawal jadi approved
+            DB::table('payroll_transactions')->where('id', $txId)->update([
+                'status'         => 'approved',
+                'balance_after'  => $newBalance,
+                'processed_at'   => now(),
+                'processed_by'   => $approvedBy,
+                'approval_token' => null,
+                'updated_at'     => now(),
+            ]);
+
+            // 3. Kurangi saldo cash account
+            $newCashBalance = (int) $locked->balance - $amount;
+            DB::table('cash_accounts')->where('id', $cashAccountId)->update([
+                'balance'    => $newCashBalance,
+                'updated_at' => now(),
+            ]);
+
+            // 4. Catat mutasi kas
+            $categoryId = $this->resolvePayrollCategory();
+            DB::table('cash_mutations')->insert([
+                'cash_account_id'     => $cashAccountId,
+                'finance_category_id' => $categoryId,
+                'type'                => 'expense',
+                'amount'              => $amount,
+                'balance_after'       => $newCashBalance,
+                'description'         => $description,
+                'reference_type'      => 'payroll_withdrawal',
+                'reference_id'        => $txId,
+                'transaction_date'    => now()->toDateString(),
+                'transaction_time'    => now()->format('H:i:s'),
+                'created_at'          => now(),
+                'updated_at'          => now(),
+            ]);
+
+            return [
+                'success'              => true,
+                'balance_after'        => $newBalance,
+                'cash_balance_after'   => $newCashBalance,
+                'cash_account_name'    => $account->name,
+            ];
+        });
     }
 
     public function rejectWithdrawal(int $txId, string $reason = '', string $rejectedBy = 'Supervisor'): array
