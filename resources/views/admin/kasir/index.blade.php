@@ -154,6 +154,7 @@
                     @if($hasWeekOverride)
                         <button type="button" class="btn btn-sm" onclick="resetWeek()" style="background: #fee2e2; color: #991b1b; border-color: #fca5a5;">🔄 Reset ke Default</button>
                     @endif
+                    <button type="button" class="btn btn-sm" id="btnSetDefaultKasir" onclick="setDefaultKasir()" style="background: #fff7ed; border-color: #ffedd5;">⭐ Set sebagai default</button>
                 </div>
             </div>
 
@@ -320,6 +321,7 @@
             savePrefs: BASE + '/admin/kasir/save-preferences',
             saveWeek: BASE + '/admin/kasir/save-week',
             resetWeek: BASE + '/admin/kasir/reset-week',
+            setDefault: BASE + '/admin/kasir/set-default',
         };
         const WEEK_ISO = @json($weekIso ?? '');
         const WEEK_START = @json($weekStart ?? '');
@@ -453,6 +455,21 @@
             } else {
                 const errors = (data.errors || [data.message || 'Gagal']).join('\n- ');
                 alert('Gagal: \n- ' + errors);
+            }
+        }
+
+        async function setDefaultKasir() {
+            if (!confirm('Simpan jadwal kasir minggu ini sebagai default?')) return;
+            const cells = collectCells();
+            const { ok, data } = await postJson(URLS.setDefault, {
+                week_iso: WEEK_ISO,
+                week_start: WEEK_START,
+                cells: cells,
+            });
+            if (ok && data.success) {
+                alert(data.message);
+            } else {
+                alert(data.message || 'Gagal menyimpan default kasir.');
             }
         }
     </script>

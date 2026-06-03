@@ -162,6 +162,22 @@ class JadwalController extends Controller
             if (! empty($weekOverride['holder_used'])) {
                 $genPrefs['holder_name'] = $weekOverride['holder_used'];
             }
+        } else {
+            // No per-week override saved. Try apply global default template if exists.
+            try {
+                $snap = $this->firebase->getDatabase()->getReference('templates/default_week_schedule')->getSnapshot();
+                if ($snap->exists()) {
+                    $tpl = (array) $snap->getValue();
+                    if (! empty($tpl['cells'])) {
+                        $override = ['cells' => $tpl['cells']];
+                    }
+                    if (! empty($tpl['holder_used'])) {
+                        $genPrefs['holder_name'] = $tpl['holder_used'];
+                    }
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         $schedule = $this->generator->generate($weekStart, $employees, $genPrefs, $override);
@@ -306,6 +322,50 @@ class JadwalController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Override minggu '.$request->week_iso.' dihapus.',
+        ]);
+    }
+
+    public function setDefault(Request $request)
+    {
+        $request->validate([
+            'week_iso' => 'required|string|regex:/^\d{4}-W\d{2}$/',
+            'week_start' => 'required|date_format:Y-m-d',
+            'cells' => 'required|array',
+            'holder_name' => 'nullable|string',
+        ]);
+
+        // Generate schedule untuk resolve libur_days + holder_used
+        $employees = $this->loadDefaultEmployees();
+        $override = ['cells' => $request->cells];
+        $genPrefs = ['holder_name' => $request->holder_name];
+        $schedule = $this->generator->generate($request->week_start, $employees, $genPrefs, $override);
+
+        $payload = [
+            'week_iso' => $request->week_iso,
+            'week_start' => $request->week_start,
+            'cells' => $request->cells,
+            'libur_days_used' => $schedule['libur_days'] ?? [],
+            'holder_used' => $schedule['holder_name'] ?? null,
+            'saved_by' => session('admin_email', 'admin'),
+            '_v' => 1,
+            'saved_at' => time(),
+        ];
+
+        try {
+            $this->firebase->getDatabase()->getReference('templates/default_week_schedule_backup/'.time())->set($payload);
+            $this->firebase->getDatabase()->getReference('templates/default_week_schedule')->set($payload);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan template: '.$e->getMessage(),
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal minggu '.$request->week_iso.' disimpan sebagai default.',
         ]);
     }
 }

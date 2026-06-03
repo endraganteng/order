@@ -11710,7 +11710,8 @@ class FirebaseService
             return ['success' => false, 'reason' => 'deadline_already_passed'];
         }
 
-        $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity($templateId, $waiterId, $targetDate);
+        $rackId = (string) ($template['rack_id'] ?? '');
+        $recurringInstanceKey = $this->buildWaiterRecurringInstanceIdentity($templateId, $waiterId, $targetDate) . '::' . $rackId;
         $taskNodeKey = $this->buildWaiterRecurringTaskNodeKey($recurringInstanceKey);
         $taskReference = $this->database->getReference('waiter_tasks/'.$taskNodeKey);
         $existingSnap = $taskReference->getSnapshot();

@@ -38,6 +38,18 @@ class KasirJadwalController extends Controller
             $weekOverride = $this->kasir->getWeekOverride($weekIso);
             $hasWeekOverride = $weekOverride !== null;
             $override = ($weekOverride && ! empty($weekOverride['cells'])) ? ['cells' => $weekOverride['cells']] : null;
+
+            // No per-week override. Try apply global default template.
+            if (! $override) {
+                $snap = app(\App\Services\FirebaseService::class)->getDatabase()->getReference('templates/kasir_default_week_schedule')->getSnapshot();
+                if ($snap->exists()) {
+                    $tpl = (array) $snap->getValue();
+                    if (! empty($tpl['cells'])) {
+                        $override = ['cells' => $tpl['cells']];
+                    }
+                }
+            }
+
             $schedule = $this->kasir->generate($weekStartCarbon->toDateString(), $override);
         } catch (\Throwable $e) {
             $error = $e->getMessage();
@@ -125,6 +137,45 @@ class KasirJadwalController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Override minggu '.$request->week_iso.' dihapus.',
+        ]);
+    }
+
+    public function setDefault(Request $request)
+    {
+        $request->validate([
+            'week_iso' => 'required|string|regex:/^\d{4}-W\d{2}$/',
+            'week_start' => 'required|date_format:Y-m-d',
+            'cells' => 'required|array',
+        ]);
+
+        // Generate untuk resolve libur_days
+        $schedule = $this->kasir->generate($request->week_start, ['cells' => $request->cells]);
+
+        $payload = [
+            'week_iso' => $request->week_iso,
+            'week_start' => $request->week_start,
+            'cells' => $request->cells,
+            'libur_days_used' => $schedule['libur_days'] ?? [],
+            'saved_by' => session('admin_email', 'admin'),
+            '_v' => 1,
+            'saved_at' => time(),
+        ];
+
+        try {
+            app(\App\Services\FirebaseService::class)->getDatabase()->getReference('templates/kasir_default_week_schedule_backup/'.time())->set($payload);
+            app(\App\Services\FirebaseService::class)->getDatabase()->getReference('templates/kasir_default_week_schedule')->set($payload);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan template: '.$e->getMessage(),
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal minggu '.$request->week_iso.' disimpan sebagai default (kasir).',
         ]);
     }
 

@@ -218,12 +218,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('jadwal/save-preferences', [\App\Http\Controllers\Admin\JadwalController::class, 'savePreferences'])->name('jadwal.save_preferences');
         Route::post('jadwal/save-week', [\App\Http\Controllers\Admin\JadwalController::class, 'saveWeek'])->name('jadwal.save_week');
         Route::post('jadwal/reset-week', [\App\Http\Controllers\Admin\JadwalController::class, 'resetWeek'])->name('jadwal.reset_week');
+        Route::post('jadwal/set-default', [\App\Http\Controllers\Admin\JadwalController::class, 'setDefault'])->name('jadwal.set_default');
 
         // Jadwal Kasir (2 kasir + 1 backup finance, libur Sen/Sel, jam beda weekday vs weekend)
         Route::get('kasir', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'index'])->name('kasir.index');
         Route::post('kasir/save-preferences', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'savePreferences'])->name('kasir.save_preferences');
         Route::post('kasir/save-week', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'saveWeek'])->name('kasir.save_week');
         Route::post('kasir/reset-week', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'resetWeek'])->name('kasir.reset_week');
+        Route::post('kasir/set-default', [\App\Http\Controllers\Admin\KasirJadwalController::class, 'setDefault'])->name('kasir.set_default');
 
         // Attendance
         Route::get('attendance', [AttendanceController::class, 'index'])->name('attendance.index');

@@ -165,6 +165,7 @@
                 @if($hasWeekOverride)
                     <button type="button" class="btn btn-sm" onclick="resetWeek()" style="background: #fee2e2; color: #991b1b; border-color: #fca5a5;">🔄 Reset ke Default</button>
                 @endif
+                <button type="button" class="btn btn-sm" id="btnSetDefault" onclick="setDefault()" style="background: #fff7ed; border-color: #ffedd5;">⭐ Set sebagai default</button>
             </div>
         </div>
 
@@ -400,6 +401,7 @@
             savePrefs: BASE + '/admin/jadwal/save-preferences',
             saveWeek: BASE + '/admin/jadwal/save-week',
             resetWeek: BASE + '/admin/jadwal/reset-week',
+            setDefault: BASE + '/admin/jadwal/set-default',
         };
         const WEEK_ISO = @json($schedule['week_iso']);
         const WEEK_START = @json($schedule['week_start']);
@@ -506,6 +508,32 @@
                 location.reload();
             } else {
                 alert(data.message || 'Gagal reset.');
+            }
+        }
+
+        async function setDefault() {
+            if (!confirm('Simpan jadwal minggu ini sebagai default untuk semua minggu baru?')) return;
+            const cells = {};
+            document.querySelectorAll('.cell-shift').forEach(td => {
+                const day = td.dataset.day;
+                const emp = td.dataset.employee;
+                const select = td.querySelector('.cell-edit');
+                const shift = select ? select.value : td.dataset.shift;
+                if (!cells[day]) cells[day] = {};
+                cells[day][emp] = shift;
+            });
+
+            const { ok, data } = await postJson(URLS.setDefault, {
+                week_iso: WEEK_ISO,
+                week_start: WEEK_START,
+                cells,
+                holder_name: HOLDER_NAME,
+            });
+
+            if (ok && data.success) {
+                alert(data.message);
+            } else {
+                alert(data.message || 'Gagal menyimpan default.');
             }
         }
     </script>
