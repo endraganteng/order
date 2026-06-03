@@ -822,7 +822,7 @@
             }
             .mobile-nav {
                 display: grid;
-                grid-template-columns: repeat(4, 1fr);
+                grid-template-columns: repeat(5, 1fr);
                 position: fixed;
                 left: 0;
                 right: 0;
@@ -1695,6 +1695,7 @@
             <button type="button" class="tab-btn js-tab-btn" data-tab="tasks">📝 Tugas <span id="badge-tab-general" class="menu-badge js-general-menu-badge hidden">0</span></button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="reports">📔 Laporan Kegiatan</button>
             <button type="button" class="tab-btn js-tab-btn" data-tab="bonus">🏆 Bonus</button>
+            <a href="{{ route('waiter.order') }}" class="tab-btn" style="text-decoration:none;">🛒 Buat Order</a>
             @if(!empty($isFinance))
             <button type="button" class="tab-btn js-tab-btn" data-tab="recheck">🔍 Recheck Rak <span id="badge-tab-recheck" class="menu-badge js-recheck-menu-badge hidden">0</span></button>
             @endif
@@ -1851,6 +1852,10 @@
             <span class="nav-label">Tugas</span>
             <span id="badge-mobile-general" class="menu-badge js-general-menu-badge hidden">0</span>
         </button>
+        <a href="{{ route('waiter.order') }}" class="mobile-nav-btn" style="text-decoration:none;">
+            <span class="nav-icon">🛒</span>
+            <span class="nav-label">Order</span>
+        </a>
         <button type="button" class="mobile-nav-btn js-tab-btn" data-tab="reports">
             <span class="nav-icon">📔</span>
             <span class="nav-label">Laporan</span>
@@ -3637,9 +3642,13 @@
                 pollIntervalId = setInterval(pollTasks, FAST_POLL);
             };
             try {
-                // limitToLast(50) untuk batasi initial download. Push-id RTDB
-                // chronological, jadi task terbaru dijamin masuk.
-                window.firebaseDB.ref('waiter_tasks').limitToLast(50).on('value', trigger, onError);
+                // Use child_added/child_changed as lightweight trigger — avoids
+                // re-downloading all 50 tasks on every single change (was .on('value')).
+                // We only need to know "something changed" to trigger pollTasks().
+                const tasksRef = window.firebaseDB.ref('waiter_tasks').limitToLast(50);
+                tasksRef.on('child_added', trigger, onError);
+                tasksRef.on('child_changed', trigger, onError);
+                tasksRef.on('child_removed', trigger, onError);
             } catch (e) {
                 console.warn('[RTDB] tasks listener failed:', e);
             }

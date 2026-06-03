@@ -1022,7 +1022,7 @@
     <script type="module">
         // Firebase Realtime Database configuration
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getDatabase, ref, onValue, get, query, orderByChild, startAt, endAt, limitToLast } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+        import { getDatabase, ref, onValue, onChildAdded, onChildChanged, onChildRemoved, get, query, orderByChild, startAt, endAt, limitToLast } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
         const firebaseConfig = {
             apiKey: "{{ env('FIREBASE_API_KEY') }}",
@@ -2095,66 +2095,83 @@
             }
         }
 
-        // Try indexed query first, fallback to full node if index missing
-        onValue(ordersRef, handleOrdersSnapshot, (error) => {
-            console.warn('Orders query failed (missing .indexOn?), falling back to full node listener:', error.message);
-            // Fallback: listen to entire orders node without query filter
-            const fallbackRef = ref(database, 'orders');
-            onValue(fallbackRef, (snapshot) => {
-                // Wrap in a filtered snapshot-like handler
-                const now = getServerNowSeconds();
-                ordersContainer.innerHTML = '';
-                latestOrdersCache = [];
+        // Incremental listeners — only receive delta, not full resync
+        function setupOrdersListeners(ordersQuery) {
+            onChildAdded(ordersQuery, (childSnapshot) => {
+                const order = childSnapshot.val();
+                order.id = childSnapshot.key;
+                order.created_at = normalizeUnixSeconds(order.created_at);
+                order.expires_at = normalizeUnixSeconds(order.expires_at);
 
-                if (!snapshot.exists()) {
-                    ordersContainer.innerHTML = '<div class="no-orders">Menunggu orderan...</div>';
-                    initialLoadComplete = true;
-                    return;
-                }
+                // Dedup
+                if (latestOrdersCache.find(o => o.id === order.id)) return;
 
-                let hasNewOrders = false;
-                const orders = [];
-                snapshot.forEach((childSnapshot) => {
-                    const order = childSnapshot.val();
-                    order.id = childSnapshot.key;
-                    order.created_at = normalizeUnixSeconds(order.created_at);
-                    order.expires_at = normalizeUnixSeconds(order.expires_at);
+                latestOrdersCache.push(order);
 
-                    // Client-side filter: only today's orders
-                    if (order.created_at >= todayStartSeconds) {
-                        if (initialLoadComplete && !processedOrderIds.has(childSnapshot.key)) {
-                            if (!order.expires_at || order.expires_at > now) {
-                                hasNewOrders = true;
-                            }
-                        }
-                        processedOrderIds.add(childSnapshot.key);
-                        orders.push(order);
+                // New order notification
+                if (initialLoadComplete && !processedOrderIds.has(order.id)) {
+                    const now = getServerNowSeconds();
+                    if (!order.expires_at || order.expires_at > now) {
+                        enqueueNotificationAudio({ type: 'chime' });
+                        showToast('🔔 Ada Order Baru!', 'order');
                     }
-                });
-
-                if (hasNewOrders) {
-                    enqueueNotificationAudio({ type: 'chime' });
-                    showToast('🔔 Ada Order Baru!', 'order');
                 }
+                processedOrderIds.add(order.id);
 
-                initialLoadComplete = true;
-                latestOrdersCache = orders;
-
-                orders.sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0));
-
-                const activeOrders = orders.filter((order) => {
-                    return !(order.expires_at && order.expires_at < now);
-                });
-
-                if (!activeOrders.length) {
-                    ordersContainer.innerHTML = '<div class="no-orders">Tidak ada order aktif.</div>';
-                } else {
-                    activeOrders.forEach((order) => {
-                        ordersContainer.appendChild(renderOrderCard(order, false));
-                    });
-                }
+                renderAllOrders();
             });
-        });
+
+            onChildChanged(ordersQuery, (childSnapshot) => {
+                const order = childSnapshot.val();
+                order.id = childSnapshot.key;
+                order.created_at = normalizeUnixSeconds(order.created_at);
+                order.expires_at = normalizeUnixSeconds(order.expires_at);
+
+                const idx = latestOrdersCache.findIndex(o => o.id === order.id);
+                if (idx >= 0) {
+                    latestOrdersCache[idx] = order;
+                } else {
+                    latestOrdersCache.push(order);
+                }
+
+                renderAllOrders();
+            });
+
+            onChildRemoved(ordersQuery, (childSnapshot) => {
+                latestOrdersCache = latestOrdersCache.filter(o => o.id !== childSnapshot.key);
+                renderAllOrders();
+            });
+
+            // Mark initial load complete after first batch
+            setTimeout(() => { initialLoadComplete = true; }, 2000);
+        }
+
+        function renderAllOrders() {
+            ordersContainer.innerHTML = '';
+            const now = getServerNowSeconds();
+            const activeOrders = latestOrdersCache.filter((order) => {
+                const expiresAt = normalizeUnixSeconds(order.expires_at);
+                return !(expiresAt && expiresAt < now);
+            });
+
+            if (!activeOrders.length) {
+                ordersContainer.innerHTML = '<div class="no-orders">Tidak ada order aktif.</div>';
+            } else {
+                activeOrders.sort((a, b) => (a.queue_number || 0) - (b.queue_number || 0));
+                activeOrders.forEach((order) => {
+                    ordersContainer.appendChild(renderOrderCard(order, false));
+                });
+            }
+        }
+
+        // Try indexed query first, fallback to full node if index missing
+        try {
+            setupOrdersListeners(ordersRef);
+        } catch (error) {
+            console.warn('Orders query failed, falling back to full node listener:', error.message);
+            const fallbackRef = query(ref(database, 'orders'));
+            setupOrdersListeners(fallbackRef);
+        }
 
         // Expired tab uses a scoped TODAY query with pagination to avoid loading all historical data.
         loadExpiredOrdersPage(1, true);

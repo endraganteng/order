@@ -81,9 +81,14 @@ class KasirScheduleService
 
     public function getPreferences(): array
     {
-        $snap = $this->database->getReference('kasir_schedule_preferences')->getSnapshot();
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
 
-        return $snap->exists() ? (array) $snap->getValue() : [];
+        $snap = $this->database->getReference('kasir_schedule_preferences')->getSnapshot();
+        $cached = $snap->exists() ? (array) $snap->getValue() : [];
+        return $cached;
     }
 
     public function savePreferences(array $prefs): void
@@ -139,6 +144,11 @@ class KasirScheduleService
      */
     public function loadEmployees(): array
     {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
         // 1. Coba dari preferences
         try {
             $prefs = $this->getPreferences();
@@ -161,7 +171,8 @@ class KasirScheduleService
                     }
                 }
                 if (count($kasirs) === 2) {
-                    return ['kasirs' => $kasirs, 'backup' => $backup];
+                    $cached = ['kasirs' => $kasirs, 'backup' => $backup];
+                    return $cached;
                 }
             }
         } catch (\Throwable $e) {
@@ -187,7 +198,8 @@ class KasirScheduleService
             report($e);
         }
 
-        return ['kasirs' => $kasirs, 'backup' => $backup];
+        $cached = ['kasirs' => $kasirs, 'backup' => $backup];
+        return $cached;
     }
 
     private function normalizeWaiter(array $w): array

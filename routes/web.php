@@ -570,6 +570,11 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         Route::post('restock/{poId}/receive', [WaiterController::class, 'receiveRestockItem'])->name('restock.receive');
         Route::post('restock/{poId}/report-issue', [WaiterController::class, 'reportRestockIssue'])->name('restock.report_issue');
 
+        // Manual Order
+        Route::get('order', [WaiterController::class, 'orderIndex'])->name('order');
+        Route::post('order', [WaiterController::class, 'submitOrder'])->name('order.submit');
+        Route::get('order/history', [WaiterController::class, 'orderHistory'])->name('order.history');
+
         // AI Product Chat (waiter)
         Route::prefix('ai-chat')->name('ai_chat.')->group(function () {
             Route::get('/', [\App\Http\Controllers\AiProductChatController::class, 'waiterIndex'])->name('index');

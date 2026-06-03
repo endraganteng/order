@@ -1198,4 +1198,79 @@ class WaiterController extends Controller
             report($e);
         }
     }
+
+    // ─── Manual Order ────────────────────────────────────────────────
+
+    /**
+     * Show manual order creation page.
+     */
+    public function orderIndex()
+    {
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+        $waiterEmail = (string) session('waiter_email', '');
+
+        return view('waiter.order', compact('waiterId', 'waiterName', 'waiterEmail'));
+    }
+
+    /**
+     * Submit manual order via AJAX.
+     */
+    public function submitOrder(Request $request)
+    {
+        $request->validate([
+            'products' => 'required|array|min:1',
+            'products.*.name' => 'required|string|max:200',
+            'products.*.price' => 'required|integer|min:0',
+        ]);
+
+        $waiterId = (string) session('waiter_id');
+        $waiterName = (string) session('waiter_name', 'Waiter');
+        $waiterEmail = (string) session('waiter_email', '');
+
+        $settings = $this->firebase->getSettings();
+        $timeoutMinutes = $settings['order_timeout_minutes'] ?? 3;
+
+        $orderData = [
+            'waiter_id' => $waiterId,
+            'waiter_name' => $waiterName,
+            'waiter_email' => $waiterEmail,
+            'products' => array_values(array_map(fn($p) => [
+                'name' => trim($p['name']),
+                'price' => (int) $p['price'],
+            ], $request->products)),
+            'created_at' => time(),
+            'expires_at' => time() + ($timeoutMinutes * 60),
+        ];
+
+        $queueNumber = $this->firebase->createOrder($orderData);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Order berhasil dibuat!',
+            'queue_number' => $queueNumber,
+        ]);
+    }
+
+    /**
+     * Get order history for logged-in waiter (AJAX).
+     */
+    public function orderHistory(Request $request)
+    {
+        $waiterId = (string) session('waiter_id');
+        $date = $request->input('date', date('Y-m-d'));
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date = date('Y-m-d');
+        }
+
+        $orders = $this->firebase->getOrdersByDateAndWaiter($date, $waiterId);
+
+        usort($orders, fn($a, $b) => ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0));
+
+        return response()->json([
+            'success' => true,
+            'orders' => $orders,
+        ]);
+    }
 }

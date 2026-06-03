@@ -360,7 +360,10 @@
             }, debounceMs);
         };
         try {
-            window.firebaseDB.ref('purchase_orders').limitToLast(20).on('value', trigger);
+            const poRef = window.firebaseDB.ref('purchase_orders').limitToLast(20);
+            poRef.on('child_added', trigger);
+            poRef.on('child_changed', trigger);
+            poRef.on('child_removed', trigger);
         } catch (e) {
             console.warn('[RTDB] restock listener failed:', e);
         }

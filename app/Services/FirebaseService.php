@@ -58,6 +58,10 @@ class FirebaseService
      */
     public function getAllowedEmails()
     {
+        if (isset($this->requestCache['allowed_emails'])) {
+            return $this->requestCache['allowed_emails'];
+        }
+
         $reference = $this->database->getReference('allowed_waiters');
         $snapshot = $reference->getSnapshot();
 
@@ -69,6 +73,8 @@ class FirebaseService
                 $waiters[] = $merged;
             }
         }
+
+        $this->requestCache['allowed_emails'] = $waiters;
 
         return $waiters;
     }
@@ -2292,6 +2298,18 @@ class FirebaseService
         // 5. Save order
         $this->database->getReference('orders')
             ->push($orderData);
+
+        return $newCounter;
+    }
+
+    /**
+     * Get orders for a specific date filtered by waiter_id.
+     */
+    public function getOrdersByDateAndWaiter(string $date, string $waiterId): array
+    {
+        $orders = $this->getOrdersByDate($date);
+
+        return array_values(array_filter($orders, fn($order) => ($order['waiter_id'] ?? '') === $waiterId));
     }
 
     /**
@@ -2782,6 +2800,11 @@ class FirebaseService
      */
     public function getWaiterTasksByWaiterId($waiterId)
     {
+        $cacheKey = 'waiter_tasks_by_id_' . (string) $waiterId;
+        if (isset($this->requestCache[$cacheKey])) {
+            return $this->requestCache[$cacheKey];
+        }
+
         $reference = $this->database->getReference('waiter_tasks')
             ->orderByChild('assigned_waiter_id')
             ->equalTo((string) $waiterId);
@@ -2798,6 +2821,8 @@ class FirebaseService
             return ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0);
         });
 
+        $this->requestCache[$cacheKey] = $tasks;
+
         return $tasks;
     }
 
@@ -2807,17 +2832,26 @@ class FirebaseService
      */
     public function getWaiterTasksForDate(string $waiterId, string $date): array
     {
-        $reference = $this->database->getReference('waiter_tasks')
-            ->orderByChild('scheduled_for_date')
-            ->equalTo($date);
-        $snapshot = $reference->getSnapshot();
+        $cacheKey = 'tasks_by_date_' . $date;
+        if (! isset($this->requestCache[$cacheKey])) {
+            $reference = $this->database->getReference('waiter_tasks')
+                ->orderByChild('scheduled_for_date')
+                ->equalTo($date);
+            $snapshot = $reference->getSnapshot();
+
+            $allTasks = [];
+            if ($snapshot->exists()) {
+                foreach ($snapshot->getValue() as $key => $task) {
+                    $allTasks[] = array_merge(['id' => $key], $task);
+                }
+            }
+            $this->requestCache[$cacheKey] = $allTasks;
+        }
 
         $tasks = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $task) {
-                if (($task['assigned_waiter_id'] ?? '') === $waiterId) {
-                    $tasks[] = array_merge(['id' => $key], $task);
-                }
+        foreach ($this->requestCache[$cacheKey] as $task) {
+            if (($task['assigned_waiter_id'] ?? '') === $waiterId) {
+                $tasks[] = $task;
             }
         }
 
@@ -11585,47 +11619,82 @@ class FirebaseService
         // Rack ID being evaluated — used for same-rack dedup.
         $thisRackId = (string) ($template['rack_id'] ?? '');
 
+        // ── Bulk-fetch all tasks for targetDate ONCE (avoid N+1 Firebase queries) ──
+        $cacheKey = 'tasks_by_date_' . $targetDate;
+        if (! isset($this->requestCache[$cacheKey])) {
+            try {
+                $allDateTasks = $this->getWaiterTasksByDate($targetDate);
+            } catch (\Throwable $e) {
+                report($e);
+                $allDateTasks = [];
+            }
+            $this->requestCache[$cacheKey] = $allDateTasks;
+        }
+        $allDateTasks = $this->requestCache[$cacheKey];
+
+        // Group by waiter_id for quick lookup
+        $tasksByWaiter = [];
+        foreach ($allDateTasks as $t) {
+            $wid = (string) ($t['assigned_waiter_id'] ?? '');
+            if ($wid !== '') {
+                $tasksByWaiter[$wid][] = $t;
+            }
+        }
+
         $evaluated = [];
         foreach ($candidates as $waiter) {
             $waiterId = (string) ($waiter['id'] ?? '');
             $isWorking = $waiterId !== '' ? $this->isWorkingDay($waiterId, $targetDate) : false;
             $dailyCap = $isWorking ? $this->getRackCheckDailyCap($waiterId, $targetDate, $template) : 0;
 
-            // today_count: Firebase query + in-memory additions from this run.
-            $firebaseCount = $waiterId !== ''
-                ? $this->countRackCheckTasksForWaiterOnDate($waiterId, $targetDate)
-                : 0;
+            // today_count: from bulk-fetched tasks + in-memory additions from this run.
+            $waiterDateTasks = $tasksByWaiter[$waiterId] ?? [];
+            $firebaseCount = 0;
+            foreach ($waiterDateTasks as $t) {
+                if (($t['task_type'] ?? '') !== 'rack_check') continue;
+                if ((string) ($t['status'] ?? '') === 'cancelled') continue;
+                $firebaseCount++;
+            }
             $inRunCount = (int) ($inMemoryCounter[$waiterId] ?? 0);
             $todayCount = $firebaseCount + $inRunCount;
 
-            $weeklyCount = $waiterId !== ''
-                ? $this->countRackCheckTasksForWaiterBetweenDates($waiterId, $weekStart, $targetDate)
-                : 0;
-            $lastAssignedAt = $waiterId !== ''
-                ? $this->getLastRackCheckAssignedAt($waiterId)
-                : 0;
-            $monthlyPoints = $waiterId !== ''
-                ? $this->getWaiterMonthlyPointsForPriority($waiterId, $targetDate)
-                : 0;
+            // weekly_count: use cached per-waiter data
+            $weeklyCacheKey = 'weekly_rack_count_' . $waiterId . '_' . $weekStart . '_' . $targetDate;
+            if (! isset($this->requestCache[$weeklyCacheKey])) {
+                $this->requestCache[$weeklyCacheKey] = $waiterId !== ''
+                    ? $this->countRackCheckTasksForWaiterBetweenDates($waiterId, $weekStart, $targetDate)
+                    : 0;
+            }
+            $weeklyCount = $this->requestCache[$weeklyCacheKey];
+
+            // last_assigned_at: cache per waiter
+            $lastCacheKey = 'last_rack_assigned_' . $waiterId;
+            if (! isset($this->requestCache[$lastCacheKey])) {
+                $this->requestCache[$lastCacheKey] = $waiterId !== ''
+                    ? $this->getLastRackCheckAssignedAt($waiterId)
+                    : 0;
+            }
+            $lastAssignedAt = $this->requestCache[$lastCacheKey];
+
+            // monthly_points: cache per waiter
+            $pointsCacheKey = 'monthly_points_' . $waiterId . '_' . $targetDate;
+            if (! isset($this->requestCache[$pointsCacheKey])) {
+                $this->requestCache[$pointsCacheKey] = $waiterId !== ''
+                    ? $this->getWaiterMonthlyPointsForPriority($waiterId, $targetDate)
+                    : 0;
+            }
+            $monthlyPoints = $this->requestCache[$pointsCacheKey];
 
             // Same-rack dedup: reject waiter already assigned this rack today
-            // (either from Firebase tasks or from this run's in-memory state).
             $alreadyHasThisRack = false;
             if ($thisRackId !== '' && $waiterId !== '') {
-                // Check Firebase tasks for this waiter+rack+date
-                if ($firebaseCount > 0) {
-                    try {
-                        $waiterTodayTasks = $this->getWaiterTasksForDate($waiterId, $targetDate);
-                        foreach ($waiterTodayTasks as $t) {
-                            if (($t['task_type'] ?? '') === 'rack_check'
-                                && (string)($t['rack_id'] ?? '') === $thisRackId
-                                && (string)($t['status'] ?? '') !== 'cancelled') {
-                                $alreadyHasThisRack = true;
-                                break;
-                            }
-                        }
-                    } catch (\Throwable $e) {
-                        // Ignore — worst case waiter gets same rack twice, not a crash
+                // Check from bulk-fetched tasks
+                foreach ($waiterDateTasks as $t) {
+                    if (($t['task_type'] ?? '') === 'rack_check'
+                        && (string) ($t['rack_id'] ?? '') === $thisRackId
+                        && (string) ($t['status'] ?? '') !== 'cancelled') {
+                        $alreadyHasThisRack = true;
+                        break;
                     }
                 }
                 // Check in-memory assignments from this run

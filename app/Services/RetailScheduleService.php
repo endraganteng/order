@@ -31,12 +31,19 @@ class RetailScheduleService
 
     public function getPreferences(): array
     {
-        $snap = $this->database->getReference('retail_schedule_preferences')->getSnapshot();
-        if (! $snap->exists()) {
-            return [];
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
         }
 
-        return (array) $snap->getValue();
+        $snap = $this->database->getReference('retail_schedule_preferences')->getSnapshot();
+        if (! $snap->exists()) {
+            $cached = [];
+            return $cached;
+        }
+
+        $cached = (array) $snap->getValue();
+        return $cached;
     }
 
     public function savePreferences(array $prefs): void
@@ -273,6 +280,11 @@ class RetailScheduleService
      */
     public function loadRetailEmployees(): array
     {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
         try {
             $prefs = $this->getPreferences();
             $employeeIds = $prefs['employees'] ?? [];
@@ -292,7 +304,8 @@ class RetailScheduleService
                     }
                 }
                 if (count($resolved) === 3) {
-                    return $resolved;
+                    $cached = $resolved;
+                    return $cached;
                 }
             }
         } catch (\Throwable $e) {
@@ -320,7 +333,8 @@ class RetailScheduleService
             report($e);
         }
 
-        return array_values(array_filter($resolved));
+        $cached = array_values(array_filter($resolved));
+        return $cached;
     }
 
     /**
