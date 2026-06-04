@@ -16,6 +16,13 @@ Artisan::command('inspire', function () {
 Artisan::command('waiter:process-tasks', function () {
     $firebase = app(FirebaseService::class);
     $fonnte = app(FonnteService::class);
+
+    // Cancel orphaned tasks (template deleted but tasks still pending)
+    $orphansCancelled = $firebase->cancelOrphanedPendingTasks();
+    if ($orphansCancelled > 0) {
+        $this->info("Cancelled {$orphansCancelled} orphaned tasks (template deleted).");
+    }
+
     $generateResult = $firebase->generateDueRecurringWaiterTasks();
     $generatedCount = is_array($generateResult)
         ? (int) ($generateResult['generated'] ?? 0)

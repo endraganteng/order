@@ -5363,6 +5363,81 @@ class FirebaseService
     }
 
     /**
+     * Cancel orphaned pending tasks whose source template no longer exists.
+     * Safety net for tasks created after template deletion (e.g. overflow redistribution).
+     *
+     * @return int Number of tasks cancelled
+     */
+    public function cancelOrphanedPendingTasks(): int
+    {
+        $today = date('Y-m-d');
+        $cancelledCount = 0;
+
+        try {
+            // Get all pending tasks for today
+            $reference = $this->database->getReference('waiter_tasks')
+                ->orderByChild('scheduled_for_date')
+                ->equalTo($today);
+            $snapshot = $reference->getSnapshot();
+
+            if (! $snapshot->exists()) {
+                return 0;
+            }
+
+            // Collect unique template IDs from pending tasks
+            $templateIds = [];
+            $pendingTasks = [];
+            foreach ((array) $snapshot->getValue() as $taskId => $task) {
+                $status = (string) ($task['status'] ?? 'pending');
+                if (! in_array($status, ['pending', 'in_progress'], true)) {
+                    continue;
+                }
+                $sourceId = (string) ($task['source_template_id'] ?? $task['template_id'] ?? '');
+                if ($sourceId === '') {
+                    continue;
+                }
+                $pendingTasks[$taskId] = $sourceId;
+                $templateIds[$sourceId] = true;
+            }
+
+            if (empty($pendingTasks)) {
+                return 0;
+            }
+
+            // Check which templates still exist
+            $existingTemplates = [];
+            foreach (array_keys($templateIds) as $tplId) {
+                $tplSnap = $this->database->getReference('waiter_task_templates/' . $tplId)->getSnapshot();
+                if ($tplSnap->exists()) {
+                    $existingTemplates[$tplId] = true;
+                }
+            }
+
+            // Cancel tasks whose template no longer exists
+            $updates = [];
+            $now = time();
+            foreach ($pendingTasks as $taskId => $sourceId) {
+                if (isset($existingTemplates[$sourceId])) {
+                    continue; // Template still exists, skip
+                }
+                $updates[$taskId . '/status'] = 'cancelled';
+                $updates[$taskId . '/cancelled_at'] = $now;
+                $updates[$taskId . '/cancelled_by_template_delete'] = true;
+                $updates[$taskId . '/completed_note'] = 'Template induk tidak ditemukan (auto-cleanup)';
+                $cancelledCount++;
+            }
+
+            if (! empty($updates)) {
+                $this->database->getReference('waiter_tasks')->update($updates);
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $cancelledCount;
+    }
+
+    /**
      * Reset all rack-check waiter data (tasks + recurring templates).
      */
     public function resetRackCheckWaiterData(): array
