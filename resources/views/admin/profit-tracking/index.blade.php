@@ -47,6 +47,16 @@
 @if(session('info'))
 <div class="pt-alert pt-alert-info">ℹ️ {{ session('info') }}</div>
 @endif
+@if($errors->any())
+<div class="pt-alert" style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;">
+    ⚠️ <strong>Error:</strong>
+    <ul style="margin:4px 0 0 16px;">
+        @foreach($errors->all() as $error)
+            <li>{{ $error }}</li>
+        @endforeach
+    </ul>
+</div>
+@endif
 
 {{-- Filter Bar --}}
 <form method="GET" action="{{ route('admin.profit-tracking.index') }}" class="pt-filter-bar">
@@ -145,3 +155,20 @@
 @endforelse
 
 @endsection
+
+@push('scripts')
+<script>
+document.querySelectorAll('.pt-input-nominal').forEach(function(input) {
+    input.addEventListener('input', function() {
+        var row = this.closest('tr');
+        var stokMasukText = row.querySelectorAll('td')[2].textContent;
+        var stokMasuk = parseFloat(stokMasukText.replace(/[^\d]/g, '')) || 0;
+        var penjualan = parseFloat(this.value) || 0;
+        var profit = penjualan - stokMasuk;
+        var profitCell = row.querySelectorAll('td')[5];
+        profitCell.textContent = 'Rp ' + profit.toLocaleString('id-ID');
+        profitCell.className = profit >= 0 ? 'pt-profit-positive' : 'pt-profit-negative';
+    });
+});
+</script>
+@endpush
