@@ -32,3 +32,4 @@ Thumbs.db
 *.bak
 resources/views/webhooks/dana_inspect.blade.php
 resources/views/webhooks/partials/dana_entry.blade.php
+.claude/worktrees/agent-a82ab684f1102a98b/

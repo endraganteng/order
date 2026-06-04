@@ -54,13 +54,23 @@ Artisan::command('waiter:send-task-reminders {date?}', function (?string $date =
     $date = $date ?: date('Y-m-d');
     $sentByType = ['general' => 0, 'rack_check' => 0];
 
+    // Single indexed query for all tasks today (instead of N+1 per waiter)
+    $allTodayTasks = $firebase->getWaiterTasksByDateRange($date, $date);
+    $tasksByWaiter = [];
+    foreach ($allTodayTasks as $task) {
+        $wid = (string) ($task['assigned_waiter_id'] ?? '');
+        if ($wid !== '') {
+            $tasksByWaiter[$wid][] = $task;
+        }
+    }
+
     foreach ($firebase->getActiveWaiters() as $waiter) {
         $waiterId = (string) ($waiter['id'] ?? '');
         if ($waiterId === '') {
             continue;
         }
 
-        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId);
+        $tasks = $tasksByWaiter[$waiterId] ?? [];
         $visiblePendingTasks = array_values(array_filter($tasks, function ($task) use ($date, $firebase, $waiterId) {
             if (($task['status'] ?? 'pending') !== 'pending') {
                 return false;

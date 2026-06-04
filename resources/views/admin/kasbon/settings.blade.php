@@ -30,7 +30,7 @@
             <div style="margin-bottom: 16px;">
                 <label style="display:block; font-weight:600; font-size:13px; margin-bottom:4px;">Default Limit (%)</label>
                 <input type="number" name="default_limit_percent" value="{{ $config['default_limit_percent'] }}" min="1" max="100" required style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px;">
-                <p style="font-size:12px; color:#64748b; margin-top:4px;">Persentase dari gaji berjalan (prorated harian). Contoh: 30% = max kasbon 30% dari gaji yang sudah berjalan bulan ini.</p>
+                <p style="font-size:12px; color:#64748b; margin-top:4px;">Persentase dari gaji bulanan. Default 100% = tanpa batas (maks seluruh gaji). Berlaku untuk karyawan yang belum di-set limit secara individual.</p>
             </div>
             <div style="margin-bottom: 16px;">
                 <label style="display:block; font-weight:600; font-size:13px; margin-bottom:4px;">Limit Fixed (Rp)</label>

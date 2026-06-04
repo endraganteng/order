@@ -2313,12 +2313,17 @@ class FirebaseService
     }
 
     /**
-     * Get order statistics per user
+     * Get order statistics per user (filtered to current month for bandwidth efficiency).
      */
     public function getUserOrderStats()
     {
+        $startOfMonth = strtotime(date('Y-m-01') . ' 00:00:00') * 1000;
+
         $ordersRef = $this->database->getReference('orders');
-        $ordersSnapshot = $ordersRef->getSnapshot();
+        $ordersSnapshot = $ordersRef
+            ->orderByChild('created_at')
+            ->startAt($startOfMonth)
+            ->getSnapshot();
 
         $stats = [];
 
@@ -2775,6 +2780,7 @@ class FirebaseService
 
     /**
      * Get all waiter tasks.
+     * @deprecated Use getWaiterTasksByDateRange() instead to avoid downloading entire node.
      */
     public function getWaiterTasks()
     {
@@ -2789,8 +2795,42 @@ class FirebaseService
         }
 
         usort($tasks, function ($a, $b) {
-            return ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0);
+            return (int) ($b['created_at'] ?? 0) - (int) ($a['created_at'] ?? 0);
         });
+
+        return $tasks;
+    }
+
+    /**
+     * Get waiter tasks filtered by date range (uses scheduled_for_date index).
+     * Much more efficient than getWaiterTasks() for bounded queries.
+     */
+    public function getWaiterTasksByDateRange(string $startDate, string $endDate): array
+    {
+        $cacheKey = 'waiter_tasks_range_' . $startDate . '_' . $endDate;
+        if (isset($this->requestCache[$cacheKey])) {
+            return $this->requestCache[$cacheKey];
+        }
+
+        $reference = $this->database->getReference('waiter_tasks');
+        $snapshot = $reference
+            ->orderByChild('scheduled_for_date')
+            ->startAt($startDate)
+            ->endAt($endDate)
+            ->getSnapshot();
+
+        $tasks = [];
+        if ($snapshot->exists()) {
+            foreach ($snapshot->getValue() as $key => $task) {
+                $tasks[] = array_merge(['id' => $key], $task);
+            }
+        }
+
+        usort($tasks, function ($a, $b) {
+            return (int) ($b['created_at'] ?? 0) - (int) ($a['created_at'] ?? 0);
+        });
+
+        $this->requestCache[$cacheKey] = $tasks;
 
         return $tasks;
     }
@@ -2818,7 +2858,9 @@ class FirebaseService
         }
 
         usort($tasks, function ($a, $b) {
-            return ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0);
+            $aTime = is_numeric($a['created_at'] ?? 0) ? (int) ($a['created_at'] ?? 0) : strtotime($a['created_at'] ?? '0');
+            $bTime = is_numeric($b['created_at'] ?? 0) ? (int) ($b['created_at'] ?? 0) : strtotime($b['created_at'] ?? '0');
+            return $bTime - $aTime;
         });
 
         $this->requestCache[$cacheKey] = $tasks;

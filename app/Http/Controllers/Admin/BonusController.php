@@ -154,7 +154,7 @@ class BonusController extends Controller
 
         // ── BATCH FETCH: read each node ONCE for all waiters ──
         $allAttendance = $this->firebase->getAllAttendanceByDate($date);       // 1 read
-        $allTasks      = $this->firebase->getWaiterTasks();                    // 1 read
+        $allTasks      = $this->firebase->getWaiterTasksByDateRange($date, $date); // 1 read (indexed query, today only)
         $allReports    = $this->firebase->getWaiterActivityReportsByDate($date); // 1 read (via getWaiterActivityReports internally)
         $allPenalties  = $this->bonus->getPenaltiesByPeriod($startDate, $date);  // period scope
 

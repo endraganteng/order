@@ -72,8 +72,11 @@ class PayrollController extends Controller
         $kasbonService = app(KasbonService::class);
         $kasbonSettings = $kasbonService->getWaiterKasbonSettings($waiterId);
 
+        // Salary pause info
+        $salaryPause = $this->payroll->getWaiterSalaryPause($waiterId);
+
         return view('admin.payroll.show', compact(
-            'waiter', 'settings', 'balance', 'transactions', 'kasbonSettings'
+            'waiter', 'settings', 'balance', 'transactions', 'kasbonSettings', 'salaryPause'
         ));
     }
 
@@ -97,11 +100,13 @@ class PayrollController extends Controller
     public function updateSettings(string $waiterId, Request $request)
     {
         $data = $request->validate([
-            'payroll_enabled'     => 'nullable|boolean',
-            'monthly_salary'      => 'nullable|integer|min:0|max:999999999',
-            'payday'              => 'nullable|integer|min:0|max:28',
-            'kasbon_enabled'      => 'nullable|boolean',
-            'kasbon_limit_percent' => 'nullable|integer|min:0|max:100',
+            'payroll_enabled'          => 'nullable|boolean',
+            'monthly_salary'           => 'nullable|integer|min:0|max:999999999',
+            'payday'                   => 'nullable|integer|min:0|max:28',
+            'kasbon_enabled'           => 'nullable|boolean',
+            'kasbon_limit_mode'        => 'nullable|string|in:none,percent,fixed',
+            'kasbon_limit_percent'     => 'nullable|integer|min:0|max:100',
+            'kasbon_limit_fixed_amount' => 'nullable|integer|min:0|max:999999999',
         ]);
 
         // Bank account fields are managed by waiter themselves via /waiter/payroll.
@@ -115,7 +120,9 @@ class PayrollController extends Controller
         $kasbonService = app(KasbonService::class);
         $kasbonService->updateWaiterKasbonSettings($waiterId, [
             'kasbon_enabled' => (bool) ($data['kasbon_enabled'] ?? false),
+            'kasbon_limit_mode' => $data['kasbon_limit_mode'] ?? 'none',
             'kasbon_limit_percent' => $data['kasbon_limit_percent'] ?? null,
+            'kasbon_limit_fixed_amount' => $data['kasbon_limit_fixed_amount'] ?? null,
         ]);
 
         $this->firebase->logAuditAction('payroll_settings_update', 'waiter', $waiterId, [
@@ -205,6 +212,50 @@ class PayrollController extends Controller
     {
         $pending = $this->payroll->listPendingWithdrawals();
         return view('admin.payroll.withdrawals', compact('pending'));
+    }
+
+    /**
+     * Set/clear salary pause (cuti/pulang kampung) untuk karyawan.
+     */
+    public function pauseSalary(string $waiterId, Request $request)
+    {
+        $data = $request->validate([
+            'pause_start'  => 'nullable|date_format:Y-m-d',
+            'pause_end'    => 'nullable|date_format:Y-m-d',
+            'pause_reason' => 'nullable|string|max:200',
+            'clear_pause'  => 'nullable|boolean',
+        ]);
+
+        if (! empty($data['clear_pause'])) {
+            $result = $this->payroll->setWaiterSalaryPause($waiterId, null, null);
+        } else {
+            if (empty($data['pause_start']) || empty($data['pause_end'])) {
+                return back()->withErrors(['pause_start' => 'Tanggal mulai dan selesai wajib diisi.'])->withInput();
+            }
+            $result = $this->payroll->setWaiterSalaryPause(
+                $waiterId,
+                $data['pause_start'],
+                $data['pause_end'],
+                trim((string) ($data['pause_reason'] ?? ''))
+            );
+        }
+
+        if (! ($result['success'] ?? false)) {
+            return back()->withErrors(['pause_start' => $result['message'] ?? 'Gagal menyimpan pause.'])->withInput();
+        }
+
+        $this->firebase->logAuditAction('payroll_pause_salary', 'waiter', $waiterId, [
+            'pause_start'  => $data['pause_start'] ?? null,
+            'pause_end'    => $data['pause_end'] ?? null,
+            'pause_reason' => $data['pause_reason'] ?? '',
+            'cleared'      => ! empty($data['clear_pause']),
+        ]);
+
+        $msg = ! empty($data['clear_pause'])
+            ? 'Pause gaji berhasil dihapus. Karyawan akan menerima gaji normal.'
+            : 'Gaji di-pause dari ' . $data['pause_start'] . ' s/d ' . $data['pause_end'] . '.';
+
+        return back()->with('success', $msg);
     }
 
     public function approveWithdrawal(string $txId, Request $request)

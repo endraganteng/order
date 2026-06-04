@@ -281,7 +281,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('payroll/{waiterId}', [PayrollController::class, 'show'])->name('payroll.show');
         Route::post('payroll/{waiterId}/settings', [PayrollController::class, 'updateSettings'])->name('payroll.settings_update');
         Route::post('payroll/{waiterId}/credit', [PayrollController::class, 'manualCredit'])->name('payroll.manual_credit');
-        // Cash payout replaced by approveWithdrawalWithCash modal — lihat withdrawals.blade.php
+        Route::post('payroll/{waiterId}/cash-payout', [PayrollController::class, 'cashPayout'])->name('payroll.cash_payout');
+        Route::post('payroll/{waiterId}/pause-salary', [PayrollController::class, 'pauseSalary'])->name('payroll.pause_salary');
 
         // Kasbon Management
         Route::get('kasbon', [\App\Http\Controllers\Admin\KasbonController::class, 'index'])->name('kasbon.index');

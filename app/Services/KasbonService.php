@@ -36,7 +36,7 @@ class KasbonService
         $rows = DB::table('kasbon_configs')->pluck('value', 'key')->toArray();
 
         return array_merge([
-            'default_limit_percent' => '30',
+            'default_limit_percent' => '100',
             'kasbon_limit_fixed' => '0',
             'min_kasbon_amount' => '50000',
             'max_active_kasbon' => '1',
@@ -70,17 +70,23 @@ class KasbonService
 
         $config = $this->getConfig();
         $monthlySalary = (int) ($waiter['monthly_salary'] ?? 0);
-        $limitPercent = (int) ($waiter['kasbon_limit_percent'] ?? $config['default_limit_percent']);
-        $limitFixed = (int) $config['kasbon_limit_fixed'];
 
-        // Prorated: (salary / 30) * days_worked_this_month * percent / 100
-        $daysWorked = (int) date('j'); // hari ke-berapa bulan ini
-        $proratedLimit = ($monthlySalary > 0)
-            ? (int) floor(($monthlySalary / 30) * $daysWorked * $limitPercent / 100)
-            : $limitFixed;
+        // Determine limit mode: 'none' (no limit), 'percent', 'fixed'
+        $limitMode = $waiter['kasbon_limit_mode'] ?? 'none';
 
-        // Jika salary ada, tambahkan fixed sebagai bonus limit
-        $totalLimit = ($monthlySalary > 0) ? $proratedLimit + $limitFixed : $limitFixed;
+        if ($limitMode === 'fixed') {
+            // Fixed rupiah amount as limit
+            $totalLimit = (int) ($waiter['kasbon_limit_fixed_amount'] ?? 0);
+        } elseif ($limitMode === 'percent') {
+            // Percentage of monthly salary (no proration)
+            $limitPercent = (int) ($waiter['kasbon_limit_percent'] ?? $config['default_limit_percent']);
+            $totalLimit = ($monthlySalary > 0)
+                ? (int) floor($monthlySalary * $limitPercent / 100)
+                : 0;
+        } else {
+            // 'none' = no custom limit, use 100% of monthly salary
+            $totalLimit = $monthlySalary;
+        }
 
         // Kasbon aktif yang masih berjalan
         $usedAmount = (int) DB::table('kasbons')
@@ -95,8 +101,7 @@ class KasbonService
             'used' => $usedAmount,
             'available' => $available,
             'monthly_salary' => $monthlySalary,
-            'days_worked' => $daysWorked,
-            'limit_percent' => $limitPercent,
+            'limit_mode' => $limitMode,
         ];
     }
 
@@ -120,16 +125,6 @@ class KasbonService
             return ['success' => false, 'message' => "Minimal kasbon Rp " . number_format($minAmount, 0, ',', '.')];
         }
 
-        // Cek max active
-        $maxActive = (int) $config['max_active_kasbon'];
-        $activeCount = DB::table('kasbons')
-            ->where('waiter_id', $waiterId)
-            ->where('status', 'active')
-            ->count();
-        if ($activeCount >= $maxActive) {
-            return ['success' => false, 'message' => "Sudah ada {$activeCount} kasbon aktif. Maksimal {$maxActive}."];
-        }
-
         // Cek limit
         $limitInfo = $this->calculateAvailableLimit($waiterId);
         if ($amount > $limitInfo['available']) {
@@ -147,15 +142,10 @@ class KasbonService
             }
 
             try {
-                // Re-check active count inside lock to prevent race
-                $activeCount = DB::table('kasbons')
-                    ->where('waiter_id', $waiterId)
-                    ->where('status', 'active')
-                    ->count();
-                $config = $this->getConfig();
-                $maxActive = (int) $config['max_active_kasbon'];
-                if ($activeCount >= $maxActive) {
-                    return ['success' => false, 'message' => "Sudah ada {$activeCount} kasbon aktif. Maksimal {$maxActive}."];
+                // Re-check limit inside lock to prevent race
+                $limitInfo = $this->calculateAvailableLimit($waiterId);
+                if ($amount > $limitInfo['available']) {
+                    return ['success' => false, 'message' => 'Melebihi limit kasbon. Tersedia: Rp ' . number_format($limitInfo['available'], 0, ',', '.')];
                 }
 
                 $newBalance = $this->payroll->adjustBalancePublic($waiterId, -$amount);
@@ -485,7 +475,9 @@ class KasbonService
 
         return [
             'kasbon_enabled' => (bool) ($waiter['kasbon_enabled'] ?? false),
+            'kasbon_limit_mode' => $waiter['kasbon_limit_mode'] ?? 'none',
             'kasbon_limit_percent' => isset($waiter['kasbon_limit_percent']) ? (int) $waiter['kasbon_limit_percent'] : null,
+            'kasbon_limit_fixed_amount' => isset($waiter['kasbon_limit_fixed_amount']) ? (int) $waiter['kasbon_limit_fixed_amount'] : null,
         ];
     }
 
@@ -495,9 +487,19 @@ class KasbonService
         if (array_key_exists('kasbon_enabled', $patch)) {
             $payload['kasbon_enabled'] = (bool) $patch['kasbon_enabled'];
         }
+        if (array_key_exists('kasbon_limit_mode', $patch)) {
+            $allowed = ['none', 'percent', 'fixed'];
+            $payload['kasbon_limit_mode'] = in_array($patch['kasbon_limit_mode'], $allowed, true)
+                ? $patch['kasbon_limit_mode']
+                : 'none';
+        }
         if (array_key_exists('kasbon_limit_percent', $patch)) {
             $val = $patch['kasbon_limit_percent'];
             $payload['kasbon_limit_percent'] = ($val !== null && $val !== '') ? max(0, min(100, (int) $val)) : null;
+        }
+        if (array_key_exists('kasbon_limit_fixed_amount', $patch)) {
+            $val = $patch['kasbon_limit_fixed_amount'];
+            $payload['kasbon_limit_fixed_amount'] = ($val !== null && $val !== '') ? max(0, (int) $val) : null;
         }
         if (! empty($payload)) {
             $payload['updated_at'] = time();

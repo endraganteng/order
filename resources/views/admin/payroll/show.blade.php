@@ -66,10 +66,58 @@
                     <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Jika diaktifkan, Finance bisa membuat kasbon untuk karyawan ini dari halaman Kasbon.</p>
                 </div>
                 <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Limit Kasbon (%)</label>
-                    <input type="number" name="kasbon_limit_percent" value="{{ $kasbonSettings['kasbon_limit_percent'] ?? '' }}" min="0" max="100" placeholder="Kosongkan = pakai default (30%)" class="form-control" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
-                    <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Persentase dari gaji berjalan (prorated). Kosongkan untuk pakai default dari pengaturan kasbon.</p>
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Mode Limit Kasbon</label>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px;" id="mode-none-label">
+                            <input type="radio" name="kasbon_limit_mode" value="none" {{ ($kasbonSettings['kasbon_limit_mode'] ?? 'none') === 'none' ? 'checked' : '' }} onchange="toggleKasbonLimitFields()">
+                            Tanpa Batas
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px;" id="mode-percent-label">
+                            <input type="radio" name="kasbon_limit_mode" value="percent" {{ ($kasbonSettings['kasbon_limit_mode'] ?? 'none') === 'percent' ? 'checked' : '' }} onchange="toggleKasbonLimitFields()">
+                            Persen (%)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 13px;" id="mode-fixed-label">
+                            <input type="radio" name="kasbon_limit_mode" value="fixed" {{ ($kasbonSettings['kasbon_limit_mode'] ?? 'none') === 'fixed' ? 'checked' : '' }} onchange="toggleKasbonLimitFields()">
+                            Rupiah Tetap
+                        </label>
+                    </div>
+                    <p style="font-size: 11px; color: #64748b; margin-top: 4px;"><strong>Tanpa Batas</strong> = maks 100% gaji. <strong>Persen</strong> = % dari gaji bulanan. <strong>Rupiah Tetap</strong> = nominal tetap.</p>
                 </div>
+                <div id="kasbon-percent-field" style="margin-bottom: 12px; display: none;">
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Limit Kasbon (%)</label>
+                    <input type="number" name="kasbon_limit_percent" value="{{ $kasbonSettings['kasbon_limit_percent'] ?? '' }}" min="1" max="100" placeholder="Contoh: 50" class="form-control" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Persentase dari gaji bulanan sebagai batas kasbon.</p>
+                </div>
+                <div id="kasbon-fixed-field" style="margin-bottom: 12px; display: none;">
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Limit Kasbon (Rupiah)</label>
+                    <div style="position: relative;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #64748b; font-size: 13px;">Rp</span>
+                        <input type="text" id="kasbonFixedDisplay" inputmode="numeric" autocomplete="off" value="{{ ($kasbonSettings['kasbon_limit_fixed_amount'] ?? 0) > 0 ? number_format($kasbonSettings['kasbon_limit_fixed_amount'], 0, ',', '.') : '' }}" placeholder="Contoh: 500.000" class="form-control rupiah-input" style="width: 100%; padding: 8px 12px 8px 36px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                    <input type="hidden" name="kasbon_limit_fixed_amount" id="kasbonFixedRaw" value="{{ (int) ($kasbonSettings['kasbon_limit_fixed_amount'] ?? 0) }}">
+                    <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Nominal tetap sebagai batas kasbon (tidak tergantung gaji).</p>
+                </div>
+                <script>
+                function toggleKasbonLimitFields() {
+                    var mode = document.querySelector('input[name="kasbon_limit_mode"]:checked').value;
+                    document.getElementById('kasbon-percent-field').style.display = mode === 'percent' ? 'block' : 'none';
+                    document.getElementById('kasbon-fixed-field').style.display = mode === 'fixed' ? 'block' : 'none';
+                }
+                document.addEventListener('DOMContentLoaded', function() {
+                    toggleKasbonLimitFields();
+                    var fixedDisplay = document.getElementById('kasbonFixedDisplay');
+                    var fixedRaw = document.getElementById('kasbonFixedRaw');
+                    if (fixedDisplay) {
+                        fixedDisplay.addEventListener('input', function() {
+                            var num = this.value.replace(/[^\d]/g, '');
+                            fixedRaw.value = num;
+                            if (num) {
+                                this.value = parseInt(num).toLocaleString('id-ID');
+                            }
+                        });
+                    }
+                });
+                </script>
                 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 16px 0;">
                 <h4 style="margin-top: 0; color: #475569;">🏦 Rekening Tujuan Penarikan</h4>
                 <p style="font-size: 12px; color: #64748b; margin-bottom: 8px;">Diatur oleh karyawan sendiri lewat portal /waiter/payroll. Anda hanya bisa lihat untuk verifikasi.</p>
@@ -104,6 +152,90 @@
                 </div>
                 <button type="submit" class="btn" style="background: #10b981; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;">+ Tambah Saldo</button>
             </form>
+        </div>
+
+        {{-- Cash Payout (Manual Debit) --}}
+        <div class="card" style="padding: 16px; margin-top: 16px;">
+            <h3 style="margin-top: 0;">💵 Bayar Tunai (Tarik Saldo)</h3>
+            <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">Potong saldo karyawan dan keluarkan uang tunai dari akun kas. Membutuhkan PIN supervisor.</p>
+            <form method="POST" action="{{ route('admin.payroll.cash_payout', $waiter['id'] ?? '') }}">
+                @csrf
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Nominal</label>
+                    <div style="position: relative;">
+                        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #475569; font-weight: 600; pointer-events: none;">Rp</span>
+                        <input type="text" id="payoutDisplay" inputmode="numeric" autocomplete="off" required class="form-control rupiah-input" placeholder="0" style="width: 100%; padding: 8px 12px 8px 36px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                    <input type="hidden" name="amount" id="payoutRaw">
+                    <small style="color: #64748b; font-size: 11px;">Maks: Rp {{ number_format($balance, 0, ',', '.') }} (saldo saat ini)</small>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Akun Kas</label>
+                    <select name="cash_account_id" required style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;">
+                        <option value="">-- Pilih akun kas --</option>
+                        @foreach(\Illuminate\Support\Facades\DB::table('cash_accounts')->where('is_active', 1)->orderBy('name')->get(['id','name','balance']) as $ca)
+                            <option value="{{ $ca->id }}">{{ $ca->name }} (Rp {{ number_format($ca->balance, 0, ',', '.') }})</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Catatan</label>
+                    <input type="text" name="note" maxlength="200" class="form-control" placeholder="Bayar gaji tunai / Penarikan / dst" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">PIN Supervisor</label>
+                    <input type="password" name="supervisor_pin" required maxlength="32" autocomplete="off" class="form-control" placeholder="Masukkan PIN" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                </div>
+                <button type="submit" class="btn" style="background: #dc2626; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;" onclick="return confirm('Yakin bayar tunai? Saldo karyawan akan berkurang dan uang kas keluar.')">💵 Bayar Tunai</button>
+            </form>
+        </div>
+
+        {{-- Pause Gaji (Cuti / Pulang Kampung) --}}
+        <div class="card" style="padding: 16px; margin-top: 16px;">
+            <h3 style="margin-top: 0;">⏸️ Pause Gaji (Cuti / Pulang Kampung)</h3>
+            @if(!empty($salaryPause['is_paused']))
+                <div style="background: #fef3c7; border: 1px solid #fbbf24; color: #92400e; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;">
+                    <strong>⚠️ Gaji sedang di-pause</strong><br>
+                    Dari: <strong>{{ $salaryPause['salary_pause_start'] }}</strong> s/d <strong>{{ $salaryPause['salary_pause_end'] }}</strong><br>
+                    @if(!empty($salaryPause['salary_pause_reason']))
+                        Alasan: {{ $salaryPause['salary_pause_reason'] }}
+                    @endif
+                </div>
+                <form method="POST" action="{{ route('admin.payroll.pause_salary', $waiter['id'] ?? '') }}">
+                    @csrf
+                    <input type="hidden" name="clear_pause" value="1">
+                    <button type="submit" class="btn" style="background: #10b981; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;" onclick="return confirm('Yakin hapus pause? Gaji akan berjalan normal kembali.')">✅ Aktifkan Gaji Kembali</button>
+                </form>
+            @else
+                @if(!empty($salaryPause['salary_pause_start']) && !empty($salaryPause['salary_pause_end']))
+                    <div style="background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 13px;">
+                        <strong>📅 Pause terjadwal</strong><br>
+                        Dari: <strong>{{ $salaryPause['salary_pause_start'] }}</strong> s/d <strong>{{ $salaryPause['salary_pause_end'] }}</strong><br>
+                        @if(!empty($salaryPause['salary_pause_reason']))
+                            Alasan: {{ $salaryPause['salary_pause_reason'] }}
+                        @endif
+                    </div>
+                @endif
+                <form method="POST" action="{{ route('admin.payroll.pause_salary', $waiter['id'] ?? '') }}">
+                    @csrf
+                    <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">Karyawan yang di-pause tidak akan menerima gaji otomatis selama periode tersebut.</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                        <div>
+                            <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Tanggal Mulai</label>
+                            <input type="date" name="pause_start" value="{{ $salaryPause['salary_pause_start'] ?? '' }}" required class="form-control" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                        </div>
+                        <div>
+                            <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Tanggal Selesai</label>
+                            <input type="date" name="pause_end" value="{{ $salaryPause['salary_pause_end'] ?? '' }}" required class="form-control" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px;">Alasan</label>
+                        <input type="text" name="pause_reason" maxlength="200" value="{{ $salaryPause['salary_pause_reason'] ?? '' }}" class="form-control" placeholder="Pulang kampung / Cuti panjang / dst" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                    </div>
+                    <button type="submit" class="btn" style="background: #f59e0b; color: #fff; padding: 10px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; width: 100%;">⏸️ Pause Gaji</button>
+                </form>
+            @endif
         </div>
 
     </div>
@@ -207,6 +339,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         attachRupiahInput('salaryDisplay', 'salaryRaw');
         attachRupiahInput('creditDisplay', 'creditRaw');
+        attachRupiahInput('payoutDisplay', 'payoutRaw');
 
         // Block manual credit submit kalau amount kosong/0.
         var creditDisplay = document.getElementById('creditDisplay');
@@ -220,6 +353,23 @@
                         e.preventDefault();
                         alert('Masukkan nominal yang valid.');
                         creditDisplay.focus();
+                    }
+                });
+            }
+        }
+
+        // Block cash payout submit kalau amount kosong/0.
+        var payoutDisplay = document.getElementById('payoutDisplay');
+        var payoutRaw = document.getElementById('payoutRaw');
+        if (payoutDisplay && payoutRaw) {
+            var payoutForm = payoutDisplay.closest('form');
+            if (payoutForm) {
+                payoutForm.addEventListener('submit', function (e) {
+                    var v = parseInt(payoutRaw.value || '0', 10);
+                    if (! v || v <= 0) {
+                        e.preventDefault();
+                        alert('Masukkan nominal yang valid.');
+                        payoutDisplay.focus();
                     }
                 });
             }

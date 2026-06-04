@@ -25,7 +25,7 @@ class DashboardController extends Controller
         $settings = $this->firebase->getSettings();
         [$periodStartTs, $periodEndTs, $orderPeriodLabel, $startDate, $endDate, $dateRangeInput] = $this->resolveDateRange($request);
         $orders = $this->firebase->getOrdersByDateRange($periodStartTs, $periodEndTs);
-        $waiterTasks = $this->firebase->getWaiterTasks();
+        $waiterTasks = $this->firebase->getWaiterTasksByDateRange($startDate, $endDate);
         $waiterActivityReports = $this->firebase->getWaiterActivityReports();
         $waiterIdentityDirectory = $this->buildIdentityDirectory($waiters);
 

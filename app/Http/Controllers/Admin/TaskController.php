@@ -739,9 +739,7 @@ class TaskController extends Controller
      */
     public function destroy($id, Request $request)
     {
-        $task = collect($this->firebase->getWaiterTasks())->first(function ($candidate) use ($id) {
-            return (string) ($candidate['id'] ?? '') === (string) $id;
-        });
+        $task = $this->firebase->getWaiterTaskById((string) $id);
 
         if (! $task) {
             if ($request->expectsJson() || $request->ajax()) {
@@ -1901,7 +1899,9 @@ class TaskController extends Controller
     protected function indexByScope(Request $request, string $taskScope)
     {
         $taskScope = $taskScope === 'rack_check' ? 'rack_check' : 'general';
-        $tasks = $this->firebase->getWaiterTasks();
+        $selectedDate = $request->input('track_date', date('Y-m-d'));
+        $rangeStart = date('Y-m-d', strtotime('-30 days', strtotime($selectedDate)));
+        $tasks = $this->firebase->getWaiterTasksByDateRange($rangeStart, $selectedDate);
         $recurringTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
         $categories = $this->firebase->getTaskCategories();
         $waiters = $this->firebase->getActiveWaiters();
@@ -1923,7 +1923,6 @@ class TaskController extends Controller
 
         $taskHistory = $tasks;
 
-        $selectedDate = $request->input('track_date', date('Y-m-d'));
         $dateTasks = array_values(array_filter($tasks, function ($task) use ($selectedDate) {
             return ($task['tracking_date'] ?? '') === $selectedDate;
         }));
@@ -3402,8 +3401,8 @@ class TaskController extends Controller
         $fromDate = $request->input('from_date');
         $toDate = $request->input('to_date');
 
-        // Get all tasks and filter by date range + rack_check + done
-        $tasks = $this->firebase->getWaiterTasks();
+        // Get tasks by date range (indexed query) and filter by rack_check + done
+        $tasks = $this->firebase->getWaiterTasksByDateRange($fromDate, $toDate);
         $tasks = array_filter($tasks, function ($task) use ($fromDate, $toDate) {
             if (($task['task_type'] ?? '') !== 'rack_check') {
                 return false;

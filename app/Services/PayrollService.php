@@ -753,6 +753,72 @@ class PayrollService
     }
 
     // =========================================================================
+    //  SALARY PAUSE (CUTI / PULANG KAMPUNG)
+    // =========================================================================
+
+    /**
+     * Check apakah waiter sedang dalam masa pause gaji.
+     */
+    protected function isWaiterSalaryPaused(string $waiterId, array $waiter): bool
+    {
+        $pauseStart = $waiter['salary_pause_start'] ?? null;
+        $pauseEnd = $waiter['salary_pause_end'] ?? null;
+
+        if (! $pauseStart || ! $pauseEnd) {
+            return false;
+        }
+
+        $today = date('Y-m-d');
+        return $today >= $pauseStart && $today <= $pauseEnd;
+    }
+
+    /**
+     * Get salary pause info for a waiter.
+     */
+    public function getWaiterSalaryPause(string $waiterId): array
+    {
+        $waiter = $this->firebase->getWaiterById($waiterId);
+        return [
+            'salary_pause_start'  => $waiter['salary_pause_start'] ?? null,
+            'salary_pause_end'    => $waiter['salary_pause_end'] ?? null,
+            'salary_pause_reason' => $waiter['salary_pause_reason'] ?? null,
+            'is_paused'           => $this->isWaiterSalaryPaused($waiterId, $waiter ?? []),
+        ];
+    }
+
+    /**
+     * Set salary pause date range for a waiter.
+     */
+    public function setWaiterSalaryPause(string $waiterId, ?string $startDate, ?string $endDate, ?string $reason = null): array
+    {
+        $updates = [];
+
+        if ($startDate && $endDate) {
+            // Validasi: end >= start
+            if ($endDate < $startDate) {
+                return ['success' => false, 'message' => 'Tanggal selesai harus >= tanggal mulai.'];
+            }
+            $updates['salary_pause_start'] = $startDate;
+            $updates['salary_pause_end'] = $endDate;
+            $updates['salary_pause_reason'] = $reason ?? '';
+        } else {
+            // Clear pause
+            $updates['salary_pause_start'] = null;
+            $updates['salary_pause_end'] = null;
+            $updates['salary_pause_reason'] = null;
+        }
+
+        $this->database->getReference('allowed_waiters/' . $waiterId)->update($updates);
+
+        // Flag for real-time refresh
+        $this->database->getReference('payroll_flags/' . $waiterId)->update([
+            'updated_at' => time(),
+        ]);
+
+        return ['success' => true];
+    }
+
+    // =========================================================================
     //  AUTO-CREDIT (SCHEDULER)
     // =========================================================================
 
@@ -784,6 +850,12 @@ class PayrollService
         foreach ($waiters as $waiter) {
             $waiterId = (string) ($waiter['id'] ?? '');
             if ($waiterId === '' || empty($waiter['payroll_enabled'])) {
+                $skipped++;
+                continue;
+            }
+
+            // Skip jika karyawan sedang dalam masa pause gaji (pulang kampung, dll)
+            if ($this->isWaiterSalaryPaused($waiterId, $waiter)) {
                 $skipped++;
                 continue;
             }

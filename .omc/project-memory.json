@@ -1,0 +1,597 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1780514997355,
+  "projectRoot": "S:\\wamp64\\www\\endra\\order",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "PHP",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "composer.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "vite",
+        "version": "7.0.7",
+        "category": "build"
+      }
+    ],
+    "packageManager": "composer",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": "npm run dev",
+    "scripts": {
+      "build": "vite build",
+      "dev": "vite"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app",
+      "docs",
+      "public",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 0,
+      "lastAccessed": 1780514997319,
+      "keyFiles": []
+    },
+    "bootstrap": {
+      "path": "bootstrap",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1780514997319,
+      "keyFiles": [
+        "app.php",
+        "providers.php"
+      ]
+    },
+    "config": {
+      "path": "config",
+      "purpose": "Configuration files",
+      "fileCount": 16,
+      "lastAccessed": 1780514997328,
+      "keyFiles": [
+        "admin.php",
+        "ai_product_assistant.php",
+        "app.php",
+        "auth.php",
+        "cache.php"
+      ]
+    },
+    "database": {
+      "path": "database",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1780514997329,
+      "keyFiles": [
+        "database.sqlite"
+      ]
+    },
+    "docker": {
+      "path": "docker",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1780514997329,
+      "keyFiles": [
+        "entrypoint.sh",
+        "nginx.conf",
+        "php-fpm.conf",
+        "php.ini"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1780514997330,
+      "keyFiles": [
+        "DESIGN_KASBON.md",
+        "rack-check-system-existing.md"
+      ]
+    },
+    "order": {
+      "path": "order",
+      "purpose": null,
+      "fileCount": 14,
+      "lastAccessed": 1780514997330,
+      "keyFiles": [
+        "artisan",
+        "cacert.pem",
+        "composer.json",
+        "composer.lock",
+        "package-lock.json"
+      ]
+    },
+    "orderankasir": {
+      "path": "orderankasir",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1780514997331,
+      "keyFiles": [
+        "README.md"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 5,
+      "lastAccessed": 1780514997331,
+      "keyFiles": [
+        "favicon.ico",
+        "index.php",
+        "ordermasuk.mp3",
+        "robots.txt"
+      ]
+    },
+    "resources": {
+      "path": "resources",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1780514997331,
+      "keyFiles": []
+    },
+    "routes": {
+      "path": "routes",
+      "purpose": "Route handlers",
+      "fileCount": 3,
+      "lastAccessed": 1780514997331,
+      "keyFiles": [
+        "api.php",
+        "console.php",
+        "web.php"
+      ]
+    },
+    "storage": {
+      "path": "storage",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1780514997332,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1780514997332,
+      "keyFiles": [
+        "TestCase.php"
+      ]
+    },
+    "vendor": {
+      "path": "vendor",
+      "purpose": "Third-party code",
+      "fileCount": 1,
+      "lastAccessed": 1780514997332,
+      "keyFiles": [
+        "autoload.php"
+      ]
+    },
+    "app\\Helpers": {
+      "path": "app\\Helpers",
+      "purpose": "Helper functions",
+      "fileCount": 1,
+      "lastAccessed": 1780514997333,
+      "keyFiles": [
+        "MarkdownHelper.php"
+      ]
+    },
+    "app\\Models": {
+      "path": "app\\Models",
+      "purpose": "Data models",
+      "fileCount": 8,
+      "lastAccessed": 1780514997333,
+      "keyFiles": [
+        "AiChatMessage.php",
+        "AiChatSession.php",
+        "AiProductEnrichmentBatch.php"
+      ]
+    },
+    "app\\Services": {
+      "path": "app\\Services",
+      "purpose": "Business logic services",
+      "fileCount": 25,
+      "lastAccessed": 1780514997334,
+      "keyFiles": [
+        "AiProductChatService.php",
+        "BatchProcessService.php",
+        "BonusService.php"
+      ]
+    },
+    "database\\migrations": {
+      "path": "database\\migrations",
+      "purpose": "Database migrations",
+      "fileCount": 26,
+      "lastAccessed": 1780514997335,
+      "keyFiles": [
+        "0001_01_01_000000_create_users_table.php",
+        "0001_01_01_000001_create_cache_table.php",
+        "0001_01_01_000002_create_jobs_table.php"
+      ]
+    },
+    "order\\app": {
+      "path": "order\\app",
+      "purpose": "Application code",
+      "fileCount": 0,
+      "lastAccessed": 1780514997336,
+      "keyFiles": []
+    },
+    "public\\build": {
+      "path": "public\\build",
+      "purpose": "Build output",
+      "fileCount": 1,
+      "lastAccessed": 1780514997336,
+      "keyFiles": [
+        "manifest.json"
+      ]
+    },
+    "resources\\views": {
+      "path": "resources\\views",
+      "purpose": "View templates",
+      "fileCount": 1,
+      "lastAccessed": 1780514997337,
+      "keyFiles": [
+        "welcome.blade.php"
+      ]
+    },
+    "storage\\app": {
+      "path": "storage\\app",
+      "purpose": "Application code",
+      "fileCount": 5,
+      "lastAccessed": 1780514997338,
+      "keyFiles": [
+        "check_bagas.php",
+        "firebase-credentials.json",
+        "rack_debug.html"
+      ]
+    },
+    "vendor\\bin": {
+      "path": "vendor\\bin",
+      "purpose": "Executable scripts",
+      "fileCount": 23,
+      "lastAccessed": 1780514997339,
+      "keyFiles": [
+        "carbon",
+        "carbon.bat",
+        "google-cloud-batch"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "app\\Services\\FirebaseService.php",
+      "accessCount": 95,
+      "lastAccessed": 1780517052701,
+      "type": "directory"
+    },
+    {
+      "path": "",
+      "accessCount": 34,
+      "lastAccessed": 1780516807943,
+      "type": "directory"
+    },
+    {
+      "path": "resources\\views\\waiter\\tasks.blade.php",
+      "accessCount": 24,
+      "lastAccessed": 1780516818646,
+      "type": "directory"
+    },
+    {
+      "path": "app\\Services\\PayrollService.php",
+      "accessCount": 23,
+      "lastAccessed": 1780445469900,
+      "type": "directory"
+    },
+    {
+      "path": "app\\Http\\Controllers\\WaiterController.php",
+      "accessCount": 20,
+      "lastAccessed": 1780517106562,
+      "type": "directory"
+    },
+    {
+      "path": "routes\\web.php",
+      "accessCount": 16,
+      "lastAccessed": 1780517068186,
+      "type": "file"
+    },
+    {
+      "path": "app\\Http\\Controllers\\WaiterBonusController.php",
+      "accessCount": 15,
+      "lastAccessed": 1780422597764,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\waiter\\bonus_dashboard.blade.php",
+      "accessCount": 14,
+      "lastAccessed": 1780422781888,
+      "type": "file"
+    },
+    {
+      "path": "app",
+      "accessCount": 13,
+      "lastAccessed": 1780423522124,
+      "type": "directory"
+    },
+    {
+      "path": "app\\Services\\BonusService.php",
+      "accessCount": 11,
+      "lastAccessed": 1780421710278,
+      "type": "file"
+    },
+    {
+      "path": "app\\Http\\Controllers\\Admin\\BonusController.php",
+      "accessCount": 11,
+      "lastAccessed": 1780422084855,
+      "type": "file"
+    },
+    {
+      "path": "routes\\console.php",
+      "accessCount": 10,
+      "lastAccessed": 1780423318544,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\monthly_summary.blade.php",
+      "accessCount": 9,
+      "lastAccessed": 1780422166923,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\manual_bonus.blade.php",
+      "accessCount": 8,
+      "lastAccessed": 1780422119880,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views",
+      "accessCount": 8,
+      "lastAccessed": 1780515420057,
+      "type": "directory"
+    },
+    {
+      "path": "resources\\views\\waiter",
+      "accessCount": 7,
+      "lastAccessed": 1780515393452,
+      "type": "directory"
+    },
+    {
+      "path": "app\\Services\\SalesCampaignService.php",
+      "accessCount": 6,
+      "lastAccessed": 1780421900632,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\waiter\\_bonus_summary.blade.php",
+      "accessCount": 5,
+      "lastAccessed": 1780422117886,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\leaderboard.blade.php",
+      "accessCount": 5,
+      "lastAccessed": 1780422139616,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\sales_targets.blade.php",
+      "accessCount": 5,
+      "lastAccessed": 1780422167609,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\penalties.blade.php",
+      "accessCount": 4,
+      "lastAccessed": 1780422167953,
+      "type": "file"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus",
+      "accessCount": 4,
+      "lastAccessed": 1780422710607,
+      "type": "directory"
+    },
+    {
+      "path": "resources\\views\\waiter\\bonus_produk.blade.php",
+      "accessCount": 4,
+      "lastAccessed": 1780422781904,
+      "type": "file"
+    },
+    {
+      "path": "database",
+      "accessCount": 4,
+      "lastAccessed": 1780423594220,
+      "type": "directory"
+    },
+    {
+      "path": "routes/console.php",
+      "accessCount": 3,
+      "lastAccessed": 1780421292468,
+      "type": "directory"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\campaigns.blade.php",
+      "accessCount": 3,
+      "lastAccessed": 1780421957619,
+      "type": "file"
+    },
+    {
+      "path": "app\\Http\\Controllers\\Admin\\TaskController.php",
+      "accessCount": 3,
+      "lastAccessed": 1780422864519,
+      "type": "directory"
+    },
+    {
+      "path": "routes",
+      "accessCount": 2,
+      "lastAccessed": 1780421253202,
+      "type": "directory"
+    },
+    {
+      "path": "app/Services/PayrollService.php",
+      "accessCount": 2,
+      "lastAccessed": 1780421273971,
+      "type": "directory"
+    },
+    {
+      "path": "app/Services/FirebaseService.php",
+      "accessCount": 2,
+      "lastAccessed": 1780421274040,
+      "type": "directory"
+    },
+    {
+      "path": "resources/views/waiter",
+      "accessCount": 2,
+      "lastAccessed": 1780421297205,
+      "type": "directory"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\config.blade.php",
+      "accessCount": 2,
+      "lastAccessed": 1780421945356,
+      "type": "file"
+    },
+    {
+      "path": "app\\Console\\Commands\\BonusRackRecheckBackfill.php",
+      "accessCount": 1,
+      "lastAccessed": 1780420845829,
+      "type": "file"
+    },
+    {
+      "path": "app\\Models",
+      "accessCount": 1,
+      "lastAccessed": 1780420846000,
+      "type": "directory"
+    },
+    {
+      "path": "app\\Console\\Commands\\BonusRackRecheckMarkLegacy.php",
+      "accessCount": 1,
+      "lastAccessed": 1780420846076,
+      "type": "file"
+    },
+    {
+      "path": "database\\migrations",
+      "accessCount": 1,
+      "lastAccessed": 1780420846151,
+      "type": "directory"
+    },
+    {
+      "path": "app\\Http\\Controllers\\Admin\\SalesCampaignController.php",
+      "accessCount": 1,
+      "lastAccessed": 1780420872095,
+      "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 1,
+      "lastAccessed": 1780420872122,
+      "type": "directory"
+    },
+    {
+      "path": "resources\\views\\admin\\bonus\\daily_scoring.blade.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421242529,
+      "type": "file"
+    },
+    {
+      "path": "app/Http/Controllers/WaiterController.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421243325,
+      "type": "directory"
+    },
+    {
+      "path": "routes/web.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421243431,
+      "type": "directory"
+    },
+    {
+      "path": "app/Services/SalesCampaignService.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421243582,
+      "type": "directory"
+    },
+    {
+      "path": "app\\Http\\Controllers\\Admin\\WaiterPerformanceController.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421243670,
+      "type": "file"
+    },
+    {
+      "path": "app/Services/BonusService.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421255188,
+      "type": "directory"
+    },
+    {
+      "path": "app/Http/Controllers/WaiterBonusController.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421264236,
+      "type": "directory"
+    },
+    {
+      "path": "app/Http/Controllers/Admin/WaiterController.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421264257,
+      "type": "directory"
+    },
+    {
+      "path": "app/Http/Controllers/Admin/BonusController.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421264276,
+      "type": "directory"
+    },
+    {
+      "path": "resources\\views\\admin\\waiters\\performance.blade.php",
+      "accessCount": 1,
+      "lastAccessed": 1780421268884,
+      "type": "file"
+    },
+    {
+      "path": "resources/views",
+      "accessCount": 1,
+      "lastAccessed": 1780421283547,
+      "type": "directory"
+    },
+    {
+      "path": "resources/views/admin/bonus",
+      "accessCount": 1,
+      "lastAccessed": 1780421292535,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}

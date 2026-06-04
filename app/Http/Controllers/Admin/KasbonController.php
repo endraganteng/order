@@ -156,11 +156,14 @@ class KasbonController extends Controller
     public function updateWaiterSettings(Request $request, string $waiterId)
     {
         $data = $request->validate([
-            'kasbon_enabled' => 'nullable|boolean',
-            'kasbon_limit_percent' => 'nullable|integer|min:0|max:100',
+            'kasbon_enabled'            => 'nullable|boolean',
+            'kasbon_limit_mode'         => 'nullable|string|in:none,percent,fixed',
+            'kasbon_limit_percent'      => 'nullable|integer|min:0|max:100',
+            'kasbon_limit_fixed_amount' => 'nullable|integer|min:0|max:999999999',
         ]);
 
         $data['kasbon_enabled'] = $request->has('kasbon_enabled');
+        $data['kasbon_limit_mode'] = $data['kasbon_limit_mode'] ?? 'none';
         $this->kasbon->updateWaiterKasbonSettings($waiterId, $data);
 
         return back()->with('success', 'Pengaturan kasbon karyawan disimpan.');
