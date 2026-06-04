@@ -116,11 +116,16 @@
                         <td>{{ number_format($item->sisa_stok_qty, 2, ',', '.') }}</td>
                         <td>
                             <input type="hidden" name="items[{{ $idx }}][product_name]" value="{{ $item->product_name }}">
-                            <input type="number" step="0.01" min="0"
-                                name="items[{{ $idx }}][penjualan_nominal]"
-                                value="{{ $item->penjualan_nominal }}"
-                                class="pt-input-nominal"
-                                placeholder="0">
+                            <input type="hidden" name="items[{{ $idx }}][penjualan_nominal]" value="{{ $item->penjualan_nominal }}" class="pt-input-raw">
+                            <div style="position:relative;">
+                                <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;color:#64748b;">Rp</span>
+                                <input type="text" inputmode="numeric"
+                                    value="{{ $item->penjualan_nominal > 0 ? number_format($item->penjualan_nominal, 0, ',', '.') : '' }}"
+                                    class="pt-input-nominal pt-input-rupiah"
+                                    placeholder="0"
+                                    style="padding-left:28px;"
+                                    data-idx="{{ $idx }}">
+                            </div>
                         </td>
                         <td class="{{ $item->profit >= 0 ? 'pt-profit-positive' : 'pt-profit-negative' }}">
                             Rp {{ number_format($item->profit, 0, ',', '.') }}
@@ -158,17 +163,59 @@
 
 @push('scripts')
 <script>
-document.querySelectorAll('.pt-input-nominal').forEach(function(input) {
+function formatRupiah(value) {
+    var num = value.replace(/[^\d]/g, '');
+    if (!num) return '';
+    return num.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function parseRupiah(value) {
+    return parseInt(value.replace(/[^\d]/g, '')) || 0;
+}
+
+document.querySelectorAll('.pt-input-rupiah').forEach(function(input) {
     input.addEventListener('input', function() {
+        var raw = parseRupiah(this.value);
+        this.value = formatRupiah(this.value);
+
+        // Update hidden raw input
+        var idx = this.dataset.idx;
+        var form = this.closest('form');
+        var hiddenInput = form.querySelector('.pt-input-raw[name="items[' + idx + '][penjualan_nominal]"]');
+        if (hiddenInput) hiddenInput.value = raw;
+
+        // Update profit realtime
         var row = this.closest('tr');
         var stokMasukText = row.querySelectorAll('td')[2].textContent;
-        var stokMasuk = parseFloat(stokMasukText.replace(/[^\d]/g, '')) || 0;
-        var penjualan = parseFloat(this.value) || 0;
-        var profit = penjualan - stokMasuk;
+        var stokMasuk = parseInt(stokMasukText.replace(/[^\d]/g, '')) || 0;
+        var profit = raw - stokMasuk;
         var profitCell = row.querySelectorAll('td')[5];
-        profitCell.textContent = 'Rp ' + profit.toLocaleString('id-ID');
+        profitCell.textContent = 'Rp ' + (profit >= 0 ? '' : '-') + Math.abs(profit).toLocaleString('id-ID');
         profitCell.className = profit >= 0 ? 'pt-profit-positive' : 'pt-profit-negative';
+
+        // Update summary
+        updateSummary(this.closest('.pt-section'));
     });
 });
+
+function updateSummary(section) {
+    var rows = section.querySelectorAll('tbody tr:not(.pt-summary-row)');
+    var totalPenjualan = 0;
+    var totalStokMasuk = 0;
+    rows.forEach(function(row) {
+        var cells = row.querySelectorAll('td');
+        totalStokMasuk += parseInt(cells[2].textContent.replace(/[^\d]/g, '')) || 0;
+        var input = row.querySelector('.pt-input-rupiah');
+        totalPenjualan += parseRupiah(input ? input.value : '0');
+    });
+    var totalProfit = totalPenjualan - totalStokMasuk;
+    var summaryRow = section.querySelector('.pt-summary-row');
+    if (summaryRow) {
+        var cells = summaryRow.querySelectorAll('td');
+        cells[4].textContent = 'Rp ' + totalPenjualan.toLocaleString('id-ID');
+        cells[5].textContent = 'Rp ' + (totalProfit >= 0 ? '' : '-') + Math.abs(totalProfit).toLocaleString('id-ID');
+        cells[5].className = totalProfit >= 0 ? 'pt-profit-positive' : 'pt-profit-negative';
+    }
+}
 </script>
 @endpush
