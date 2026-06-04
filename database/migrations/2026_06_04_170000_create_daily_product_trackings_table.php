@@ -19,7 +19,7 @@ return new class extends Migration
             $table->decimal('penjualan_nominal', 15, 2)->default(0);
             $table->decimal('profit', 15, 2)->storedAs('penjualan_nominal - stok_masuk_total');
             $table->timestamps();
-            $table->unique(['tracking_date', 'product_id']);
+            $table->unique(['tracking_date', 'product_name']);
         });
     }
 
