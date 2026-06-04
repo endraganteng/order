@@ -181,6 +181,91 @@ class FinanceService
             }
         }
 
+        // Sync pengeluaran items (product expenses)
+        $pengeluaranResult = $this->apiGet('/api/finance/pengeluaran/daily', [
+            'dari' => $from,
+            'sampai' => $to,
+        ]);
+
+        if ($pengeluaranResult['success'] ?? false) {
+            foreach ($pengeluaranResult['data'] ?? [] as $dayData) {
+                $date = $dayData['date'] ?? $dayData['tanggal'] ?? null;
+                if (!$date) continue;
+
+                $productItems = collect($dayData['items'] ?? [])
+                    ->filter(fn($item) => ($item['line_type'] ?? '') === 'product');
+
+                foreach ($productItems as $item) {
+                    try {
+                        $deskripsi = $item['product_name'] ?? $item['deskripsi'] ?? '';
+                        $qty = (int) ($item['qty'] ?? 1);
+                        $hash = md5($date . '|' . $deskripsi . '|' . $qty);
+
+                        DB::table('finance_expense_items')->updateOrInsert(
+                            ['hash' => $hash],
+                            [
+                                'tanggal' => $date,
+                                'line_type' => $item['line_type'],
+                                'deskripsi' => $deskripsi,
+                                'kategori' => $item['kategori'] ?? null,
+                                'supplier' => $item['supplier'] ?? null,
+                                'qty' => $qty,
+                                'harga_satuan' => $item['harga_satuan'] ?? 0,
+                                'total' => $item['total'] ?? 0,
+                                'status' => 'synced',
+                                'updated_at' => now(),
+                                'created_at' => now(),
+                            ]
+                        );
+                        $synced++;
+                    } catch (\Exception $e) {
+                        $failed++;
+                        $errors[] = "Pengeluaran {$date}: {$e->getMessage()}";
+                    }
+                }
+            }
+        } else {
+            Log::warning('FinanceService: pengeluaran sync skipped', [
+                'message' => $pengeluaranResult['message'] ?? 'no data',
+                'from' => $from,
+                'to' => $to,
+            ]);
+        }
+
+        // Sync sisa stok
+        $sisaStokResult = $this->apiGet('/api/finance/sisa-stok/daily', [
+            'dari' => $from,
+            'sampai' => $to,
+        ]);
+
+        if (!($sisaStokResult['success'] ?? false)) {
+            Log::warning('FinanceService: sisa stok sync skipped', [
+                'message' => $sisaStokResult['message'] ?? 'no data',
+                'from' => $from,
+                'to' => $to,
+            ]);
+        }
+
+        // Sync sisa stok from shifkasirlama API
+        $sisaStokData = [];
+        $sisaStokResult = $this->apiGet('/api/finance/sisa-stok/daily', [
+            'dari' => $from,
+            'sampai' => $to,
+        ]);
+
+        if ($sisaStokResult['success'] ?? false) {
+            $sisaStokData = $sisaStokResult['data'] ?? [];
+        } else {
+            Log::warning('FinanceService: sisa stok sync skipped', [
+                'message' => $sisaStokResult['message'] ?? 'no data',
+                'from' => $from,
+                'to' => $to,
+            ]);
+        }
+
+        // Aggregate expense items + sisa stok into daily_product_trackings
+        $this->aggregateDailyProductTrackings($from, $to, $sisaStokData);
+
         $status = $failed === 0 ? 'success' : ($synced > 0 ? 'partial_success' : 'failed');
 
         // Auto-create cash mutations from daily data based on account mappings
@@ -509,6 +594,159 @@ class FinanceService
         ]);
 
         return ['success' => $status !== 'failed', 'status' => $status, 'synced' => $synced, 'failed' => $failed, 'duration_ms' => $duration, 'id' => $id];
+    }
+
+    // ─── Product Tracking ────────────────────────────────────────
+
+    /** Tracked product names for daily product tracking (lowercase). */
+    protected static array $trackedProducts = [
+        'jangkrik',
+        'ulat kandang',
+        'ulat hongkong',
+        'ulat jerman',
+        'kroto',
+    ];
+
+    /**
+     * Aggregate expense items + sisa stok into daily_product_trackings.
+     * Only processes the 5 tracked products. Preserves existing penjualan_nominal.
+     */
+    public function aggregateDailyProductTrackings(string $from, string $to, array $sisaStokData = []): void
+    {
+        // Build sisa stok lookup: lowercase(product_name)|date => ['qty' => ..., 'product_id' => ...]
+        $sisaStokLookup = [];
+        $productIdMap = []; // lowercase(name) => product_id from API
+
+        foreach ($sisaStokData as $row) {
+            $date = $row['date'] ?? $row['tanggal'] ?? null;
+            $productName = $row['product_name'] ?? $row['nama'] ?? null;
+            $productId = (int) ($row['product_id'] ?? $row['id'] ?? 0);
+            $qty = $row['sisa_stok'] ?? $row['qty'] ?? $row['stok'] ?? 0;
+
+            if (!$date || !$productName) continue;
+
+            $nameLower = strtolower(trim($productName));
+            if (!$this->isTrackedProduct($nameLower)) continue;
+
+            $sisaStokLookup[$nameLower . '|' . $date] = [
+                'qty' => $qty,
+                'product_id' => $productId,
+            ];
+
+            if ($productId > 0 && !isset($productIdMap[$nameLower])) {
+                $productIdMap[$nameLower] = $productId;
+            }
+        }
+
+        // Query expense items grouped by date + product name
+        $expenseRows = DB::table('finance_expense_items')
+            ->where('line_type', 'product')
+            ->whereBetween('tanggal', [$from, $to])
+            ->select('tanggal', 'deskripsi', DB::raw('SUM(qty) as total_qty'), DB::raw('SUM(total) as total_nilai'))
+            ->groupBy('tanggal', 'deskripsi')
+            ->get();
+
+        foreach ($expenseRows as $row) {
+            $nameLower = strtolower(trim($row->deskripsi));
+
+            // Filter: only tracked products (case-insensitive)
+            if (!$this->isTrackedProduct($nameLower)) continue;
+
+            // Normalize product name to canonical form
+            $productNameOriginal = $row->deskripsi;
+            foreach (static::$trackedProducts as $tracked) {
+                if ($nameLower === $tracked) {
+                    $productNameOriginal = ucwords($tracked);
+                    break;
+                }
+            }
+
+            $date = $row->tanggal;
+            $sisaKey = $nameLower . '|' . $date;
+            $sisaStokQty = $sisaStokLookup[$sisaKey]['qty'] ?? null;
+            $productId = $sisaStokLookup[$sisaKey]['product_id'] ?? $productIdMap[$nameLower] ?? 0;
+
+            $upsertData = [
+                'product_id' => $productId,
+                'stok_masuk_qty' => $row->total_qty,
+                'stok_masuk_total' => $row->total_nilai,
+                'updated_at' => now(),
+            ];
+
+            if ($sisaStokQty !== null) {
+                $upsertData['sisa_stok_qty'] = $sisaStokQty;
+            }
+
+            DB::table('daily_product_trackings')->updateOrInsert(
+                ['tracking_date' => $date, 'product_name' => $productNameOriginal],
+                array_merge($upsertData, [
+                    'penjualan_nominal' => DB::table('daily_product_trackings')
+                        ->where('tracking_date', $date)
+                        ->where('product_name', $productNameOriginal)
+                        ->value('penjualan_nominal') ?? 0,
+                    'created_at' => now(),
+                ])
+            );
+        }
+
+        // Also upsert rows from sisa stok that have no expense items in range
+        foreach ($sisaStokData as $row) {
+            $date = $row['date'] ?? $row['tanggal'] ?? null;
+            $productName = $row['product_name'] ?? $row['nama'] ?? null;
+            $productId = (int) ($row['product_id'] ?? $row['id'] ?? 0);
+            $qty = $row['sisa_stok'] ?? $row['qty'] ?? $row['stok'] ?? 0;
+
+            if (!$date || !$productName) continue;
+
+            $nameLower = strtolower(trim($productName));
+            if (!$this->isTrackedProduct($nameLower)) continue;
+
+            $canonicalName = ucwords($nameLower);
+
+            $existing = DB::table('daily_product_trackings')
+                ->where('tracking_date', $date)
+                ->where('product_name', $canonicalName)
+                ->first();
+
+            if ($existing) {
+                DB::table('daily_product_trackings')
+                    ->where('tracking_date', $date)
+                    ->where('product_name', $canonicalName)
+                    ->update(['sisa_stok_qty' => $qty, 'updated_at' => now()]);
+            } else {
+                DB::table('daily_product_trackings')->insert([
+                    'tracking_date' => $date,
+                    'product_id' => $productId,
+                    'product_name' => $canonicalName,
+                    'stok_masuk_qty' => 0,
+                    'stok_masuk_total' => 0,
+                    'sisa_stok_qty' => $qty,
+                    'penjualan_nominal' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        Log::info('FinanceService: aggregateDailyProductTrackings done', [
+            'from' => $from,
+            'to' => $to,
+            'expense_rows' => $expenseRows->count(),
+            'sisa_stok_rows' => count($sisaStokData),
+        ]);
+    }
+
+    /**
+     * Check if a product name (lowercase) matches one of the tracked products.
+     */
+    protected function isTrackedProduct(string $nameLower): bool
+    {
+        foreach (static::$trackedProducts as $tracked) {
+            if (str_contains($nameLower, $tracked)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     protected function resolveCategoryMapping(string $lineType): ?int
@@ -1429,4 +1667,5 @@ class FinanceService
             Log::warning('FinanceService: Gagal kirim laporan shift', ['error' => $e->getMessage()]);
         }
     }
+
 }

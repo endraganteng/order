@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FinanceDashboardController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PayrollController;
+use App\Http\Controllers\Admin\ProfitTrackingController;
 use App\Http\Controllers\Admin\RackController;
 use App\Http\Controllers\Admin\RackCheckTemplateController;
 use App\Http\Controllers\Admin\ReconciliationController;
@@ -401,6 +402,13 @@ Route::prefix('admin')->name('admin.')->group(function () {
                 Route::get('sessions/{id}/messages', [\App\Http\Controllers\FinanceChatController::class, 'messages'])->name('messages');
                 Route::delete('sessions/{id}', [\App\Http\Controllers\FinanceChatController::class, 'deleteSession'])->name('delete_session');
             });
+        });
+
+        // Profit Tracking Dashboard
+        Route::prefix('profit-tracking')->name('profit-tracking.')->group(function () {
+            Route::get('/', [ProfitTrackingController::class, 'index'])->name('index');
+            Route::post('/penjualan', [ProfitTrackingController::class, 'updatePenjualan'])->name('update-penjualan');
+            Route::post('/sync', [ProfitTrackingController::class, 'syncNow'])->name('sync');
         });
 
         // AI Product Knowledge Enrichment (admin only)
