@@ -3067,6 +3067,15 @@ class FirebaseService
         $task = $snapshot->getValue();
         $assignedWaiterId = (string) ($task['assigned_waiter_id'] ?? '');
         if ($assignedWaiterId === '' || $assignedWaiterId !== (string) $waiterId) {
+            // Distinguish: task never had an assigned waiter vs waiter mismatch (reassigned)
+            if ($assignedWaiterId !== '' && $assignedWaiterId !== (string) $waiterId) {
+                return [
+                    'success'    => false,
+                    'message'    => 'Tugas ini sudah tidak ditugaskan kepada Anda. Silakan refresh halaman tugas.',
+                    'error_code' => 'not_assigned',
+                ];
+            }
+
             return [
                 'success' => false,
                 'message' => 'Tugas ini bukan milik akun waiter Anda.',
@@ -3202,9 +3211,12 @@ class FirebaseService
             if ($providedBarcode !== $expectedBarcode) {
                 // Log mismatch attempt
                 $this->logScanAttempt($waiterId, $rackId, false, $providedBarcode, $expectedBarcode);
+                $rackLabel = trim((string) ($task['rack_name'] ?? $task['rack_code'] ?? $rackId));
                 return [
                     'success' => false,
-                    'message' => 'QR code tidak sesuai dengan rak target. Silakan scan ulang QR code rak yang benar.',
+                    'message' => "QR code tidak sesuai dengan rak target ({$rackLabel}). Pastikan Anda scan QR code pada rak yang benar.",
+                    'error_code' => 'barcode_mismatch',
+                    'expected_rack' => $rackLabel,
                 ];
             }
 
@@ -6659,7 +6671,7 @@ class FirebaseService
     /**
      * Decide if a recurring template should run on a given date
      */
-    protected function isTemplateDueForDate($template, $date)
+    public function isTemplateDueForDate($template, $date)
     {
         $type = $template['recurrence_type'] ?? 'daily';
 
@@ -11039,7 +11051,7 @@ class FirebaseService
     /**
      * @param array|null $template Optional template with full_shift_daily_cap / partial_shift_daily_cap overrides.
      */
-    protected function getRackCheckDailyCap(string $waiterId, string $date, ?array $template = null): int
+    public function getRackCheckDailyCap(string $waiterId, string $date, ?array $template = null): int
     {
         // Quick early-out: not working today = no rack tasks
         if (! $this->isWorkingDay($waiterId, $date)) {
@@ -12478,5 +12490,525 @@ class FirebaseService
             'evaluated' => $evaluated,
             'rejected_candidates' => $evaluated,
         ];
+    }
+
+    // =========================================================================
+    // Planning Cek Rak Methods
+    // =========================================================================
+
+    /**
+     * Get all planning tasks for a specific date from /rack_check_planning.
+     *
+     * @param  string  $date  Format: YYYY-MM-DD
+     * @return array
+     */
+    public function getPlanningTasksForDate(string $date): array
+    {
+        try {
+            $snapshot = $this->database->getReference('rack_check_planning')->getSnapshot();
+            if (! $snapshot->exists()) {
+                return [];
+            }
+
+            $allTasks = (array) ($snapshot->getValue() ?? []);
+            $result = [];
+
+            foreach ($allTasks as $taskId => $task) {
+                if (! is_array($task)) {
+                    continue;
+                }
+                if (($task['scheduled_for_date'] ?? '') === $date) {
+                    $result[] = array_merge($task, ['id' => $taskId]);
+                }
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] getPlanningTasksForDate error', [
+                'date'  => $date,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
+     * Create a new planning task at /rack_check_planning/{auto_id}.
+     *
+     * @param  array  $data
+     * @return string  The generated Firebase key
+     */
+    public function savePlanningTask(array $data): string
+    {
+        try {
+            $newRef = $this->database->getReference('rack_check_planning')->push($data);
+
+            return (string) $newRef->getKey();
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] savePlanningTask error', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Update specific fields of a planning task at /rack_check_planning/{taskId}.
+     * Automatically adds updated_at timestamp.
+     *
+     * @param  string  $taskId
+     * @param  array   $data
+     * @return void
+     */
+    public function updatePlanningTask(string $taskId, array $data): void
+    {
+        try {
+            $data['updated_at'] = time();
+            $this->database->getReference('rack_check_planning/' . $taskId)->update($data);
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] updatePlanningTask error', [
+                'task_id' => $taskId,
+                'error'   => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Batch publish all planned+unpublished planning tasks for a date.
+     * Creates real waiter tasks with deterministic keys and locks to prevent duplicates.
+     *
+     * @param  string  $date  Format: YYYY-MM-DD
+     * @return array  ['published' => int, 'skipped' => int, 'errors' => array]
+     */
+    public function publishPlanningForDate(string $date): array
+    {
+        $published = 0;
+        $skipped   = 0;
+        $errors    = [];
+
+        try {
+            $tasks = $this->getPlanningTasksForDate($date);
+        } catch (\Throwable $e) {
+            return ['published' => 0, 'skipped' => 0, 'errors' => [$e->getMessage()]];
+        }
+
+        $dateCompact = str_replace('-', '', $date);
+
+        foreach ($tasks as $task) {
+            if (($task['status'] ?? '') !== 'planned' || ! empty($task['is_published'])) {
+                $skipped++;
+                continue;
+            }
+
+            $taskId     = (string) ($task['id'] ?? '');
+            $templateId = (string) ($task['template_id'] ?? '');
+            $waiterId   = (string) ($task['assigned_to'] ?? '');
+            $rackId     = (string) ($task['rack_id'] ?? '');
+
+            if ($taskId === '' || $templateId === '' || $waiterId === '' || $rackId === '') {
+                $errors[] = "Task {$taskId}: missing required fields";
+                $skipped++;
+                continue;
+            }
+
+            // Check lock to prevent duplicates
+            $lockPath = 'waiter_task_generation_locks/' . $templateId . '/' . $rackId . '/' . $dateCompact;
+            try {
+                $lockExists = $this->database->getReference($lockPath)->getSnapshot()->exists();
+            } catch (\Throwable $e) {
+                $errors[] = "Task {$taskId}: lock check failed — " . $e->getMessage();
+                $skipped++;
+                continue;
+            }
+
+            if ($lockExists) {
+                $skipped++;
+                continue;
+            }
+
+            // Get rack barcode value and rack code
+            $rackBarcodeValue = '';
+            $rackCode = '';
+            $rackName = '';
+            try {
+                $rackSnapshot = $this->database->getReference('racks/' . $rackId)->getSnapshot();
+                if ($rackSnapshot->exists()) {
+                    $rackData         = (array) ($rackSnapshot->getValue() ?? []);
+                    $rackBarcodeValue = (string) ($rackData['barcode_value'] ?? '');
+                    $rackCode         = (string) ($rackData['code'] ?? $rackData['rack_code'] ?? '');
+                    $rackName         = (string) ($rackData['name'] ?? $rackData['rack_name'] ?? '');
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('[FirebaseService] publishPlanningForDate: failed to get rack barcode', [
+                    'rack_id' => $rackId,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
+
+            // Build deterministic waiter task key
+            $nodeKey   = 'waiter_rec_' . substr(hash('sha256', $templateId . '::' . $waiterId . '::' . $date), 0, 32);
+            $createdAt = time();
+
+            // Determine deadline_at: end of shift (23:59:59 of the scheduled date)
+            $deadlineAt = strtotime($date . ' 23:59:59');
+            if ($deadlineAt === false) {
+                $deadlineAt = $createdAt;
+            }
+
+            $waiterTask = [
+                'id'                   => $nodeKey,
+                'template_id'          => $templateId,
+                'title'                => (string) ($task['title'] ?? ''),
+                'description'          => (string) ($task['description'] ?? ''),
+                'task_type'            => 'rack_check',
+                'assigned_waiter_id'   => $waiterId,
+                'assigned_waiter_name' => (string) ($task['assigned_waiter_name'] ?? ''),
+                'status'               => 'pending',
+                'scheduled_for_date'   => $date,
+                'deadline_at'          => $deadlineAt,
+                'requires_barcode_scan'=> true,
+                'rack_id'              => $rackId,
+                'rack_code'            => $rackCode,
+                'rack_name'            => $rackName,
+                'rack_barcode_value'   => $rackBarcodeValue,
+                'priority'             => 'normal',
+                'created_at'           => $createdAt,
+                'created_by'           => (string) ($task['created_by'] ?? 'system'),
+            ];
+
+            // Multi-path atomic write: create waiter task + lock + update planning task
+            try {
+                $this->database->getReference()->update([
+                    '/waiter_tasks/' . $nodeKey => $waiterTask,
+                    '/rack_check_planning/' . $taskId . '/status'       => 'pending',
+                    '/rack_check_planning/' . $taskId . '/is_published' => true,
+                    '/rack_check_planning/' . $taskId . '/updated_at'   => $createdAt,
+                    '/rack_check_planning/' . $taskId . '/waiter_task_id' => $nodeKey,
+                    '/' . $lockPath => [
+                        'created_at'  => $createdAt,
+                        'waiter_id'   => $waiterId,
+                        'template_id' => $templateId,
+                        'rack_id'     => $rackId,
+                        'date'        => $date,
+                    ],
+                ]);
+                $published++;
+            } catch (\Throwable $e) {
+                $errors[] = "Task {$taskId}: write failed — " . $e->getMessage();
+            }
+        }
+
+        return [
+            'published' => $published,
+            'skipped'   => $skipped,
+            'errors'    => $errors,
+        ];
+    }
+
+    /**
+     * Count tasks assigned to a waiter for a specific date.
+     * Combines waiter_tasks and rack_check_planning counts.
+     *
+     * @param  string  $waiterId
+     * @param  string  $date     Format: YYYY-MM-DD
+     * @return int
+     */
+    public function getWaiterTaskCountForDate(string $waiterId, string $date): int
+    {
+        $count = 0;
+
+        // Count from /waiter_tasks
+        try {
+            $snapshot = $this->database
+                ->getReference('waiter_tasks')
+                ->orderByChild('assigned_waiter_id')
+                ->equalTo($waiterId)
+                ->getSnapshot();
+
+            if ($snapshot->exists()) {
+                $waiterTasks = (array) ($snapshot->getValue() ?? []);
+                foreach ($waiterTasks as $task) {
+                    if (! is_array($task)) {
+                        continue;
+                    }
+                    if (($task['scheduled_for_date'] ?? '') !== $date) {
+                        continue;
+                    }
+                    $status = (string) ($task['status'] ?? '');
+                    if ($status === 'cancelled') {
+                        continue;
+                    }
+                    $count++;
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('[FirebaseService] getWaiterTaskCountForDate: waiter_tasks query failed', [
+                'waiter_id' => $waiterId,
+                'date'      => $date,
+                'error'     => $e->getMessage(),
+            ]);
+        }
+
+        // Count from /rack_check_planning
+        try {
+            $planningTasks = $this->getPlanningTasksForDate($date);
+            foreach ($planningTasks as $task) {
+                if (($task['assigned_to'] ?? '') !== $waiterId) {
+                    continue;
+                }
+                $status = (string) ($task['status'] ?? '');
+                if (in_array($status, ['planned', 'pending'], true)) {
+                    $count++;
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('[FirebaseService] getWaiterTaskCountForDate: planning query failed', [
+                'waiter_id' => $waiterId,
+                'date'      => $date,
+                'error'     => $e->getMessage(),
+            ]);
+        }
+
+        return $count;
+    }
+
+    /**
+     * Get all racks due for checking on a specific date based on active templates.
+     *
+     * @param  string  $date  Format: YYYY-MM-DD
+     * @return array  Array of rack items with template context and lock status
+     */
+    public function getRacksDueForDateFromTemplates(string $date): array
+    {
+        $result      = [];
+        $dateCompact = str_replace('-', '', $date);
+
+        try {
+            $templates = $this->getRecurringWaiterTaskTemplates();
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] getRacksDueForDateFromTemplates: templates fetch failed', [
+                'date'  => $date,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        foreach ($templates as $template) {
+            if (! is_array($template)) {
+                continue;
+            }
+            if (($template['task_type'] ?? '') !== 'rack_check') {
+                continue;
+            }
+            if (! ($template['is_active'] ?? false)) {
+                continue;
+            }
+
+            try {
+                $isDue = $this->isTemplateDueForDate($template, $date);
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            if (! $isDue) {
+                continue;
+            }
+
+            try {
+                $racks = $this->normalizeTemplateRacks($template);
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            $templateId    = (string) ($template['id'] ?? '');
+            $templateTitle = (string) ($template['title'] ?? '');
+            $scheduleTime  = (string) ($template['schedule_time'] ?? '');
+
+            // Batch lock read: 1 Firebase read per template instead of N per rack
+            $lockSnapshot = null;
+            try {
+                $lockBasePath = 'waiter_task_generation_locks/' . $templateId;
+                $lockSnapshot = $this->database->getReference($lockBasePath)->getSnapshot();
+            } catch (\Throwable $e) {
+                // treat all racks as not locked on error
+            }
+
+            foreach ($racks as $rack) {
+                if (! is_array($rack)) {
+                    continue;
+                }
+
+                $rackId = (string) ($rack['rack_id'] ?? $rack['id'] ?? '');
+
+                $alreadyExists = false;
+                if ($lockSnapshot && $rackId) {
+                    $alreadyExists = $lockSnapshot->hasChild($rackId . '/' . $dateCompact);
+                }
+
+                $result[] = [
+                    'template_id'    => $templateId,
+                    'template_title' => $templateTitle,
+                    'rack_id'        => $rackId,
+                    'rack_code'      => (string) ($rack['rack_code'] ?? $rack['code'] ?? ''),
+                    'rack_name'      => (string) ($rack['rack_name'] ?? $rack['name'] ?? ''),
+                    'schedule_time'  => $scheduleTime,
+                    'already_exists' => $alreadyExists,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Lightweight count of racks due for a date (no lock check, no detail).
+     * Use for reminder/notification that only needs total count.
+     */
+    public function countRacksDueForDate(string $date): int
+    {
+        $count = 0;
+
+        try {
+            $templates = $this->getRecurringWaiterTaskTemplates();
+        } catch (\Throwable $e) {
+            return 0;
+        }
+
+        foreach ($templates as $template) {
+            if (! is_array($template)) {
+                continue;
+            }
+            if (($template['task_type'] ?? '') !== 'rack_check') {
+                continue;
+            }
+            if (! ($template['is_active'] ?? false)) {
+                continue;
+            }
+
+            try {
+                if (! $this->isTemplateDueForDate($template, $date)) {
+                    continue;
+                }
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            try {
+                $racks = $this->normalizeTemplateRacks($template);
+                $count += count($racks);
+            } catch (\Throwable $e) {
+                continue;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Get a single planning task by ID.
+     *
+     * @param  string  $taskId
+     * @return array|null
+     */
+    public function getPlanningTaskById(string $taskId): ?array
+    {
+        try {
+            $snapshot = $this->database->getReference('rack_check_planning/' . $taskId)->getSnapshot();
+            if (! $snapshot->exists()) {
+                return null;
+            }
+
+            return array_merge((array) $snapshot->getValue(), ['id' => $taskId]);
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] getPlanningTaskById error', [
+                'task_id' => $taskId,
+                'error'   => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Write an audit log entry to /rack_check_planning_logs/{date}/{push_id}.
+     *
+     * @param  string  $action  Action name, e.g. 'create', 'publish', 'update'
+     * @param  array   $data    Additional context data to include in the log
+     * @return void
+     */
+    public function logPlanningAction(string $action, array $data): void
+    {
+        try {
+            $date    = date('Y-m-d');
+            $logPath = 'rack_check_planning_logs/' . $date;
+
+            $logEntry = array_merge($data, [
+                'action'       => $action,
+                'performed_at' => time(),
+            ]);
+
+            // performed_by may be passed via $data; keep it if present
+            if (! isset($logEntry['performed_by'])) {
+                $logEntry['performed_by'] = 'system';
+            }
+
+            $this->database->getReference($logPath)->push($logEntry);
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] logPlanningAction error', [
+                'action' => $action,
+                'error'  => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Remove a waiter task by setting its node to null.
+     */
+    public function removeWaiterTask(string $waiterTaskId): void
+    {
+        try {
+            $this->database->getReference('waiter_tasks/' . $waiterTaskId)->remove();
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] removeWaiterTask error', [
+                'task_id' => $waiterTaskId,
+                'error'   => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Update specific fields of an existing waiter task.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function updateWaiterTask(string $waiterTaskId, array $data): void
+    {
+        try {
+            $data['updated_at'] = time();
+            $this->database->getReference('waiter_tasks/' . $waiterTaskId)->update($data);
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] updateWaiterTask error', [
+                'task_id' => $waiterTaskId,
+                'error'   => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Remove a generation lock entry.
+     */
+    public function removePlanningLock(string $templateId, string $rackId, string $date): void
+    {
+        try {
+            $dateCompact = str_replace('-', '', $date);
+            $this->database->getReference('waiter_task_generation_locks/' . $templateId . '/' . $rackId . '/' . $dateCompact)->remove();
+        } catch (\Throwable $e) {
+            \Log::error('[FirebaseService] removePlanningLock error', ['error' => $e->getMessage()]);
+        }
     }
 }
