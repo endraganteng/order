@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\PayrollController;
 use App\Http\Controllers\Admin\ProfitTrackingController;
 use App\Http\Controllers\Admin\RackController;
+use App\Http\Controllers\Admin\RackCheckPlanningController;
 use App\Http\Controllers\Admin\RackCheckTemplateController;
 use App\Http\Controllers\Admin\ReconciliationController;
 use App\Http\Controllers\Admin\ProductCategoryController;
@@ -146,14 +147,22 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::post('templates', [RackCheckTemplateController::class, 'store'])->name('templates.store');
             Route::get('templates/{id}/edit', [RackCheckTemplateController::class, 'edit'])->name('templates.edit');
             Route::put('templates/{id}', [RackCheckTemplateController::class, 'update'])->name('templates.update');
-            Route::get('templates/{id}/preview', [RackCheckTemplateController::class, 'preview'])->name('templates.preview');
-            Route::post('templates/{id}/generate', [RackCheckTemplateController::class, 'generateNow'])->name('templates.generate');
             Route::post('templates/{id}/toggle', [RackCheckTemplateController::class, 'toggle'])->name('templates.toggle');
-            Route::post('overflows/{id}/assign', [RackCheckTemplateController::class, 'assignOverflow'])->name('overflows.assign');
-            Route::post('overflows/{id}/move-tomorrow', [RackCheckTemplateController::class, 'moveOverflowToTomorrow'])->name('overflows.move_tomorrow');
-            Route::post('overflows/{id}/move-next-shift', [RackCheckTemplateController::class, 'moveOverflowToNextShift'])->name('overflows.move_next_shift');
-            Route::post('overflows/{id}/ignore', [RackCheckTemplateController::class, 'ignoreOverflow'])->name('overflows.ignore');
             Route::delete('templates/{id}', [RackCheckTemplateController::class, 'destroy'])->name('templates.destroy');
+        });
+
+        // Rack Check Planning (manual supervisor planning)
+        Route::prefix('rack-check/planning')->name('rack_check.planning.')->group(function () {
+            Route::get('/', [RackCheckPlanningController::class, 'index'])->name('index');
+            Route::get('/daily', [RackCheckPlanningController::class, 'dailyDetail'])->name('daily');
+            Route::post('/assign', [RackCheckPlanningController::class, 'assignRack'])->name('assign');
+            Route::post('/unassign', [RackCheckPlanningController::class, 'unassignRack'])->name('unassign');
+            Route::post('/save-draft', [RackCheckPlanningController::class, 'saveDraft'])->name('save_draft');
+            Route::post('/publish', [RackCheckPlanningController::class, 'publishPlanning'])->name('publish');
+            Route::post('/reassign', [RackCheckPlanningController::class, 'reassignRack'])->name('reassign');
+            Route::post('/reschedule', [RackCheckPlanningController::class, 'rescheduleRack'])->name('reschedule');
+            Route::post('/ignore', [RackCheckPlanningController::class, 'ignoreRack'])->name('ignore');
+            Route::post('/auto-suggest', [RackCheckPlanningController::class, 'autoSuggest'])->name('auto_suggest');
         });
 
         // Live Dashboard

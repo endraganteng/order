@@ -661,6 +661,58 @@ Artisan::command('rack-check:cleanup-legacy', function () {
     $this->info('Template baru gunakan /admin/rack-check/templates (simple_lowest_load / round_robin_simple).');
 })->purpose('Nonaktifkan semua template rack_check legacy (role_round_robin) yang sudah digantikan wizard baru');
 
+Artisan::command('planning:remind-incomplete', function () {
+    $firebase = app(FirebaseService::class);
+    $fonnte = app(FonnteService::class);
+    $payroll = app(PayrollService::class);
+
+    $tomorrow = now()->addDay()->format('Y-m-d');
+
+    $total = $firebase->countRacksDueForDate($tomorrow);
+    $planningTasks = $firebase->getPlanningTasksForDate($tomorrow);
+
+    $assigned = 0;
+
+    foreach ($planningTasks as $task) {
+        $status = $task['status'] ?? '';
+        if (in_array($status, ['planned', 'pending'], true)) {
+            $assigned++;
+        }
+    }
+
+    $unassigned = max(0, $total - $assigned);
+
+    if ($unassigned === 0) {
+        $this->info("Planning untuk {$tomorrow} sudah lengkap. Tidak ada reminder dikirim.");
+        return 0;
+    }
+
+    $config = $payroll->getConfig();
+    $supervisorPhone = $config['supervisor_phone'] ?? '';
+
+    if (empty($supervisorPhone)) {
+        $this->warn("supervisor_phone kosong di payroll config. Reminder tidak dikirim.");
+        return 0;
+    }
+
+    $message = "⚠️ *REMINDER: Planning Cek Rak Belum Lengkap*\n\n"
+        . "📅 Tanggal: {$tomorrow}\n"
+        . "📊 Total Rak: {$total}\n"
+        . "✅ Sudah diassign: {$assigned}\n"
+        . "❌ Belum diassign: {$unassigned}\n\n"
+        . "Segera lengkapi planning di panel admin.";
+
+    $result = $fonnte->sendMessage($supervisorPhone, $message);
+
+    if ($result !== null) {
+        $this->info("Reminder WA terkirim ke {$supervisorPhone} — {$unassigned} rak belum diassign untuk {$tomorrow}.");
+    } else {
+        $this->warn("Gagal mengirim WA reminder ke {$supervisorPhone}.");
+    }
+
+    return 0;
+})->purpose('Send WA reminder if tomorrow planning is incomplete');
+
 Schedule::command('waiter:process-tasks')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('waiter:send-task-reminders')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('waiter:audit-attendance')->hourly()->withoutOverlapping();
@@ -672,6 +724,7 @@ Schedule::command('waiter:send-monthly-report')->monthlyOn(1, '07:00')->withoutO
 Schedule::command('waiter:check-stale-po')->dailyAt('08:00')->withoutOverlapping();
 Schedule::command('firebase:cleanup-idempotency')->dailyAt('03:00')->withoutOverlapping();
 Schedule::command('waiter:send-daily-task-recap')->dailyAt('21:00')->withoutOverlapping();
+Schedule::command('planning:remind-incomplete')->dailyAt('18:00')->withoutOverlapping();
 
 Artisan::command('payroll:auto-credit-salary {--catchup=7 : Catchup window dalam hari}', function () {
     $payroll = app(PayrollService::class);
