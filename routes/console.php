@@ -735,8 +735,9 @@ Artisan::command('finance:auto-sync', function () {
     return $result['status'] === 'failed' ? 1 : 0;
 })->purpose('Auto sync finance data dari API shift kasir');
 
-// Schedule finance auto sync setiap jam (command sendiri yang cek apakah enabled + jam yang tepat)
-Schedule::command('finance:auto-sync')->hourly()->withoutOverlapping();
+// Auto-sync dihapus — sync dilakukan realtime via webhook saat shift submit.
+// Manual sync tetap tersedia via tombol "Sync Sekarang" di /admin/profit-tracking.
+// Schedule::command('finance:auto-sync')->hourly()->withoutOverlapping();
 
 Artisan::command('finance:debt-due-alert', function () {
     $today = now()->format('Y-m-d');

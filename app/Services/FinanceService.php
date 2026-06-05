@@ -666,10 +666,36 @@ class FinanceService
             $sisaStokQty = $sisaStokLookup[$sisaKey]['qty'] ?? null;
             $productId = $sisaStokLookup[$sisaKey]['product_id'] ?? $productIdMap[$nameLower] ?? 0;
 
+            // Calculate harga_per_unit
+            $stokMasukQty = (float) $row->total_qty;
+            $stokMasukTotal = (float) $row->total_nilai;
+            $hargaPerUnit = $stokMasukQty > 0 ? round($stokMasukTotal / $stokMasukQty, 2) : 0;
+
+            // Get modal kemarin (sisa_stok_qty from previous day)
+            $prevDate = date('Y-m-d', strtotime($date . ' -1 day'));
+            $modalKemarin = (float) (DB::table('daily_product_trackings')
+                ->where('tracking_date', $prevDate)
+                ->where('product_name', $productNameOriginal)
+                ->value('sisa_stok_qty') ?? 0);
+
+            // Calculate terjual & HPP
+            $terjualQty = 0;
+            $hpp = 0;
+            if ($sisaStokQty !== null) {
+                $terjualQty = max(0, ($modalKemarin + $stokMasukQty) - (float) $sisaStokQty);
+                // Harga per unit: use today's if available, otherwise fallback
+                $effectiveHarga = $hargaPerUnit > 0 ? $hargaPerUnit : $this->getLastKnownHargaPerUnit($productNameOriginal, $date);
+                $hpp = round($terjualQty * $effectiveHarga, 2);
+            }
+
             $upsertData = [
                 'product_id' => $productId,
-                'stok_masuk_qty' => $row->total_qty,
-                'stok_masuk_total' => $row->total_nilai,
+                'stok_masuk_qty' => $stokMasukQty,
+                'stok_masuk_total' => $stokMasukTotal,
+                'harga_per_unit' => $hargaPerUnit,
+                'modal_kemarin_qty' => $modalKemarin,
+                'terjual_qty' => $terjualQty,
+                'hpp' => $hpp,
                 'updated_at' => now(),
             ];
 
@@ -708,19 +734,49 @@ class FinanceService
                 ->where('product_name', $canonicalName)
                 ->first();
 
+            // Get modal kemarin
+            $prevDate = date('Y-m-d', strtotime($date . ' -1 day'));
+            $modalKemarin = (float) (DB::table('daily_product_trackings')
+                ->where('tracking_date', $prevDate)
+                ->where('product_name', $canonicalName)
+                ->value('sisa_stok_qty') ?? 0);
+
             if ($existing) {
+                // Recalculate terjual & HPP with updated sisa_stok
+                $stokMasukQty = (float) $existing->stok_masuk_qty;
+                $terjualQty = max(0, ($modalKemarin + $stokMasukQty) - (float) $qty);
+                $effectiveHarga = (float) $existing->harga_per_unit > 0
+                    ? (float) $existing->harga_per_unit
+                    : $this->getLastKnownHargaPerUnit($canonicalName, $date);
+                $hpp = round($terjualQty * $effectiveHarga, 2);
+
                 DB::table('daily_product_trackings')
                     ->where('tracking_date', $date)
                     ->where('product_name', $canonicalName)
-                    ->update(['sisa_stok_qty' => $qty, 'updated_at' => now()]);
+                    ->update([
+                        'sisa_stok_qty' => $qty,
+                        'modal_kemarin_qty' => $modalKemarin,
+                        'terjual_qty' => $terjualQty,
+                        'hpp' => $hpp,
+                        'updated_at' => now(),
+                    ]);
             } else {
+                // No expense row — still calculate from modal kemarin
+                $terjualQty = max(0, $modalKemarin - (float) $qty);
+                $effectiveHarga = $this->getLastKnownHargaPerUnit($canonicalName, $date);
+                $hpp = round($terjualQty * $effectiveHarga, 2);
+
                 DB::table('daily_product_trackings')->insert([
                     'tracking_date' => $date,
                     'product_id' => $productId,
                     'product_name' => $canonicalName,
+                    'modal_kemarin_qty' => $modalKemarin,
                     'stok_masuk_qty' => 0,
                     'stok_masuk_total' => 0,
+                    'harga_per_unit' => $effectiveHarga,
                     'sisa_stok_qty' => $qty,
+                    'terjual_qty' => $terjualQty,
+                    'hpp' => $hpp,
                     'penjualan_nominal' => 0,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -734,6 +790,22 @@ class FinanceService
             'expense_rows' => $expenseRows->count(),
             'sisa_stok_rows' => count($sisaStokData),
         ]);
+    }
+
+    /**
+     * Get the last known harga_per_unit for a product before a given date.
+     * Fallback for days without stok masuk.
+     */
+    protected function getLastKnownHargaPerUnit(string $productName, string $beforeDate): float
+    {
+        $harga = DB::table('daily_product_trackings')
+            ->where('product_name', $productName)
+            ->where('tracking_date', '<', $beforeDate)
+            ->where('harga_per_unit', '>', 0)
+            ->orderBy('tracking_date', 'desc')
+            ->value('harga_per_unit');
+
+        return (float) ($harga ?? 0);
     }
 
     /**

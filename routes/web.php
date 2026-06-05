@@ -407,7 +407,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Profit Tracking Dashboard
         Route::prefix('profit-tracking')->name('profit-tracking.')->group(function () {
             Route::get('/', [ProfitTrackingController::class, 'index'])->name('index');
+            Route::get('/report', [ProfitTrackingController::class, 'report'])->name('report');
             Route::post('/penjualan', [ProfitTrackingController::class, 'updatePenjualan'])->name('update-penjualan');
+            Route::post('/opening-stock', [ProfitTrackingController::class, 'setOpeningStock'])->name('opening-stock');
+            Route::post('/settings', [ProfitTrackingController::class, 'saveSettings'])->name('settings');
             Route::post('/sync', [ProfitTrackingController::class, 'syncNow'])->name('sync');
         });
 

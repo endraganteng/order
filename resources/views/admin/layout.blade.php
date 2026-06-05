@@ -1392,8 +1392,8 @@
                     </div>
                 </li>
                 @if(in_array('laporan_keuangan', $allowedGroups))
-                <li class="{{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log']) ? 'is-active-group' : '' }}">
-                    <button class="dropdown-toggle {{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log']) ? 'is-active-group' : '' }}">📈 Laporan <span class="caret">▾</span></button>
+                <li class="{{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log','admin.profit-tracking.*']) ? 'is-active-group' : '' }}">
+                    <button class="dropdown-toggle {{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log','admin.profit-tracking.*']) ? 'is-active-group' : '' }}">📈 Laporan <span class="caret">▾</span></button>
                     <div class="dropdown-menu">
                         <a class="{{ request()->routeIs('admin.finance.budget') ? 'is-active' : '' }}" href="{{ route('admin.finance.budget') }}">📊 Budget vs Realisasi</a>
                         <a class="{{ request()->routeIs('admin.finance.report.monthly') ? 'is-active' : '' }}" href="{{ route('admin.finance.report.monthly') }}">📈 Laporan Bulanan</a>
@@ -1401,6 +1401,8 @@
                         <a class="{{ request()->routeIs('admin.finance.laba_rugi') ? 'is-active' : '' }}" href="{{ route('admin.finance.laba_rugi') }}">📊 Laba Rugi</a>
                         <a class="{{ request()->routeIs('admin.finance.tutup_buku') ? 'is-active' : '' }}" href="{{ route('admin.finance.tutup_buku') }}">📕 Tutup Buku</a>
                         <a class="{{ request()->routeIs('admin.finance.audit_log') ? 'is-active' : '' }}" href="{{ route('admin.finance.audit_log') }}">📜 Audit Log</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="{{ request()->routeIs('admin.profit-tracking.*') ? 'is-active' : '' }}" href="{{ route('admin.profit-tracking.index') }}">📈 Profit Tracking</a>
                     </div>
                 </li>
                 @endif
@@ -1449,7 +1451,7 @@
                                 <a class="{{ request()->routeIs('admin.finance.shifts') ? 'is-active' : '' }}" href="{{ route('admin.finance.shifts') }}">🕐 Detail Shift</a>
                             </div>
                         </div>
-                        <div class="has-submenu {{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log']) ? 'is-active-sub' : '' }}">
+                        <div class="has-submenu {{ request()->routeIs(['admin.finance.budget','admin.finance.report.*','admin.finance.audit_log','admin.profit-tracking.*']) ? 'is-active-sub' : '' }}">
                             <span class="submenu-toggle">📈 Laporan</span>
                             <div class="submenu-panel">
                                 <a class="{{ request()->routeIs('admin.finance.budget') ? 'is-active' : '' }}" href="{{ route('admin.finance.budget') }}">📊 Budget vs Realisasi</a>
@@ -1458,6 +1460,8 @@
                                 <a class="{{ request()->routeIs('admin.finance.laba_rugi') ? 'is-active' : '' }}" href="{{ route('admin.finance.laba_rugi') }}">📊 Laba Rugi</a>
                                 <a class="{{ request()->routeIs('admin.finance.tutup_buku') ? 'is-active' : '' }}" href="{{ route('admin.finance.tutup_buku') }}">📕 Tutup Buku</a>
                                 <a class="{{ request()->routeIs('admin.finance.audit_log') ? 'is-active' : '' }}" href="{{ route('admin.finance.audit_log') }}">📜 Audit Log</a>
+                                <div class="dropdown-divider"></div>
+                                <a class="{{ request()->routeIs('admin.profit-tracking.*') ? 'is-active' : '' }}" href="{{ route('admin.profit-tracking.index') }}">📈 Profit Tracking</a>
                             </div>
                         </div>
                         <div class="has-submenu {{ request()->routeIs(['admin.finance.sync','admin.finance.settings','admin.finance.sync_logs','admin.finance.mappings.*','admin.finance.categories','admin.finance.allocations']) ? 'is-active-sub' : '' }}">
