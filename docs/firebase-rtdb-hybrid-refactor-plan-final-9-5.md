@@ -2300,3 +2300,69 @@ Perlu restructure node (plan larang) atau mirror node atau MySQL. DEFER.
 6. Task -> MySQL: schema harus superset (tutup lubang 3) ATAU hybrid list/detail
 ```
 
+---
+
+## 21. Status Terkini (Update) — 2026-06-06
+
+> Menggantikan status "OPEN" di section 20.4. Lubang fondasi SUDAH ditutup +
+> diverifikasi runtime (bukan sekadar lint).
+
+### 21.1 Photo offload — SELESAI (temuan #1, di luar plan asli)
+
+```text
+Foto base64 di RTDB (cap 3MB, 2/task) = akar bandwidth terbesar.
+- uploadTaskPhoto() -> Firebase Storage, simpan URL ~100 byte
+- 3 titik tulis wired (completions[], proof, before)
+- command tasks:migrate-photos (idempotent) -> 32 task, 34 foto, B64:0 URL:17
+- .env FIREBASE_STORAGE_BUCKET dikoreksi -> imowebdev-project.firebasestorage.app
+- VERIFIED runtime: upload return URL valid
+```
+
+### 21.2 Fondasi Phase 1 — 3 lubang TERTUTUP + runtime-verified
+
+```text
+LUBANG 1 read   getWaiterTasksByWaiterId flag-gated MySQL, return firebase_payload
+                verbatim + fallback kolom struktural. VERIFIED: 8 task, title+status OK.
+LUBANG 2 create dualWriteWaiterTaskToMysql() di 4 titik (assignment, refill,
+                recurring x2). VERIFIED: create -> id=35, priority OK, payload set.
+LUBANG 3 schema migration firebase_payload JSON + model cast + seed isi.
+                VERIFIED: 32/32 row payload terisi.
+completeTask    VERIFIED: resolve by key -> pending->done, completed_at set.
+```
+
+### 21.3 Bug ditemukan + fixed sesi ini (5, kelas sama)
+
+```text
+getAuditLogs, getWaiterTaskPerformance, getManualBonusesByPeriod  (full-read unbounded)
+seed mapper priority/task_type null            (commit 448e281)
+dual-write helper priority/task_type null      (commit 69bd018, runtime-caught)
+```
+
+### 21.4 database.rules.json
+
+```text
+File rules final di repo root, sudah diaplikasikan ke Console.
+Fix vs draft: waiter_manual_bonuses .indexOn tambah "date" (query pakai 'date').
+Index cocok semua query kode yang diverifikasi sesi ini.
+```
+
+### 21.5 Sisa produksi (di luar sesi kode)
+
+```text
+[x] apply database.rules.json ke Console
+[ ] seed full range (di luar window test 6 hari)
+[ ] FEATURE_MYSQL_WAITER_TASKS=true di staging -> uji portal browser
+[ ] monitor bandwidth (target Phase 1 <1GB/hari; photo offload dorong lebih turun)
+[ ] Phase 2/3 migrasi MySQL penuh (attendance/audit/reports/bonus) - bila perlu history
+[ ] Phase 4 cleanup legacy
+```
+
+### 21.6 Catatan flag
+
+```text
+FEATURE_MYSQL_WAITER_TASKS default FALSE -> produksi belum berubah.
+Read+create+complete+schema sudah nyambung -> flag ON tak lagi langsung rusak.
+Foto BARU sudah ke Storage tanpa bergantung flag (independen).
+```
+
+

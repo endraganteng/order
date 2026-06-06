@@ -1,0 +1,108 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "active_sessions": { ".indexOn": ["last_seen"] },
+    "rack_stock_movements": { ".indexOn": ["product_id", "rack_id", "created_at"] },
+    "reconciliation_reports": { ".indexOn": ["created_at"] },
+
+    "waiter_payroll_transactions": {
+      ".indexOn": ["waiter_id", "status", "type", "created_at"]
+    },
+    "bonus_pending_recompute_index": { ".indexOn": ["created_at"] },
+    "bonus_pending_waiter_index": { ".indexOn": ["created_at"] },
+
+    "orders": {
+      ".read": true,
+      ".write": "auth != null",
+      ".indexOn": ["waiter_id", "created_at", "expires_at"]
+    },
+
+    "dana_payments": {
+      ".read": true,
+      ".write": false,
+      ".indexOn": ["received_at_ms"]
+    },
+
+    "cashier_workers": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "cashier_tasks_templates": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "cashier_tasks": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["status", "source_template_id"]
+    },
+
+    "allowed_waiters": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "waiter_tasks": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["assigned_waiter_id", "scheduled_for_date", "status", "rack_id"]
+    },
+
+    "waiter_activity_reports": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["report_date", "waiter_id"]
+    },
+
+    "waiter_penalties": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["waiter_id", "month", "date"]
+    },
+
+    "restock_requests": {
+      ".indexOn": ["product_id", "status"]
+    },
+
+    "waiter_daily_points": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["date", "waiter_id"]
+    },
+
+    "waiter_sales_targets": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["period", "waiter_id"]
+    },
+
+    "waiter_manual_bonuses": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["date", "period", "waiter_id"]
+    },
+
+    "waiter_bonus_summary": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["period"]
+    },
+
+    "purchase_orders": {
+      ".indexOn": ["status", "created_date"]
+    },
+
+    "audit_logs": {
+      ".indexOn": ["timestamp", "date"]
+    }
+  }
+}
