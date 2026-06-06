@@ -5696,12 +5696,13 @@ class FirebaseService
 
         try {
             $createdAt = $payload['created_at'] ?? null;
+            $rawType = $payload['task_type'] ?? 'general';
+            $rawPriority = $payload['priority'] ?? 'normal';
             \App\Models\WaiterTask::updateOrCreate(
                 ['firebase_legacy_key' => $firebaseKey],
                 [
                     'deterministic_key' => 'wt_legacy_'.substr(hash('sha256', $firebaseKey), 0, 32),
-                    'task_type' => in_array(($payload['task_type'] ?? 'general'), ['general', 'rack_check'], true)
-                        ? $payload['task_type'] : 'general',
+                    'task_type' => in_array($rawType, ['general', 'rack_check'], true) ? $rawType : 'general',
                     'title' => (string) ($payload['title'] ?? 'Untitled'),
                     'description' => $payload['description'] ?? null,
                     'assigned_waiter_id' => (string) ($payload['assigned_waiter_id'] ?? ''),
@@ -5710,8 +5711,7 @@ class FirebaseService
                     'status' => 'pending',
                     'publish_status' => 'published',
                     'sync_status' => 'synced',
-                    'priority' => in_array(($payload['priority'] ?? 'normal'), ['low', 'normal', 'high', 'urgent'], true)
-                        ? $payload['priority'] : 'normal',
+                    'priority' => in_array($rawPriority, ['low', 'normal', 'high', 'urgent'], true) ? $rawPriority : 'normal',
                     'rack_id' => $payload['rack_id'] ?? null,
                     'rack_name' => $payload['rack_name'] ?? null,
                     'created_by' => $payload['assigned_by'] ?? ($payload['created_by'] ?? null),
