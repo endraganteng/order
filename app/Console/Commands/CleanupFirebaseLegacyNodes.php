@@ -31,17 +31,17 @@ class CleanupFirebaseLegacyNodes extends Command
 
     protected $description = 'Hapus node Firebase legacy setelah MySQL terisi + flag ON (irreversible).';
 
-    /** Map node Firebase -> [feature flag, MySQL table, butuh reconcile guard?] */
+    /** Map node Firebase -> [feature flag, MySQL table, butuh reconcile guard?, keyed-node?] */
     private const MAP = [
-        'waiter_tasks'             => ['mysql_waiter_tasks', 'waiter_tasks', true],
-        'audit_logs'               => ['mysql_audit_logs', 'audit_logs', false],
-        'waiter_activity_reports'  => ['mysql_activity_reports', 'waiter_activity_reports', false],
-        'product_categories'       => ['mysql_product_categories', 'product_categories', false],
-        'work_shifts'              => ['mysql_work_shifts', 'work_shifts', false],
-        'waiter_bonus_summary'     => ['mysql_bonus_summary', 'waiter_bonus_summaries', false],
-        'waiter_penalties'         => ['mysql_penalties', 'waiter_penalties', false],
-        'waiter_manual_bonuses'    => ['mysql_manual_bonuses', 'waiter_manual_bonuses', false],
-        'waiter_attendance'        => ['mysql_attendance', 'waiter_attendances', false],
+        'waiter_tasks'             => ['mysql_waiter_tasks', 'waiter_tasks', true, false],
+        'audit_logs'               => ['mysql_audit_logs', 'audit_logs', false, false],
+        'waiter_activity_reports'  => ['mysql_activity_reports', 'waiter_activity_reports', false, false],
+        'product_categories'       => ['mysql_product_categories', 'product_categories', false, false],
+        'work_shifts'              => ['mysql_work_shifts', 'work_shifts', false, false],
+        'waiter_bonus_summary'     => ['mysql_bonus_summary', 'waiter_bonus_summaries', false, true],
+        'waiter_penalties'         => ['mysql_penalties', 'waiter_penalties', false, false],
+        'waiter_manual_bonuses'    => ['mysql_manual_bonuses', 'waiter_manual_bonuses', false, false],
+        'waiter_attendance'        => ['mysql_attendance', 'waiter_attendances', false, true],
     ];
 
     public function handle(Database $database): int
@@ -54,7 +54,7 @@ class CleanupFirebaseLegacyNodes extends Command
             return Command::FAILURE;
         }
 
-        [$flagKey, $mysqlTable, $needsReconcileGuard] = self::MAP[$node];
+        [$flagKey, $mysqlTable, $needsReconcileGuard, $isKeyed] = self::MAP[$node];
 
         // GUARD 1 — feature flag ON
         if (! config("features.{$flagKey}")) {
@@ -89,8 +89,20 @@ class CleanupFirebaseLegacyNodes extends Command
             }
         }
 
-        // Hitung target Firebase
-        $fbCount = $database->getReference($node)->getSnapshot()->numChildren();
+        // Hitung target Firebase. Untuk node keyed (parent/child/leaf),
+        // numChildren root cuma hitung parent — telusuri 1 level untuk total leaf.
+        $rootRef = $database->getReference($node);
+        if ($isKeyed) {
+            $fbCount = 0;
+            $snap = $rootRef->getSnapshot();
+            if ($snap->exists()) {
+                foreach ((array) $snap->getValue() as $children) {
+                    $fbCount += is_array($children) ? count($children) : 0;
+                }
+            }
+        } else {
+            $fbCount = $rootRef->getSnapshot()->numChildren();
+        }
 
         $this->info("Guards lulus untuk {$node}.");
         $this->line("  flag={$flagKey}=true | MySQL {$mysqlTable} rows={$mysqlCount} | Firebase node children={$fbCount}");
