@@ -6110,6 +6110,69 @@ class FirebaseService
     }
 
     /**
+     * Migrate legacy base64 task photos in /waiter_tasks to Firebase Storage,
+     * replacing each data URL with a storage URL. Idempotent: skips entries
+     * already holding an http URL. Returns counters for reporting.
+     */
+    public function migrateTaskPhotosToStorage(string $from, string $to, bool $dryRun = true): array
+    {
+        $snapshot = $this->database->getReference('waiter_tasks')
+            ->orderByChild('scheduled_for_date')
+            ->startAt($from)
+            ->endAt($to)
+            ->getSnapshot();
+
+        $items = $snapshot->getValue() ?: [];
+        $scanned = 0;
+        $migrated = 0;
+        $skipped = 0;
+        $failed = 0;
+
+        foreach ($items as $taskId => $task) {
+            if (! is_array($task)) {
+                continue;
+            }
+            $scanned++;
+
+            $fields = [
+                'completed_photo_proof_url' => 'proof',
+                'completed_photo_before_url' => 'before',
+            ];
+
+            $updates = [];
+            foreach ($fields as $field => $kind) {
+                $value = (string) ($task[$field] ?? '');
+                if ($value === '') {
+                    continue; // no photo in this field
+                }
+                if (strpos($value, 'data:image') !== 0) {
+                    $skipped++; // already an http URL
+                    continue;
+                }
+
+                if ($dryRun) {
+                    $migrated++;
+                    continue;
+                }
+
+                $url = $this->uploadTaskPhoto($value, (string) $taskId, $kind);
+                if ($url === '') {
+                    $failed++;
+                    continue;
+                }
+                $updates[$field] = $url;
+                $migrated++;
+            }
+
+            if (! $dryRun && ! empty($updates)) {
+                $this->database->getReference('waiter_tasks/'.$taskId)->update($updates);
+            }
+        }
+
+        return compact('scanned', 'migrated', 'failed', 'skipped');
+    }
+
+    /**
      * Upload a validated base64 image data URL to Firebase Storage and return a
      * public URL. Replaces storing multi-MB base64 blobs inside RTDB nodes
      * (the main bandwidth offender). Returns '' on empty/failure so callers can
