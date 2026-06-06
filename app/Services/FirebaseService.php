@@ -3029,6 +3029,26 @@ class FirebaseService
 
         $ref = $this->database->getReference('waiter_activity_reports')->push($payload);
 
+        if (config('features.mysql_activity_reports')) {
+            try {
+                $createdAt = $payload['created_at'] ?? null;
+                \App\Models\WaiterActivityReport::updateOrCreate(
+                    ['firebase_legacy_key' => (string) $ref->getKey()],
+                    [
+                        'waiter_id' => (string) ($payload['waiter_id'] ?? ''),
+                        'waiter_name' => $payload['waiter_name'] ?? null,
+                        'waiter_email' => $payload['waiter_email'] ?? null,
+                        'report_date' => $payload['report_date'] ?? now()->format('Y-m-d'),
+                        'activity_text' => $payload['activity_text'] ?? null,
+                        'activity_items' => $payload['activity_items'] ?? null,
+                        'event_timestamp' => is_numeric($createdAt) ? (int) $createdAt : null,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         return [
             'success' => true,
             'id' => $ref->getKey(),
@@ -3040,6 +3060,32 @@ class FirebaseService
      */
     public function getWaiterActivityReports(?string $dateFrom = null, ?string $dateTo = null): array
     {
+        // MySQL read path (flag-gated). Source of truth; avoids full RTDB read.
+        if (config('features.mysql_activity_reports')) {
+            $query = \App\Models\WaiterActivityReport::query();
+            if ($dateFrom !== null) {
+                $query->where('report_date', '>=', $dateFrom);
+            }
+            if ($dateTo !== null) {
+                $query->where('report_date', '<=', $dateTo);
+            }
+
+            return $query->orderByDesc('event_timestamp')
+                ->get()
+                ->map(function ($row) {
+                    return [
+                        'id' => $row->firebase_legacy_key ?: (string) $row->id,
+                        'waiter_id' => $row->waiter_id,
+                        'waiter_name' => $row->waiter_name,
+                        'waiter_email' => $row->waiter_email,
+                        'report_date' => optional($row->report_date)->format('Y-m-d'),
+                        'activity_text' => $row->activity_text,
+                        'activity_items' => $row->activity_items,
+                        'created_at' => $row->event_timestamp,
+                    ];
+                })->all();
+        }
+
         // Bound by report_date when a range is given (needs .indexOn ["report_date"]),
         // else fall back to full read (legacy callers).
         $reference = $this->database->getReference('waiter_activity_reports');

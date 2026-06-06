@@ -15,4 +15,5 @@ return [
     'mysql_bonus' => env('FEATURE_MYSQL_BONUS', false),
     'mysql_master_data' => env('FEATURE_MYSQL_MASTER_DATA', false),
     'mysql_audit_logs' => env('FEATURE_MYSQL_AUDIT_LOGS', false),
+    'mysql_activity_reports' => env('FEATURE_MYSQL_ACTIVITY_REPORTS', false),
 ];
