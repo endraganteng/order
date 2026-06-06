@@ -7564,6 +7564,10 @@ class FirebaseService
 
         $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$today)->update($record);
 
+        if (config('features.mysql_attendance')) {
+            $this->syncAttendanceToMysql($waiterId, $today);
+        }
+
         return [
             'success' => true,
             'message' => $status === 'late'
@@ -7600,6 +7604,10 @@ class FirebaseService
             'clock_out_timestamp' => time(),
             'updated_at' => time(),
         ]);
+
+        if (config('features.mysql_attendance')) {
+            $this->syncAttendanceToMysql($waiterId, $today);
+        }
 
         return ['success' => true, 'message' => 'Absen keluar tercatat pada '.$now];
     }
@@ -8457,8 +8465,43 @@ class FirebaseService
         return $result;
     }
 
+    /**
+     * Mirror a Firebase attendance record into MySQL (flag-gated dual-write).
+     * Reads the canonical node value and upserts by waiter+date. Never fatal.
+     */
+    protected function syncAttendanceToMysql(string $waiterId, string $date): void
+    {
+        try {
+            $snap = $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->getSnapshot();
+            $record = $snap->exists() ? (array) $snap->getValue() : null;
+            if ($record === null) {
+                return;
+            }
+
+            \App\Models\WaiterAttendance::updateOrCreate(
+                ['waiter_id' => $waiterId, 'date' => $date],
+                [
+                    'status' => $record['status'] ?? null,
+                    'late_minutes' => (int) ($record['late_minutes'] ?? 0),
+                    'clock_in' => $record['clock_in'] ?? null,
+                    'clock_out' => $record['clock_out'] ?? null,
+                    'data' => $record,
+                ]
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
     public function getAttendanceByDate(string $waiterId, string $date): ?array
     {
+        if (config('features.mysql_attendance')) {
+            $row = \App\Models\WaiterAttendance::where('waiter_id', $waiterId)
+                ->where('date', $date)
+                ->first();
+            return $row && is_array($row->data) ? $row->data : ($row ? [] : null);
+        }
+
         $ref = $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date);
         $snapshot = $ref->getSnapshot();
 
@@ -8521,6 +8564,14 @@ class FirebaseService
      */
     public function getAllAttendanceByDate(string $date): array
     {
+        if (config('features.mysql_attendance')) {
+            $result = [];
+            foreach (\App\Models\WaiterAttendance::where('date', $date)->get() as $row) {
+                $result[$row->waiter_id] = is_array($row->data) ? $row->data : [];
+            }
+            return $result;
+        }
+
         $ref = $this->database->getReference('waiter_attendance');
         $snapshot = $ref->getSnapshot();
 
@@ -8561,6 +8612,10 @@ class FirebaseService
         }
 
         $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->update($payload);
+
+        if (config('features.mysql_attendance')) {
+            $this->syncAttendanceToMysql($waiterId, $date);
+        }
     }
 
     /**
@@ -8569,6 +8624,14 @@ class FirebaseService
     public function deleteAttendance(string $waiterId, string $date): void
     {
         $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->remove();
+
+        if (config('features.mysql_attendance')) {
+            try {
+                \App\Models\WaiterAttendance::where('waiter_id', $waiterId)->where('date', $date)->delete();
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     /**
