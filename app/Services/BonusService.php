@@ -827,6 +827,29 @@ class BonusService
         ];
 
         $this->database->getReference('waiter_penalties/' . $penaltyKey)->set($record);
+
+        if (config('features.mysql_penalties')) {
+            try {
+                \App\Models\WaiterPenalty::updateOrCreate(
+                    ['firebase_legacy_key' => (string) $penaltyKey],
+                    [
+                        'waiter_id' => (string) $record['waiter_id'],
+                        'waiter_name' => $record['waiter_name'] ?: null,
+                        'penalty_type' => $record['penalty_type'] ?? null,
+                        'penalty_label' => $record['penalty_label'] ?? null,
+                        'points_deducted' => (int) $record['points_deducted'],
+                        'date' => $record['date'],
+                        'month' => $record['month'] ?? null,
+                        'reason' => $record['reason'] ?: null,
+                        'evidence_photo_url' => $record['evidence_photo_url'] ?: null,
+                        'related_task_id' => $record['related_task_id'] ?: null,
+                        'event_created_at' => $record['created_at'] ?? null,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
         $penaltyId = $penaltyKey;
 
         return [
@@ -846,6 +869,37 @@ class BonusService
      */
     public function getPenaltiesByPeriod(string $startDate, string $endDate, ?string $waiterId = null): array
     {
+        if (config('features.mysql_penalties')) {
+            $effectiveFrom = $this->getEffectiveFromDate();
+            $query = \App\Models\WaiterPenalty::query()
+                ->whereBetween('date', [$startDate, $endDate]);
+            if ($waiterId !== null) {
+                $query->where('waiter_id', $waiterId);
+            }
+            if ($effectiveFrom !== null) {
+                $query->where('date', '>=', $effectiveFrom);
+            }
+
+            return $query->orderByDesc('event_created_at')
+                ->get()
+                ->map(function ($row) {
+                    return [
+                        'id' => $row->firebase_legacy_key ?: (string) $row->id,
+                        'waiter_id' => $row->waiter_id,
+                        'waiter_name' => $row->waiter_name,
+                        'penalty_type' => $row->penalty_type,
+                        'penalty_label' => $row->penalty_label,
+                        'points_deducted' => $row->points_deducted,
+                        'date' => optional($row->date)->format('Y-m-d'),
+                        'month' => $row->month,
+                        'reason' => $row->reason,
+                        'evidence_photo_url' => $row->evidence_photo_url,
+                        'related_task_id' => $row->related_task_id,
+                        'created_at' => $row->event_created_at,
+                    ];
+                })->all();
+        }
+
         // Query by date range using startAt/endAt on the 'date' child key
         $reference = $this->database->getReference('waiter_penalties')
             ->orderByChild('date')
