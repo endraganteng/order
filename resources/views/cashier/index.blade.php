@@ -379,119 +379,17 @@
             50% { opacity: 0.4; }
         }
 
-        .dana-payments-container {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        .no-dana-payments {
-            text-align: center;
-            color: #64748b;
-            padding: 40px 20px;
-            font-size: 16px;
-            background: rgba(148, 163, 184, 0.05);
-            border-radius: 12px;
-            border: 1px dashed rgba(148, 163, 184, 0.2);
-        }
-
-        .dana-payment-card {
-            background: linear-gradient(135deg, rgba(74, 222, 128, 0.08), rgba(34, 197, 94, 0.04));
-            border: 1px solid rgba(74, 222, 128, 0.2);
-            border-left: 4px solid #4ade80;
-            border-radius: 10px;
-            padding: 16px 20px;
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 16px;
-            align-items: center;
-            animation: slideIn 0.3s ease-out;
-            transition: background 0.3s ease;
-        }
-
-        .dana-payment-card.fresh {
-            background: linear-gradient(135deg, rgba(74, 222, 128, 0.25), rgba(34, 197, 94, 0.12));
-            box-shadow: 0 0 24px rgba(74, 222, 128, 0.4);
-        }
-
-        .dana-payment-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #4ade80, #22c55e);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            flex-shrink: 0;
-        }
-
-        .dana-payment-info {
-            min-width: 0;
-        }
-
-        .dana-payment-amount {
-            font-size: 22px;
-            font-weight: 700;
-            color: #4ade80;
-            margin-bottom: 4px;
-        }
-
-        .dana-payment-sender {
-            font-size: 14px;
-            color: #e2e8f0;
-            font-weight: 500;
-            margin-bottom: 4px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .dana-payment-meta {
-            font-size: 12px;
-            color: #94a3b8;
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .dana-payment-time {
-            font-size: 13px;
-            color: #cbd5e1;
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-            white-space: nowrap;
-        }
-
-        .dana-payment-time-relative {
-            font-size: 11px;
-            color: #64748b;
-            margin-top: 2px;
-        }
-
-        .dana-source-badge {
-            display: inline-block;
-            background: rgba(74, 222, 128, 0.2);
-            color: #4ade80;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        @media (max-width: 600px) {
-            .dana-payment-card {
-                grid-template-columns: auto 1fr;
-            }
-            .dana-payment-time {
-                grid-column: 1 / -1;
-                text-align: left;
-                padding-left: 64px;
-            }
-        }
+        .dana-payments-container,
+        .no-dana-payments,
+        .dana-payment-card,
+        .dana-payment-icon,
+        .dana-payment-info,
+        .dana-payment-amount,
+        .dana-payment-sender,
+        .dana-payment-meta,
+        .dana-payment-time,
+        .dana-payment-time-relative,
+        .dana-source-badge { display: none !important; }
         /* ========== END DANA TAB ========== */
 
         /* ========== ORDER CARDS ========== */
@@ -832,7 +730,7 @@
             ?? Tugas Supervisor
             <span id="task-badge" class="tab-badge zero">0</span>
         </button>
-        <button class="tab-btn" data-tab="dana" onclick="switchTab('dana')">
+        <button class="tab-btn" data-tab="dana" onclick="switchTab('dana')" style="display:none">
             💰 DANA Masuk
             <span id="dana-badge" class="tab-badge zero">0</span>
         </button>
@@ -938,8 +836,8 @@
         </div>
     </div>
 
-    <!-- TAB: DANA MASUK -->
-    <div id="tab-dana" class="tab-content">
+    <!-- TAB: DANA MASUK (DEPRECATED — fitur DANA dihilangkan, blok di-hide) -->
+    <div id="tab-dana" class="tab-content" style="display:none !important">
         <h1 class="section-title dana">💰 Pembayaran DANA Masuk</h1>
 
         <div class="dana-summary">
@@ -2396,7 +2294,7 @@
         const danaVoiceEnabledEl = document.getElementById('dana-voice-enabled');
         const danaVoiceTestBtn = document.getElementById('dana-voice-test');
         const danaVoiceSelectEl = document.getElementById('dana-voice-select');
-        const danaPaymentsEndpoint = @json(route('cashier.dana_payments', [], false));
+        const danaPaymentsEndpoint = null; // DEPRECATED — fitur DANA dihilangkan, route hapus
 
         // Voice config
         const DANA_VOICE_STORAGE_KEY = 'cashier_dana_voice_enabled';
@@ -2914,12 +2812,13 @@
             }
         }
 
-        // Listener Firebase: /dana_payments
-        // Pakai limitToLast(50) untuk hindari load semua history.
+        // Listener Firebase: /dana_payments — DEPRECATED, fitur DANA dihilangkan.
+        // Skip subscribe agar bandwidth Firebase /dana_payments tak ditarik.
+        const DANA_DISABLED = true;
         const danaPaymentsRef = ref(database, 'dana_payments');
         const danaPaymentsQuery = query(danaPaymentsRef, limitToLast(50));
 
-        loadInitialDanaPayments().then(() => {
+        if (!DANA_DISABLED) loadInitialDanaPayments().then(() => {
             onValue(danaPaymentsQuery, (snapshot) => {
                 if (!snapshot.exists()) {
                     return;

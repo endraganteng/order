@@ -308,12 +308,6 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Audit Log
         Route::get('audit-log', [AuditLogController::class, 'index'])->name('audit_log.index');
 
-        // DANA Payments History
-        Route::get('dana-payments', [\App\Http\Controllers\Admin\DanaPaymentController::class, 'index'])->name('dana_payments.index');
-        Route::get('dana-payments/export', [\App\Http\Controllers\Admin\DanaPaymentController::class, 'export'])->name('dana_payments.export');
-        Route::post('dana-payments/reset', [\App\Http\Controllers\Admin\DanaPaymentController::class, 'reset'])->name('dana_payments.reset');
-        Route::get('dana-payments/{id}', [\App\Http\Controllers\Admin\DanaPaymentController::class, 'show'])->name('dana_payments.show')->whereNumber('id');
-
         // Waiter Performance
         Route::get('waiters/{id}/performance', [WaiterPerformanceController::class, 'show'])->name('waiters.performance');
 
@@ -468,7 +462,6 @@ Route::get('cashier', [CashierController::class, 'index'])->name('cashier.index'
 Route::get('cashier/workers', [CashierController::class, 'getCashierWorkers'])->name('cashier.workers');
 Route::get('cashier/attendance-qr', [CashierController::class, 'getAttendanceQr'])->name('cashier.attendance_qr');
 Route::get('cashier/attendance-qr/global', [CashierController::class, 'getGlobalAttendanceQr'])->name('cashier.attendance_qr_global');
-Route::get('cashier/dana-payments', [CashierController::class, 'getDanaPayments'])->name('cashier.dana_payments');
 Route::post('cashier/tts/speak', [CashierController::class, 'ttsSpeak'])
     ->middleware('throttle:60,1')
     ->name('cashier.tts.speak');
@@ -490,16 +483,6 @@ Route::post('webhooks/finance-sync', function (\Illuminate\Http\Request $request
 
     return response()->json(['success' => true, 'status' => $result['status'], 'synced' => $result['synced']]);
 })->name('webhooks.finance_sync');
-
-// === DANA Listener Webhook (TESTING ONLY, NO AUTH) ===
-// Endpoint testing untuk menerima POST dari app notification listener.
-// CSRF dikecualikan via bootstrap/app.php → middleware->validateCsrfTokens(except: ['webhooks/*']).
-Route::prefix('webhooks/dana-listener')->name('webhooks.dana_listener.')->group(function () {
-    Route::post('/', [\App\Http\Controllers\DanaWebhookController::class, 'receive'])->name('receive');
-    Route::get('/inspect', [\App\Http\Controllers\DanaWebhookController::class, 'inspect'])->name('inspect');
-    Route::get('/feed', [\App\Http\Controllers\DanaWebhookController::class, 'feed'])->name('feed');
-    Route::post('/reset', [\App\Http\Controllers\DanaWebhookController::class, 'reset'])->name('reset');
-});
 
 // Cashier task actions (no auth, accessible from cashier page)
 Route::post('cashier/tasks/sync-due', [CashierController::class, 'syncDueTasks'])

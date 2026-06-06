@@ -39,7 +39,7 @@ class RolePermissionService
     public const ROUTE_MAP = [
         'ringkasan' => ['admin.dashboard', 'admin.current_order.*', 'admin.test_order'],
         'tim_area' => ['admin.waiters.*', 'admin.racks.*', 'admin.products.*', 'admin.product_categories.*', 'admin.shifts.*', 'admin.schedules.*'],
-        'operasional' => ['admin.tasks.*', 'admin.restock.*', 'admin.suppliers.*', 'admin.attendance.*', 'admin.reconciliation.*', 'admin.dana_payments.*', 'admin.cleanup'],
+        'operasional' => ['admin.tasks.*', 'admin.restock.*', 'admin.suppliers.*', 'admin.attendance.*', 'admin.reconciliation.*', 'admin.cleanup'],
         'bonus' => ['admin.bonus.*'],
         'keuangan' => ['admin.finance.dashboard', 'admin.finance_dashboard', 'admin.payroll.*', 'admin.finance.mutations', 'admin.finance.expenses', 'admin.finance.debts', 'admin.finance.shifts', 'admin.finance.transfers', 'admin.finance.cash_accounts', 'admin.finance.need_review', 'admin.finance.deposit', 'admin.finance.correct_balance', 'admin.finance.check_budget'],
         'kasbon' => ['admin.kasbon.*'],
