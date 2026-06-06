@@ -3286,7 +3286,9 @@ class FirebaseService
         ];
 
         if ($validatedPhotoProofDataUrl !== '') {
-            $completionEntry['photo_proof_url'] = $validatedPhotoProofDataUrl;
+            // Offload to Storage; keep inline data URL only if upload fails.
+            $uploadedProofUrl = $this->uploadTaskPhoto($validatedPhotoProofDataUrl, (string) $taskId, 'proof');
+            $completionEntry['photo_proof_url'] = $uploadedProofUrl !== '' ? $uploadedProofUrl : $validatedPhotoProofDataUrl;
             $completionEntry['photo_proof_mime_type'] = $normalizedPhoto['mime_type'] ?? null;
             $completionEntry['photo_proof_size_bytes'] = (int) ($normalizedPhoto['size_bytes'] ?? 0);
         }
@@ -3384,7 +3386,13 @@ class FirebaseService
         // For single-repeat tasks or final completion, store photo at top level too
         if ($isFullyDone && ($requiresPhotoProof || $validatedPhotoProofDataUrl !== '')) {
             $hasPhotoProof = $validatedPhotoProofDataUrl !== '';
-            $updates['completed_photo_proof_url'] = $hasPhotoProof ? $validatedPhotoProofDataUrl : null;
+            // Reuse the per-completion uploaded URL if present, else upload now.
+            $proofUrl = $completionEntry['photo_proof_url'] ?? '';
+            if ($hasPhotoProof && $proofUrl === '') {
+                $uploaded = $this->uploadTaskPhoto($validatedPhotoProofDataUrl, (string) $taskId, 'proof');
+                $proofUrl = $uploaded !== '' ? $uploaded : $validatedPhotoProofDataUrl;
+            }
+            $updates['completed_photo_proof_url'] = $hasPhotoProof ? $proofUrl : null;
             $updates['completed_photo_proof_mime_type'] = $hasPhotoProof ? ($normalizedPhoto['mime_type'] ?? null) : null;
             $updates['completed_photo_proof_size_bytes'] = $hasPhotoProof ? (int) ($normalizedPhoto['size_bytes'] ?? 0) : null;
             $updates['photo_proof_uploaded_at'] = $hasPhotoProof ? $now : null;
@@ -3392,7 +3400,8 @@ class FirebaseService
 
         // Store photo before (kondisi awal) if provided
         if ($validatedPhotoBeforeDataUrl !== '') {
-            $updates['completed_photo_before_url'] = $validatedPhotoBeforeDataUrl;
+            $uploadedBefore = $this->uploadTaskPhoto($validatedPhotoBeforeDataUrl, (string) $taskId, 'before');
+            $updates['completed_photo_before_url'] = $uploadedBefore !== '' ? $uploadedBefore : $validatedPhotoBeforeDataUrl;
         }
 
         if (! empty($note) && $isFullyDone) {
@@ -6098,6 +6107,54 @@ class FirebaseService
             'mime_type' => $mimeType,
             'size_bytes' => $sizeBytes,
         ];
+    }
+
+    /**
+     * Upload a validated base64 image data URL to Firebase Storage and return a
+     * public URL. Replaces storing multi-MB base64 blobs inside RTDB nodes
+     * (the main bandwidth offender). Returns '' on empty/failure so callers can
+     * fall back to the legacy inline data URL without breaking task completion.
+     */
+    protected function uploadTaskPhoto(string $dataUrl, string $taskId, string $kind): string
+    {
+        if ($dataUrl === '' || ! preg_match('/^data:(image\/[\w.+-]+);base64,(.+)$/i', $dataUrl, $m)) {
+            return '';
+        }
+
+        $mime = strtolower($m[1]);
+        $bytes = base64_decode(preg_replace('/\s+/', '', $m[2]) ?? '', true);
+        if ($bytes === false || $bytes === '') {
+            return '';
+        }
+
+        $ext = match ($mime) {
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => 'jpg',
+        };
+
+        $safeTask = preg_replace('/[^A-Za-z0-9_-]/', '', $taskId) ?: 'unknown';
+        $object = sprintf('task_photos/%s/%s_%d.%s', $safeTask, $kind, time(), $ext);
+
+        try {
+            $bucketName = (string) config('firebase.web.storage_bucket') ?: null;
+            $bucket = app('firebase.storage')->getBucket($bucketName);
+            $bucket->upload($bytes, [
+                'name' => $object,
+                'metadata' => ['contentType' => $mime],
+                'predefinedAcl' => 'publicRead',
+            ]);
+
+            return sprintf(
+                'https://storage.googleapis.com/%s/%s',
+                $bucket->name(),
+                $object
+            );
+        } catch (\Throwable $e) {
+            report($e);
+
+            return '';
+        }
     }
 
     /**
