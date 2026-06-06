@@ -367,21 +367,32 @@ class WaiterController extends Controller
             }
         }
 
-        $result = $this->firebase->updateWaiterTaskStatus(
-            $id,
-            'done',
-            $waiterId,
-            $waiterName,
-            $waiterEmail,
-            $request->input('note'),
-            $request->input('scanned_barcode'),
-            $request->input('stock_report_items'),
-            $request->boolean('no_out_of_stock'),
-            $request->input('photo_proof_data_url'),
-            $productChecklist,
-            $request->input('photo_before_data_url'),
-            $request->input('idempotency_key')
-        );
+        if (config('features.mysql_waiter_tasks')) {
+            // MySQL path: $id is the firebase/deterministic key; service resolves by key.
+            $result = app(\App\Services\WaiterTaskService::class)->completeTask($id, [
+                'waiter_id' => $waiterId,
+                'waiter_name' => $waiterName,
+                'waiter_email' => $waiterEmail,
+                'notes' => $request->input('note'),
+                'photo_url' => $request->input('photo_proof_data_url'),
+            ]);
+        } else {
+            $result = $this->firebase->updateWaiterTaskStatus(
+                $id,
+                'done',
+                $waiterId,
+                $waiterName,
+                $waiterEmail,
+                $request->input('note'),
+                $request->input('scanned_barcode'),
+                $request->input('stock_report_items'),
+                $request->boolean('no_out_of_stock'),
+                $request->input('photo_proof_data_url'),
+                $productChecklist,
+                $request->input('photo_before_data_url'),
+                $request->input('idempotency_key')
+            );
+        }
 
         if (! ($result['success'] ?? false)) {
             if ($request->expectsJson()) {
