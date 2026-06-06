@@ -123,10 +123,13 @@ class SeedWaiterTasksFromFirebase extends Command
         $createdAt = $task['created_at'] ?? null;
         $createdAtTs = is_numeric($createdAt) ? date('Y-m-d H:i:s', (int) $createdAt) : null;
 
+        $rawTaskType = $task['task_type'] ?? 'general';
+        $rawPriority = $task['priority'] ?? 'normal';
+
         return [
             'firebase_legacy_key' => $fbKey !== '' ? $fbKey : null,
-            'task_type' => in_array(($task['task_type'] ?? 'general'), ['general', 'rack_check'], true)
-                ? $task['task_type'] : 'general',
+            'task_type' => in_array($rawTaskType, ['general', 'rack_check'], true)
+                ? $rawTaskType : 'general',
             'title' => (string) ($task['title'] ?? 'Untitled'),
             'description' => $task['description'] ?? null,
             'assigned_waiter_id' => $waiterId,
@@ -135,8 +138,8 @@ class SeedWaiterTasksFromFirebase extends Command
             'status' => $status,
             'publish_status' => 'draft',
             'sync_status' => 'pending',
-            'priority' => in_array(($task['priority'] ?? 'normal'), ['low', 'normal', 'high', 'urgent'], true)
-                ? $task['priority'] : 'normal',
+            'priority' => in_array($rawPriority, ['low', 'normal', 'high', 'urgent'], true)
+                ? $rawPriority : 'normal',
             'rack_id' => $task['rack_id'] ?? null,
             'rack_name' => $task['rack_name'] ?? null,
             'completed_at' => is_numeric($task['completed_at'] ?? null)
