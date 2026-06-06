@@ -1720,6 +1720,21 @@ class BonusService
             $finalizedSummary = $summary;
         });
 
+        if (config('features.mysql_bonus_summary') && is_array($finalizedSummary)) {
+            try {
+                \App\Models\WaiterBonusSummary::updateOrCreate(
+                    ['waiter_id' => (string) $waiterId, 'period_key' => (string) $periodKey],
+                    [
+                        'status' => $finalizedSummary['status'] ?? 'finalized',
+                        'finalized_at' => $finalizedSummary['finalized_at'] ?? time(),
+                        'summary' => $finalizedSummary,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         if ($alreadyFinalized) {
             return array_merge($finalizedSummary ?? [], [
                 'success' => false,
@@ -1788,6 +1803,14 @@ class BonusService
      */
     public function getAllBonusSummaries(string $periodKey): array
     {
+        if (config('features.mysql_bonus_summary')) {
+            $results = [];
+            foreach (\App\Models\WaiterBonusSummary::forPeriod($periodKey)->get() as $row) {
+                $results[$row->waiter_id] = is_array($row->summary) ? $row->summary : [];
+            }
+            return $results;
+        }
+
         $snapshot = $this->database->getReference('waiter_bonus_summary')->getSnapshot();
 
         if (! $snapshot->exists()) {

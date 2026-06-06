@@ -18,4 +18,5 @@ return [
     'mysql_activity_reports' => env('FEATURE_MYSQL_ACTIVITY_REPORTS', false),
     'mysql_product_categories' => env('FEATURE_MYSQL_PRODUCT_CATEGORIES', false),
     'mysql_work_shifts' => env('FEATURE_MYSQL_WORK_SHIFTS', false),
+    'mysql_bonus_summary' => env('FEATURE_MYSQL_BONUS_SUMMARY', false),
 ];
