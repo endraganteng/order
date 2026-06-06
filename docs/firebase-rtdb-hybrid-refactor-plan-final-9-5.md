@@ -2365,4 +2365,59 @@ Read+create+complete+schema sudah nyambung -> flag ON tak lagi langsung rusak.
 Foto BARU sudah ke Storage tanpa bergantung flag (independen).
 ```
 
+---
+
+## 22. Node Migrasi Penuh (Update) — 2026-06-06
+
+### 22.1 8 node MySQL selesai + e2e verified (flag-gated, default false)
+
+```text
+NODE                  WRITE      READ        FLAG
+audit_logs            dual-write gated       mysql_audit_logs
+waiter_activity_reports dual-write gated     mysql_activity_reports
+product_categories    CRUD       gated       mysql_product_categories
+work_shifts           dual-write gated       mysql_work_shifts
+waiter_bonus_summary  dual-write gated       mysql_bonus_summary
+waiter_penalties      CRUD       gated       mysql_penalties
+waiter_manual_bonuses CRUD       gated       mysql_manual_bonuses
+waiter_attendance     4-write 2-read gated   mysql_attendance
+```
+
+### 22.2 Pola tiap node (terbukti stabil)
+
+```text
+migration (kolom kunci + JSON mirror utk shape dinamis)
+-> model (scopes)
+-> flag config/features.php
+-> dual-write tiap titik write (idempotent firebase_legacy_key / natural key)
+-> read flag-gated (return shape identik Firebase)
+-> e2e tinker lokal -> commit
+```
+
+### 22.3 GAP tersisa (WAJIB sebelum flag ON produksi)
+
+```text
+1. SEED data lama -> MySQL: BELUM ADA seed command untuk 8 node baru.
+   Hanya waiter_tasks yang punya seed. Flag ON tanpa seed = MySQL kosong,
+   read kembalikan kosong sampai data baru masuk via dual-write.
+   -> Untuk node historical (audit/attendance/penalties/bonus), seed WAJIB
+      sebelum flag ON atau data lama "hilang" dari tampilan.
+2. e2e = tinker lokal terkontrol, BUKAN portal browser nyata.
+3. database.rules.json .indexOn node baru belum ditambah (kalau masih
+   ada query orderByChild ke node lama saat transisi).
+4. Verifikasi: dual-write CREATE/UPDATE/DELETE/READ semua tertutup +
+   verified per node sesi ini.
+```
+
+### 22.4 Urutan aktivasi aman per node
+
+```text
+1. Deploy kode (flag false) - produksi tak berubah
+2. Seed data lama node X -> MySQL (BUTUH seed command, belum dibuat)
+3. Validasi count Firebase vs MySQL node X
+4. Flag X = true (read pindah MySQL, dual-write jaga sinkron)
+5. Monitor; rollback = flag false
+```
+
+
 
