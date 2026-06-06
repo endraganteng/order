@@ -1,0 +1,17 @@
+<?php
+
+return [
+    // Phase 1 — waiter & cashier tasks ke MySQL
+    'mysql_waiter_tasks' => env('FEATURE_MYSQL_WAITER_TASKS', false),
+    'active_waiter_task_node' => env('FEATURE_ACTIVE_WAITER_TASK_NODE', false),
+    'mysql_cashier_tasks' => env('FEATURE_MYSQL_CASHIER_TASKS', false),
+
+    // Phase 2 — orders
+    'mysql_orders' => env('FEATURE_MYSQL_ORDERS', false),
+    'active_orders_node' => env('FEATURE_ACTIVE_ORDERS_NODE', false),
+
+    // Phase 2/3 — report, attendance, bonus, master data
+    'mysql_attendance' => env('FEATURE_MYSQL_ATTENDANCE', false),
+    'mysql_bonus' => env('FEATURE_MYSQL_BONUS', false),
+    'mysql_master_data' => env('FEATURE_MYSQL_MASTER_DATA', false),
+];
