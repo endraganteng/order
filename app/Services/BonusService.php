@@ -963,6 +963,14 @@ class BonusService
         $date = (string) ($penalty['date'] ?? '');
         $relatedTaskId = (string) ($penalty['related_task_id'] ?? '');
 
+        if (config('features.mysql_penalties')) {
+            try {
+                \App\Models\WaiterPenalty::where('firebase_legacy_key', (string) $penaltyId)->delete();
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         if ($penaltyType !== '' && $waiterId !== '' && $date !== '') {
             $dedupKey = sha1(implode('|', [$penaltyType, $waiterId, $date, $relatedTaskId]));
 
@@ -1222,6 +1230,10 @@ class BonusService
         }
         try {
             $this->database->getReference('waiter_manual_bonuses/' . $bonusId)->remove();
+
+            if (config('features.mysql_manual_bonuses')) {
+                \App\Models\WaiterManualBonus::where('firebase_legacy_key', (string) $bonusId)->delete();
+            }
 
             return true;
         } catch (\Throwable $e) {
