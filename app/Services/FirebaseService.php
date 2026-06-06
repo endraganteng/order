@@ -2463,7 +2463,8 @@ class FirebaseService
                 'recurrence_type' => null,
             ]);
 
-            $this->database->getReference('waiter_tasks')->push($taskData);
+            $newRef = $this->database->getReference('waiter_tasks')->push($taskData);
+            $this->dualWriteWaiterTaskToMysql((string) $newRef->getKey(), $taskData);
             $createdEntries[] = ['waiter' => $waiter, 'task' => $taskData];
             $count++;
         }
@@ -2522,6 +2523,7 @@ class FirebaseService
         ];
 
         $ref = $this->database->getReference('waiter_tasks')->push($taskData);
+        $this->dualWriteWaiterTaskToMysql((string) $ref->getKey(), $taskData);
         return $ref->getKey();
     }
 
@@ -2845,6 +2847,51 @@ class FirebaseService
         $cacheKey = 'waiter_tasks_by_id_' . (string) $waiterId . '_' . ($dateFrom ?? 'null') . '_' . ($dateTo ?? 'null');
         if (isset($this->requestCache[$cacheKey])) {
             return $this->requestCache[$cacheKey];
+        }
+
+        // MySQL read path (flag-gated). Returns firebase_payload verbatim so the
+        // portal sees the exact same field shape as the legacy Firebase node;
+        // 'id' is set to the legacy key callers already expect.
+        if (config('features.mysql_waiter_tasks')) {
+            $query = \App\Models\WaiterTask::query()->forWaiter((string) $waiterId);
+            if ($dateFrom !== null) {
+                $query->where('scheduled_for_date', '>=', $dateFrom);
+            }
+            if ($dateTo !== null) {
+                $query->where('scheduled_for_date', '<=', $dateTo);
+            }
+
+            $tasks = $query->get()->map(function ($row) {
+                $payload = is_array($row->firebase_payload) ? $row->firebase_payload : [];
+                if (empty($payload)) {
+                    // Row seeded before firebase_payload existed: rebuild a minimal
+                    // payload from structured columns so the portal isn't blank.
+                    $payload = [
+                        'title' => $row->title,
+                        'description' => $row->description,
+                        'task_type' => $row->task_type,
+                        'assigned_waiter_id' => $row->assigned_waiter_id,
+                        'assigned_waiter_name' => $row->assigned_waiter_name,
+                        'scheduled_for_date' => optional($row->scheduled_for_date)->format('Y-m-d'),
+                        'priority' => $row->priority,
+                        'rack_id' => $row->rack_id,
+                        'rack_name' => $row->rack_name,
+                        'created_at' => optional($row->created_at)->timestamp,
+                    ];
+                }
+                $payload['id'] = $row->firebase_legacy_key ?: $row->deterministic_key;
+                $payload['status'] = $row->status; // MySQL is source of truth for status
+                return $payload;
+            })->all();
+
+            usort($tasks, function ($a, $b) {
+                $aTime = is_numeric($a['created_at'] ?? 0) ? (int) ($a['created_at'] ?? 0) : strtotime($a['created_at'] ?? '0');
+                $bTime = is_numeric($b['created_at'] ?? 0) ? (int) ($b['created_at'] ?? 0) : strtotime($b['created_at'] ?? '0');
+                return $bTime - $aTime;
+            });
+
+            $this->requestCache[$cacheKey] = $tasks;
+            return $tasks;
         }
 
         if ($dateFrom !== null || $dateTo !== null) {
@@ -4870,6 +4917,7 @@ class FirebaseService
                 }
 
                 $taskReference->set($taskData);
+                $this->dualWriteWaiterTaskToMysql((string) $taskNodeKey, $taskData);
                 $existingRecurringMap[$mapKey] = true;
                 $generatedForTemplate++;
                 $generatedCount++;
@@ -5631,6 +5679,49 @@ class FirebaseService
         }
 
         return $this->getActiveWaiters();
+    }
+
+    /**
+     * Dual-write a freshly created Firebase waiter task into MySQL when the
+     * flag is on. Idempotent via firebase_legacy_key. The full Firebase payload
+     * is mirrored into firebase_payload so the portal keeps every field; the
+     * structured columns serve querying. Failure is logged, never fatal — task
+     * creation in Firebase must not break during rollout.
+     */
+    protected function dualWriteWaiterTaskToMysql(string $firebaseKey, array $payload): void
+    {
+        if (! config('features.mysql_waiter_tasks')) {
+            return;
+        }
+
+        try {
+            $createdAt = $payload['created_at'] ?? null;
+            \App\Models\WaiterTask::updateOrCreate(
+                ['firebase_legacy_key' => $firebaseKey],
+                [
+                    'deterministic_key' => 'wt_legacy_'.substr(hash('sha256', $firebaseKey), 0, 32),
+                    'task_type' => in_array(($payload['task_type'] ?? 'general'), ['general', 'rack_check'], true)
+                        ? $payload['task_type'] : 'general',
+                    'title' => (string) ($payload['title'] ?? 'Untitled'),
+                    'description' => $payload['description'] ?? null,
+                    'assigned_waiter_id' => (string) ($payload['assigned_waiter_id'] ?? ''),
+                    'assigned_waiter_name' => $payload['assigned_waiter_name'] ?? null,
+                    'scheduled_for_date' => $payload['scheduled_for_date'] ?? now()->format('Y-m-d'),
+                    'status' => 'pending',
+                    'publish_status' => 'published',
+                    'sync_status' => 'synced',
+                    'priority' => in_array(($payload['priority'] ?? 'normal'), ['low', 'normal', 'high', 'urgent'], true)
+                        ? $payload['priority'] : 'normal',
+                    'rack_id' => $payload['rack_id'] ?? null,
+                    'rack_name' => $payload['rack_name'] ?? null,
+                    'created_by' => $payload['assigned_by'] ?? ($payload['created_by'] ?? null),
+                    'firebase_payload' => $payload,
+                    'created_at' => is_numeric($createdAt) ? date('Y-m-d H:i:s', (int) $createdAt) : null,
+                ]
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /**
@@ -12122,6 +12213,7 @@ class FirebaseService
         ]);
 
         $taskReference->set($taskData);
+        $this->dualWriteWaiterTaskToMysql((string) $taskNodeKey, $taskData);
 
         return [
             'success' => true,

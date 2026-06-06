@@ -38,6 +38,7 @@ class WaiterTask extends Model
         'photo_url',
         'notes',
         'metadata',
+        'firebase_payload',
         'sync_error',
         'synced_at',
         'created_by',
@@ -46,6 +47,7 @@ class WaiterTask extends Model
     protected $casts = [
         'scheduled_for_date' => 'date',
         'metadata' => 'array',
+        'firebase_payload' => 'array',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',

@@ -147,6 +147,9 @@ class SeedWaiterTasksFromFirebase extends Command
             'notes' => $task['completed_note'] ?? null,
             'created_by' => $task['assigned_by'] ?? null,
             'created_at' => $createdAtTs,
+            // Full Firebase payload mirror so the portal keeps every field
+            // when reading from MySQL (read path returns this verbatim).
+            'firebase_payload' => $task,
         ];
     }
 }
