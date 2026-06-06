@@ -2991,9 +2991,16 @@ class FirebaseService
     /**
      * Get all waiter activity reports.
      */
-    public function getWaiterActivityReports(): array
+    public function getWaiterActivityReports(?string $dateFrom = null, ?string $dateTo = null): array
     {
+        // Bound by report_date when a range is given (needs .indexOn ["report_date"]),
+        // else fall back to full read (legacy callers).
         $reference = $this->database->getReference('waiter_activity_reports');
+        if ($dateFrom !== null || $dateTo !== null) {
+            $reference = $reference->orderByChild('report_date')
+                ->startAt($dateFrom ?: '0000-00-00')
+                ->endAt($dateTo ?: '9999-12-31');
+        }
         $snapshot = $reference->getSnapshot();
 
         $reports = [];
@@ -10055,16 +10062,22 @@ class FirebaseService
      */
     public function getAuditLogs(?string $date = null, ?string $entity = null, ?string $adminId = null, int $limit = 100): array
     {
-        $snapshot = $this->database->getReference('audit_logs')
-            ->orderByChild('timestamp')
-            ->getSnapshot();
+        // Bound the transfer server-side instead of reading the whole node.
+        // - date given  -> query by 'date' child (needs .indexOn ["date"])
+        // - no date     -> only the latest $limit by timestamp
+        $reference = $this->database->getReference('audit_logs');
+        if ($date) {
+            $reference = $reference->orderByChild('date')->equalTo($date);
+        } else {
+            $reference = $reference->orderByChild('timestamp')->limitToLast($limit);
+        }
+        $snapshot = $reference->getSnapshot();
 
         $logs = [];
         if ($snapshot->exists()) {
             foreach ($snapshot->getValue() as $id => $log) {
                 if (!is_array($log)) continue;
 
-                if ($date && ($log['date'] ?? '') !== $date) continue;
                 if ($entity && ($log['entity'] ?? '') !== $entity) continue;
                 if ($adminId && ($log['admin_id'] ?? '') !== $adminId) continue;
 
@@ -10089,9 +10102,12 @@ class FirebaseService
      */
     public function getWaiterTaskPerformance(string $waiterId, string $fromDate, string $toDate): array
     {
+        // Bound by scheduled_for_date server-side (needs .indexOn ["scheduled_for_date"]),
+        // then filter to this waiter in PHP. Avoids reading the waiter's full history.
         $tasks = $this->database->getReference('waiter_tasks')
-            ->orderByChild('assigned_waiter_id')
-            ->equalTo($waiterId)
+            ->orderByChild('scheduled_for_date')
+            ->startAt($fromDate)
+            ->endAt($toDate)
             ->getSnapshot()
             ->getValue();
 
@@ -10103,6 +10119,7 @@ class FirebaseService
         if ($tasks) {
             foreach ($tasks as $task) {
                 if (!is_array($task)) continue;
+                if ((string) ($task['assigned_waiter_id'] ?? '') !== (string) $waiterId) continue;
                 $taskDate = $task['scheduled_for_date'] ?? '';
                 if ($taskDate < $fromDate || $taskDate > $toDate) continue;
 
