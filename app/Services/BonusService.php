@@ -1043,7 +1043,13 @@ class BonusService
      */
     public function getManualBonusesByPeriod(string $startDate, string $endDate, ?string $waiterId = null): array
     {
-        $snapshot = $this->database->getReference('waiter_manual_bonuses')->getSnapshot();
+        // Bound by date child server-side (needs .indexOn ["date"]) instead of
+        // reading the entire waiter_manual_bonuses node then filtering in PHP.
+        $snapshot = $this->database->getReference('waiter_manual_bonuses')
+            ->orderByChild('date')
+            ->startAt($startDate)
+            ->endAt($endDate)
+            ->getSnapshot();
 
         if (! $snapshot->exists()) {
             return [];
