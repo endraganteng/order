@@ -10265,7 +10265,28 @@ class FirebaseService
             'date' => now()->format('Y-m-d'),
         ];
 
-        $this->database->getReference('audit_logs')->push($entry);
+        $newRef = $this->database->getReference('audit_logs')->push($entry);
+
+        if (config('features.mysql_audit_logs')) {
+            try {
+                \App\Models\AuditLog::updateOrCreate(
+                    ['firebase_legacy_key' => (string) $newRef->getKey()],
+                    [
+                        'action' => $action,
+                        'entity' => $entity,
+                        'entity_id' => $entityId,
+                        'admin_id' => (string) $adminId,
+                        'admin_name' => (string) $adminName,
+                        'details' => $details ?: null,
+                        'ip' => $entry['ip'],
+                        'event_timestamp' => $entry['timestamp'],
+                        'event_date' => $entry['date'],
+                    ]
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     /**
@@ -10273,6 +10294,39 @@ class FirebaseService
      */
     public function getAuditLogs(?string $date = null, ?string $entity = null, ?string $adminId = null, int $limit = 100): array
     {
+        // MySQL read path (flag-gated). Source of truth for audit history;
+        // avoids pulling the unbounded RTDB node on every admin page load.
+        if (config('features.mysql_audit_logs')) {
+            $query = \App\Models\AuditLog::query();
+            if ($date) {
+                $query->where('event_date', $date);
+            }
+            if ($entity) {
+                $query->where('entity', $entity);
+            }
+            if ($adminId) {
+                $query->where('admin_id', $adminId);
+            }
+
+            return $query->orderByDesc('event_timestamp')
+                ->limit($limit)
+                ->get()
+                ->map(function ($row) {
+                    return [
+                        'id' => $row->firebase_legacy_key ?: (string) $row->id,
+                        'action' => $row->action,
+                        'entity' => $row->entity,
+                        'entity_id' => $row->entity_id,
+                        'admin_id' => $row->admin_id,
+                        'admin_name' => $row->admin_name,
+                        'details' => $row->details,
+                        'ip' => $row->ip,
+                        'timestamp' => $row->event_timestamp,
+                        'date' => optional($row->event_date)->format('Y-m-d'),
+                    ];
+                })->all();
+        }
+
         // Bound the transfer server-side instead of reading the whole node.
         // - date given  -> query by 'date' child (needs .indexOn ["date"])
         // - no date     -> only the latest $limit by timestamp
