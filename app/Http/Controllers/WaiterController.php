@@ -989,7 +989,11 @@ class WaiterController extends Controller
      */
     protected function buildWaiterTaskBuckets(string $waiterId): array
     {
-        $tasks = $this->firebase->getWaiterTasksByWaiterId($waiterId);
+        $tasks = $this->firebase->getWaiterTasksByWaiterId(
+            $waiterId,
+            now()->subDays(7)->format('Y-m-d'),
+            now()->format('Y-m-d')
+        );
 
         $pendingTasks = array_values(array_filter($tasks, function ($task) {
             $status = $task['status'] ?? 'pending';

@@ -2080,7 +2080,7 @@
             ...(Array.isArray(context.pendingTasks) ? context.pendingTasks : []),
             ...(Array.isArray(context.taskHistory) ? context.taskHistory : []),
         ];
-        let reportDate = String(context.reportDate || new Date().toISOString().slice(0, 10));
+        let reportDate = String(context.reportDate || new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10));
         let activityReports = Array.isArray(context.activityReports) ? context.activityReports : [];
         let rackProductsMap = context.rackProductsMap && typeof context.rackProductsMap === 'object' ? context.rackProductsMap : {};
         let rackTypesMap = context.rackTypesMap && typeof context.rackTypesMap === 'object' ? context.rackTypesMap : {};
@@ -3642,10 +3642,16 @@
                 pollIntervalId = setInterval(pollTasks, FAST_POLL);
             };
             try {
-                // Use child_added/child_changed as lightweight trigger — avoids
-                // re-downloading all 50 tasks on every single change (was .on('value')).
-                // We only need to know "something changed" to trigger pollTasks().
-                const tasksRef = window.firebaseDB.ref('waiter_tasks').limitToLast(50);
+                // Scope listener to CURRENT waiter only — avoids stampede where
+                // every waiter receives events for every task. Requires
+                // .indexOn ["assigned_waiter_id"] on waiter_tasks rules.
+                // child_added/changed as lightweight trigger -> pollTasks().
+                let tasksRef = window.firebaseDB.ref('waiter_tasks');
+                if (waiterId) {
+                    tasksRef = tasksRef.orderByChild('assigned_waiter_id').equalTo(waiterId);
+                } else {
+                    tasksRef = tasksRef.limitToLast(50);
+                }
                 tasksRef.on('child_added', trigger, onError);
                 tasksRef.on('child_changed', trigger, onError);
                 tasksRef.on('child_removed', trigger, onError);
@@ -5323,7 +5329,9 @@
             recheckPendingTasks.forEach(t => {
                 const card = document.createElement('div');
                 card.className = 'recheck-pending-card';
-                const todayStr = new Date().toISOString().slice(0, 10);
+                // WIB date (UTC+7), NOT toISOString() which is UTC and shifts the
+                // day backward during 00:00-07:00 WIB -> false "TERLEWAT" badges.
+                const todayStr = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
                 const taskDate = t.scheduled_for_date || '';
                 const isOldTask = taskDate && taskDate !== todayStr;
                 const dateBadge = isOldTask

@@ -217,7 +217,7 @@ Artisan::command('waiter:send-weekly-report', function () {
             continue;
         }
 
-        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId);
+        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId, $startDate, $endDate);
         $waiterTotal = 0;
         $waiterDone = 0;
 
@@ -292,7 +292,7 @@ Artisan::command('waiter:send-monthly-report', function () {
             continue;
         }
 
-        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId);
+        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId, $startDate, $endDate);
         $waiterTotal = 0;
         $waiterDone = 0;
 
@@ -860,3 +860,87 @@ Schedule::command('finance:settle-qris')->dailyAt('22:00')->withoutOverlapping()
 Schedule::command('olsera:sync')->hourlyAt(15)->between('07:00', '21:00')->withoutOverlapping();
 // Sync hari sebelumnya (final) jam 06:00
 Schedule::command('olsera:sync --date=' . date('Y-m-d', strtotime('-1 day')))->dailyAt('06:00')->withoutOverlapping();
+
+// ─── Restore cancelled tasks (one-time utility) ───────────────────────────────
+Artisan::command('task:restore-cancelled-today {--date= : Format Y-m-d, default today} {--dry : Preview without restoring}', function () {
+    $firebase = app(FirebaseService::class);
+    $date = $this->option('date') ?: now()->format('Y-m-d');
+    $dry = $this->option('dry');
+
+    $this->info("Mencari task cancelled akibat template delete untuk tanggal: {$date}...");
+
+    try {
+        $snapshot = $firebase->getDatabase()->getReference('waiter_tasks')
+            ->orderByChild('scheduled_for_date')
+            ->equalTo($date)
+            ->getSnapshot();
+    } catch (\Throwable $e) {
+        $this->error('Gagal koneksi Firebase: ' . $e->getMessage());
+        return 1;
+    }
+
+    if (!$snapshot->exists()) {
+        $this->warn('Tidak ada task untuk tanggal ini.');
+        return 0;
+    }
+
+    $tasks = (array) $snapshot->getValue();
+    $toRestore = [];
+
+    foreach ($tasks as $taskId => $task) {
+        if (($task['status'] ?? '') !== 'cancelled') continue;
+        if (empty($task['cancelled_by_template_delete'])) continue;
+
+        $toRestore[$taskId] = $task;
+    }
+
+    if (empty($toRestore)) {
+        $this->info('Tidak ada task cancelled akibat template delete untuk tanggal ini.');
+        return 0;
+    }
+
+    $this->info('Ditemukan ' . count($toRestore) . ' task yang perlu di-restore:');
+    $this->newLine();
+
+    foreach ($toRestore as $taskId => $task) {
+        $waiterName = $task['assigned_waiter_name'] ?? $task['assigned_waiter_id'] ?? '?';
+        $title = $task['title'] ?? $task['rack_name'] ?? $taskId;
+        $type = $task['task_type'] ?? 'general';
+        $this->line("  [{$type}] {$title} → {$waiterName} (id: {$taskId})");
+    }
+
+    $this->newLine();
+
+    if ($dry) {
+        $this->warn('DRY RUN — tidak ada perubahan. Jalankan tanpa --dry untuk restore.');
+        return 0;
+    }
+
+    if (!$this->confirm('Restore ' . count($toRestore) . ' task ke status pending?')) {
+        $this->info('Dibatalkan.');
+        return 0;
+    }
+
+    $updates = [];
+    foreach ($toRestore as $taskId => $task) {
+        $updates[$taskId . '/status'] = 'pending';
+        $updates[$taskId . '/cancelled_at'] = null;
+        $updates[$taskId . '/cancelled_by_template_delete'] = null;
+        // Clean up cancel note
+        $note = (string) ($task['completed_note'] ?? '');
+        $note = trim(str_replace('Template induk dihapus oleh admin', '', $note), ' |');
+        $updates[$taskId . '/completed_note'] = $note !== '' ? $note : null;
+        $updates[$taskId . '/restored_at'] = time();
+        $updates[$taskId . '/restored_reason'] = 'Accidental template delete — restored by admin';
+    }
+
+    try {
+        $firebase->getDatabase()->getReference('waiter_tasks')->update($updates);
+        $this->info('✓ Berhasil restore ' . count($toRestore) . ' task ke status pending.');
+    } catch (\Throwable $e) {
+        $this->error('Gagal restore: ' . $e->getMessage());
+        return 1;
+    }
+
+    return 0;
+})->purpose('Restore task yang ter-cancel akibat accidental template delete');

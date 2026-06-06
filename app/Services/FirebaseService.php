@@ -2838,22 +2838,47 @@ class FirebaseService
     /**
      * Get tasks assigned to one waiter.
      */
-    public function getWaiterTasksByWaiterId($waiterId)
+    public function getWaiterTasksByWaiterId($waiterId, ?string $dateFrom = null, ?string $dateTo = null)
     {
-        $cacheKey = 'waiter_tasks_by_id_' . (string) $waiterId;
+        // Cache key MUST include date range, otherwise a second call with a
+        // different range would return the first range's cached result.
+        $cacheKey = 'waiter_tasks_by_id_' . (string) $waiterId . '_' . ($dateFrom ?? 'null') . '_' . ($dateTo ?? 'null');
         if (isset($this->requestCache[$cacheKey])) {
             return $this->requestCache[$cacheKey];
         }
 
-        $reference = $this->database->getReference('waiter_tasks')
-            ->orderByChild('assigned_waiter_id')
-            ->equalTo((string) $waiterId);
-        $snapshot = $reference->getSnapshot();
+        if ($dateFrom !== null || $dateTo !== null) {
+            // Date-bounded read: query by scheduled_for_date, filter waiter in PHP.
+            // Requires .indexOn ["scheduled_for_date"] on waiter_tasks rules.
+            $from = $dateFrom ?: '0000-00-00';
+            $to = $dateTo ?: '9999-12-31';
 
-        $tasks = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $task) {
-                $tasks[] = array_merge(['id' => $key], $task);
+            $snapshot = $this->database->getReference('waiter_tasks')
+                ->orderByChild('scheduled_for_date')
+                ->startAt($from)
+                ->endAt($to)
+                ->getSnapshot();
+
+            $tasks = [];
+            if ($snapshot->exists()) {
+                foreach ($snapshot->getValue() as $key => $task) {
+                    if ((string) ($task['assigned_waiter_id'] ?? '') === (string) $waiterId) {
+                        $tasks[] = array_merge(['id' => $key], $task);
+                    }
+                }
+            }
+        } else {
+            // Legacy unbounded read (kept for getLastRackCheckAssignedAt which needs full history).
+            $reference = $this->database->getReference('waiter_tasks')
+                ->orderByChild('assigned_waiter_id')
+                ->equalTo((string) $waiterId);
+            $snapshot = $reference->getSnapshot();
+
+            $tasks = [];
+            if ($snapshot->exists()) {
+                foreach ($snapshot->getValue() as $key => $task) {
+                    $tasks[] = array_merge(['id' => $key], $task);
+                }
             }
         }
 
@@ -3700,6 +3725,11 @@ class FirebaseService
      */
     public function getRecurringWaiterTaskTemplates(): array
     {
+        $cacheKey = 'recurringWaiterTaskTemplates';
+        if (array_key_exists($cacheKey, $this->requestCache)) {
+            return $this->requestCache[$cacheKey];
+        }
+
         $reference = $this->database->getReference('waiter_task_templates');
         $snapshot = $reference->getSnapshot();
 
@@ -3714,6 +3744,7 @@ class FirebaseService
             return ($a['schedule_time'] ?? '99:99') <=> ($b['schedule_time'] ?? '99:99');
         });
 
+        $this->requestCache[$cacheKey] = $templates;
         return $templates;
     }
 
@@ -11998,7 +12029,7 @@ class FirebaseService
             return 0;
         }
         try {
-            $allTasks = $this->getWaiterTasksByWaiterId($waiterId);
+            $allTasks = $this->getWaiterTasksByWaiterId($waiterId, $startDate, $endDate);
         } catch (\Throwable $e) {
             report($e);
             return 0;
@@ -12504,9 +12535,15 @@ class FirebaseService
      */
     public function getPlanningTasksForDate(string $date): array
     {
+        $cacheKey = 'planningTasksForDate:' . $date;
+        if (array_key_exists($cacheKey, $this->requestCache)) {
+            return $this->requestCache[$cacheKey];
+        }
+
         try {
             $snapshot = $this->database->getReference('rack_check_planning')->getSnapshot();
             if (! $snapshot->exists()) {
+                $this->requestCache[$cacheKey] = [];
                 return [];
             }
 
@@ -12522,6 +12559,7 @@ class FirebaseService
                 }
             }
 
+            $this->requestCache[$cacheKey] = $result;
             return $result;
         } catch (\Throwable $e) {
             \Log::error('[FirebaseService] getPlanningTasksForDate error', [
