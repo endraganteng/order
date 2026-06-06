@@ -20,4 +20,5 @@ return [
     'mysql_work_shifts' => env('FEATURE_MYSQL_WORK_SHIFTS', false),
     'mysql_bonus_summary' => env('FEATURE_MYSQL_BONUS_SUMMARY', false),
     'mysql_penalties' => env('FEATURE_MYSQL_PENALTIES', false),
+    'mysql_manual_bonuses' => env('FEATURE_MYSQL_MANUAL_BONUSES', false),
 ];

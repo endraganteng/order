@@ -1028,6 +1028,27 @@ class BonusService
         ];
         $ref->set($record);
 
+        if (config('features.mysql_manual_bonuses')) {
+            try {
+                \App\Models\WaiterManualBonus::updateOrCreate(
+                    ['firebase_legacy_key' => (string) $bonusId],
+                    [
+                        'waiter_id' => (string) $record['waiter_id'],
+                        'waiter_name' => $record['waiter_name'] ?: null,
+                        'month' => $record['month'] ?? null,
+                        'date' => $record['date'],
+                        'points' => (int) $record['points'],
+                        'reason' => $record['reason'] ?: null,
+                        'category' => $record['category'] ?? null,
+                        'created_by' => $record['created_by'] ?? null,
+                        'event_created_at' => $record['created_at'] ?? null,
+                    ]
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         return [
             'success'  => true,
             'bonus_id' => $bonusId,
@@ -1097,6 +1118,32 @@ class BonusService
      */
     public function getManualBonusesByPeriod(string $startDate, string $endDate, ?string $waiterId = null): array
     {
+        if (config('features.mysql_manual_bonuses')) {
+            $query = \App\Models\WaiterManualBonus::query()
+                ->whereBetween('date', [$startDate, $endDate]);
+            if ($waiterId !== null) {
+                $query->where('waiter_id', $waiterId);
+            }
+
+            return $query->orderByDesc('date')
+                ->orderByDesc('event_created_at')
+                ->get()
+                ->map(function ($row) {
+                    return [
+                        'bonus_id' => $row->firebase_legacy_key ?: (string) $row->id,
+                        'waiter_id' => $row->waiter_id,
+                        'waiter_name' => $row->waiter_name,
+                        'month' => $row->month,
+                        'date' => optional($row->date)->format('Y-m-d'),
+                        'points' => $row->points,
+                        'reason' => $row->reason,
+                        'category' => $row->category,
+                        'created_by' => $row->created_by,
+                        'created_at' => $row->event_created_at,
+                    ];
+                })->all();
+        }
+
         // Bound by date child server-side (needs .indexOn ["date"]) instead of
         // reading the entire waiter_manual_bonuses node then filtering in PHP.
         $snapshot = $this->database->getReference('waiter_manual_bonuses')
