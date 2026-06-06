@@ -17,4 +17,5 @@ return [
     'mysql_audit_logs' => env('FEATURE_MYSQL_AUDIT_LOGS', false),
     'mysql_activity_reports' => env('FEATURE_MYSQL_ACTIVITY_REPORTS', false),
     'mysql_product_categories' => env('FEATURE_MYSQL_PRODUCT_CATEGORIES', false),
+    'mysql_work_shifts' => env('FEATURE_MYSQL_WORK_SHIFTS', false),
 ];

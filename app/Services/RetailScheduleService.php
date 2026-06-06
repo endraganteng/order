@@ -236,6 +236,26 @@ class RetailScheduleService
                 $template['updated_at'] = time();
                 $newRef = $this->database->getReference('work_shifts')->push($template);
                 $resolved[$tag] = $newRef->getKey();
+
+                if (config('features.mysql_work_shifts')) {
+                    try {
+                        \App\Models\WorkShift::updateOrCreate(
+                            ['firebase_legacy_key' => (string) $newRef->getKey()],
+                            [
+                                'name' => $template['name'] ?? '',
+                                'clock_in_time' => $template['clock_in_time'] ?? null,
+                                'clock_out_time' => $template['clock_out_time'] ?? null,
+                                'late_tolerance_minutes' => (int) ($template['late_tolerance_minutes'] ?? 0),
+                                'is_active' => (bool) ($template['is_active'] ?? true),
+                                'retail_tag' => $template['retail_tag'] ?? null,
+                                'event_created_at' => $template['created_at'] ?? null,
+                                'event_updated_at' => $template['updated_at'] ?? null,
+                            ]
+                        );
+                    } catch (\Throwable $e) {
+                        report($e);
+                    }
+                }
             }
         }
 
@@ -244,6 +264,22 @@ class RetailScheduleService
 
     private function getAllShifts(): array
     {
+        if (config('features.mysql_work_shifts')) {
+            $result = [];
+            foreach (\App\Models\WorkShift::all() as $row) {
+                $key = $row->firebase_legacy_key ?: (string) $row->id;
+                $result[$key] = [
+                    'name' => $row->name,
+                    'clock_in_time' => $row->clock_in_time,
+                    'clock_out_time' => $row->clock_out_time,
+                    'late_tolerance_minutes' => $row->late_tolerance_minutes,
+                    'is_active' => $row->is_active,
+                    'retail_tag' => $row->retail_tag,
+                ];
+            }
+            return $result;
+        }
+
         $snap = $this->database->getReference('work_shifts')->getSnapshot();
         if (! $snap->exists()) {
             return [];
