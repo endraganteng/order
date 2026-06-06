@@ -1266,6 +1266,24 @@ class FirebaseService
      */
     public function getProductCategories()
     {
+        if (config('features.mysql_product_categories')) {
+            return \App\Models\ProductCategory::query()
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get()
+                ->map(function ($row) {
+                    return [
+                        'id' => $row->firebase_legacy_key ?: (string) $row->id,
+                        'name' => $row->name,
+                        'description' => $row->description,
+                        'sort_order' => $row->sort_order,
+                        'is_active' => $row->is_active,
+                        'created_at' => $row->event_created_at,
+                        'updated_at' => $row->event_updated_at,
+                    ];
+                })->all();
+        }
+
         $reference = $this->database->getReference('product_categories');
         $snapshot = $reference->getSnapshot();
 
@@ -1338,6 +1356,24 @@ class FirebaseService
 
         $created = $this->database->getReference('product_categories')->push($payload);
 
+        if (config('features.mysql_product_categories')) {
+            try {
+                \App\Models\ProductCategory::updateOrCreate(
+                    ['firebase_legacy_key' => (string) $created->getKey()],
+                    [
+                        'name' => $payload['name'],
+                        'description' => $payload['description'] ?: null,
+                        'sort_order' => $payload['sort_order'],
+                        'is_active' => $payload['is_active'],
+                        'event_created_at' => $payload['created_at'],
+                        'event_updated_at' => $payload['updated_at'],
+                    ]
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         return array_merge(['id' => $created->getKey()], $payload);
     }
 
@@ -1355,6 +1391,23 @@ class FirebaseService
         ];
 
         $this->database->getReference('product_categories/'.$id)->update($payload);
+
+        if (config('features.mysql_product_categories')) {
+            try {
+                \App\Models\ProductCategory::updateOrCreate(
+                    ['firebase_legacy_key' => (string) $id],
+                    [
+                        'name' => $payload['name'],
+                        'description' => $payload['description'] ?: null,
+                        'sort_order' => $payload['sort_order'],
+                        'is_active' => $payload['is_active'],
+                        'event_updated_at' => $payload['updated_at'],
+                    ]
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     /**
@@ -1379,6 +1432,14 @@ class FirebaseService
         }
 
         $this->database->getReference('product_categories/'.$id)->remove();
+
+        if (config('features.mysql_product_categories')) {
+            try {
+                \App\Models\ProductCategory::where('firebase_legacy_key', (string) $id)->delete();
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     /**
