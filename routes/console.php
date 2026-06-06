@@ -726,6 +726,11 @@ Schedule::command('firebase:cleanup-idempotency')->dailyAt('03:00')->withoutOver
 Schedule::command('waiter:send-daily-task-recap')->dailyAt('21:00')->withoutOverlapping();
 Schedule::command('planning:remind-incomplete')->dailyAt('18:00')->withoutOverlapping();
 
+// Hybrid Firebase<->MySQL sync (Phase 1). Aktif hanya berdampak saat
+// FEATURE_MYSQL_WAITER_TASKS=true; jika false, reconcile/retry no-op aman.
+Schedule::command('firebase:reconcile-active-tasks')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('firebase:retry-sync')->everyFiveMinutes()->withoutOverlapping();
+
 Artisan::command('payroll:auto-credit-salary {--catchup=7 : Catchup window dalam hari}', function () {
     $payroll = app(PayrollService::class);
     $catchup = max(0, (int) $this->option('catchup'));
