@@ -2,30 +2,23 @@
 
 namespace Tests\Feature\Waiter;
 
-use App\Services\BonusService;
 use App\Services\FirebaseService;
-use App\Services\FonnteService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Kreait\Firebase\Contract\Auth;
+use Kreait\Firebase\Contract\Database;
 use Mockery;
-use Tests\TestCase;
+use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
+/**
+ * Restock auto-collection moved from WaiterController into
+ * FirebaseService::updateWaiterTaskStatus -> writeRestockRequestsForCompletion
+ * (P0-3 atomicity: shortage signal persisted before task status flips to done).
+ *
+ * These tests exercise that protected helper directly so the real shortage
+ * decision logic is covered without seeding the full RTDB task-completion path.
+ */
 class StockTakeFlowTest extends TestCase
 {
-    use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        // These tests mock FirebaseService entirely (RTDB path), so force every
-        // read-from-MySQL flag off to exercise the mocked path they were built for.
-        config([
-            'features.mysql_waiter_tasks' => false,
-            'features.mysql_rack_products' => false,
-            'features.mysql_cashier_tasks' => false,
-            'features.mysql_attendance' => false,
-        ]);
-    }
-
     protected function tearDown(): void
     {
         Mockery::close();
@@ -33,117 +26,81 @@ class StockTakeFlowTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_complete_task_creates_restock_request_for_storage_shortage(): void
+    /**
+     * @return array{0: FirebaseService, 1: ReflectionMethod}
+     */
+    private function makeServiceWithStubs(): array
+    {
+        $database = Mockery::mock(Database::class);
+        $auth = Mockery::mock(Auth::class);
+
+        $service = Mockery::mock(FirebaseService::class, [$database, $auth])
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+
+        $method = new ReflectionMethod(FirebaseService::class, 'writeRestockRequestsForCompletion');
+        $method->setAccessible(true);
+
+        return [$service, $method];
+    }
+
+    public function test_storage_rack_shortage_creates_restock_request(): void
     {
         $today = date('Y-m-d');
         $capturedRestockPayload = null;
 
-        $firebase = Mockery::mock(FirebaseService::class);
-        $bonus = Mockery::mock(BonusService::class);
-        $fonnte = Mockery::mock(FonnteService::class);
+        [$service, $invoke] = $this->makeServiceWithStubs();
 
-        $firebase->shouldReceive('updateWaiterTaskStatus')
-            ->once()
-            ->withArgs(function (...$args) {
-                return $args[0] === 'task-1'
-                    && $args[1] === 'done'
-                    && $args[2] === 'waiter-1'
-                    && $args[3] === 'Waiter Satu'
-                    && $args[4] === 'waiter@example.com'
-                    && $args[5] === 'Cek stok rak'
-                    && $args[6] === 'RACK-001'
-                    && $args[7] === 'Susu UHT, Teh Botol'
-                    && $args[8] === false
-                    && $args[9] === null
-                    && is_array($args[10])
-                    && ($args[10]['prod-1']['actual_qty'] ?? null) === 1
-                    && $args[11] === null;
-            })
-            ->andReturn([
-                'success' => true,
-                'partial' => false,
-                'completed_count' => 1,
-                'repeat_count' => 1,
-                'message' => 'Tugas berhasil diverifikasi.',
-            ]);
-
-        $firebase->shouldReceive('getWaiterTaskById')->once()->with('task-1')->andReturn([
-            'id' => 'task-1',
-            'rack_id' => 'rack-storage',
-            'rack_name' => 'Rak Gudang',
-            'title' => 'Cek Rak Gudang',
-        ]);
-        $firebase->shouldReceive('getRackById')->once()->with('rack-storage')->andReturn([
+        $service->shouldReceive('getRackById')->once()->with('rack-storage')->andReturn([
             'id' => 'rack-storage',
             'rack_type' => 'storage',
         ]);
-        $firebase->shouldReceive('getProductCategoriesMap')->once()->andReturn([
+        $service->shouldReceive('getProductCategoriesMap')->once()->andReturn([
             'cat-1' => ['name' => 'Minuman'],
         ]);
-        $firebase->shouldReceive('getProductById')->once()->with('prod-1')->andReturn([
+        $service->shouldReceive('getProductById')->once()->with('prod-1')->andReturn([
             'id' => 'prod-1',
             'category_id' => 'cat-1',
         ]);
-        $firebase->shouldReceive('createOrUpdateRestockRequest')
+        $service->shouldReceive('createOrUpdateRestockRequest')
+            ->once()
             ->andReturnUsing(function (array $data) use (&$capturedRestockPayload) {
                 $capturedRestockPayload = $data;
 
                 return 'restock-1';
             });
-        $firebase->shouldReceive('getAttendanceByDate')->once()->andReturn(null);
-        $firebase->shouldReceive('getWaiterTasksForDate')->once()->andReturn([]);
-        $firebase->shouldReceive('getWaiterActivityReportsByWaiterIdForDate')->once()->andReturn([]);
 
-        $bonus->shouldReceive('autoScoreDailyPoints')->once()->andReturn([
-            'discipline' => 10,
-            'operational' => 10,
-            'attitude' => 10,
-            'auto_details' => [],
-        ]);
-        $bonus->shouldReceive('saveAutoDailyScore')->once();
+        $task = [
+            'id' => 'task-1',
+            'rack_id' => 'rack-storage',
+            'rack_name' => 'Rak Gudang',
+            'title' => 'Cek Rak Gudang',
+        ];
 
-        $this->instance(FirebaseService::class, $firebase);
-        $this->instance(BonusService::class, $bonus);
-        $this->instance(FonnteService::class, $fonnte);
+        $productChecklist = [
+            'prod-1' => [
+                'product_id' => 'prod-1',
+                'checked' => true,
+                'actual_qty' => 1,
+                'standard_qty' => 4,
+                'min_qty' => 2,
+                'product_name' => 'Susu UHT',
+                'product_unit' => 'pcs',
+            ],
+            'prod-2' => [
+                'product_id' => 'prod-2',
+                'checked' => true,
+                'actual_qty' => 4,
+                'standard_qty' => 4,
+                'min_qty' => 1,
+                'product_name' => 'Teh Botol',
+                'product_unit' => 'pcs',
+            ],
+        ];
 
-        $response = $this->withSession([
-            'waiter_authenticated' => true,
-            'waiter_id' => 'waiter-1',
-            'waiter_name' => 'Waiter Satu',
-            'waiter_email' => 'waiter@example.com',
-        ])->postJson(route('waiter.task.complete', ['id' => 'task-1']), [
-            'note' => 'Cek stok rak',
-            'scanned_barcode' => 'RACK-001',
-            'stock_report_items' => 'Susu UHT, Teh Botol',
-            'no_out_of_stock' => false,
-            'product_checklist' => json_encode([
-                'prod-1' => [
-                    'product_id' => 'prod-1',
-                    'checked' => true,
-                    'actual_qty' => 1,
-                    'standard_qty' => 4,
-                    'min_qty' => 2,
-                    'product_name' => 'Susu UHT',
-                    'product_unit' => 'pcs',
-                ],
-                'prod-2' => [
-                    'product_id' => 'prod-2',
-                    'checked' => true,
-                    'actual_qty' => 4,
-                    'standard_qty' => 4,
-                    'min_qty' => 1,
-                    'product_name' => 'Teh Botol',
-                    'product_unit' => 'pcs',
-                ],
-            ]),
-        ]);
+        $result = $invoke->invoke($service, 'task-1', $task, $productChecklist, 'waiter-1', 'Waiter Satu');
 
-        $response->assertOk();
-        $response->assertJsonPath('success', true);
-        $response->assertJsonPath('partial', false);
-        $response->assertJsonPath('completed_count', 1);
-        $response->assertJsonPath('repeat_count', 1);
-
+        $this->assertTrue($result['success']);
         $this->assertIsArray($capturedRestockPayload);
         $this->assertSame('prod-1', $capturedRestockPayload['product_id']);
         $this->assertSame('Susu UHT', $capturedRestockPayload['product_name']);
@@ -157,75 +114,45 @@ class StockTakeFlowTest extends TestCase
         $this->assertSame('waiter-1', $capturedRestockPayload['reported_by']);
         $this->assertSame('Waiter Satu', $capturedRestockPayload['reported_by_name']);
         $this->assertSame($today, $capturedRestockPayload['date']);
+        $this->assertSame('storage_rack_shortage', $capturedRestockPayload['source']);
     }
 
-    public function test_complete_task_does_not_create_restock_request_for_display_rack_without_refill_shortage(): void
+    public function test_display_rack_shortage_covered_by_storage_does_not_create_restock(): void
     {
-        $firebase = Mockery::mock(FirebaseService::class);
-        $bonus = Mockery::mock(BonusService::class);
-        $fonnte = Mockery::mock(FonnteService::class);
+        [$service, $invoke] = $this->makeServiceWithStubs();
 
-        $firebase->shouldReceive('updateWaiterTaskStatus')
-            ->once()
-            ->andReturn([
-                'success' => true,
-                'partial' => false,
-                'completed_count' => 1,
-                'repeat_count' => 1,
-                'message' => 'Tugas berhasil diverifikasi.',
-            ]);
-        $firebase->shouldReceive('getWaiterTaskById')->once()->andReturn([
+        $service->shouldReceive('getRackById')->once()->with('rack-display')->andReturn([
+            'id' => 'rack-display',
+            'rack_type' => 'display',
+        ]);
+        $service->shouldReceive('getProductCategoriesMap')->once()->andReturn([]);
+        // Display short by 3, but storage holds 5 -> combined (1+5) >= standard (4),
+        // waiter can refill from storage, so no supervisor restock escalation.
+        $service->shouldReceive('getTotalStorageQtyForProduct')->once()->with('prod-3')->andReturn(5);
+        $service->shouldNotReceive('getProductById');
+        $service->shouldNotReceive('createOrUpdateRestockRequest');
+
+        $task = [
             'id' => 'task-2',
             'rack_id' => 'rack-display',
             'rack_name' => 'Rak Display',
             'title' => 'Cek Rak Display',
-        ]);
-        $firebase->shouldReceive('getRackById')->once()->with('rack-display')->andReturn([
-            'id' => 'rack-display',
-            'rack_type' => 'display',
-        ]);
-        $firebase->shouldReceive('getProductCategoriesMap')->once()->andReturn([]);
-        $firebase->shouldNotReceive('getProductById');
-        $firebase->shouldNotReceive('createOrUpdateRestockRequest');
-        $firebase->shouldReceive('getAttendanceByDate')->once()->andReturn(null);
-        $firebase->shouldReceive('getWaiterTasksForDate')->once()->andReturn([]);
-        $firebase->shouldReceive('getWaiterActivityReportsByWaiterIdForDate')->once()->andReturn([]);
+        ];
 
-        $bonus->shouldReceive('autoScoreDailyPoints')->once()->andReturn([
-            'discipline' => 10,
-            'operational' => 10,
-            'attitude' => 10,
-            'auto_details' => [],
-        ]);
-        $bonus->shouldReceive('saveAutoDailyScore')->once();
+        $productChecklist = [
+            'prod-3' => [
+                'product_id' => 'prod-3',
+                'checked' => true,
+                'actual_qty' => 1,
+                'standard_qty' => 4,
+                'was_refilled' => false,
+                'product_name' => 'Kopi Sachet',
+                'product_unit' => 'pcs',
+            ],
+        ];
 
-        $this->instance(FirebaseService::class, $firebase);
-        $this->instance(BonusService::class, $bonus);
-        $this->instance(FonnteService::class, $fonnte);
+        $result = $invoke->invoke($service, 'task-2', $task, $productChecklist, 'waiter-1', 'Waiter Satu');
 
-        $response = $this->withSession([
-            'waiter_authenticated' => true,
-            'waiter_id' => 'waiter-1',
-            'waiter_name' => 'Waiter Satu',
-            'waiter_email' => 'waiter@example.com',
-        ])->postJson(route('waiter.task.complete', ['id' => 'task-2']), [
-            'note' => 'Cek display',
-            'scanned_barcode' => 'RACK-002',
-            'stock_report_items' => '',
-            'no_out_of_stock' => true,
-            'product_checklist' => json_encode([
-                'prod-3' => [
-                    'checked' => true,
-                    'actual_qty' => 1,
-                    'standard_qty' => 4,
-                    'was_refilled' => false,
-                    'product_name' => 'Kopi Sachet',
-                    'product_unit' => 'pcs',
-                ],
-            ]),
-        ]);
-
-        $response->assertOk();
-        $response->assertJsonPath('success', true);
+        $this->assertTrue($result['success']);
     }
 }

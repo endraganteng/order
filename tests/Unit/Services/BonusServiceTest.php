@@ -7,7 +7,7 @@ use App\Services\FirebaseService;
 use Kreait\Firebase\Contract\Database;
 use Kreait\Firebase\Database\Reference;
 use Kreait\Firebase\Database\Snapshot;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class BonusServiceTest extends TestCase
 {

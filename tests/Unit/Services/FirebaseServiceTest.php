@@ -3,14 +3,42 @@
 namespace Tests\Unit\Services;
 
 use App\Services\FirebaseService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Kreait\Firebase\Contract\Auth;
 use Kreait\Firebase\Contract\Database;
 use Kreait\Firebase\Database\Snapshot;
 use Kreait\Firebase\Database\Reference;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class FirebaseServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // These tests seed RTDB state into a mocked Database. Force read-from-MySQL
+        // flags off so repositories resolved via app(...) read the same RTDB store
+        // the test writes to, instead of the (empty) sqlite tables.
+        config([
+            'features.mysql_attendance' => false,
+            'features.mysql_waiter_tasks' => false,
+            'features.mysql_rack_products' => false,
+            'features.mysql_cashier_tasks' => false,
+        ]);
+    }
+
+    /**
+     * Bind a mocked RTDB Database into the container so repositories resolved via
+     * app(...) (RackRepository, WaiterRepository, AttendanceRepository, ...) share
+     * the same in-memory store the test seeds, instead of a live Firebase project.
+     */
+    private function bindFirebaseDatabase(Database $database): void
+    {
+        $this->app->instance(Database::class, $database);
+        $this->app->instance('firebase.database', $database);
+    }
+
     public function test_update_attendance_derives_timestamps_from_time_strings(): void
     {
         $capturedPayload = null;
@@ -25,6 +53,7 @@ class FirebaseServiceTest extends TestCase
             });
         $database->method('getReference')->willReturn($reference);
 
+        $this->bindFirebaseDatabase($database);
         $service = new FirebaseService($database, $this->createMock(Auth::class));
         $service->updateAttendance('waiter-1', '2026-05-04', [
             'clock_in' => '08:30',
@@ -55,6 +84,7 @@ class FirebaseServiceTest extends TestCase
             'settings' => ['clock_out_enabled' => true],
         ]);
 
+        $this->bindFirebaseDatabase($database);
         $service = new FirebaseService($database, $this->createMock(Auth::class));
         $payload = $service->getCashierAttendanceQrData('waiter-1');
 
@@ -95,6 +125,7 @@ class FirebaseServiceTest extends TestCase
             'settings' => ['clock_out_enabled' => true],
         ]);
 
+        $this->bindFirebaseDatabase($database);
         $service = new FirebaseService($database, $this->createMock(Auth::class));
 
         $clockInPayload = $service->getCashierAttendanceQrData('waiter-1');
@@ -172,6 +203,7 @@ class FirebaseServiceTest extends TestCase
             'rack_stock_movements' => [],
         ]);
 
+        $this->bindFirebaseDatabase($database);
         $service = new FirebaseService($database, $this->createMock(Auth::class));
         $result = $service->updateWaiterTaskStatus(
             'task-1',
@@ -276,6 +308,7 @@ class FirebaseServiceTest extends TestCase
             'po_receive_idempotency' => [],
         ]);
 
+        $this->bindFirebaseDatabase($database);
         $service = new FirebaseService($database, $this->createMock(Auth::class));
         $result = $service->receivePoItem('po-1', 'restock-1', 3, 'waiter-1', 'Waiter Satu');
 
@@ -345,6 +378,7 @@ class FirebaseServiceTest extends TestCase
             'po_receive_idempotency' => [],
         ]);
 
+        $this->bindFirebaseDatabase($database);
         $service = new FirebaseService($database, $this->createMock(Auth::class));
 
         $first = $service->receivePoItem('po-1', 'restock-1', 2, 'waiter-1', 'Waiter Satu', 'idem-123');
@@ -449,20 +483,27 @@ class FirebaseServiceTest extends TestCase
         });
 
         $database->method('runTransaction')->willReturnCallback(function (callable $callback) use ($store, &$referencePaths) {
-            $transaction = new class($store, $referencePaths, $this) {
-                public function __construct(private object $store, private array $referencePaths, private FirebaseServiceTest $test)
+            // Resolve paths against the LIVE $referencePaths: references created
+            // inside the callback (e.g. attendance node first touched mid-transaction)
+            // must still be writable. A constructor copy would miss them.
+            $resolvePath = function (Reference $reference) use (&$referencePaths): ?string {
+                return $referencePaths[spl_object_id($reference)] ?? null;
+            };
+
+            $transaction = new class($store, $resolvePath, $this) {
+                public function __construct(private object $store, private $resolvePath, private FirebaseServiceTest $test)
                 {
                 }
 
                 public function snapshot(Reference $reference): Snapshot
                 {
-                    $path = $this->referencePaths[spl_object_id($reference)] ?? '';
+                    $path = ($this->resolvePath)($reference) ?? '';
                     return new Snapshot($reference, $this->test->readStoreValue($this->store, $path));
                 }
 
                 public function set(Reference $reference, mixed $value): void
                 {
-                    $path = $this->referencePaths[spl_object_id($reference)] ?? null;
+                    $path = ($this->resolvePath)($reference);
                     if ($path === null) {
                         return;
                     }
