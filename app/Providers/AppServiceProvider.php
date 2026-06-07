@@ -24,6 +24,11 @@ class AppServiceProvider extends ServiceProvider
             \App\Repositories\CashierTaskRepository::class
         );
 
+        $this->app->bind(
+            \App\Repositories\Contracts\WaiterTaskRepositoryInterface::class,
+            \App\Repositories\WaiterTaskRepository::class
+        );
+
         // Fix cURL error 60 (SSL certificate problem) pada local dev
         if (app()->environment('local')) {
             $candidatePaths = array_filter([

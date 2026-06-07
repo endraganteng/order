@@ -2691,12 +2691,7 @@ class FirebaseService
 
     public function getWaiterTaskById(string $taskId): ?array
     {
-        $snapshot = $this->database->getReference('waiter_tasks/'.$taskId)->getSnapshot();
-        if (! $snapshot->exists()) {
-            return null;
-        }
-
-        return array_merge(['id' => $taskId], $snapshot->getValue());
+        return app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->find($taskId);
     }
 
     /**
@@ -2804,21 +2799,7 @@ class FirebaseService
      */
     public function getWaiterTasks()
     {
-        $reference = $this->database->getReference('waiter_tasks');
-        $snapshot = $reference->getSnapshot();
-
-        $tasks = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $task) {
-                $tasks[] = array_merge(['id' => $key], $task);
-            }
-        }
-
-        usort($tasks, function ($a, $b) {
-            return (int) ($b['created_at'] ?? 0) - (int) ($a['created_at'] ?? 0);
-        });
-
-        return $tasks;
+        return app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->all();
     }
 
     /**
@@ -2827,32 +2808,7 @@ class FirebaseService
      */
     public function getWaiterTasksByDateRange(string $startDate, string $endDate): array
     {
-        $cacheKey = 'waiter_tasks_range_' . $startDate . '_' . $endDate;
-        if (isset($this->requestCache[$cacheKey])) {
-            return $this->requestCache[$cacheKey];
-        }
-
-        $reference = $this->database->getReference('waiter_tasks');
-        $snapshot = $reference
-            ->orderByChild('scheduled_for_date')
-            ->startAt($startDate)
-            ->endAt($endDate)
-            ->getSnapshot();
-
-        $tasks = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $task) {
-                $tasks[] = array_merge(['id' => $key], $task);
-            }
-        }
-
-        usort($tasks, function ($a, $b) {
-            return (int) ($b['created_at'] ?? 0) - (int) ($a['created_at'] ?? 0);
-        });
-
-        $this->requestCache[$cacheKey] = $tasks;
-
-        return $tasks;
+        return app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->forDateRange($startDate, $endDate);
     }
 
     /**
@@ -2860,102 +2816,8 @@ class FirebaseService
      */
     public function getWaiterTasksByWaiterId($waiterId, ?string $dateFrom = null, ?string $dateTo = null)
     {
-        // Cache key MUST include date range, otherwise a second call with a
-        // different range would return the first range's cached result.
-        $cacheKey = 'waiter_tasks_by_id_' . (string) $waiterId . '_' . ($dateFrom ?? 'null') . '_' . ($dateTo ?? 'null');
-        if (isset($this->requestCache[$cacheKey])) {
-            return $this->requestCache[$cacheKey];
-        }
-
-        // MySQL read path (flag-gated). Returns firebase_payload verbatim so the
-        // portal sees the exact same field shape as the legacy Firebase node;
-        // 'id' is set to the legacy key callers already expect.
-        if (config('features.mysql_waiter_tasks')) {
-            $query = \App\Models\WaiterTask::query()->forWaiter((string) $waiterId);
-            if ($dateFrom !== null) {
-                $query->where('scheduled_for_date', '>=', $dateFrom);
-            }
-            if ($dateTo !== null) {
-                $query->where('scheduled_for_date', '<=', $dateTo);
-            }
-
-            $tasks = $query->get()->map(function ($row) {
-                $payload = is_array($row->firebase_payload) ? $row->firebase_payload : [];
-                if (empty($payload)) {
-                    // Row seeded before firebase_payload existed: rebuild a minimal
-                    // payload from structured columns so the portal isn't blank.
-                    $payload = [
-                        'title' => $row->title,
-                        'description' => $row->description,
-                        'task_type' => $row->task_type,
-                        'assigned_waiter_id' => $row->assigned_waiter_id,
-                        'assigned_waiter_name' => $row->assigned_waiter_name,
-                        'scheduled_for_date' => optional($row->scheduled_for_date)->format('Y-m-d'),
-                        'priority' => $row->priority,
-                        'rack_id' => $row->rack_id,
-                        'rack_name' => $row->rack_name,
-                        'created_at' => optional($row->created_at)->timestamp,
-                    ];
-                }
-                $payload['id'] = $row->firebase_legacy_key ?: $row->deterministic_key;
-                $payload['status'] = $row->status; // MySQL is source of truth for status
-                return $payload;
-            })->all();
-
-            usort($tasks, function ($a, $b) {
-                $aTime = is_numeric($a['created_at'] ?? 0) ? (int) ($a['created_at'] ?? 0) : strtotime($a['created_at'] ?? '0');
-                $bTime = is_numeric($b['created_at'] ?? 0) ? (int) ($b['created_at'] ?? 0) : strtotime($b['created_at'] ?? '0');
-                return $bTime - $aTime;
-            });
-
-            $this->requestCache[$cacheKey] = $tasks;
-            return $tasks;
-        }
-
-        if ($dateFrom !== null || $dateTo !== null) {
-            // Date-bounded read: query by scheduled_for_date, filter waiter in PHP.
-            // Requires .indexOn ["scheduled_for_date"] on waiter_tasks rules.
-            $from = $dateFrom ?: '0000-00-00';
-            $to = $dateTo ?: '9999-12-31';
-
-            $snapshot = $this->database->getReference('waiter_tasks')
-                ->orderByChild('scheduled_for_date')
-                ->startAt($from)
-                ->endAt($to)
-                ->getSnapshot();
-
-            $tasks = [];
-            if ($snapshot->exists()) {
-                foreach ($snapshot->getValue() as $key => $task) {
-                    if ((string) ($task['assigned_waiter_id'] ?? '') === (string) $waiterId) {
-                        $tasks[] = array_merge(['id' => $key], $task);
-                    }
-                }
-            }
-        } else {
-            // Legacy unbounded read (kept for getLastRackCheckAssignedAt which needs full history).
-            $reference = $this->database->getReference('waiter_tasks')
-                ->orderByChild('assigned_waiter_id')
-                ->equalTo((string) $waiterId);
-            $snapshot = $reference->getSnapshot();
-
-            $tasks = [];
-            if ($snapshot->exists()) {
-                foreach ($snapshot->getValue() as $key => $task) {
-                    $tasks[] = array_merge(['id' => $key], $task);
-                }
-            }
-        }
-
-        usort($tasks, function ($a, $b) {
-            $aTime = is_numeric($a['created_at'] ?? 0) ? (int) ($a['created_at'] ?? 0) : strtotime($a['created_at'] ?? '0');
-            $bTime = is_numeric($b['created_at'] ?? 0) ? (int) ($b['created_at'] ?? 0) : strtotime($b['created_at'] ?? '0');
-            return $bTime - $aTime;
-        });
-
-        $this->requestCache[$cacheKey] = $tasks;
-
-        return $tasks;
+        return app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)
+            ->forWaiter((string) $waiterId, $dateFrom, $dateTo);
     }
 
     /**
@@ -2964,30 +2826,7 @@ class FirebaseService
      */
     public function getWaiterTasksForDate(string $waiterId, string $date): array
     {
-        $cacheKey = 'tasks_by_date_' . $date;
-        if (! isset($this->requestCache[$cacheKey])) {
-            $reference = $this->database->getReference('waiter_tasks')
-                ->orderByChild('scheduled_for_date')
-                ->equalTo($date);
-            $snapshot = $reference->getSnapshot();
-
-            $allTasks = [];
-            if ($snapshot->exists()) {
-                foreach ($snapshot->getValue() as $key => $task) {
-                    $allTasks[] = array_merge(['id' => $key], $task);
-                }
-            }
-            $this->requestCache[$cacheKey] = $allTasks;
-        }
-
-        $tasks = [];
-        foreach ($this->requestCache[$cacheKey] as $task) {
-            if (($task['assigned_waiter_id'] ?? '') === $waiterId) {
-                $tasks[] = $task;
-            }
-        }
-
-        return $tasks;
+        return app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->forWaiterOnDate($waiterId, $date);
     }
 
     /**
@@ -2995,19 +2834,7 @@ class FirebaseService
      */
     public function getWaiterTasksByDate(string $date): array
     {
-        $reference = $this->database->getReference('waiter_tasks')
-            ->orderByChild('scheduled_for_date')
-            ->equalTo($date);
-        $snapshot = $reference->getSnapshot();
-
-        $tasks = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $task) {
-                $tasks[] = array_merge(['id' => $key], $task);
-            }
-        }
-
-        return $tasks;
+        return app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->forDate($date);
     }
 
     /**
@@ -3751,7 +3578,7 @@ class FirebaseService
      */
     public function deleteWaiterTask($id)
     {
-        $this->database->getReference('waiter_tasks/'.$id)->remove();
+        app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->delete((string) $id);
     }
 
     /**
