@@ -10,14 +10,12 @@
     </div>
 
     @if(session('success'))
-        <div style="background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;">
-            ✓ {{ session('success') }}
-        </div>
+        <x-alert type="success">✓ {{ session('success') }}</x-alert>
     @endif
     @if($errors->any())
-        <div style="background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;">
+        <x-alert type="error">
             @foreach($errors->all() as $e)<div>{{ $e }}</div>@endforeach
-        </div>
+        </x-alert>
     @endif
 
     {{-- KPI cards --}}
