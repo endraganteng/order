@@ -6634,14 +6634,7 @@ class FirebaseService
             'completed_by_worker_name' => null,
         ];
 
-        $legacyKey = null;
-        if (config('features.legacy_write_cashier_tasks')) {
-            $legacyKey = (string) $this->database->getReference('cashier_tasks')->push($taskData)->getKey();
-        } else {
-            $legacyKey = 'ct_local_'.substr(hash('sha256', json_encode($taskData).microtime()), 0, 24);
-        }
-
-        $this->dualWriteCashierTaskToMysql($legacyKey, $taskData);
+        app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->create($taskData);
     }
 
     /**
@@ -6649,28 +6642,7 @@ class FirebaseService
      */
     public function getTasks()
     {
-        if (config('features.mysql_cashier_tasks')) {
-            return \App\Models\CashierTask::orderByDesc('created_at')->get()
-                ->map(fn ($row) => $this->cashierRowToPayload($row))
-                ->all();
-        }
-
-        $reference = $this->database->getReference('cashier_tasks');
-        $snapshot = $reference->getSnapshot();
-
-        $tasks = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $task) {
-                $tasks[] = array_merge(['id' => $key], $task);
-            }
-        }
-
-        // Sort by created_at descending (newest first)
-        usort($tasks, function ($a, $b) {
-            return ($b['created_at'] ?? 0) - ($a['created_at'] ?? 0);
-        });
-
-        return $tasks;
+        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->all();
     }
 
     /**
@@ -6678,11 +6650,7 @@ class FirebaseService
      */
     public function getActiveTasks()
     {
-        $tasks = $this->getTasks();
-
-        return array_filter($tasks, function ($task) {
-            return ($task['status'] ?? 'pending') === 'pending';
-        });
+        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->allActive();
     }
 
     /**
@@ -6690,87 +6658,8 @@ class FirebaseService
      */
     public function updateTaskStatus($id, $status, $note = null, $workerId = null, $workerName = null)
     {
-        $useMysql = config('features.mysql_cashier_tasks');
-        $mysqlRow = $useMysql
-            ? \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->first()
-            : null;
-
-        $taskReference = $this->database->getReference('cashier_tasks/'.$id);
-        $snapshot = $taskReference->getSnapshot();
-
-        if (! $snapshot->exists() && ! $mysqlRow) {
-            return [
-                'success' => false,
-                'message' => 'Tugas tidak ditemukan',
-            ];
-        }
-
-        $task = $snapshot->exists()
-            ? $snapshot->getValue()
-            : (is_array($mysqlRow->firebase_payload) ? $mysqlRow->firebase_payload : []);
-        $currentStatus = $task['status'] ?? ($mysqlRow->status ?? 'pending');
-
-        if ($currentStatus !== 'pending') {
-            return [
-                'success' => false,
-                'message' => 'Tugas ini sudah tidak aktif',
-            ];
-        }
-
-        $now = time();
-        $deadlineAt = (int) ($task['deadline_at'] ?? 0);
-        if ($deadlineAt > 0 && $now > $deadlineAt) {
-            $taskReference->update([
-                'status' => 'overdue',
-                'completed_at' => $now,
-                'completed_note' => 'Auto: batas waktu habis',
-            ]);
-
-            if (config('features.mysql_cashier_tasks')) {
-                \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->update([
-                    'status' => 'overdue',
-                    'completed_at' => date('Y-m-d H:i:s', $now),
-                    'notes' => 'Auto: batas waktu habis',
-                ]);
-            }
-
-            return [
-                'success' => false,
-                'message' => 'Tugas sudah melewati batas waktu dan dihitung tidak selesai',
-            ];
-        }
-
-        $updates = [
-            'status' => $status,
-            'completed_at' => $now,
-        ];
-
-        if (! empty($note)) {
-            $updates['completed_note'] = $note;
-        }
-
-        if ($status === 'done') {
-            $updates['completed_by_worker_id'] = $workerId;
-            $updates['completed_by_worker_name'] = $workerName;
-        }
-
-        $taskReference->update($updates);
-
-        if (config('features.mysql_cashier_tasks')) {
-            $mysqlUpdates = [
-                'status' => $status,
-                'completed_at' => date('Y-m-d H:i:s', $now),
-            ];
-            if (! empty($note)) {
-                $mysqlUpdates['notes'] = $note;
-            }
-            \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->update($mysqlUpdates);
-        }
-
-        return [
-            'success' => true,
-            'message' => 'Status tugas berhasil diupdate',
-        ];
+        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)
+            ->updateStatus((string) $id, $status, $note, $workerId, $workerName);
     }
 
     /**
@@ -6778,14 +6667,7 @@ class FirebaseService
      */
     public function deleteTask($id)
     {
-        if (config('features.legacy_write_cashier_tasks')) {
-            $this->database->getReference('cashier_tasks/'.$id)
-                ->remove();
-        }
-
-        if (config('features.mysql_cashier_tasks')) {
-            \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->delete();
-        }
+        app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->delete((string) $id);
     }
 
     /**
@@ -6991,39 +6873,7 @@ class FirebaseService
      */
     public function markOverdueTasks()
     {
-        $reference = $this->database->getReference('cashier_tasks')
-            ->orderByChild('status')
-            ->equalTo('pending');
-        $snapshot = $reference->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return 0;
-        }
-
-        $now = time();
-        $updates = [];
-        $overdueCount = 0;
-        $baseRef = $this->database->getReference('cashier_tasks');
-
-        foreach ($snapshot->getValue() as $taskId => $task) {
-            $deadlineAt = (int) ($task['deadline_at'] ?? 0);
-            if ($deadlineAt <= 0 || $now <= $deadlineAt) {
-                continue;
-            }
-
-            $updates[$taskId.'/status'] = 'overdue';
-            $updates[$taskId.'/completed_at'] = $now;
-            if (empty($task['completed_note'])) {
-                $updates[$taskId.'/completed_note'] = 'Auto: batas waktu habis';
-            }
-            $overdueCount++;
-        }
-
-        if (! empty($updates)) {
-            $baseRef->update($updates);
-        }
-
-        return $overdueCount;
+        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->markOverdue();
     }
 
     /**
@@ -7031,37 +6881,7 @@ class FirebaseService
      */
     protected function getExistingRecurringMapForDate($date)
     {
-        $map = [];
-
-        if (config('features.mysql_cashier_tasks')) {
-            $rows = \App\Models\CashierTask::where('scheduled_date', $date)
-                ->where('status', 'pending')
-                ->whereNotNull('source_template_key')
-                ->pluck('source_template_key');
-            foreach ($rows as $key) {
-                $map[$key] = true;
-            }
-            return $map;
-        }
-
-        $reference = $this->database->getReference('cashier_tasks');
-        $snapshot = $reference->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return $map;
-        }
-
-        foreach ($snapshot->getValue() as $task) {
-            $sourceTemplateId = $task['source_template_id'] ?? null;
-            $scheduledDate = $task['scheduled_for_date'] ?? null;
-            $status = $task['status'] ?? 'pending';
-
-            if ($sourceTemplateId && $scheduledDate === $date && $status === 'pending') {
-                $map[$sourceTemplateId] = true;
-            }
-        }
-
-        return $map;
+        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->existingRecurringMap($date);
     }
 
     /**
@@ -7069,29 +6889,8 @@ class FirebaseService
      */
     protected function hasPendingRecurringInstanceForDate($templateId, $date)
     {
-        if (config('features.mysql_cashier_tasks')) {
-            return \App\Models\CashierTask::where('source_template_key', (string) $templateId)
-                ->where('scheduled_date', $date)
-                ->where('status', 'pending')
-                ->exists();
-        }
-
-        $reference = $this->database->getReference('cashier_tasks')
-            ->orderByChild('source_template_id')
-            ->equalTo($templateId);
-        $snapshot = $reference->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return false;
-        }
-
-        foreach ($snapshot->getValue() as $task) {
-            if (($task['scheduled_for_date'] ?? null) === $date && ($task['status'] ?? 'pending') === 'pending') {
-                return true;
-            }
-        }
-
-        return false;
+        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)
+            ->hasPendingRecurringInstance((string) $templateId, $date);
     }
 
     /**
@@ -7099,29 +6898,8 @@ class FirebaseService
      */
     protected function hasDoneRecurringInstanceForDate($templateId, $date)
     {
-        if (config('features.mysql_cashier_tasks')) {
-            return \App\Models\CashierTask::where('source_template_key', (string) $templateId)
-                ->where('scheduled_date', $date)
-                ->where('status', 'done')
-                ->exists();
-        }
-
-        $reference = $this->database->getReference('cashier_tasks')
-            ->orderByChild('source_template_id')
-            ->equalTo($templateId);
-        $snapshot = $reference->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return false;
-        }
-
-        foreach ($snapshot->getValue() as $task) {
-            if (($task['scheduled_for_date'] ?? null) === $date && ($task['status'] ?? 'pending') === 'done') {
-                return true;
-            }
-        }
-
-        return false;
+        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)
+            ->hasDoneRecurringInstance((string) $templateId, $date);
     }
 
     /**
