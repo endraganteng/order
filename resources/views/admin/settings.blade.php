@@ -152,15 +152,11 @@
         </p>
 
         @if(session('fonnte_success'))
-            <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px;">
-                ✅ {{ session('fonnte_success') }}
-            </div>
+            <x-alert type="success">✅ {{ session('fonnte_success') }}</x-alert>
         @endif
 
         @if(session('fonnte_error'))
-            <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px;">
-                ❌ {{ session('fonnte_error') }}
-            </div>
+            <x-alert type="error">❌ {{ session('fonnte_error') }}</x-alert>
         @endif
 
         <form method="POST" action="{{ route('admin.settings.test_fonnte') }}">

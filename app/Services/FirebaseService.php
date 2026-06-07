@@ -1458,27 +1458,7 @@ class FirebaseService
      */
     public function getProducts()
     {
-        if (config('features.mysql_rack_products')) {
-            return \App\Models\RackProduct::orderBy('name')->get()
-                ->map(fn ($row) => $this->rackProductRowToPayload($row))
-                ->all();
-        }
-
-        $reference = $this->database->getReference('rack_products');
-        $snapshot = $reference->getSnapshot();
-
-        $products = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $product) {
-                $products[] = array_merge(['id' => $key], $product);
-            }
-        }
-
-        usort($products, function ($a, $b) {
-            return ($a['name'] ?? '') <=> ($b['name'] ?? '');
-        });
-
-        return $products;
+        return app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->all();
     }
 
     /**
@@ -1486,9 +1466,7 @@ class FirebaseService
      */
     public function getActiveProducts()
     {
-        return array_values(array_filter($this->getProducts(), function ($product) {
-            return ($product['is_active'] ?? true) !== false;
-        }));
+        return app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->allActive();
     }
 
     /**
@@ -1496,19 +1474,7 @@ class FirebaseService
      */
     public function getProductById($id)
     {
-        if (config('features.mysql_rack_products')) {
-            $row = \App\Models\RackProduct::where('firebase_legacy_key', (string) $id)->first();
-            return $row ? $this->rackProductRowToPayload($row) : null;
-        }
-
-        $reference = $this->database->getReference('rack_products/'.$id);
-        $snapshot = $reference->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return null;
-        }
-
-        return array_merge(['id' => $id], $snapshot->getValue());
+        return app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->find((string) $id);
     }
 
     /**
@@ -1516,28 +1482,7 @@ class FirebaseService
      */
     public function createProduct(array $data)
     {
-        $categoryId = isset($data['category_id']) && $data['category_id'] !== '' ? (string) $data['category_id'] : null;
-
-        $payload = [
-            'name' => trim((string) ($data['name'] ?? '')),
-            'category_id' => $categoryId,
-            'standard_qty' => max(0, (int) ($data['standard_qty'] ?? 0)),
-            'unit' => trim((string) ($data['unit'] ?? 'pcs')),
-            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
-            'created_at' => time(),
-            'updated_at' => time(),
-        ];
-
-        $legacyKey = null;
-        if (config('features.legacy_write_rack_products')) {
-            $legacyKey = (string) $this->database->getReference('rack_products')->push($payload)->getKey();
-        } else {
-            $legacyKey = 'rp_local_'.substr(hash('sha256', json_encode($payload).microtime()), 0, 24);
-        }
-
-        $this->dualWriteRackProductToMysql($legacyKey, $payload);
-
-        return array_merge(['id' => $legacyKey], $payload);
+        return app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->create($data);
     }
 
     /**
@@ -1545,31 +1490,7 @@ class FirebaseService
      */
     public function updateProduct($id, array $data)
     {
-        $categoryId = isset($data['category_id']) && $data['category_id'] !== '' ? (string) $data['category_id'] : null;
-
-        $payload = [
-            'name' => trim((string) ($data['name'] ?? '')),
-            'category_id' => $categoryId,
-            'standard_qty' => max(0, (int) ($data['standard_qty'] ?? 0)),
-            'unit' => trim((string) ($data['unit'] ?? 'pcs')),
-            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
-            'updated_at' => time(),
-        ];
-
-        if (config('features.legacy_write_rack_products')) {
-            $this->database->getReference('rack_products/'.$id)->update($payload);
-        }
-
-        if (config('features.mysql_rack_products')) {
-            \App\Models\RackProduct::where('firebase_legacy_key', (string) $id)->update([
-                'name' => $payload['name'],
-                'category_id' => $payload['category_id'],
-                'standard_qty' => $payload['standard_qty'],
-                'unit' => $payload['unit'],
-                'is_active' => $payload['is_active'],
-                'event_updated_at' => $payload['updated_at'],
-            ]);
-        }
+        app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->update((string) $id, $data);
     }
 
     /**
@@ -1597,13 +1518,7 @@ class FirebaseService
             }
         }
 
-        if (config('features.legacy_write_rack_products')) {
-            $this->database->getReference('rack_products/'.$id)->remove();
-        }
-
-        if (config('features.mysql_rack_products')) {
-            \App\Models\RackProduct::where('firebase_legacy_key', (string) $id)->delete();
-        }
+        app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->delete((string) $id);
     }
 
     /**

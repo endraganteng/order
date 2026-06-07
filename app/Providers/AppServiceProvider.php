@@ -14,6 +14,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(
+            \App\Repositories\Contracts\RackProductRepositoryInterface::class,
+            \App\Repositories\RackProductRepository::class
+        );
+
         // Fix cURL error 60 (SSL certificate problem) pada local dev
         if (app()->environment('local')) {
             $candidatePaths = array_filter([
