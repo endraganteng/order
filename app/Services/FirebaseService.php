@@ -302,9 +302,7 @@ class FirebaseService
      */
     public function getActiveRacks()
     {
-        return array_values(array_filter($this->getRacks(), function ($rack) {
-            return ($rack['is_active'] ?? true) !== false;
-        }));
+        return app(\App\Repositories\Contracts\RackRepositoryInterface::class)->allActive();
     }
 
     /**
@@ -312,13 +310,7 @@ class FirebaseService
      */
     public function getRackById($id)
     {
-        foreach ($this->getRacks() as $rack) {
-            if (($rack['id'] ?? null) === $id) {
-                return $rack;
-            }
-        }
-
-        return null;
+        return app(\App\Repositories\Contracts\RackRepositoryInterface::class)->find((string) $id);
     }
 
     /**
@@ -342,9 +334,7 @@ class FirebaseService
             'updated_at' => time(),
         ];
 
-        $created = $this->database->getReference('waiter_racks')->push($payload);
-
-        return array_merge(['id' => $created->getKey()], $payload);
+        return app(\App\Repositories\Contracts\RackRepositoryInterface::class)->create($payload);
     }
 
     /**
@@ -362,7 +352,7 @@ class FirebaseService
             'updated_at' => time(),
         ];
 
-        $this->database->getReference('waiter_racks/'.$id)->update($payload);
+        app(\App\Repositories\Contracts\RackRepositoryInterface::class)->update((string) $id, $payload);
     }
 
     /**
@@ -389,7 +379,7 @@ class FirebaseService
      */
     public function deleteRack($id)
     {
-        $this->database->getReference('waiter_racks/'.$id)->remove();
+        app(\App\Repositories\Contracts\RackRepositoryInterface::class)->delete((string) $id);
     }
 
     /**
