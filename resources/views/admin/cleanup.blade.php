@@ -10,39 +10,23 @@
     @endif
 
     {{-- Statistics --}}
-    <div
-        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
-        <div class="card" style="text-align: center;">
-            <h3 style="color: #667eea; font-size: 32px; margin-bottom: 10px;">{{ $stats['total_orders'] }}</h3>
-            <p style="color: #666; font-size: 14px;">Total Orders</p>
-        </div>
-
-        <div class="card" style="text-align: center;">
-            <h3 style="color: #ffc107; font-size: 32px; margin-bottom: 10px;">{{ $stats['orders_30_days'] }}</h3>
-            <p style="color: #666; font-size: 14px;">> 30 Hari</p>
-        </div>
-
-        <div class="card" style="text-align: center;">
-            <h3 style="color: #ff9800; font-size: 32px; margin-bottom: 10px;">{{ $stats['orders_60_days'] }}</h3>
-            <p style="color: #666; font-size: 14px;">> 60 Hari</p>
-        </div>
-
-        <div class="card" style="text-align: center;">
-            <h3 style="color: #f44336; font-size: 32px; margin-bottom: 10px;">{{ $stats['orders_90_days'] }}</h3>
-            <p style="color: #666; font-size: 14px;">> 90 Hari</p>
-        </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
+        <x-stat-card label="Total Orders" :value="$stats['total_orders']" />
+        <x-stat-card label="> 30 Hari" :value="$stats['orders_30_days']" color="#ffc107" />
+        <x-stat-card label="> 60 Hari" :value="$stats['orders_60_days']" color="#ff9800" />
+        <x-stat-card label="> 90 Hari" :value="$stats['orders_90_days']" color="#f44336" />
     </div>
 
     {{-- Warning Info --}}
-    <div style="padding: 20px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; margin-bottom: 30px;">
-        <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Peringatan</h4>
-        <p style="margin: 0; color: #856404; line-height: 1.6;">
+    <x-alert type="warning">
+        <h4 style="margin: 0 0 10px 0;">Peringatan</h4>
+        <p style="margin: 0; line-height: 1.6;">
             Cleanup akan <strong>menghapus permanen</strong> order yang lebih lama dari jumlah hari yang ditentukan.
             <br>Data yang sudah dihapus <strong>tidak dapat dikembalikan</strong>.
             <br><br>
             <strong>Rekomendasi:</strong> Hapus order > 30 hari untuk menghemat storage Firebase.
         </p>
-    </div>
+    </x-alert>
 
     {{-- Cleanup Form --}}
     <div class="card">
