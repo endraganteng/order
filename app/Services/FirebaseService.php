@@ -10336,18 +10336,7 @@ class FirebaseService
      */
     public function getSuppliers(): array
     {
-        $snapshot = $this->database->getReference('suppliers')->getSnapshot();
-        if (!$snapshot->exists()) return [];
-
-        $suppliers = [];
-        foreach ($snapshot->getValue() as $id => $supplier) {
-            if (!is_array($supplier)) continue;
-            $supplier['id'] = $id;
-            $suppliers[] = $supplier;
-        }
-
-        usort($suppliers, fn($a, $b) => strcasecmp($a['name'] ?? '', $b['name'] ?? ''));
-        return $suppliers;
+        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->all();
     }
 
     /**
@@ -10355,12 +10344,7 @@ class FirebaseService
      */
     public function getSupplierById(string $id): ?array
     {
-        $snapshot = $this->database->getReference("suppliers/{$id}")->getSnapshot();
-        if (!$snapshot->exists()) return null;
-
-        $supplier = (array) $snapshot->getValue();
-        $supplier['id'] = $id;
-        return $supplier;
+        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->find($id);
     }
 
     /**
@@ -10368,17 +10352,7 @@ class FirebaseService
      */
     public function createSupplier(array $data): string
     {
-        $payload = [
-            'name' => (string) ($data['name'] ?? ''),
-            'phone' => (string) ($data['phone'] ?? ''),
-            'address' => (string) ($data['address'] ?? ''),
-            'contact_person' => (string) ($data['contact_person'] ?? ''),
-            'created_at' => time(),
-            'updated_at' => time(),
-        ];
-
-        $ref = $this->database->getReference('suppliers')->push($payload);
-        return $ref->getKey();
+        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->create($data);
     }
 
     /**
@@ -10386,16 +10360,7 @@ class FirebaseService
      */
     public function updateSupplier(string $id, array $data): bool
     {
-        $payload = [
-            'name' => (string) ($data['name'] ?? ''),
-            'phone' => (string) ($data['phone'] ?? ''),
-            'address' => (string) ($data['address'] ?? ''),
-            'contact_person' => (string) ($data['contact_person'] ?? ''),
-            'updated_at' => time(),
-        ];
-
-        $this->database->getReference("suppliers/{$id}")->update($payload);
-        return true;
+        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->update($id, $data);
     }
 
     /**
@@ -10403,8 +10368,7 @@ class FirebaseService
      */
     public function deleteSupplier(string $id): bool
     {
-        $this->database->getReference("suppliers/{$id}")->remove();
-        return true;
+        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->delete($id);
     }
 
     public function getProductAuditTrail(string $productId, int $limit = 200): array
