@@ -247,20 +247,31 @@ class PayrollService
             return ['success' => false, 'message' => 'Nominal harus > 0'];
         }
 
-        $newBalance = $this->adjustBalance($waiterId, $amount);
-        $txId = $this->writeTransaction([
-            'waiter_id'     => $waiterId,
-            'type'          => 'manual_credit',
-            'amount'        => $amount,
-            'balance_after' => $newBalance,
-            'status'        => 'completed',
-            'note'          => $note,
-            'created_by'    => $createdBy,
-        ]);
+        return DB::transaction(function () use ($waiterId, $amount, $note, $createdBy) {
+            $newBalance = $this->adjustBalance($waiterId, $amount);
+            $txId = $this->writeTransaction([
+                'waiter_id'     => $waiterId,
+                'type'          => 'manual_credit',
+                'amount'        => $amount,
+                'balance_after' => $newBalance,
+                'status'        => 'completed',
+                'note'          => $note,
+                'created_by'    => $createdBy,
+            ]);
 
-        $this->triggerWaiterFlag($waiterId);
+            $this->triggerWaiterFlag($waiterId);
 
-        return ['success' => true, 'tx_id' => $txId, 'balance_after' => $newBalance];
+            // Auto-deduct kasbon dari credit yang baru masuk (sama spt creditIfAbsent).
+            // Owner decision: manual top-up juga harus tutup kasbon aktif dulu.
+            try {
+                $kasbonService = app(KasbonService::class);
+                $kasbonService->autoDeductFromCredit($waiterId, $amount);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+
+            return ['success' => true, 'tx_id' => $txId, 'balance_after' => $this->getBalance($waiterId)];
+        });
     }
 
     public function listTransactionsByWaiter(string $waiterId, int $limit = 100): array
