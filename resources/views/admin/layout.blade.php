@@ -47,6 +47,40 @@
             background: #f5f7fa;
         }
 
+        /* ===== UI/UX Pro Max: global interaction polish ===== */
+        button, a, [onclick], [role="button"], .btn, select, summary {
+            cursor: pointer;
+        }
+        button:disabled, .btn:disabled, [disabled] {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+        /* Visible keyboard focus (accessibility — WCAG) */
+        a:focus-visible, button:focus-visible, input:focus-visible,
+        select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+            outline: 2px solid var(--color-primary, #667eea);
+            outline-offset: 2px;
+            border-radius: var(--radius-sm, 6px);
+        }
+        /* Smooth interaction states (150-300ms) */
+        button, .btn, a.btn, [role="button"] {
+            transition: background-color .18s ease, opacity .18s ease, box-shadow .18s ease, transform .18s ease;
+        }
+        /* Tabular figures for numeric/data columns + currency */
+        .num, .tabular, td.num, .amount, .price {
+            font-variant-numeric: tabular-nums;
+            font-feature-settings: "tnum";
+        }
+        /* Respect reduced-motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: .01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: .01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+
         /* ===== Navbar ===== */
         .navbar {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
