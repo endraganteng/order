@@ -28,9 +28,9 @@ return new class extends Migration
             $table->unsignedBigInteger('event_created_at')->nullable();
             $table->timestamps();
 
-            $table->index(['waiter_id', 'date'], 'idx_waiter_date');
-            $table->index('month', 'idx_month');
-            $table->index('date', 'idx_date');
+            $table->index(['waiter_id', 'date'], 'idx_wp_waiter_date');
+            $table->index('month', 'idx_wp_month');
+            $table->index('date', 'idx_wp_date');
         });
     }
 

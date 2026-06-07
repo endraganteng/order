@@ -28,7 +28,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('event_date', 'idx_event_date');
-            $table->index(['entity', 'entity_id'], 'idx_entity');
+            $table->index(['entity', 'entity_id'], 'idx_audit_entity');
             $table->index('admin_id', 'idx_admin');
             $table->index('event_timestamp', 'idx_event_ts');
         });

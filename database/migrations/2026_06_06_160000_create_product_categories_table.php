@@ -21,7 +21,7 @@ return new class extends Migration
             $table->unsignedBigInteger('event_updated_at')->nullable();
             $table->timestamps();
 
-            $table->index('is_active', 'idx_active');
+            $table->index('is_active', 'idx_pc_active');
             $table->index('sort_order', 'idx_sort');
         });
     }

@@ -18,11 +18,15 @@ return new class extends Migration
             // integer template_id. Indexed for recurring-instance lookups.
             $table->string('source_template_key', 150)->nullable()->after('template_id');
 
-            $table->index(['source_template_key', 'scheduled_date'], 'idx_source_template_date');
+            $table->index(['source_template_key', 'scheduled_date'], 'idx_ct_source_template_date');
         });
 
         // RTDB uses status 'overdue' which the original enum lacks.
-        DB::statement("ALTER TABLE cashier_tasks MODIFY COLUMN status ENUM('pending','in_progress','done','overdue','cancelled','failed') NOT NULL DEFAULT 'pending'");
+        // ENUM MODIFY is MySQL-only; sqlite (tests) stores enums as text and
+        // accepts any string, so the new value works without a schema change.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE cashier_tasks MODIFY COLUMN status ENUM('pending','in_progress','done','overdue','cancelled','failed') NOT NULL DEFAULT 'pending'");
+        }
     }
 
     public function down(): void
@@ -32,6 +36,8 @@ return new class extends Migration
             $table->dropColumn(['firebase_payload', 'source_template_key']);
         });
 
-        DB::statement("ALTER TABLE cashier_tasks MODIFY COLUMN status ENUM('pending','in_progress','done','cancelled','failed') NOT NULL DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE cashier_tasks MODIFY COLUMN status ENUM('pending','in_progress','done','cancelled','failed') NOT NULL DEFAULT 'pending'");
+        }
     }
 };

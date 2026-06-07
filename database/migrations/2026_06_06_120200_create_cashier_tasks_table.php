@@ -34,7 +34,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['assigned_cashier_id', 'scheduled_date'], 'idx_cashier_date');
-            $table->index(['scheduled_date', 'status'], 'idx_date_status');
+            $table->index(['scheduled_date', 'status'], 'idx_cashier_date_status');
             $table->index(['template_id', 'scheduled_date'], 'idx_template_date');
         });
     }

@@ -24,7 +24,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('retail_tag', 'idx_retail_tag');
-            $table->index('is_active', 'idx_active');
+            $table->index('is_active', 'idx_ws_active');
         });
     }
 

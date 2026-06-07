@@ -23,7 +23,7 @@ return new class extends Migration
             $table->unsignedBigInteger('event_timestamp')->nullable(); // created_at epoch dari Firebase
             $table->timestamps();
 
-            $table->index(['waiter_id', 'report_date'], 'idx_waiter_date');
+            $table->index(['waiter_id', 'report_date'], 'idx_war_waiter_date');
             $table->index('report_date', 'idx_report_date');
         });
     }

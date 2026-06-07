@@ -11,6 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
         DB::statement("
             ALTER TABLE payroll_transactions
             MODIFY COLUMN type ENUM(
@@ -28,6 +31,9 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
         // Revert: hapus cash_payout dari enum.
         // Catatan: jika sudah ada baris dengan type=cash_payout, harus diubah dulu sebelum migrate down.
         DB::statement("

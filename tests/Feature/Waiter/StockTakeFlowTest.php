@@ -5,11 +5,27 @@ namespace Tests\Feature\Waiter;
 use App\Services\BonusService;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use Tests\TestCase;
 
 class StockTakeFlowTest extends TestCase
 {
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // These tests mock FirebaseService entirely (RTDB path), so force every
+        // read-from-MySQL flag off to exercise the mocked path they were built for.
+        config([
+            'features.mysql_waiter_tasks' => false,
+            'features.mysql_rack_products' => false,
+            'features.mysql_cashier_tasks' => false,
+            'features.mysql_attendance' => false,
+        ]);
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

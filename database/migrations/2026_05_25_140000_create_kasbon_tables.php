@@ -54,7 +54,9 @@ return new class extends Migration
         });
 
         // Alter payroll_transactions.type to add kasbon types
-        DB::statement("ALTER TABLE payroll_transactions MODIFY COLUMN `type` ENUM('salary_credit', 'bonus_credit', 'manual_credit', 'withdrawal', 'kasbon_disbursement', 'kasbon_deduct') NOT NULL");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE payroll_transactions MODIFY COLUMN `type` ENUM('salary_credit', 'bonus_credit', 'manual_credit', 'withdrawal', 'kasbon_disbursement', 'kasbon_deduct') NOT NULL");
+        }
 
         // Seed default configs
         DB::table('kasbon_configs')->insert([
@@ -73,6 +75,8 @@ return new class extends Migration
         Schema::dropIfExists('kasbon_configs');
 
         // Revert payroll_transactions.type
-        DB::statement("ALTER TABLE payroll_transactions MODIFY COLUMN `type` ENUM('salary_credit', 'bonus_credit', 'manual_credit', 'withdrawal') NOT NULL");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE payroll_transactions MODIFY COLUMN `type` ENUM('salary_credit', 'bonus_credit', 'manual_credit', 'withdrawal') NOT NULL");
+        }
     }
 };

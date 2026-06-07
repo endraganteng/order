@@ -62,7 +62,7 @@ return new class extends Migration
             $table->string('created_by', 100)->nullable();
             $table->timestamps();
 
-            $table->index(['assigned_waiter_id', 'scheduled_for_date'], 'idx_waiter_date');
+            $table->index(['assigned_waiter_id', 'scheduled_for_date'], 'idx_wt_waiter_date');
             $table->index(['scheduled_for_date', 'status'], 'idx_date_status');
             $table->index('sync_status', 'idx_sync_status');
             $table->index('publish_status', 'idx_publish_status');

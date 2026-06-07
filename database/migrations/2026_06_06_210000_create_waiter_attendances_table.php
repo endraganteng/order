@@ -24,8 +24,8 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['waiter_id', 'date'], 'uniq_waiter_date');
-            $table->index('date', 'idx_date');
-            $table->index('status', 'idx_status');
+            $table->index('date', 'idx_wa_date');
+            $table->index('status', 'idx_wa_status');
         });
     }
 

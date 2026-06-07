@@ -16,19 +16,25 @@ return new class extends Migration
             $table->decimal('hpp', 15, 2)->default(0)->after('terjual_qty');
         });
 
-        // Drop the generated column and recreate with new formula
-        DB::statement('ALTER TABLE daily_product_trackings DROP COLUMN profit');
-        DB::statement('ALTER TABLE daily_product_trackings ADD COLUMN profit DECIMAL(15,2) GENERATED ALWAYS AS (penjualan_nominal - hpp) STORED AFTER hpp');
+        // Generated columns are MySQL-only; sqlite (tests) skips the recompute.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE daily_product_trackings DROP COLUMN profit');
+            DB::statement('ALTER TABLE daily_product_trackings ADD COLUMN profit DECIMAL(15,2) GENERATED ALWAYS AS (penjualan_nominal - hpp) STORED AFTER hpp');
+        }
     }
 
     public function down(): void
     {
-        DB::statement('ALTER TABLE daily_product_trackings DROP COLUMN profit');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE daily_product_trackings DROP COLUMN profit');
+        }
 
         Schema::table('daily_product_trackings', function (Blueprint $table) {
             $table->dropColumn(['modal_kemarin_qty', 'harga_per_unit', 'terjual_qty', 'hpp']);
         });
 
-        DB::statement('ALTER TABLE daily_product_trackings ADD COLUMN profit DECIMAL(15,2) GENERATED ALWAYS AS (penjualan_nominal - stok_masuk_total) STORED');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE daily_product_trackings ADD COLUMN profit DECIMAL(15,2) GENERATED ALWAYS AS (penjualan_nominal - stok_masuk_total) STORED');
+        }
     }
 };

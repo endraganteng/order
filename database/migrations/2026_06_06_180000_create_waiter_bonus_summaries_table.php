@@ -23,7 +23,7 @@ return new class extends Migration
 
             $table->unique(['waiter_id', 'period_key'], 'uniq_waiter_period');
             $table->index('period_key', 'idx_period');
-            $table->index('status', 'idx_status');
+            $table->index('status', 'idx_wbs_status');
         });
     }
 
