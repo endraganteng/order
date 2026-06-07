@@ -1034,7 +1034,9 @@ class BonusService
             'created_by'  => $createdBy,
             'created_at'  => time(),
         ];
-        $ref->set($record);
+        if (config('features.legacy_write_manual_bonuses')) {
+            $ref->set($record);
+        }
 
         if (config('features.mysql_manual_bonuses')) {
             try {

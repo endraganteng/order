@@ -10,6 +10,7 @@ class CashierTask extends Model
         'firebase_legacy_key',
         'deterministic_key',
         'template_id',
+        'source_template_key',
         'title',
         'description',
         'assigned_cashier_id',
@@ -19,6 +20,7 @@ class CashierTask extends Model
         'is_recurring',
         'recurrence_pattern',
         'metadata',
+        'firebase_payload',
         'completed_at',
         'notes',
     ];
@@ -27,6 +29,7 @@ class CashierTask extends Model
         'scheduled_date' => 'date',
         'is_recurring' => 'boolean',
         'metadata' => 'array',
+        'firebase_payload' => 'array',
         'completed_at' => 'datetime',
     ];
 

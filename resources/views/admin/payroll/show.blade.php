@@ -288,7 +288,7 @@
                         };
                     @endphp
                     <tr style="border-bottom: 1px solid #e2e8f0;">
-                        <td style="padding: 8px 12px;">{{ \Carbon\Carbon::createFromTimestamp((int)($tx['created_at'] ?? time()))->format('d M Y H:i') }}</td>
+                        <td style="padding: 8px 12px;">{{ \Carbon\Carbon::parse($tx['created_at'] ?? now())->format('d M Y H:i') }}</td>
                         <td style="padding: 8px 12px;">{{ $typeLabel }}</td>
                         <td style="padding: 8px 12px; font-weight: 600; color: {{ $isOut ? '#dc2626' : '#059669' }};">
                             {{ $isOut ? '-' : '+' }} Rp {{ number_format($amount, 0, ',', '.') }}

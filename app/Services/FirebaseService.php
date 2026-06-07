@@ -1354,27 +1354,32 @@ class FirebaseService
             'updated_at' => time(),
         ];
 
-        $created = $this->database->getReference('product_categories')->push($payload);
+        $legacyKey = null;
+        if (config('features.legacy_write_product_categories')) {
+            $legacyKey = (string) $this->database->getReference('product_categories')->push($payload)->getKey();
+        }
 
         if (config('features.mysql_product_categories')) {
             try {
-                \App\Models\ProductCategory::updateOrCreate(
-                    ['firebase_legacy_key' => (string) $created->getKey()],
-                    [
-                        'name' => $payload['name'],
-                        'description' => $payload['description'] ?: null,
-                        'sort_order' => $payload['sort_order'],
-                        'is_active' => $payload['is_active'],
-                        'event_created_at' => $payload['created_at'],
-                        'event_updated_at' => $payload['updated_at'],
-                    ]
-                );
+                $attrs = [
+                    'name' => $payload['name'],
+                    'description' => $payload['description'] ?: null,
+                    'sort_order' => $payload['sort_order'],
+                    'is_active' => $payload['is_active'],
+                    'event_created_at' => $payload['created_at'],
+                    'event_updated_at' => $payload['updated_at'],
+                ];
+                if ($legacyKey !== null) {
+                    \App\Models\ProductCategory::updateOrCreate(['firebase_legacy_key' => $legacyKey], $attrs);
+                } else {
+                    \App\Models\ProductCategory::create($attrs);
+                }
             } catch (\Throwable $e) {
                 report($e);
             }
         }
 
-        return array_merge(['id' => $created->getKey()], $payload);
+        return array_merge(['id' => $legacyKey], $payload);
     }
 
     /**
@@ -3088,23 +3093,28 @@ class FirebaseService
             'created_at' => time(),
         ];
 
-        $ref = $this->database->getReference('waiter_activity_reports')->push($payload);
+        $legacyKey = null;
+        if (config('features.legacy_write_activity_reports')) {
+            $legacyKey = (string) $this->database->getReference('waiter_activity_reports')->push($payload)->getKey();
+        }
 
         if (config('features.mysql_activity_reports')) {
             try {
                 $createdAt = $payload['created_at'] ?? null;
-                \App\Models\WaiterActivityReport::updateOrCreate(
-                    ['firebase_legacy_key' => (string) $ref->getKey()],
-                    [
-                        'waiter_id' => (string) ($payload['waiter_id'] ?? ''),
-                        'waiter_name' => $payload['waiter_name'] ?? null,
-                        'waiter_email' => $payload['waiter_email'] ?? null,
-                        'report_date' => $payload['report_date'] ?? now()->format('Y-m-d'),
-                        'activity_text' => $payload['activity_text'] ?? null,
-                        'activity_items' => $payload['activity_items'] ?? null,
-                        'event_timestamp' => is_numeric($createdAt) ? (int) $createdAt : null,
-                    ]
-                );
+                $attrs = [
+                    'waiter_id' => (string) ($payload['waiter_id'] ?? ''),
+                    'waiter_name' => $payload['waiter_name'] ?? null,
+                    'waiter_email' => $payload['waiter_email'] ?? null,
+                    'report_date' => $payload['report_date'] ?? now()->format('Y-m-d'),
+                    'activity_text' => $payload['activity_text'] ?? null,
+                    'activity_items' => $payload['activity_items'] ?? null,
+                    'event_timestamp' => is_numeric($createdAt) ? (int) $createdAt : null,
+                ];
+                if ($legacyKey !== null) {
+                    \App\Models\WaiterActivityReport::updateOrCreate(['firebase_legacy_key' => $legacyKey], $attrs);
+                } else {
+                    \App\Models\WaiterActivityReport::create($attrs);
+                }
             } catch (\Throwable $e) {
                 report($e);
             }
@@ -3112,7 +3122,7 @@ class FirebaseService
 
         return [
             'success' => true,
-            'id' => $ref->getKey(),
+            'id' => $legacyKey,
         ];
     }
 
@@ -5832,8 +5842,71 @@ class FirebaseService
     }
 
     /**
-     * Build waiter task payload from base data + target waiter.
+     * Dual-write a freshly created Firebase cashier task into MySQL when the
+     * flag is on. Idempotent via firebase_legacy_key. Mirrors the full Firebase
+     * payload into firebase_payload so the cashier portal keeps every field.
+     * Failure is logged, never fatal during rollout.
      */
+    protected function dualWriteCashierTaskToMysql(string $firebaseKey, array $payload): void
+    {
+        if (! config('features.mysql_cashier_tasks')) {
+            return;
+        }
+
+        try {
+            $createdAt = $payload['created_at'] ?? null;
+            $completedAt = $payload['completed_at'] ?? null;
+            $rawStatus = $payload['status'] ?? 'pending';
+            $validStatus = ['pending', 'in_progress', 'done', 'overdue', 'cancelled', 'failed'];
+            \App\Models\CashierTask::updateOrCreate(
+                ['firebase_legacy_key' => $firebaseKey],
+                [
+                    'deterministic_key' => 'ct_legacy_'.substr(hash('sha256', $firebaseKey), 0, 32),
+                    'source_template_key' => isset($payload['source_template_id']) ? (string) $payload['source_template_id'] : null,
+                    'title' => (string) ($payload['title'] ?? 'Untitled'),
+                    'description' => $payload['description'] ?? null,
+                    'scheduled_date' => $payload['scheduled_for_date'] ?? now()->format('Y-m-d'),
+                    'scheduled_time' => $payload['scheduled_time'] ?? null,
+                    'status' => in_array($rawStatus, $validStatus, true) ? $rawStatus : 'pending',
+                    'is_recurring' => (bool) ($payload['is_recurring_instance'] ?? false),
+                    'recurrence_pattern' => $payload['recurrence_type'] ?? null,
+                    'notes' => $payload['completed_note'] ?? null,
+                    'firebase_payload' => $payload,
+                    'completed_at' => is_numeric($completedAt) ? date('Y-m-d H:i:s', (int) $completedAt) : null,
+                    'created_at' => is_numeric($createdAt) ? date('Y-m-d H:i:s', (int) $createdAt) : null,
+                ]
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Reconstruct the RTDB cashier-task shape from a MySQL row. Prefers the
+     * verbatim firebase_payload; falls back to structured columns for rows
+     * seeded before the payload column existed. 'id' is the legacy key the
+     * portal already expects.
+     */
+    protected function cashierRowToPayload(\App\Models\CashierTask $row): array
+    {
+        $id = $row->firebase_legacy_key ?: (string) $row->id;
+        $payload = is_array($row->firebase_payload) ? $row->firebase_payload : [];
+
+        if (empty($payload)) {
+            $payload = [
+                'title' => $row->title,
+                'description' => $row->description,
+                'status' => $row->status,
+                'scheduled_for_date' => optional($row->scheduled_date)->format('Y-m-d'),
+                'scheduled_time' => $row->scheduled_time,
+                'source_template_id' => $row->source_template_key,
+                'is_recurring_instance' => (bool) $row->is_recurring,
+                'created_at' => optional($row->created_at)->timestamp,
+            ];
+        }
+
+        return array_merge(['id' => $id], $payload);
+    }
     protected function buildWaiterTaskPayload(array $data, array $waiter, array $overrides = [])
     {
         $taskType = (string) ($data['task_type'] ?? 'general');
@@ -6555,8 +6628,14 @@ class FirebaseService
             'completed_by_worker_name' => null,
         ];
 
-        $this->database->getReference('cashier_tasks')
-            ->push($taskData);
+        $legacyKey = null;
+        if (config('features.legacy_write_cashier_tasks')) {
+            $legacyKey = (string) $this->database->getReference('cashier_tasks')->push($taskData)->getKey();
+        } else {
+            $legacyKey = 'ct_local_'.substr(hash('sha256', json_encode($taskData).microtime()), 0, 24);
+        }
+
+        $this->dualWriteCashierTaskToMysql($legacyKey, $taskData);
     }
 
     /**
@@ -6564,6 +6643,12 @@ class FirebaseService
      */
     public function getTasks()
     {
+        if (config('features.mysql_cashier_tasks')) {
+            return \App\Models\CashierTask::orderByDesc('created_at')->get()
+                ->map(fn ($row) => $this->cashierRowToPayload($row))
+                ->all();
+        }
+
         $reference = $this->database->getReference('cashier_tasks');
         $snapshot = $reference->getSnapshot();
 
@@ -6599,18 +6684,25 @@ class FirebaseService
      */
     public function updateTaskStatus($id, $status, $note = null, $workerId = null, $workerName = null)
     {
+        $useMysql = config('features.mysql_cashier_tasks');
+        $mysqlRow = $useMysql
+            ? \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->first()
+            : null;
+
         $taskReference = $this->database->getReference('cashier_tasks/'.$id);
         $snapshot = $taskReference->getSnapshot();
 
-        if (! $snapshot->exists()) {
+        if (! $snapshot->exists() && ! $mysqlRow) {
             return [
                 'success' => false,
                 'message' => 'Tugas tidak ditemukan',
             ];
         }
 
-        $task = $snapshot->getValue();
-        $currentStatus = $task['status'] ?? 'pending';
+        $task = $snapshot->exists()
+            ? $snapshot->getValue()
+            : (is_array($mysqlRow->firebase_payload) ? $mysqlRow->firebase_payload : []);
+        $currentStatus = $task['status'] ?? ($mysqlRow->status ?? 'pending');
 
         if ($currentStatus !== 'pending') {
             return [
@@ -6627,6 +6719,14 @@ class FirebaseService
                 'completed_at' => $now,
                 'completed_note' => 'Auto: batas waktu habis',
             ]);
+
+            if (config('features.mysql_cashier_tasks')) {
+                \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->update([
+                    'status' => 'overdue',
+                    'completed_at' => date('Y-m-d H:i:s', $now),
+                    'notes' => 'Auto: batas waktu habis',
+                ]);
+            }
 
             return [
                 'success' => false,
@@ -6650,6 +6750,17 @@ class FirebaseService
 
         $taskReference->update($updates);
 
+        if (config('features.mysql_cashier_tasks')) {
+            $mysqlUpdates = [
+                'status' => $status,
+                'completed_at' => date('Y-m-d H:i:s', $now),
+            ];
+            if (! empty($note)) {
+                $mysqlUpdates['notes'] = $note;
+            }
+            \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->update($mysqlUpdates);
+        }
+
         return [
             'success' => true,
             'message' => 'Status tugas berhasil diupdate',
@@ -6661,8 +6772,14 @@ class FirebaseService
      */
     public function deleteTask($id)
     {
-        $this->database->getReference('cashier_tasks/'.$id)
-            ->remove();
+        if (config('features.legacy_write_cashier_tasks')) {
+            $this->database->getReference('cashier_tasks/'.$id)
+                ->remove();
+        }
+
+        if (config('features.mysql_cashier_tasks')) {
+            \App\Models\CashierTask::where('firebase_legacy_key', (string) $id)->delete();
+        }
     }
 
     /**
@@ -6842,8 +6959,14 @@ class FirebaseService
                 'completed_by_worker_name' => null,
             ];
 
-            $this->database->getReference('cashier_tasks')
-                ->push($taskData);
+            $legacyKey = null;
+            if (config('features.legacy_write_cashier_tasks')) {
+                $legacyKey = (string) $this->database->getReference('cashier_tasks')->push($taskData)->getKey();
+            } else {
+                $legacyKey = 'ct_local_'.substr(hash('sha256', json_encode($taskData).$template['id']), 0, 24);
+            }
+
+            $this->dualWriteCashierTaskToMysql($legacyKey, $taskData);
 
             $this->database->getReference('cashier_task_templates/'.$template['id'])
                 ->update([
@@ -6902,9 +7025,21 @@ class FirebaseService
      */
     protected function getExistingRecurringMapForDate($date)
     {
+        $map = [];
+
+        if (config('features.mysql_cashier_tasks')) {
+            $rows = \App\Models\CashierTask::where('scheduled_date', $date)
+                ->where('status', 'pending')
+                ->whereNotNull('source_template_key')
+                ->pluck('source_template_key');
+            foreach ($rows as $key) {
+                $map[$key] = true;
+            }
+            return $map;
+        }
+
         $reference = $this->database->getReference('cashier_tasks');
         $snapshot = $reference->getSnapshot();
-        $map = [];
 
         if (! $snapshot->exists()) {
             return $map;
@@ -6928,6 +7063,13 @@ class FirebaseService
      */
     protected function hasPendingRecurringInstanceForDate($templateId, $date)
     {
+        if (config('features.mysql_cashier_tasks')) {
+            return \App\Models\CashierTask::where('source_template_key', (string) $templateId)
+                ->where('scheduled_date', $date)
+                ->where('status', 'pending')
+                ->exists();
+        }
+
         $reference = $this->database->getReference('cashier_tasks')
             ->orderByChild('source_template_id')
             ->equalTo($templateId);
@@ -6951,6 +7093,13 @@ class FirebaseService
      */
     protected function hasDoneRecurringInstanceForDate($templateId, $date)
     {
+        if (config('features.mysql_cashier_tasks')) {
+            return \App\Models\CashierTask::where('source_template_key', (string) $templateId)
+                ->where('scheduled_date', $date)
+                ->where('status', 'done')
+                ->exists();
+        }
+
         $reference = $this->database->getReference('cashier_tasks')
             ->orderByChild('source_template_id')
             ->equalTo($templateId);
@@ -10435,24 +10584,29 @@ class FirebaseService
             'date' => now()->format('Y-m-d'),
         ];
 
-        $newRef = $this->database->getReference('audit_logs')->push($entry);
+        $legacyKey = null;
+        if (config('features.legacy_write_audit_logs')) {
+            $legacyKey = (string) $this->database->getReference('audit_logs')->push($entry)->getKey();
+        }
 
         if (config('features.mysql_audit_logs')) {
             try {
-                \App\Models\AuditLog::updateOrCreate(
-                    ['firebase_legacy_key' => (string) $newRef->getKey()],
-                    [
-                        'action' => $action,
-                        'entity' => $entity,
-                        'entity_id' => $entityId,
-                        'admin_id' => (string) $adminId,
-                        'admin_name' => (string) $adminName,
-                        'details' => $details ?: null,
-                        'ip' => $entry['ip'],
-                        'event_timestamp' => $entry['timestamp'],
-                        'event_date' => $entry['date'],
-                    ]
-                );
+                $attrs = [
+                    'action' => $action,
+                    'entity' => $entity,
+                    'entity_id' => $entityId,
+                    'admin_id' => (string) $adminId,
+                    'admin_name' => (string) $adminName,
+                    'details' => $details ?: null,
+                    'ip' => $entry['ip'],
+                    'event_timestamp' => $entry['timestamp'],
+                    'event_date' => $entry['date'],
+                ];
+                if ($legacyKey !== null) {
+                    \App\Models\AuditLog::updateOrCreate(['firebase_legacy_key' => $legacyKey], $attrs);
+                } else {
+                    \App\Models\AuditLog::create($attrs);
+                }
             } catch (\Throwable $e) {
                 report($e);
             }

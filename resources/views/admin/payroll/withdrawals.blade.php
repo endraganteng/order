@@ -37,7 +37,7 @@
                     $txId = $tx['id'];
                     $txName = $tx['waiter_name'] ?? 'Karyawan';
                     $txAmount = (int)($tx['amount'] ?? 0);
-                    $txDate = \Carbon\Carbon::createFromTimestamp((int)($tx['created_at'] ?? time()))->format('d M Y H:i');
+                    $txDate = \Carbon\Carbon::parse($tx['created_at'] ?? now())->format('d M Y H:i');
                     $txBank = $tx['bank_name'] ?? '-';
                     $txAcc = $tx['bank_account_number'] ?? '-';
                     $txHolder = $tx['bank_account_holder'] ?? '-';

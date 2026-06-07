@@ -234,24 +234,30 @@ class RetailScheduleService
                 // Create new
                 $template['created_at'] = time();
                 $template['updated_at'] = time();
-                $newRef = $this->database->getReference('work_shifts')->push($template);
-                $resolved[$tag] = $newRef->getKey();
+                $legacyKey = null;
+                if (config('features.legacy_write_work_shifts')) {
+                    $legacyKey = (string) $this->database->getReference('work_shifts')->push($template)->getKey();
+                }
+                $resolved[$tag] = $legacyKey;
 
                 if (config('features.mysql_work_shifts')) {
                     try {
-                        \App\Models\WorkShift::updateOrCreate(
-                            ['firebase_legacy_key' => (string) $newRef->getKey()],
-                            [
-                                'name' => $template['name'] ?? '',
-                                'clock_in_time' => $template['clock_in_time'] ?? null,
-                                'clock_out_time' => $template['clock_out_time'] ?? null,
-                                'late_tolerance_minutes' => (int) ($template['late_tolerance_minutes'] ?? 0),
-                                'is_active' => (bool) ($template['is_active'] ?? true),
-                                'retail_tag' => $template['retail_tag'] ?? null,
-                                'event_created_at' => $template['created_at'] ?? null,
-                                'event_updated_at' => $template['updated_at'] ?? null,
-                            ]
-                        );
+                        $attrs = [
+                            'name' => $template['name'] ?? '',
+                            'clock_in_time' => $template['clock_in_time'] ?? null,
+                            'clock_out_time' => $template['clock_out_time'] ?? null,
+                            'late_tolerance_minutes' => (int) ($template['late_tolerance_minutes'] ?? 0),
+                            'is_active' => (bool) ($template['is_active'] ?? true),
+                            'retail_tag' => $template['retail_tag'] ?? null,
+                            'event_created_at' => $template['created_at'] ?? null,
+                            'event_updated_at' => $template['updated_at'] ?? null,
+                        ];
+                        if ($legacyKey !== null) {
+                            $model = \App\Models\WorkShift::updateOrCreate(['firebase_legacy_key' => $legacyKey], $attrs);
+                        } else {
+                            $model = \App\Models\WorkShift::create($attrs);
+                            $resolved[$tag] = (string) $model->id;
+                        }
                     } catch (\Throwable $e) {
                         report($e);
                     }
