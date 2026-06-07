@@ -1386,6 +1386,7 @@ class FinanceService
     {
         $totalPendapatan = (int) DB::table('finance_daily_data')->whereBetween('tanggal', [$from, $to])->sum('total_pendapatan');
 
+        // Primary: allocations active within the requested period
         $allocations = DB::table('finance_allocations')
             ->join('finance_categories', 'finance_allocations.finance_category_id', '=', 'finance_categories.id')
             ->where('finance_allocations.is_active', true)
@@ -1393,6 +1394,21 @@ class FinanceService
             ->where(fn($q) => $q->whereNull('finance_allocations.end_date')->orWhere('finance_allocations.end_date', '>=', $from))
             ->select('finance_allocations.*', 'finance_categories.name as category_name')
             ->get();
+
+        // Fallback: if no allocations found for this period, use the most recent ones
+        if ($allocations->isEmpty()) {
+            $allocations = DB::table('finance_allocations')
+                ->join('finance_categories', 'finance_allocations.finance_category_id', '=', 'finance_categories.id')
+                ->where('finance_allocations.is_active', true)
+                ->whereIn('finance_allocations.id', function ($query) {
+                    $query->select(DB::raw('MAX(id)'))
+                        ->from('finance_allocations')
+                        ->where('is_active', true)
+                        ->groupBy('finance_category_id');
+                })
+                ->select('finance_allocations.*', 'finance_categories.name as category_name')
+                ->get();
+        }
 
         $result = [];
         foreach ($allocations as $alloc) {
