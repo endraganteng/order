@@ -35,3 +35,4 @@ backup-rtdb-*.json
 resources/views/webhooks/dana_inspect.blade.php
 resources/views/webhooks/partials/dana_entry.blade.php
 .claude/
+/storage/app/screenshots
