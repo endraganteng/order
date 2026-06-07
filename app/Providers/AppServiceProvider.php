@@ -49,6 +49,16 @@ class AppServiceProvider extends ServiceProvider
     {
         \Illuminate\Support\Facades\Schema::defaultStringLength(191);
 
+        // DB-backed feature flags override config('features.*') so they can be
+        // toggled from the settings UI. Guarded: skip if table not yet migrated.
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('app_settings')) {
+                app(\App\Services\FeatureFlagService::class)->applyToConfig();
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         RateLimiter::for('waiter-poll', function (Request $request) {
             $waiterId = (string) $request->session()->get('waiter_id', '');
             $waiterIdentity = $waiterId !== '' ? 'waiter:'.$waiterId : 'ip:'.$request->ip();

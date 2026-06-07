@@ -1458,6 +1458,12 @@ class FirebaseService
      */
     public function getProducts()
     {
+        if (config('features.mysql_rack_products')) {
+            return \App\Models\RackProduct::orderBy('name')->get()
+                ->map(fn ($row) => $this->rackProductRowToPayload($row))
+                ->all();
+        }
+
         $reference = $this->database->getReference('rack_products');
         $snapshot = $reference->getSnapshot();
 
@@ -1490,6 +1496,11 @@ class FirebaseService
      */
     public function getProductById($id)
     {
+        if (config('features.mysql_rack_products')) {
+            $row = \App\Models\RackProduct::where('firebase_legacy_key', (string) $id)->first();
+            return $row ? $this->rackProductRowToPayload($row) : null;
+        }
+
         $reference = $this->database->getReference('rack_products/'.$id);
         $snapshot = $reference->getSnapshot();
 
@@ -1517,9 +1528,16 @@ class FirebaseService
             'updated_at' => time(),
         ];
 
-        $created = $this->database->getReference('rack_products')->push($payload);
+        $legacyKey = null;
+        if (config('features.legacy_write_rack_products')) {
+            $legacyKey = (string) $this->database->getReference('rack_products')->push($payload)->getKey();
+        } else {
+            $legacyKey = 'rp_local_'.substr(hash('sha256', json_encode($payload).microtime()), 0, 24);
+        }
 
-        return array_merge(['id' => $created->getKey()], $payload);
+        $this->dualWriteRackProductToMysql($legacyKey, $payload);
+
+        return array_merge(['id' => $legacyKey], $payload);
     }
 
     /**
@@ -1538,7 +1556,20 @@ class FirebaseService
             'updated_at' => time(),
         ];
 
-        $this->database->getReference('rack_products/'.$id)->update($payload);
+        if (config('features.legacy_write_rack_products')) {
+            $this->database->getReference('rack_products/'.$id)->update($payload);
+        }
+
+        if (config('features.mysql_rack_products')) {
+            \App\Models\RackProduct::where('firebase_legacy_key', (string) $id)->update([
+                'name' => $payload['name'],
+                'category_id' => $payload['category_id'],
+                'standard_qty' => $payload['standard_qty'],
+                'unit' => $payload['unit'],
+                'is_active' => $payload['is_active'],
+                'event_updated_at' => $payload['updated_at'],
+            ]);
+        }
     }
 
     /**
@@ -1566,7 +1597,13 @@ class FirebaseService
             }
         }
 
-        $this->database->getReference('rack_products/'.$id)->remove();
+        if (config('features.legacy_write_rack_products')) {
+            $this->database->getReference('rack_products/'.$id)->remove();
+        }
+
+        if (config('features.mysql_rack_products')) {
+            \App\Models\RackProduct::where('firebase_legacy_key', (string) $id)->delete();
+        }
     }
 
     /**
@@ -5907,6 +5944,60 @@ class FirebaseService
 
         return array_merge(['id' => $id], $payload);
     }
+
+    /**
+     * Dual-write a master product into MySQL when the flag is on. Idempotent
+     * via firebase_legacy_key. Mirrors verbatim payload into firebase_payload.
+     */
+    protected function dualWriteRackProductToMysql(string $firebaseKey, array $payload): void
+    {
+        if (! config('features.mysql_rack_products')) {
+            return;
+        }
+
+        try {
+            \App\Models\RackProduct::updateOrCreate(
+                ['firebase_legacy_key' => $firebaseKey],
+                [
+                    'name' => (string) ($payload['name'] ?? ''),
+                    'category_id' => $payload['category_id'] ?? null,
+                    'standard_qty' => max(0, (int) ($payload['standard_qty'] ?? 0)),
+                    'unit' => (string) ($payload['unit'] ?? 'pcs'),
+                    'is_active' => (bool) ($payload['is_active'] ?? true),
+                    'firebase_payload' => $payload,
+                    'event_created_at' => $payload['created_at'] ?? null,
+                    'event_updated_at' => $payload['updated_at'] ?? null,
+                ]
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Reconstruct the RTDB master-product shape from a MySQL row. Prefers
+     * verbatim firebase_payload; falls back to columns for pre-payload rows.
+     */
+    protected function rackProductRowToPayload(\App\Models\RackProduct $row): array
+    {
+        $id = $row->firebase_legacy_key ?: (string) $row->id;
+        $payload = is_array($row->firebase_payload) ? $row->firebase_payload : [];
+
+        if (empty($payload)) {
+            $payload = [
+                'name' => $row->name,
+                'category_id' => $row->category_id,
+                'standard_qty' => $row->standard_qty,
+                'unit' => $row->unit,
+                'is_active' => (bool) $row->is_active,
+                'created_at' => $row->event_created_at,
+                'updated_at' => $row->event_updated_at,
+            ];
+        }
+
+        return array_merge(['id' => $id], $payload);
+    }
+
     protected function buildWaiterTaskPayload(array $data, array $waiter, array $overrides = [])
     {
         $taskType = (string) ($data['task_type'] ?? 'general');

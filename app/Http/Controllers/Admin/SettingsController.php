@@ -24,7 +24,53 @@ class SettingsController extends Controller
         $settings = $this->firebase->getSettings();
         $settings['supervisor_pin'] = app(\App\Services\FinanceService::class)->getSetting('supervisor_pin');
 
-        return view('admin.settings', compact('settings'));
+        $featureFlags = $this->resolveFeatureFlags();
+
+        return view('admin.settings', compact('settings', 'featureFlags'));
+    }
+
+    /**
+     * Resolve current value of UI-toggleable feature flags (DB override
+     * already applied to config at boot, so config() reflects effective value).
+     */
+    private function resolveFeatureFlags(): array
+    {
+        $keys = [
+            'mysql_cashier_tasks',
+            'legacy_write_cashier_tasks',
+            'legacy_write_waiter_tasks',
+            'legacy_write_attendance',
+            'legacy_write_bonus_summary',
+            'legacy_write_penalties',
+        ];
+
+        $flags = [];
+        foreach ($keys as $key) {
+            $flags[$key] = (bool) config('features.'.$key);
+        }
+
+        return $flags;
+    }
+
+    public function updateFeatureFlags(Request $request)
+    {
+        $svc = app(\App\Services\FeatureFlagService::class);
+        $allowed = [
+            'mysql_cashier_tasks',
+            'legacy_write_cashier_tasks',
+            'legacy_write_waiter_tasks',
+            'legacy_write_attendance',
+            'legacy_write_bonus_summary',
+            'legacy_write_penalties',
+        ];
+
+        foreach ($allowed as $key) {
+            $svc->set($key, $request->boolean($key));
+        }
+
+        $this->firebase->logAuditAction('update', 'feature_flags', null, $request->only($allowed));
+
+        return back()->with('success', 'Feature flags berhasil diupdate');
     }
 
     public function update(UpdateSettingsRequest $request)

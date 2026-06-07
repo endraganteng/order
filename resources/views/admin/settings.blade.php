@@ -188,4 +188,45 @@
             </button>
         </form>
     </div>
+
+    <div class="card" style="margin-top: 24px;">
+        <h3 style="margin-bottom: 8px; color: #333;">Feature Flags (MySQL / Firebase)</h3>
+        <p style="color: #856404; background: #fff3cd; border: 1px solid #ffeeba; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 20px;">
+            ⚠️ Pengaturan teknis. Salah ubah bisa bikin data tidak sinkron antara MySQL dan Firebase. Ubah hanya jika paham dampaknya.
+        </p>
+
+        <form method="POST" action="{{ route('admin.settings.feature_flags') }}">
+            @csrf
+
+            @php
+                $flagLabels = [
+                    'mysql_cashier_tasks' => 'Baca cashier tasks dari MySQL',
+                    'legacy_write_cashier_tasks' => 'Tulis cashier tasks ke Firebase (legacy)',
+                    'legacy_write_waiter_tasks' => 'Tulis waiter tasks ke Firebase (legacy)',
+                    'legacy_write_attendance' => 'Tulis attendance ke Firebase (legacy)',
+                    'legacy_write_bonus_summary' => 'Tulis bonus summary ke Firebase (legacy)',
+                    'legacy_write_penalties' => 'Tulis penalties ke Firebase (legacy)',
+                ];
+            @endphp
+
+            @foreach($flagLabels as $key => $label)
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0;">
+                    <div>
+                        <label for="flag_{{ $key }}" style="color: #555; font-weight: 600; cursor: pointer;">{{ $label }}</label>
+                        <code style="display: block; color: #999; font-size: 11px; margin-top: 2px;">{{ $key }}</code>
+                    </div>
+                    <label style="position: relative; display: inline-block;">
+                        <input type="hidden" name="{{ $key }}" value="0">
+                        <input type="checkbox" id="flag_{{ $key }}" name="{{ $key }}" value="1"
+                            {{ ($featureFlags[$key] ?? false) ? 'checked' : '' }}
+                            style="width: 20px; height: 20px; cursor: pointer;">
+                    </label>
+                </div>
+            @endforeach
+
+            <button type="submit" class="btn" style="background: #007bff; color: white; margin-top: 20px;">
+                💾 Simpan Feature Flags
+            </button>
+        </form>
+    </div>
 @endsection

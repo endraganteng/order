@@ -102,6 +102,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Settings
         Route::get('settings', [SettingsController::class, 'show'])->name('settings');
         Route::post('settings', [SettingsController::class, 'update'])->name('settings.update');
+        Route::post('settings/feature-flags', [SettingsController::class, 'updateFeatureFlags'])->name('settings.feature_flags');
         Route::post('settings/test-fonnte', [SettingsController::class, 'testFonnte'])->name('settings.test_fonnte');
 
         // Role Permissions Management (supervisor only)
