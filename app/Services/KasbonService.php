@@ -133,6 +133,7 @@ class KasbonService
 
         // Langsung cair — potong saldo payroll (boleh negatif)
         // Use advisory lock to prevent double-submit race condition
+        try {
         return DB::transaction(function () use ($waiterId, $waiter, $amount, $reason, $createdBy, $cashAccountId) {
             // Advisory lock per waiter — prevents concurrent kasbon creation
             $lockKey = 'kasbon_create_' . $waiterId;
@@ -146,6 +147,16 @@ class KasbonService
                 $limitInfo = $this->calculateAvailableLimit($waiterId);
                 if ($amount > $limitInfo['available']) {
                     return ['success' => false, 'message' => 'Melebihi limit kasbon. Tersedia: Rp ' . number_format($limitInfo['available'], 0, ',', '.')];
+                }
+
+                // Enforce max active kasbon per waiter
+                $maxActive = (int) ($this->getConfig()['max_active_kasbon'] ?? 1);
+                $activeCount = DB::table('kasbons')
+                    ->where('waiter_id', $waiterId)
+                    ->where('status', 'active')
+                    ->count();
+                if ($activeCount >= $maxActive) {
+                    return ['success' => false, 'message' => 'Sudah ada ' . $activeCount . ' kasbon aktif. Maksimal ' . $maxActive . '.'];
                 }
 
                 $newBalance = $this->payroll->adjustBalancePublic($waiterId, -$amount);
@@ -176,10 +187,13 @@ class KasbonService
                     'updated_at' => now(),
                 ]);
 
-                // Kurangi saldo kas fisik + insert mutasi
+                // Kurangi saldo kas fisik + insert mutasi (lock to prevent concurrent overdraft)
                 if ($cashAccountId) {
-                    $account = DB::table('cash_accounts')->where('id', $cashAccountId)->first();
+                    $account = DB::table('cash_accounts')->where('id', $cashAccountId)->lockForUpdate()->first();
                     if ($account) {
+                        if ((int) $account->balance < $amount) {
+                            throw new \RuntimeException('__KASBON_CASH_INSUFFICIENT__:' . number_format((int) $account->balance, 0, ',', '.'));
+                        }
                         $newCashBalance = (int) $account->balance - $amount;
                         DB::table('cash_accounts')->where('id', $cashAccountId)->update([
                             'balance' => $newCashBalance,
@@ -220,6 +234,13 @@ class KasbonService
                 $lock->release();
             }
         });
+        } catch (\RuntimeException $e) {
+            if (str_starts_with($e->getMessage(), '__KASBON_CASH_INSUFFICIENT__:')) {
+                $available = str_replace('__KASBON_CASH_INSUFFICIENT__:', '', $e->getMessage());
+                return ['success' => false, 'message' => 'Saldo kas tidak cukup. Tersedia: Rp ' . $available];
+            }
+            throw $e;
+        }
     }
 
     // =========================================================================
