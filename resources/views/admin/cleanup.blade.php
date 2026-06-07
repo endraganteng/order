@@ -6,10 +6,7 @@
     <h2 style="margin-bottom: 20px; color: #333;">🗑️ Cleanup Orders</h2>
 
     @if(session('success'))
-        <div
-            style="padding: 15px; background: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 8px; margin-bottom: 20px;">
-            {{ session('success') }}
-        </div>
+        <x-alert type="success">{{ session('success') }}</x-alert>
     @endif
 
     {{-- Statistics --}}

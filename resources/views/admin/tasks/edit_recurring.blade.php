@@ -11,13 +11,13 @@
     <h2 style="margin-bottom: 20px; color: #333; font-size: clamp(24px, 5vw, 32px);">✏️ Edit Task Berulang</h2>
 
     @if($errors->any())
-        <div class="alert" style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; margin-bottom: 20px; padding: 12px 20px; border-radius: 6px;">
+        <x-alert type="error">
             <ul style="margin: 0; padding-left: 20px;">
                 @foreach($errors->all() as $error)
                     <li>{{ $error }}</li>
                 @endforeach
             </ul>
-        </div>
+        </x-alert>
     @endif
 
     <div class="card" style="max-width: 700px; padding: 30px;">
