@@ -8255,21 +8255,7 @@ class FirebaseService
 
     public function getAttendanceByDate(string $waiterId, string $date): ?array
     {
-        if (config('features.mysql_attendance')) {
-            $row = \App\Models\WaiterAttendance::where('waiter_id', $waiterId)
-                ->where('date', $date)
-                ->first();
-            return $row && is_array($row->data) ? $row->data : ($row ? [] : null);
-        }
-
-        $ref = $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date);
-        $snapshot = $ref->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return null;
-        }
-
-        return $snapshot->getValue();
+        return app(\App\Repositories\Contracts\AttendanceRepositoryInterface::class)->forWaiterOnDate($waiterId, $date);
     }
 
     /**
@@ -8297,26 +8283,7 @@ class FirebaseService
 
     public function getAttendanceByMonth(string $waiterId, string $yearMonth): array
     {
-        $ref = $this->database->getReference('waiter_attendance/'.$waiterId);
-        $snapshot = $ref->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return [];
-        }
-
-        $all = $snapshot->getValue();
-        $filtered = [];
-        $prefix = $yearMonth.'-';
-
-        foreach ($all as $date => $record) {
-            if (strpos($date, $prefix) === 0) {
-                $filtered[$date] = $record;
-            }
-        }
-
-        ksort($filtered);
-
-        return $filtered;
+        return app(\App\Repositories\Contracts\AttendanceRepositoryInterface::class)->forWaiterInMonth($waiterId, $yearMonth);
     }
 
     /**
@@ -8324,29 +8291,7 @@ class FirebaseService
      */
     public function getAllAttendanceByDate(string $date): array
     {
-        if (config('features.mysql_attendance')) {
-            $result = [];
-            foreach (\App\Models\WaiterAttendance::where('date', $date)->get() as $row) {
-                $result[$row->waiter_id] = is_array($row->data) ? $row->data : [];
-            }
-            return $result;
-        }
-
-        $ref = $this->database->getReference('waiter_attendance');
-        $snapshot = $ref->getSnapshot();
-
-        if (! $snapshot->exists()) {
-            return [];
-        }
-
-        $result = [];
-        foreach ($snapshot->getValue() as $waiterId => $dates) {
-            if (isset($dates[$date]) && is_array($dates[$date])) {
-                $result[$waiterId] = $dates[$date];
-            }
-        }
-
-        return $result;
+        return app(\App\Repositories\Contracts\AttendanceRepositoryInterface::class)->allOnDate($date);
     }
 
     /**
@@ -8383,15 +8328,7 @@ class FirebaseService
      */
     public function deleteAttendance(string $waiterId, string $date): void
     {
-        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$date)->remove();
-
-        if (config('features.mysql_attendance')) {
-            try {
-                \App\Models\WaiterAttendance::where('waiter_id', $waiterId)->where('date', $date)->delete();
-            } catch (\Throwable $e) {
-                report($e);
-            }
-        }
+        app(\App\Repositories\Contracts\AttendanceRepositoryInterface::class)->delete($waiterId, $date);
     }
 
     /**
