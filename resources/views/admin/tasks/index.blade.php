@@ -874,11 +874,11 @@
     </script>
 
     @if(session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
+        <x-alert type="success">{{ session('success') }}</x-alert>
     @endif
 
     @if(session('error'))
-        <div class="alert alert-danger">{{ session('error') }}</div>
+        <x-alert type="error">{{ session('error') }}</x-alert>
     @endif
 
     {{-- ═══════════════════════════════════════════════════════════════

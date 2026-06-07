@@ -13,13 +13,13 @@
     </div>
 
     @if($errors->any())
-        <div class="alert alert-danger" style="margin-bottom: 20px;">
+        <x-alert type="error">
             <ul style="margin: 0; padding-left: 20px;">
                 @foreach($errors->all() as $error)
                     <li>{{ $error }}</li>
                 @endforeach
             </ul>
-        </div>
+        </x-alert>
     @endif
 
     @push('styles')
