@@ -8591,35 +8591,8 @@ class FirebaseService
      */
     public function getPenalties(?string $month = null, ?string $waiterId = null, ?string $startDate = null, ?string $endDate = null): array
     {
-        // If explicit date range provided, use range query
-        if ($startDate !== null && $endDate !== null) {
-            $snapshot = $this->database->getReference('waiter_penalties')
-                ->orderByChild('date')
-                ->startAt($startDate)
-                ->endAt($endDate)
-                ->getSnapshot();
-        } else {
-            $snapshot = $this->database->getReference('waiter_penalties')->getSnapshot();
-        }
-        if (!$snapshot->exists()) return [];
-
-        $all = $snapshot->getValue();
-        $result = [];
-        foreach ($all as $id => $penalty) {
-            if ($month && ($penalty['month'] ?? '') !== $month) continue;
-            if ($waiterId && ($penalty['waiter_id'] ?? '') !== $waiterId) continue;
-            // If date range filtered but via full scan (no index), also PHP-filter
-            if ($month === null && $startDate !== null && $endDate !== null) {
-                $penaltyDate = (string) ($penalty['date'] ?? '');
-                if ($penaltyDate < $startDate || $penaltyDate > $endDate) continue;
-            }
-            $penalty['id'] = $id;
-            $result[] = $penalty;
-        }
-
-        // Sort by date desc
-        usort($result, fn($a, $b) => strcmp($b['date'] ?? '', $a['date'] ?? ''));
-        return $result;
+        return app(\App\Repositories\Contracts\BonusRepositoryInterface::class)
+            ->penalties($month, $waiterId, $startDate, $endDate);
     }
 
     /**
@@ -8627,7 +8600,7 @@ class FirebaseService
      */
     public function deletePenalty(string $penaltyId): void
     {
-        $this->database->getReference("waiter_penalties/{$penaltyId}")->remove();
+        app(\App\Repositories\Contracts\BonusRepositoryInterface::class)->deletePenalty($penaltyId);
     }
 
     /**
@@ -8635,11 +8608,7 @@ class FirebaseService
      */
     public function getPenaltyById(string $penaltyId): ?array
     {
-        $snapshot = $this->database->getReference("waiter_penalties/{$penaltyId}")->getSnapshot();
-        if (!$snapshot->exists()) return null;
-        $data = $snapshot->getValue();
-        $data['id'] = $penaltyId;
-        return $data;
+        return app(\App\Repositories\Contracts\BonusRepositoryInterface::class)->penaltyById($penaltyId);
     }
 
     /**
@@ -8721,8 +8690,7 @@ class FirebaseService
      */
     public function getBonusSummary(string $waiterId, string $periodKey): ?array
     {
-        $snapshot = $this->database->getReference("waiter_bonus_summary/{$waiterId}/{$periodKey}")->getSnapshot();
-        return $snapshot->exists() ? $snapshot->getValue() : null;
+        return app(\App\Repositories\Contracts\BonusRepositoryInterface::class)->bonusSummary($waiterId, $periodKey);
     }
 
     /**
@@ -8730,19 +8698,7 @@ class FirebaseService
      */
     public function getAllBonusSummaries(string $periodKey): array
     {
-        $snapshot = $this->database->getReference('waiter_bonus_summary')->getSnapshot();
-        if (!$snapshot->exists()) return [];
-
-        $all = $snapshot->getValue();
-        $result = [];
-        foreach ($all as $waiterId => $keys) {
-            if (isset($keys[$periodKey])) {
-                $summary = $keys[$periodKey];
-                $summary['waiter_id'] = $waiterId;
-                $result[] = $summary;
-            }
-        }
-        return $result;
+        return app(\App\Repositories\Contracts\BonusRepositoryInterface::class)->allBonusSummaries($periodKey);
     }
 
     /**

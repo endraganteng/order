@@ -34,6 +34,11 @@ class AppServiceProvider extends ServiceProvider
             \App\Repositories\AttendanceRepository::class
         );
 
+        $this->app->bind(
+            \App\Repositories\Contracts\BonusRepositoryInterface::class,
+            \App\Repositories\BonusRepository::class
+        );
+
         // Fix cURL error 60 (SSL certificate problem) pada local dev
         if (app()->environment('local')) {
             $candidatePaths = array_filter([
