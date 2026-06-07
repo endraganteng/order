@@ -58,25 +58,7 @@ class FirebaseService
      */
     public function getAllowedEmails()
     {
-        if (isset($this->requestCache['allowed_emails'])) {
-            return $this->requestCache['allowed_emails'];
-        }
-
-        $reference = $this->database->getReference('allowed_waiters');
-        $snapshot = $reference->getSnapshot();
-
-        $waiters = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $waiter) {
-                $merged = array_merge(['id' => $key], $waiter);
-                $merged['waiter_role'] = $this->normalizeWaiterRole($merged['waiter_role'] ?? 'pelayan');
-                $waiters[] = $merged;
-            }
-        }
-
-        $this->requestCache['allowed_emails'] = $waiters;
-
-        return $waiters;
+        return app(\App\Repositories\Contracts\WaiterRepositoryInterface::class)->all();
     }
 
     /**
@@ -92,31 +74,8 @@ class FirebaseService
      */
     public function addAllowedEmailWithPassword($email, $name, $passwordHash = null, $waiterRole = 'pelayan', $shiftId = null, $phone = null, $attendanceExempt = false)
     {
-        $payload = [
-            'email' => strtolower(trim((string) $email)),
-            'name' => trim((string) $name),
-            'waiter_role' => $this->normalizeWaiterRole($waiterRole),
-            'is_active' => true,
-            'created_at' => time(),
-        ];
-
-        if ($passwordHash) {
-            $payload['password_hash'] = $passwordHash;
-        }
-
-        if ($shiftId) {
-            $payload['shift_id'] = $shiftId;
-        }
-
-        if ($phone) {
-            $payload['phone'] = trim((string) $phone);
-        }
-
-        if ($attendanceExempt) {
-            $payload['attendance_exempt'] = true;
-        }
-
-        $this->database->getReference('allowed_waiters')->push($payload);
+        app(\App\Repositories\Contracts\WaiterRepositoryInterface::class)
+            ->add((string) $email, (string) $name, $passwordHash, (string) $waiterRole, $shiftId, $phone, (bool) $attendanceExempt);
     }
 
     /**
@@ -124,12 +83,7 @@ class FirebaseService
      */
     public function updateAllowedEmail($id, $data)
     {
-        if (array_key_exists('waiter_role', $data)) {
-            $data['waiter_role'] = $this->normalizeWaiterRole($data['waiter_role']);
-        }
-
-        $this->database->getReference('allowed_waiters/'.$id)
-            ->update($data);
+        app(\App\Repositories\Contracts\WaiterRepositoryInterface::class)->update((string) $id, $data);
     }
 
     /**
@@ -137,9 +91,7 @@ class FirebaseService
      */
     public function getActiveWaiters()
     {
-        return array_values(array_filter($this->getAllowedEmails(), function ($waiter) {
-            return ($waiter['is_active'] ?? true) !== false;
-        }));
+        return app(\App\Repositories\Contracts\WaiterRepositoryInterface::class)->allActive();
     }
 
     /**
@@ -163,11 +115,7 @@ class FirebaseService
      */
     public function getActiveWaitersByRole($waiterRole)
     {
-        $normalizedRole = $this->normalizeWaiterRole($waiterRole);
-
-        return array_values(array_filter($this->getActiveWaiters(), function ($waiter) use ($normalizedRole) {
-            return $this->normalizeWaiterRole($waiter['waiter_role'] ?? 'pelayan') === $normalizedRole;
-        }));
+        return app(\App\Repositories\Contracts\WaiterRepositoryInterface::class)->activeByRole((string) $waiterRole);
     }
 
     /**
@@ -309,8 +257,7 @@ class FirebaseService
      */
     public function deleteAllowedEmail($id)
     {
-        $this->database->getReference('allowed_waiters/'.$id)
-            ->remove();
+        app(\App\Repositories\Contracts\WaiterRepositoryInterface::class)->delete((string) $id);
     }
 
     /**
