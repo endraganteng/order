@@ -14,7 +14,7 @@ return [
     'mysql_attendance' => env('FEATURE_MYSQL_ATTENDANCE', true),
     'mysql_bonus' => env('FEATURE_MYSQL_BONUS', false),
     'mysql_master_data' => env('FEATURE_MYSQL_MASTER_DATA', false),
-    'mysql_rack_products' => env('FEATURE_MYSQL_RACK_PRODUCTS', false),
+    'mysql_rack_products' => env('FEATURE_MYSQL_RACK_PRODUCTS', true),
     'mysql_audit_logs' => env('FEATURE_MYSQL_AUDIT_LOGS', true),
     'mysql_activity_reports' => env('FEATURE_MYSQL_ACTIVITY_REPORTS', true),
     'mysql_product_categories' => env('FEATURE_MYSQL_PRODUCT_CATEGORIES', true),
