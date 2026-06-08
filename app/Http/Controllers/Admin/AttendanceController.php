@@ -3,16 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Repositories\Contracts\AttendanceRepositoryInterface;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 
 class AttendanceController extends Controller
 {
-    protected FirebaseService $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected AttendanceRepositoryInterface $attendance,
+    ) {
     }
 
     /**
@@ -21,13 +21,11 @@ class AttendanceController extends Controller
     public function index(Request $request)
     {
         $date = $request->input('date', date('Y-m-d'));
-        $weekKey = date('o-\\WW', strtotime($date));
 
         $waiters = $this->firebase->getActiveWaiters();
-        $attendanceByDate = $this->firebase->getAllAttendanceByDate($date);
+        $attendanceByDate = $this->attendance->allOnDate($date);
 
-        // Build today's shifts from schedule template (1 Firebase read via cached getScheduleTemplate)
-        // Also build shifts lookup and schedules from the same template data
+        // Build today's shifts from schedule template
         $todayShifts = [];
         $shifts = [];
         $schedules = [];
@@ -55,7 +53,31 @@ class AttendanceController extends Controller
         $summaries = [];
         foreach ($waiters as $waiter) {
             $wId = $waiter['id'] ?? '';
-            $summaries[$wId] = $this->firebase->getAttendanceSummary($wId, $yearMonth);
+            $monthData = $this->attendance->forWaiterInMonth($wId, $yearMonth);
+
+            // Build summary from attendance data
+            $present = 0;
+            $late = 0;
+            $absent = 0;
+            foreach ($monthData as $dayData) {
+                $status = $dayData['status'] ?? 'absent';
+                if ($status === 'present' || $status === 'on_time') {
+                    $present++;
+                } elseif ($status === 'late') {
+                    $late++;
+                    $present++;
+                } else {
+                    $absent++;
+                }
+            }
+
+            $summaries[$wId] = [
+                'total_days' => count($monthData),
+                'present' => $present,
+                'late' => $late,
+                'absent' => $absent,
+                'records' => $monthData,
+            ];
         }
 
         return view('admin.attendance.monthly', compact('yearMonth', 'waiters', 'summaries'));
@@ -84,6 +106,7 @@ class AttendanceController extends Controller
             $data['note'] = $request->input('note');
         }
 
+        // Override masih via FirebaseService karena perlu write ke RTDB + sync MySQL
         $this->firebase->updateAttendance($waiterId, $date, $data);
 
         $this->firebase->logAuditAction('override', 'attendance', $waiterId, ['date' => $date, 'fields' => array_keys($data)]);
@@ -96,7 +119,7 @@ class AttendanceController extends Controller
      */
     public function destroy($waiterId, $date)
     {
-        $this->firebase->deleteAttendance($waiterId, $date);
+        $this->attendance->delete($waiterId, $date);
 
         $this->firebase->logAuditAction('delete', 'attendance', $waiterId, ['date' => $date]);
 
@@ -104,7 +127,7 @@ class AttendanceController extends Controller
     }
 
     /**
-     * QR code configuration page.
+     * QR code configuration page (realtime — tetap Firebase).
      */
     public function qrConfig()
     {
@@ -114,7 +137,7 @@ class AttendanceController extends Controller
     }
 
     /**
-     * Regenerate attendance QR code.
+     * Regenerate attendance QR code (realtime — tetap Firebase).
      */
     public function regenerateQr()
     {

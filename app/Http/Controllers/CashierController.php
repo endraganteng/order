@@ -2,17 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Repositories\Contracts\CashierTaskRepositoryInterface;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class CashierController extends Controller
 {
-    protected $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected CashierTaskRepositoryInterface $cashierTasks,
+    ) {
     }
 
     /**
@@ -24,8 +24,8 @@ class CashierController extends Controller
         $now = time();
 
         if ($now - $lastSync >= 30) {
+            $this->cashierTasks->markOverdue();
             $this->firebase->generateDueRecurringTasks();
-            $this->firebase->markOverdueTasks();
             session(['cashier_last_sync' => $now]);
         }
 
@@ -185,7 +185,7 @@ class CashierController extends Controller
         session(['cashier_last_sync' => $now]);
 
         $generated = $this->firebase->generateDueRecurringTasks();
-        $overdue = $this->firebase->markOverdueTasks();
+        $overdue = $this->cashierTasks->markOverdue();
 
         return response()->json([
             'success' => true,
@@ -213,7 +213,7 @@ class CashierController extends Controller
             ], 422);
         }
 
-        $result = $this->firebase->updateTaskStatus(
+        $result = $this->cashierTasks->updateStatus(
             $id,
             $request->status,
             $request->note,

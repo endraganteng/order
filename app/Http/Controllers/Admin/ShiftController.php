@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\WorkShift;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 
@@ -20,7 +21,18 @@ class ShiftController extends Controller
      */
     public function index()
     {
-        $shifts = $this->firebase->getShifts();
+        if (config('features.mysql_work_shifts')) {
+            $shifts = WorkShift::orderBy('name')->get()->map(fn ($s) => [
+                'id' => $s->firebase_legacy_key ?: (string) $s->id,
+                'name' => $s->name,
+                'clock_in_time' => $s->clock_in_time,
+                'clock_out_time' => $s->clock_out_time,
+                'late_tolerance_minutes' => $s->late_tolerance_minutes,
+                'is_active' => (bool) $s->is_active,
+            ])->all();
+        } else {
+            $shifts = $this->firebase->getShifts();
+        }
 
         return view('admin.shifts.index', compact('shifts'));
     }
@@ -39,13 +51,25 @@ class ShiftController extends Controller
         ]);
 
         try {
-            $shift = $this->firebase->createShift([
+            $data = [
                 'name' => $validated['name'],
                 'clock_in_time' => $validated['clock_in_time'],
                 'clock_out_time' => $validated['clock_out_time'],
                 'late_tolerance_minutes' => $validated['late_tolerance_minutes'],
                 'is_active' => $request->has('is_active') ? $request->boolean('is_active') : true,
-            ]);
+            ];
+
+            if (config('features.mysql_work_shifts')) {
+                $row = WorkShift::create($data + ['event_created_at' => time(), 'event_updated_at' => time()]);
+                $shift = array_merge(['id' => (string) $row->id], $data);
+
+                // Dual-write ke Firebase jika masih aktif
+                if (config('features.legacy_write_work_shifts')) {
+                    $this->firebase->createShift($data);
+                }
+            } else {
+                $shift = $this->firebase->createShift($data);
+            }
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -77,9 +101,16 @@ class ShiftController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $shift = $this->firebase->getShiftById($id);
-        if (! $shift) {
-            abort(404);
+        if (config('features.mysql_work_shifts')) {
+            $row = WorkShift::where('firebase_legacy_key', $id)->orWhere('id', $id)->first();
+            if (! $row) {
+                abort(404);
+            }
+        } else {
+            $shift = $this->firebase->getShiftById($id);
+            if (! $shift) {
+                abort(404);
+            }
         }
 
         $validated = $request->validate([
@@ -91,13 +122,23 @@ class ShiftController extends Controller
         ]);
 
         try {
-            $this->firebase->updateShift($id, [
+            $data = [
                 'name' => $validated['name'],
                 'clock_in_time' => $validated['clock_in_time'],
                 'clock_out_time' => $validated['clock_out_time'],
                 'late_tolerance_minutes' => $validated['late_tolerance_minutes'],
                 'is_active' => $request->has('is_active') ? $request->boolean('is_active') : false,
-            ]);
+            ];
+
+            if (config('features.mysql_work_shifts')) {
+                $row->update($data + ['event_updated_at' => time()]);
+
+                if (config('features.legacy_write_work_shifts')) {
+                    $this->firebase->updateShift($id, $data);
+                }
+            } else {
+                $this->firebase->updateShift($id, $data);
+            }
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -128,13 +169,28 @@ class ShiftController extends Controller
      */
     public function destroy($id)
     {
-        $shift = $this->firebase->getShiftById($id);
-        if (! $shift) {
-            abort(404);
+        if (config('features.mysql_work_shifts')) {
+            $row = WorkShift::where('firebase_legacy_key', $id)->orWhere('id', $id)->first();
+            if (! $row) {
+                abort(404);
+            }
+        } else {
+            $shift = $this->firebase->getShiftById($id);
+            if (! $shift) {
+                abort(404);
+            }
         }
 
         try {
-            $this->firebase->deleteShift($id);
+            if (config('features.mysql_work_shifts')) {
+                $row->delete();
+
+                if (config('features.legacy_write_work_shifts')) {
+                    $this->firebase->deleteShift($id);
+                }
+            } else {
+                $this->firebase->deleteShift($id);
+            }
 
             if (request()->expectsJson()) {
                 return response()->json([
@@ -166,7 +222,18 @@ class ShiftController extends Controller
     public function schedules(Request $request)
     {
         $waiters = $this->firebase->getAllowedEmails();
-        $shifts = $this->firebase->getActiveShifts();
+
+        if (config('features.mysql_work_shifts')) {
+            $shifts = WorkShift::where('is_active', true)->orderBy('name')->get()->map(fn ($s) => [
+                'id' => $s->firebase_legacy_key ?: (string) $s->id,
+                'name' => $s->name,
+                'clock_in_time' => $s->clock_in_time,
+                'clock_out_time' => $s->clock_out_time,
+            ])->all();
+        } else {
+            $shifts = $this->firebase->getActiveShifts();
+        }
+
         $template = $this->firebase->getScheduleTemplate();
 
         $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];

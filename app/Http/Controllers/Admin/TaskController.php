@@ -7,6 +7,7 @@ use App\Http\Requests\BatchDestroyRecurringTaskRequest;
 use App\Http\Requests\StoreCashierWorkerRequest;
 use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateRecurringTaskRequest;
+use App\Repositories\Contracts\WaiterTaskRepositoryInterface;
 use App\Services\FirebaseService;
 use App\Services\FonnteService;
 use Illuminate\Http\Request;
@@ -19,10 +20,13 @@ class TaskController extends Controller
 
     protected FonnteService $fonnte;
 
-    public function __construct(FirebaseService $firebase, FonnteService $fonnte)
+    protected WaiterTaskRepositoryInterface $waiterTasks;
+
+    public function __construct(FirebaseService $firebase, FonnteService $fonnte, WaiterTaskRepositoryInterface $waiterTasks)
     {
         $this->firebase = $firebase;
         $this->fonnte = $fonnte;
+        $this->waiterTasks = $waiterTasks;
     }
 
     /**
@@ -163,7 +167,7 @@ class TaskController extends Controller
         // Format: rackId => ['template_id', 'waiter_label', 'recurrence_type', 'assignment_type', 'is_fixed_locked']
         $rackTemplateAssignments = [];
         if ($taskScope === 'rack_check') {
-            $allTasks = $this->firebase->getWaiterTasksByDate($today);
+            $allTasks = $this->waiterTasks->forDate($today);
             foreach ($allTasks as $task) {
                 if (($task['task_type'] ?? '') !== 'rack_check') {
                     continue;
@@ -739,7 +743,7 @@ class TaskController extends Controller
      */
     public function destroy($id, Request $request)
     {
-        $task = $this->firebase->getWaiterTaskById((string) $id);
+        $task = $this->waiterTasks->find((string) $id);
 
         if (! $task) {
             if ($request->expectsJson() || $request->ajax()) {
@@ -749,7 +753,7 @@ class TaskController extends Controller
             return redirect()->route('admin.tasks.index')->with('error', 'Task tidak ditemukan atau sudah dihapus.');
         }
 
-        $this->firebase->deleteWaiterTask($id);
+        $this->waiterTasks->delete($id);
         $this->firebase->logAuditAction('delete', 'task', $id, ['title' => $task['title'] ?? '']);
 
         if ($request->expectsJson() || $request->ajax()) {
@@ -1129,7 +1133,7 @@ class TaskController extends Controller
     {
         $scope = $request->query('scope', 'general');
         $today = date('Y-m-d');
-        $tasks = $this->firebase->getWaiterTasksByDate($today);
+        $tasks = $this->waiterTasks->forDate($today);
         $waiters = $this->firebase->getActiveWaiters();
         $waiterMap = [];
         foreach ($waiters as $w) {
@@ -1901,7 +1905,7 @@ class TaskController extends Controller
         $taskScope = $taskScope === 'rack_check' ? 'rack_check' : 'general';
         $selectedDate = $request->input('track_date', date('Y-m-d'));
         $rangeStart = date('Y-m-d', strtotime('-30 days', strtotime($selectedDate)));
-        $tasks = $this->firebase->getWaiterTasksByDateRange($rangeStart, $selectedDate);
+        $tasks = $this->waiterTasks->forDateRange($rangeStart, $selectedDate);
         $recurringTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
         $categories = $this->firebase->getTaskCategories();
         $waiters = $this->firebase->getActiveWaiters();
@@ -3402,7 +3406,7 @@ class TaskController extends Controller
         $toDate = $request->input('to_date');
 
         // Get tasks by date range (indexed query) and filter by rack_check + done
-        $tasks = $this->firebase->getWaiterTasksByDateRange($fromDate, $toDate);
+        $tasks = $this->waiterTasks->forDateRange($fromDate, $toDate);
         $tasks = array_filter($tasks, function ($task) use ($fromDate, $toDate) {
             if (($task['task_type'] ?? '') !== 'rack_check') {
                 return false;

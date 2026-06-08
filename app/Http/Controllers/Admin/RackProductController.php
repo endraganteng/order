@@ -3,16 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Repositories\Contracts\RackProductRepositoryInterface;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 
 class RackProductController extends Controller
 {
-    protected $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected RackProductRepositoryInterface $rackProducts,
+    ) {
     }
 
     public function index(Request $request)
@@ -26,14 +26,12 @@ class RackProductController extends Controller
     }
 
     /**
-     * AJAX live search endpoint. Return JSON struct yang sama dengan view payload
-     * untuk kebutuhan frontend re-render rows + pagination tanpa full page reload.
+     * AJAX live search endpoint.
      */
     public function searchJson(Request $request)
     {
         [$products, $categories, $categoryMap, $page, $totalPages, $totalFiltered, $perPage, $search, $categoryFilter] = $this->buildFilteredProducts($request);
 
-        // Trim payload yang dikirim - frontend hanya butuh field yang ditampilkan.
         $rows = [];
         foreach ($products as $p) {
             $catId = (string) ($p['category_id'] ?? '');
@@ -65,15 +63,13 @@ class RackProductController extends Controller
     }
 
     /**
-     * Shared filter logic - dipakai oleh index() (full render) dan
-     * searchJson() (AJAX). Return positional array agar destructuring di
-     * caller bersih.
+     * Shared filter logic.
      *
      * @return array{0:array,1:array,2:array,3:int,4:int,5:int,6:int,7:string,8:string}
      */
     private function buildFilteredProducts(Request $request): array
     {
-        $allProducts = $this->firebase->getProducts();
+        $allProducts = $this->rackProducts->all();
         $categories = $this->firebase->getActiveProductCategories();
 
         $categoryMap = [];
@@ -126,7 +122,7 @@ class RackProductController extends Controller
         ]);
 
         try {
-            $product = $this->firebase->createProduct([
+            $product = $this->rackProducts->create([
                 'name' => $validated['name'],
                 'category_id' => $validated['category_id'] ?? null,
                 'standard_qty' => $validated['standard_qty'],
@@ -161,7 +157,7 @@ class RackProductController extends Controller
 
     public function update(Request $request, $id)
     {
-        $product = $this->firebase->getProductById($id);
+        $product = $this->rackProducts->find($id);
         if (! $product) {
             abort(404);
         }
@@ -175,7 +171,7 @@ class RackProductController extends Controller
         ]);
 
         try {
-            $this->firebase->updateProduct($id, [
+            $this->rackProducts->update($id, [
                 'name' => $validated['name'],
                 'category_id' => $validated['category_id'] ?? null,
                 'standard_qty' => $validated['standard_qty'],
@@ -209,13 +205,13 @@ class RackProductController extends Controller
 
     public function destroy($id)
     {
-        $product = $this->firebase->getProductById($id);
+        $product = $this->rackProducts->find($id);
         if (! $product) {
             abort(404);
         }
 
         try {
-            $this->firebase->deleteProduct($id);
+            $this->rackProducts->delete($id);
 
             if (request()->expectsJson()) {
                 return response()->json([
@@ -254,9 +250,9 @@ class RackProductController extends Controller
 
         foreach ($ids as $id) {
             try {
-                $product = $this->firebase->getProductById($id);
+                $product = $this->rackProducts->find($id);
                 if ($product) {
-                    $this->firebase->deleteProduct($id);
+                    $this->rackProducts->delete($id);
                     $deleted++;
                 }
             } catch (\Throwable $e) {
@@ -316,11 +312,6 @@ class RackProductController extends Controller
 
     public function importProducts(Request $request)
     {
-        $request->validate([
-            'excel_file' => 'required|file|mimes:xlsx,xls|max:10240',
-            'default_standard_qty' => 'nullable|integer|min:0',
-        ]);
-
         try {
             $file = $request->file('excel_file');
             $defaultQty = (int) ($request->input('default_standard_qty', 0));
@@ -357,11 +348,10 @@ class RackProductController extends Controller
 
     public function bulkAssign()
     {
-        $products = $this->firebase->getActiveProducts();
+        $products = $this->rackProducts->allActive();
         $racks = $this->firebase->getActiveRacks();
         $categories = $this->firebase->getActiveProductCategories();
 
-        // Build category map for display
         $categoryMap = [];
         foreach ($categories as $cat) {
             $categoryMap[(string) $cat['id']] = $cat['name'];
@@ -392,7 +382,6 @@ class RackProductController extends Controller
             $data = [];
         }
 
-        // Parse: assignments[rackId][productId] = qty
         $assignments = [];
         foreach ($data as $rackId => $productMap) {
             $rackId = trim((string) $rackId);
@@ -447,14 +436,14 @@ class RackProductController extends Controller
             abort(404);
         }
 
-        $allProducts = $this->firebase->getActiveProducts();
-        $rackProducts = $this->firebase->getRackProducts($rackId);
-        $liveStockMap = $this->firebase->getRackProductLiveStock($rackId, $rackProducts);
+        $allProducts = $this->rackProducts->allActive();
+        $rackProductsList = $this->firebase->getRackProducts($rackId);
+        $liveStockMap = $this->firebase->getRackProductLiveStock($rackId, $rackProductsList);
         $assignedProductIds = array_values(array_map(function ($product) {
             return (string) ($product['id'] ?? '');
-        }, $rackProducts));
+        }, $rackProductsList));
 
-        return view('admin.products.rack_products', compact('rack', 'allProducts', 'rackProducts', 'assignedProductIds', 'liveStockMap'));
+        return view('admin.products.rack_products', compact('rack', 'allProducts', 'rackProductsList', 'assignedProductIds', 'liveStockMap'));
     }
 
     public function saveRackProducts(Request $request, $rackId)
@@ -522,7 +511,7 @@ class RackProductController extends Controller
 
     public function auditTrail(string $id)
     {
-        $product = $this->firebase->getProductById($id);
+        $product = $this->rackProducts->find($id);
         if (! $product) {
             abort(404);
         }

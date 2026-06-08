@@ -3,21 +3,21 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Repositories\Contracts\SupplierRepositoryInterface;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 
 class SupplierController extends Controller
 {
-    protected $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected SupplierRepositoryInterface $suppliers,
+    ) {
     }
 
     public function index(Request $request)
     {
-        $suppliers = $this->firebase->getSuppliers();
+        $suppliers = $this->suppliers->all();
 
         if ($request->wantsJson() || $request->ajax()) {
             return response()->json(['success' => true, 'data' => array_values($suppliers)]);
@@ -40,7 +40,7 @@ class SupplierController extends Controller
             'contact_person' => 'nullable|string|max:255',
         ]);
 
-        $supplierId = $this->firebase->createSupplier($request->all());
+        $supplierId = $this->suppliers->create($request->all());
 
         $this->firebase->logAuditAction('create', 'supplier', $supplierId, [
             'name' => $request->name,
@@ -51,7 +51,7 @@ class SupplierController extends Controller
 
     public function edit(string $id)
     {
-        $supplier = $this->firebase->getSupplierById($id);
+        $supplier = $this->suppliers->find($id);
 
         if (!$supplier) {
             return redirect()->route('admin.suppliers.index')->with('error', 'Supplier tidak ditemukan.');
@@ -69,7 +69,7 @@ class SupplierController extends Controller
             'contact_person' => 'nullable|string|max:255',
         ]);
 
-        $this->firebase->updateSupplier($id, $request->all());
+        $this->suppliers->update($id, $request->all());
 
         $this->firebase->logAuditAction('update', 'supplier', $id, [
             'name' => $request->name,
@@ -80,7 +80,7 @@ class SupplierController extends Controller
 
     public function destroy(Request $request, string $id)
     {
-        $supplier = $this->firebase->getSupplierById($id);
+        $supplier = $this->suppliers->find($id);
 
         if (!$supplier) {
             if ($request->wantsJson() || $request->ajax()) {
@@ -89,7 +89,7 @@ class SupplierController extends Controller
             return redirect()->route('admin.suppliers.index')->with('error', 'Supplier tidak ditemukan.');
         }
 
-        $this->firebase->deleteSupplier($id);
+        $this->suppliers->delete($id);
 
         $this->firebase->logAuditAction('delete', 'supplier', $id, [
             'name' => $supplier['name'] ?? '',
@@ -112,14 +112,14 @@ class SupplierController extends Controller
             'phone' => 'required|string|max:20',
         ]);
 
-        $supplierId = $this->firebase->createSupplier([
+        $supplierId = $this->suppliers->create([
             'name' => $request->name,
             'phone' => $request->phone,
             'address' => '',
             'contact_person' => '',
         ]);
 
-        $supplier = $this->firebase->getSupplierById($supplierId);
+        $supplier = $this->suppliers->find($supplierId);
 
         return response()->json([
             'success' => true,
@@ -136,7 +136,7 @@ class SupplierController extends Controller
         $q = trim((string) $request->query('q', ''));
         $limit = (int) max(5, min(50, (int) $request->query('limit', 20)));
 
-        $all = $this->firebase->getSuppliers();
+        $all = $this->suppliers->all();
         $rows = [];
         foreach ($all as $s) {
             $name = (string) ($s['name'] ?? '');

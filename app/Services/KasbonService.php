@@ -159,14 +159,16 @@ class KasbonService
                     return ['success' => false, 'message' => 'Sudah ada ' . $activeCount . ' kasbon aktif. Maksimal ' . $maxActive . '.'];
                 }
 
-                $newBalance = $this->payroll->adjustBalancePublic($waiterId, -$amount);
+                // Kasbon disbursement = hutang, uang keluar dari KAS (cash_mutations).
+                // TIDAK mengurangi payroll balance — yang mengurangi adalah kasbon_deduct saat payroll.
+                $currentBalance = $this->payroll->getBalance($waiterId);
 
                 $txId = DB::table('payroll_transactions')->insertGetId([
                     'waiter_id' => $waiterId,
                     'waiter_name' => (string) ($waiter['name'] ?? ''),
                     'type' => 'kasbon_disbursement',
                     'amount' => $amount,
-                    'balance_after' => $newBalance,
+                    'balance_after' => $currentBalance,
                     'status' => 'completed',
                     'note' => 'Kasbon: ' . ($reason ?: '-'),
                     'created_by' => $createdBy,

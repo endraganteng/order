@@ -7,21 +7,21 @@ use App\Http\Requests\BulkUpdateRackTypeRequest;
 use App\Http\Requests\StoreRackAjaxRequest;
 use App\Http\Requests\StoreRackRequest;
 use App\Http\Requests\UpdateRackRequest;
+use App\Repositories\Contracts\RackRepositoryInterface;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 
 class RackController extends Controller
 {
-    protected $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected RackRepositoryInterface $racks,
+    ) {
     }
 
     public function index()
     {
-        $racks = $this->firebase->getRacks();
+        $racks = $this->racks->all();
 
         return view('admin.racks.index', compact('racks'));
     }
@@ -33,7 +33,7 @@ class RackController extends Controller
 
     public function store(StoreRackRequest $request)
     {
-        $this->firebase->createRack([
+        $this->racks->create([
             'name' => $request->name,
             'location' => $request->location,
             'description' => $request->description,
@@ -50,7 +50,7 @@ class RackController extends Controller
 
     public function storeAjax(StoreRackAjaxRequest $request)
     {
-        $rack = $this->firebase->createRack([
+        $rack = $this->racks->create([
             'name' => $request->name,
             'location' => $request->location,
             'description' => $request->description ?? '',
@@ -141,7 +141,7 @@ class RackController extends Controller
                 continue;
             }
 
-            $this->firebase->updateRack($rackId, [
+            $this->racks->update($rackId, [
                 'name' => (string) ($rack['name'] ?? ''),
                 'location' => (string) ($rack['location'] ?? ''),
                 'description' => (string) ($rack['description'] ?? ''),
@@ -165,7 +165,7 @@ class RackController extends Controller
 
     public function edit($id)
     {
-        $rack = $this->firebase->getRackById($id);
+        $rack = $this->racks->find($id);
         if (! $rack) {
             abort(404);
         }
@@ -175,12 +175,12 @@ class RackController extends Controller
 
     public function update(UpdateRackRequest $request, $id)
     {
-        $rack = $this->firebase->getRackById($id);
+        $rack = $this->racks->find($id);
         if (! $rack) {
             abort(404);
         }
 
-        $this->firebase->updateRack($id, [
+        $this->racks->update($id, [
             'name' => $request->name,
             'location' => $request->location,
             'description' => $request->description,
@@ -195,6 +195,7 @@ class RackController extends Controller
 
     public function regenerateBarcode($id)
     {
+        // Barcode generation masih di FirebaseService (generate + simpan ke RTDB)
         $barcode = $this->firebase->regenerateRackBarcode($id);
         if (! $barcode) {
             abort(404);
@@ -206,11 +207,12 @@ class RackController extends Controller
 
     public function history(Request $request, $id)
     {
-        $rack = $this->firebase->getRackById($id);
+        $rack = $this->racks->find($id);
         if (! $rack) {
             abort(404);
         }
 
+        // History, stock movements, liveStock belum ada di MySQL
         $history = $this->firebase->getRackCheckHistory($id, 100);
         $rackProducts = $this->firebase->getRackProducts($id);
         $liveStockMap = $this->firebase->getRackProductLiveStock($id, $rackProducts);
@@ -268,7 +270,7 @@ class RackController extends Controller
 
     public function destroy($id)
     {
-        $this->firebase->deleteRack($id);
+        $this->racks->delete($id);
 
         $this->firebase->logAuditAction('delete', 'rack', $id, []);
 
@@ -278,7 +280,7 @@ class RackController extends Controller
 
     protected function resolveSelectedRacks(Request $request): array
     {
-        $allRacks = $this->firebase->getRacks();
+        $allRacks = $this->racks->all();
 
         if ($request->boolean('all')) {
             return $allRacks;

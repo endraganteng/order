@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ProductCategory;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 
@@ -17,7 +18,17 @@ class ProductCategoryController extends Controller
 
     public function index()
     {
-        $categories = $this->firebase->getProductCategories();
+        if (config('features.mysql_product_categories')) {
+            $categories = ProductCategory::orderBy('sort_order')->orderBy('name')->get()->map(fn ($c) => [
+                'id' => $c->firebase_legacy_key ?: (string) $c->id,
+                'name' => $c->name,
+                'description' => $c->description ?? '',
+                'sort_order' => $c->sort_order,
+                'is_active' => (bool) $c->is_active,
+            ])->all();
+        } else {
+            $categories = $this->firebase->getProductCategories();
+        }
 
         return view('admin.products.categories', compact('categories'));
     }
@@ -32,12 +43,26 @@ class ProductCategoryController extends Controller
         ]);
 
         try {
-            $category = $this->firebase->createProductCategory([
+            $data = [
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? '',
                 'sort_order' => $validated['sort_order'] ?? 0,
                 'is_active' => $request->has('is_active') ? $request->boolean('is_active') : true,
-            ]);
+            ];
+
+            if (config('features.mysql_product_categories')) {
+                $row = ProductCategory::create($data + [
+                    'event_created_at' => time(),
+                    'event_updated_at' => time(),
+                ]);
+                $category = array_merge(['id' => (string) $row->id], $data);
+
+                if (config('features.legacy_write_product_categories')) {
+                    $this->firebase->createProductCategory($data);
+                }
+            } else {
+                $category = $this->firebase->createProductCategory($data);
+            }
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -66,9 +91,16 @@ class ProductCategoryController extends Controller
 
     public function update(Request $request, $id)
     {
-        $category = $this->firebase->getProductCategoryById($id);
-        if (! $category) {
-            abort(404);
+        if (config('features.mysql_product_categories')) {
+            $row = ProductCategory::where('firebase_legacy_key', $id)->orWhere('id', $id)->first();
+            if (! $row) {
+                abort(404);
+            }
+        } else {
+            $category = $this->firebase->getProductCategoryById($id);
+            if (! $category) {
+                abort(404);
+            }
         }
 
         $validated = $request->validate([
@@ -79,12 +111,22 @@ class ProductCategoryController extends Controller
         ]);
 
         try {
-            $this->firebase->updateProductCategory($id, [
+            $data = [
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? '',
                 'sort_order' => $validated['sort_order'] ?? 0,
                 'is_active' => $request->has('is_active') ? $request->boolean('is_active') : false,
-            ]);
+            ];
+
+            if (config('features.mysql_product_categories')) {
+                $row->update($data + ['event_updated_at' => time()]);
+
+                if (config('features.legacy_write_product_categories')) {
+                    $this->firebase->updateProductCategory($id, $data);
+                }
+            } else {
+                $this->firebase->updateProductCategory($id, $data);
+            }
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -112,13 +154,28 @@ class ProductCategoryController extends Controller
 
     public function destroy($id)
     {
-        $category = $this->firebase->getProductCategoryById($id);
-        if (! $category) {
-            abort(404);
+        if (config('features.mysql_product_categories')) {
+            $row = ProductCategory::where('firebase_legacy_key', $id)->orWhere('id', $id)->first();
+            if (! $row) {
+                abort(404);
+            }
+        } else {
+            $category = $this->firebase->getProductCategoryById($id);
+            if (! $category) {
+                abort(404);
+            }
         }
 
         try {
-            $this->firebase->deleteProductCategory($id);
+            if (config('features.mysql_product_categories')) {
+                $row->delete();
+
+                if (config('features.legacy_write_product_categories')) {
+                    $this->firebase->deleteProductCategory($id);
+                }
+            } else {
+                $this->firebase->deleteProductCategory($id);
+            }
 
             if (request()->expectsJson()) {
                 return response()->json([
