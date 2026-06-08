@@ -226,9 +226,9 @@
         let generalDone = 0, generalTotal = 0, rackDone = 0, rackTotal = 0;
         const waiterStats = {};
 
-        // Init waiter stats
+        // Init waiter stats with task list
         waiters.forEach(w => {
-            waiterStats[w.id] = { total: 0, done: 0, name: w.name || w.id };
+            waiterStats[w.id] = { total: 0, done: 0, name: w.name || w.id, tasks: [] };
         });
 
         tasks.forEach(([id, task]) => {
@@ -237,7 +237,10 @@
 
             total++;
             const wId = task.assigned_waiter_id;
-            if (waiterStats[wId]) waiterStats[wId].total++;
+            if (waiterStats[wId]) {
+                waiterStats[wId].total++;
+                waiterStats[wId].tasks.push(task);
+            }
 
             if (task.status === 'done') {
                 done++;
@@ -331,6 +334,12 @@
             return;
         }
 
+        // Preserve expanded state
+        const expandedWaiters = new Set();
+        container.querySelectorAll('.lm-waiter-detail[style*="display: block"]').forEach(el => {
+            if (el.dataset.waiterId) expandedWaiters.add(el.dataset.waiterId);
+        });
+
         container.innerHTML = sorted.map(([wId, s]) => {
             const pct = s.total > 0 ? Math.round(s.done / s.total * 100) : 0;
             const barColor = pct === 100 ? 'var(--color-success)' : pct >= 50 ? 'var(--color-primary)' : 'var(--color-warning)';
@@ -339,22 +348,75 @@
                 ? `<img src="${waiter.photo_url}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">`
                 : `<div style="width:28px;height:28px;border-radius:50%;background:var(--color-primary-bg);display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:600;color:var(--color-primary);">${(s.name || '?').charAt(0).toUpperCase()}</div>`;
 
+            const isExpanded = expandedWaiters.has(wId);
+            const detailDisplay = isExpanded ? 'display: block' : 'display: none';
+            const chevron = isExpanded ? '▼' : '▶';
+
+            // Build task detail rows
+            const taskRows = (s.tasks || [])
+                .sort((a, b) => {
+                    const order = { overdue: 0, in_progress: 1, pending: 2, done: 3 };
+                    return (order[a.status] ?? 2) - (order[b.status] ?? 2);
+                })
+                .map(task => {
+                    const icon = task.task_type === 'rack_check' ? '📦' : '📝';
+                    const title = task.title || task.rack_name || task.rack_code || 'Tugas';
+                    const statusBadge = getStatusBadge(task.status);
+                    const completedTime = task.status === 'done' && task.completed_at ? ` <span style="font-size:0.7rem;color:var(--color-text-muted);">${formatTime(task.completed_at)}</span>` : '';
+                    return `
+                        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--radius-sm);background:var(--color-bg-subtle, #f8fafc);border:1px solid var(--color-border);margin-bottom:4px;">
+                            <span style="font-size:0.85rem;flex-shrink:0;">${icon}</span>
+                            <span style="flex:1;font-size:0.78rem;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${truncate(title, 35)}</span>
+                            ${statusBadge}${completedTime}
+                        </div>
+                    `;
+                }).join('');
+
             return `
-                <div style="display:flex;align-items:center;gap:10px;">
-                    ${avatar}
-                    <div style="flex:1;min-width:0;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                            <span style="font-size:0.82rem;font-weight:500;color:var(--color-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</span>
-                            <span style="font-size:0.75rem;color:var(--color-text-muted);flex-shrink:0;">${s.done}/${s.total} (${pct}%)</span>
+                <div style="border-radius:var(--radius-md);border:1px solid var(--color-border);padding:10px 12px;background:#fff;margin-bottom:4px;">
+                    <div onclick="toggleWaiterDetail('${wId}')" style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">
+                        ${avatar}
+                        <div style="flex:1;min-width:0;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                                <span style="font-size:0.82rem;font-weight:500;color:var(--color-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</span>
+                                <span style="font-size:0.75rem;color:var(--color-text-muted);flex-shrink:0;">${s.done}/${s.total} (${pct}%) <span class="lm-chevron" style="font-size:0.65rem;margin-left:4px;">${chevron}</span></span>
+                            </div>
+                            <div style="height:6px;background:var(--color-border);border-radius:3px;overflow:hidden;">
+                                <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width 0.5s ease;"></div>
+                            </div>
                         </div>
-                        <div style="height:6px;background:var(--color-border);border-radius:3px;overflow:hidden;">
-                            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width 0.5s ease;"></div>
-                        </div>
+                    </div>
+                    <div class="lm-waiter-detail" data-waiter-id="${wId}" style="${detailDisplay};margin-top:10px;padding-top:8px;border-top:1px solid var(--color-border);">
+                        ${taskRows || '<div style="font-size:0.78rem;color:var(--color-text-muted);text-align:center;padding:8px;">Tidak ada tugas</div>'}
                     </div>
                 </div>
             `;
         }).join('');
     }
+
+    function getStatusBadge(status) {
+        const map = {
+            done:        { label: 'Selesai', bg: 'var(--color-success-bg)', color: 'var(--color-success)', border: 'var(--color-success-border)' },
+            in_progress: { label: 'Proses', bg: 'var(--color-info-bg)', color: 'var(--color-info)', border: 'var(--color-info-border)' },
+            pending:     { label: 'Pending', bg: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: 'var(--color-warning-border)' },
+            overdue:     { label: 'Terlambat', bg: 'var(--color-danger-bg)', color: 'var(--color-danger)', border: 'var(--color-danger-border)' },
+        };
+        const s = map[status] || { label: status || '-', bg: '#f1f5f9', color: '#64748b', border: '#e2e8f0' };
+        return `<span style="font-size:0.68rem;font-weight:600;padding:2px 6px;border-radius:4px;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap;flex-shrink:0;">${s.label}</span>`;
+    }
+
+    window.toggleWaiterDetail = function(waiterId) {
+        const detail = document.querySelector(`.lm-waiter-detail[data-waiter-id="${waiterId}"]`);
+        if (!detail) return;
+        const isVisible = detail.style.display !== 'none';
+        detail.style.display = isVisible ? 'none' : 'block';
+        // Update chevron
+        const row = detail.closest('div[style*="border-radius"]');
+        if (row) {
+            const chevron = row.querySelector('.lm-chevron');
+            if (chevron) chevron.textContent = isVisible ? '▶' : '▼';
+        }
+    };
 
     function buildFeed(tasks) {
         // Get completed tasks sorted by completed_at desc
