@@ -105,6 +105,16 @@ class RackCheckPlanningController extends Controller
             // Existing planning tasks untuk tanggal ini
             $planningTasks = $this->firebase->getPlanningTasksForDate($date);
 
+            // Pre-compute task count per waiter dari planning tasks yang sudah ada (skip N+1 query)
+            $taskCountByWaiter = [];
+            foreach ($planningTasks as $task) {
+                $assignedTo = (string) ($task['assigned_to'] ?? '');
+                $status = (string) ($task['status'] ?? '');
+                if ($assignedTo !== '' && in_array($status, ['planned', 'pending'], true)) {
+                    $taskCountByWaiter[$assignedTo] = ($taskCountByWaiter[$assignedTo] ?? 0) + 1;
+                }
+            }
+
             // Ketersediaan petugas
             $waiters = $this->firebase->getActiveWaiters();
             $employeeAvailability = [];
@@ -115,8 +125,9 @@ class RackCheckPlanningController extends Controller
                 }
 
                 $isWorking = $this->firebase->isWorkingDay($waiterId, $date);
-                $shiftInfo = $this->firebase->getWaiterShiftForDate($waiterId, $date);
-                $taskCount = $this->firebase->getWaiterTaskCountForDate($waiterId, $date);
+                $shiftRaw = $this->firebase->getWaiterShiftForDate($waiterId, $date);
+                $shiftInfo = $shiftRaw ? ($shiftRaw['name'] ?? '') . ' (' . ($shiftRaw['clock_in_time'] ?? '') . '-' . ($shiftRaw['clock_out_time'] ?? '') . ')' : '';
+                $taskCount = $taskCountByWaiter[$waiterId] ?? 0;
 
                 // Ambil daily cap dari template pertama yang due (referensi cap)
                 $dailyCap = null;
