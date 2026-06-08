@@ -3,16 +3,17 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\WaiterActivityReport;
+use App\Repositories\Contracts\WaiterTaskRepositoryInterface;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    protected $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected WaiterTaskRepositoryInterface $waiterTasks,
+    ) {
     }
 
     public function __invoke(Request $request)
@@ -25,8 +26,8 @@ class DashboardController extends Controller
         $settings = $this->firebase->getSettings();
         [$periodStartTs, $periodEndTs, $orderPeriodLabel, $startDate, $endDate, $dateRangeInput] = $this->resolveDateRange($request);
         $orders = $this->firebase->getOrdersByDateRange($periodStartTs, $periodEndTs);
-        $waiterTasks = $this->firebase->getWaiterTasksByDateRange($startDate, $endDate);
-        $waiterActivityReports = $this->firebase->getWaiterActivityReports($startDate, $endDate);
+        $waiterTasks = $this->waiterTasks->forDateRange($startDate, $endDate);
+        $waiterActivityReports = WaiterActivityReport::whereBetween('report_date', [$startDate, $endDate])->get()->toArray();
         $waiterIdentityDirectory = $this->buildIdentityDirectory($waiters);
 
         $userStats = $this->buildOrderStats(
