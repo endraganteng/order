@@ -23,7 +23,7 @@ class ProductVectorSyncService
         protected ProductKnowledgeService $knowledge,
         protected GeminiService $gemini,
         protected SupabaseVectorService $vectors,
-    ) {
+        private ProductFirebaseService $product) {
     }
 
     /**
@@ -33,7 +33,7 @@ class ProductVectorSyncService
      */
     public function syncProductId(string $productId): array
     {
-        $product = $this->firebase->getProductById($productId);
+        $product = $this->product->getProductById($productId);
         if (! $product) {
             return ['success' => false, 'status' => 'not_found', 'message' => 'Produk tidak ditemukan.', 'product_id' => $productId];
         }
@@ -146,7 +146,7 @@ class ProductVectorSyncService
         $catId = $product['category_id'] ?? '';
         $categoryName = '-';
         if ($catId) {
-            $catMap = $this->firebase->getProductCategoriesMap();
+            $catMap = $this->product->getProductCategoriesMap();
             $entry = $catMap[$catId] ?? null;
             if (is_array($entry) && isset($entry['name'])) {
                 $categoryName = (string) $entry['name'];

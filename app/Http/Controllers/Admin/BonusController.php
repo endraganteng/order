@@ -4,18 +4,24 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\BonusService;
+use App\Services\AttendanceFirebaseService;
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
 use Illuminate\Http\Request;
 
 class BonusController extends Controller
 {
     protected BonusService $bonus;
     protected FirebaseService $firebase;
+    protected WaiterTaskFirebaseService $waiterTask;
+    protected AttendanceFirebaseService $attendance;
 
-    public function __construct(BonusService $bonus, FirebaseService $firebase)
+    public function __construct(BonusService $bonus, FirebaseService $firebase, AttendanceFirebaseService $attendance, WaiterTaskFirebaseService $waiterTask)
     {
         $this->bonus = $bonus;
         $this->firebase = $firebase;
+        $this->waiterTask = $waiterTask;
+        $this->attendance = $attendance;
     }
 
     // ===== CONFIG =====
@@ -150,12 +156,12 @@ class BonusController extends Controller
         $startDate = date('Y-m-d', strtotime('-29 days', strtotime($date)));
         $config = $this->bonus->getBonusConfig();
         $waiters = $this->firebase->getAllowedEmails(); // returns all waiters
-        $existingScores = $this->firebase->getAllDailyPointsByDate($date);
+        $existingScores = $this->bonus->getAllDailyPointsByDate($date);
 
         // ── BATCH FETCH: read each node ONCE for all waiters ──
-        $allAttendance = $this->firebase->getAllAttendanceByDate($date);       // 1 read
-        $allTasks      = $this->firebase->getWaiterTasksByDateRange($date, $date); // 1 read (indexed query, today only)
-        $allReports    = $this->firebase->getWaiterActivityReportsByDate($date); // 1 read (via getWaiterActivityReports internally)
+        $allAttendance = $this->attendance->getAllAttendanceByDate($date);       // 1 read
+        $allTasks      = $this->waiterTask->getWaiterTasksByDateRange($date, $date); // 1 read (indexed query, today only)
+        $allReports    = $this->waiterTask->getWaiterActivityReportsByDate($date); // 1 read (via getWaiterActivityReports internally)
         $allPenalties  = $this->bonus->getPenaltiesByPeriod($startDate, $date);  // period scope
 
         // Group tasks by waiter+date

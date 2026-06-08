@@ -130,6 +130,36 @@ services:
       app-init:
         condition: service_completed_successfully
 
+  # phpMyAdmin untuk manajemen database MySQL via web
+  phpmyadmin:
+    image: phpmyadmin:5.2-apache
+    container_name: order-phpmyadmin
+    restart: unless-stopped
+    environment:
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=Ccdkill609
+      - UPLOAD_LIMIT=100M
+    networks:
+      - db
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.phpmyadmin-http.rule=Host(`pma.imoweb.dev`)"
+      - "traefik.http.routers.phpmyadmin-http.entrypoints=web"
+      - "traefik.http.routers.phpmyadmin-http.middlewares=phpmyadmin-redirect"
+      - "traefik.http.middlewares.phpmyadmin-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.phpmyadmin-redirect.redirectscheme.permanent=true"
+      # HTTPS
+      - "traefik.http.routers.phpmyadmin.rule=Host(`pma.imoweb.dev`)"
+      - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
+      - "traefik.http.routers.phpmyadmin.tls=true"
+      - "traefik.http.routers.phpmyadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
+
 volumes:
   app-storage:
     name: order_app_storage

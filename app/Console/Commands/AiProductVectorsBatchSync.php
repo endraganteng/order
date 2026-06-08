@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\AiProductEnrichmentBatch;
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use App\Services\ProductKnowledgeService;
 use App\Services\ProductVectorSyncService;
 use Illuminate\Console\Command;
@@ -28,7 +29,7 @@ class AiProductVectorsBatchSync extends Command
         protected FirebaseService $firebase,
         protected ProductKnowledgeService $knowledge,
         protected ProductVectorSyncService $sync,
-    ) {
+        private ProductFirebaseService $product) {
         parent::__construct();
     }
 
@@ -62,7 +63,7 @@ class AiProductVectorsBatchSync extends Command
         ]);
 
         try {
-            $allProducts = $this->firebase->getActiveProducts();
+            $allProducts = $this->product->getActiveProducts();
         } catch (\Throwable $e) {
             $batch->update([
                 'status' => 'failed',

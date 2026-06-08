@@ -8,6 +8,7 @@ use App\Models\AiProductEnrichmentJob;
 use App\Models\AiProductEnrichmentLog;
 use App\Services\BatchProcessService;
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use App\Services\ProductEnrichmentService;
 use App\Services\ProductKnowledgeService;
 use App\Services\ProductVectorSyncService;
@@ -25,6 +26,7 @@ class AiProductEnrichmentController extends Controller
         protected ProductVectorSyncService $vectorSync,
         protected VariantDetectorService $variant,
         protected BatchProcessService $batchProcess,
+        private ProductFirebaseService $product
     ) {
     }
 
@@ -71,7 +73,7 @@ class AiProductEnrichmentController extends Controller
         $onlyMissing = $request->boolean('only_missing', false);
         $limit = (int) max(5, min(50, (int) $request->input('limit', 20)));
 
-        $products = $this->firebase->getActiveProducts();
+        $products = $this->product->getActiveProducts();
         $rows = [];
         foreach ($products as $p) {
             $name = (string) ($p['name'] ?? '');
@@ -129,7 +131,7 @@ class AiProductEnrichmentController extends Controller
         );
 
         $admin = $this->adminIdentifier();
-        $allProducts = $this->firebase->getActiveProducts();
+        $allProducts = $this->product->getActiveProducts();
 
         $candidates = [];
         foreach ($allProducts as $p) {
@@ -173,13 +175,13 @@ class AiProductEnrichmentController extends Controller
     public function show(int $id)
     {
         $job = AiProductEnrichmentJob::findOrFail($id);
-        $product = $this->firebase->getProductById($job->product_id);
+        $product = $this->product->getProductById($job->product_id);
         $knowledge = $this->knowledge->get($job->product_id);
         $logs = AiProductEnrichmentLog::where('job_id', $id)->orderBy('id')->get();
 
         $categoryName = '-';
         if ($product && ! empty($product['category_id'])) {
-            $map = $this->firebase->getProductCategoriesMap();
+            $map = $this->product->getProductCategoriesMap();
             $entry = $map[$product['category_id']] ?? null;
             $categoryName = is_array($entry) ? (string) ($entry['name'] ?? '-') : (string) ($entry ?? '-');
         }

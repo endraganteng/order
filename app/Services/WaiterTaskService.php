@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Services\WaiterTaskFirebaseService;
+
 use App\Models\WaiterTask;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +13,7 @@ class WaiterTaskService
     public function __construct(
         private FirebaseService $firebase,
         private FirebaseSyncService $sync,
+        private WaiterTaskFirebaseService $waiterTask
     ) {
     }
 
@@ -30,7 +33,7 @@ class WaiterTaskService
         }
 
         return collect(
-            $this->firebase->getWaiterTasksByWaiterId(
+            $this->waiterTask->getWaiterTasksByWaiterId(
                 $waiterId,
                 now()->subDays(7)->format('Y-m-d'),
                 now()->format('Y-m-d')
@@ -45,7 +48,7 @@ class WaiterTaskService
     public function completeTask(string $key, array $payload): array
     {
         if (! config('features.mysql_waiter_tasks')) {
-            return $this->firebase->updateWaiterTaskStatus(
+            return $this->waiterTask->updateWaiterTaskStatus(
                 $key,
                 'done',
                 $payload['waiter_id'] ?? '',

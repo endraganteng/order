@@ -3,7 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Repositories\Contracts\CashierTaskRepositoryInterface;
+use App\Services\AttendanceFirebaseService;
+use App\Services\CashierFirebaseService;
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -12,6 +16,10 @@ class CashierController extends Controller
     public function __construct(
         protected FirebaseService $firebase,
         protected CashierTaskRepositoryInterface $cashierTasks,
+        private AttendanceFirebaseService $attendance,
+        private ShiftScheduleFirebaseService $shift,
+        private CashierFirebaseService $cashierFb,
+        private WaiterTaskFirebaseService $waiterTask
     ) {
     }
 
@@ -25,12 +33,12 @@ class CashierController extends Controller
 
         if ($now - $lastSync >= 30) {
             $this->cashierTasks->markOverdue();
-            $this->firebase->generateDueRecurringTasks();
+            $this->waiterTask->generateDueRecurringTasks();
             session(['cashier_last_sync' => $now]);
         }
 
-        $cashierWorkers = $this->firebase->getActiveCashierWorkers();
-        $attendanceWaiters = $this->firebase->getAttendanceEligibleWaiters();
+        $cashierWorkers = $this->cashierFb->getActiveCashierWorkers();
+        $attendanceWaiters = $this->attendance->getAttendanceEligibleWaiters();
         $settings = $this->firebase->getSettings();
 
         // Get waiters who have shift today but haven't clocked in yet
@@ -39,11 +47,11 @@ class CashierController extends Controller
         
         foreach ($attendanceWaiters as $waiter) {
             $waiterId = $waiter['id'] ?? '';
-            $shift = $this->firebase->getWaiterShiftForDate($waiterId, $today);
+            $shift = $this->shift->getWaiterShiftForDate($waiterId, $today);
             
             // Only include if waiter has shift today (not off)
             if ($shift) {
-                $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
+                $attendance = $this->attendance->getAttendanceByDate($waiterId, $today);
                 
                 // Check if not clocked in yet
                 if (!$attendance || empty($attendance['clock_in'])) {
@@ -73,7 +81,7 @@ class CashierController extends Controller
             ], 422);
         }
 
-        $payload = $this->firebase->getCashierAttendanceQrData($waiterId);
+        $payload = $this->attendance->getCashierAttendanceQrData($waiterId);
         if (empty($payload['found'])) {
             return response()->json([
                 'success' => false,
@@ -89,11 +97,11 @@ class CashierController extends Controller
      */
     public function getGlobalAttendanceQr()
     {
-        $qrData = $this->firebase->getCurrentGlobalAttendanceQr();
+        $qrData = $this->attendance->getCurrentGlobalAttendanceQr();
         $today = date('Y-m-d');
         
         // Calculate statistics and build waiters list
-        $eligibleWaiters = $this->firebase->getAttendanceEligibleWaiters();
+        $eligibleWaiters = $this->attendance->getAttendanceEligibleWaiters();
         $notYet = 0;
         $clockedIn = 0;
         $clockedOut = 0;
@@ -101,10 +109,10 @@ class CashierController extends Controller
         
         foreach ($eligibleWaiters as $waiter) {
             $waiterId = $waiter['id'] ?? '';
-            $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
+            $attendance = $this->attendance->getAttendanceByDate($waiterId, $today);
             
             // Check if waiter has shift today (not day off)
-            $shift = $this->firebase->getWaiterShiftForDate($waiterId, $today);
+            $shift = $this->shift->getWaiterShiftForDate($waiterId, $today);
             
             // Skip if waiter is off today (no shift)
             if (!$shift) {
@@ -161,7 +169,7 @@ class CashierController extends Controller
     {
         return response()->json([
             'success' => true,
-            'workers' => $this->firebase->getActiveCashierWorkers(),
+            'workers' => $this->cashierFb->getActiveCashierWorkers(),
         ]);
     }
 
@@ -184,7 +192,7 @@ class CashierController extends Controller
 
         session(['cashier_last_sync' => $now]);
 
-        $generated = $this->firebase->generateDueRecurringTasks();
+        $generated = $this->waiterTask->generateDueRecurringTasks();
         $overdue = $this->cashierTasks->markOverdue();
 
         return response()->json([
@@ -205,7 +213,7 @@ class CashierController extends Controller
             'cashier_worker_id' => 'required|string|max:100',
         ]);
 
-        $worker = $this->firebase->getCashierWorkerById($request->cashier_worker_id);
+        $worker = $this->cashierFb->getCashierWorkerById($request->cashier_worker_id);
         if (! $worker || empty($worker['is_active'])) {
             return response()->json([
                 'success' => false,

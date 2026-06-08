@@ -6,15 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreWaiterRequest;
 use App\Http\Requests\UpdateWaiterRequest;
 use App\Services\FirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
 use Illuminate\Support\Facades\Hash;
 
 class WaiterController extends Controller
 {
     protected $firebase;
 
-    public function __construct(FirebaseService $firebase)
+    public function __construct(FirebaseService $firebase, ShiftScheduleFirebaseService $shift)
     {
         $this->firebase = $firebase;
+        $this->shift = $shift;
     }
 
     public function index()
@@ -26,7 +28,7 @@ class WaiterController extends Controller
 
     public function create()
     {
-        $shifts = $this->firebase->getActiveShifts();
+        $shifts = $this->shift->getActiveShifts();
 
         return view('admin.waiters.create', compact('shifts'));
     }
@@ -64,7 +66,7 @@ class WaiterController extends Controller
             abort(404);
         }
 
-        $shifts = $this->firebase->getActiveShifts();
+        $shifts = $this->shift->getActiveShifts();
 
         return view('admin.waiters.edit', compact('waiter', 'shifts'));
     }

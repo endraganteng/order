@@ -5,15 +5,17 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\WorkShift;
 use App\Services\FirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
 use Illuminate\Http\Request;
 
 class ShiftController extends Controller
 {
     protected $firebase;
 
-    public function __construct(FirebaseService $firebase)
+    public function __construct(FirebaseService $firebase, ShiftScheduleFirebaseService $shift)
     {
         $this->firebase = $firebase;
+        $this->shift = $shift;
     }
 
     /**
@@ -31,7 +33,7 @@ class ShiftController extends Controller
                 'is_active' => (bool) $s->is_active,
             ])->all();
         } else {
-            $shifts = $this->firebase->getShifts();
+            $shifts = $this->shift->getShifts();
         }
 
         return view('admin.shifts.index', compact('shifts'));
@@ -65,10 +67,10 @@ class ShiftController extends Controller
 
                 // Dual-write ke Firebase jika masih aktif
                 if (config('features.legacy_write_work_shifts')) {
-                    $this->firebase->createShift($data);
+                    $this->shift->createShift($data);
                 }
             } else {
-                $shift = $this->firebase->createShift($data);
+                $shift = $this->shift->createShift($data);
             }
 
             if ($request->expectsJson()) {
@@ -107,7 +109,7 @@ class ShiftController extends Controller
                 abort(404);
             }
         } else {
-            $shift = $this->firebase->getShiftById($id);
+            $shift = $this->shift->getShiftById($id);
             if (! $shift) {
                 abort(404);
             }
@@ -134,10 +136,10 @@ class ShiftController extends Controller
                 $row->update($data + ['event_updated_at' => time()]);
 
                 if (config('features.legacy_write_work_shifts')) {
-                    $this->firebase->updateShift($id, $data);
+                    $this->shift->updateShift($id, $data);
                 }
             } else {
-                $this->firebase->updateShift($id, $data);
+                $this->shift->updateShift($id, $data);
             }
 
             if ($request->expectsJson()) {
@@ -175,7 +177,7 @@ class ShiftController extends Controller
                 abort(404);
             }
         } else {
-            $shift = $this->firebase->getShiftById($id);
+            $shift = $this->shift->getShiftById($id);
             if (! $shift) {
                 abort(404);
             }
@@ -186,10 +188,10 @@ class ShiftController extends Controller
                 $row->delete();
 
                 if (config('features.legacy_write_work_shifts')) {
-                    $this->firebase->deleteShift($id);
+                    $this->shift->deleteShift($id);
                 }
             } else {
-                $this->firebase->deleteShift($id);
+                $this->shift->deleteShift($id);
             }
 
             if (request()->expectsJson()) {
@@ -231,10 +233,10 @@ class ShiftController extends Controller
                 'clock_out_time' => $s->clock_out_time,
             ])->all();
         } else {
-            $shifts = $this->firebase->getActiveShifts();
+            $shifts = $this->shift->getActiveShifts();
         }
 
-        $template = $this->firebase->getScheduleTemplate();
+        $template = $this->shift->getScheduleTemplate();
 
         $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
         $scheduleMap = [];
@@ -261,7 +263,7 @@ class ShiftController extends Controller
         ]);
 
         try {
-            $this->firebase->saveScheduleTemplate($validated['schedule']);
+            $this->shift->saveScheduleTemplate($validated['schedule']);
 
             $this->firebase->logAuditAction('update', 'schedule_template', null, ['waiters_count' => count($validated['schedule'])]);
 

@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
+use App\Services\RackStockFirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
 use App\Services\PlanningFirebaseService;
 use App\Services\RackCheckTemplateService;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +23,9 @@ class RackCheckPlanningController extends Controller
         protected FirebaseService $firebase,
         protected PlanningFirebaseService $planning,
         protected RackCheckTemplateService $templateService,
+        private ShiftScheduleFirebaseService $shift,
+        private RackStockFirebaseService $rack,
+        private WaiterTaskFirebaseService $waiterTask
     ) {
     }
 
@@ -30,7 +36,7 @@ class RackCheckPlanningController extends Controller
      */
     public function index(): \Illuminate\View\View
     {
-        $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+        $allTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
 
         $days = [];
         for ($i = 1; $i <= 7; $i++) {
@@ -39,12 +45,12 @@ class RackCheckPlanningController extends Controller
             $dueTemplates = array_values(array_filter($allTemplates, function (array $tpl) use ($date): bool {
                 return ($tpl['task_type'] ?? '') === 'rack_check'
                     && ! empty($tpl['is_active'])
-                    && $this->firebase->isTemplateDueForDate($tpl, $date);
+                    && $this->waiterTask->isTemplateDueForDate($tpl, $date);
             }));
 
             $dueCount = 0;
             foreach ($dueTemplates as $tpl) {
-                $racks = $this->firebase->normalizeTemplateRacks($tpl);
+                $racks = $this->rack->normalizeTemplateRacks($tpl);
                 $dueCount += count($racks);
             }
 
@@ -77,7 +83,7 @@ class RackCheckPlanningController extends Controller
         $date = (string) $request->query('date');
 
         try {
-            $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+            $allTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
 
             // Rak yang due pada tanggal ini
             $dueRacks = [];
@@ -88,10 +94,10 @@ class RackCheckPlanningController extends Controller
                 if (empty($tpl['is_active'])) {
                     continue;
                 }
-                if (! $this->firebase->isTemplateDueForDate($tpl, $date)) {
+                if (! $this->waiterTask->isTemplateDueForDate($tpl, $date)) {
                     continue;
                 }
-                $racks = $this->firebase->normalizeTemplateRacks($tpl);
+                $racks = $this->rack->normalizeTemplateRacks($tpl);
                 foreach ($racks as $rack) {
                     $dueRacks[] = [
                         'template_id' => (string) ($tpl['id'] ?? ''),
@@ -126,8 +132,8 @@ class RackCheckPlanningController extends Controller
                     continue;
                 }
 
-                $isWorking = $this->firebase->isWorkingDay($waiterId, $date);
-                $shiftRaw = $this->firebase->getWaiterShiftForDate($waiterId, $date);
+                $isWorking = $this->shift->isWorkingDay($waiterId, $date);
+                $shiftRaw = $this->shift->getWaiterShiftForDate($waiterId, $date);
                 $shiftInfo = $shiftRaw ? ($shiftRaw['name'] ?? '') . ' (' . ($shiftRaw['clock_in_time'] ?? '') . '-' . ($shiftRaw['clock_out_time'] ?? '') . ')' : '';
                 $taskCount = $taskCountByWaiter[$waiterId] ?? 0;
 
@@ -142,7 +148,7 @@ class RackCheckPlanningController extends Controller
                         }
                     }
                     if ($firstTemplate !== null) {
-                        $dailyCap = $this->firebase->getRackCheckDailyCap($waiterId, $date, $firstTemplate);
+                        $dailyCap = $this->rack->getRackCheckDailyCap($waiterId, $date, $firstTemplate);
                     }
                 }
 
@@ -199,7 +205,7 @@ class RackCheckPlanningController extends Controller
 
         try {
             // Cek petugas bekerja hari itu
-            $isWorking = $this->firebase->isWorkingDay($waiterId, $scheduledDate);
+            $isWorking = $this->shift->isWorkingDay($waiterId, $scheduledDate);
             if (! $isWorking) {
                 return response()->json([
                     'success' => false,
@@ -210,7 +216,7 @@ class RackCheckPlanningController extends Controller
 
             // Cek daily cap
             $template = null;
-            $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+            $allTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
             foreach ($allTemplates as $tpl) {
                 if ((string) ($tpl['id'] ?? '') === $templateId) {
                     $template = $tpl;
@@ -219,8 +225,8 @@ class RackCheckPlanningController extends Controller
             }
 
             if ($template !== null) {
-                $dailyCap = $this->firebase->getRackCheckDailyCap($waiterId, $scheduledDate, $template);
-                $taskCount = $this->firebase->getWaiterTaskCountForDate($waiterId, $scheduledDate);
+                $dailyCap = $this->rack->getRackCheckDailyCap($waiterId, $scheduledDate, $template);
+                $taskCount = $this->waiterTask->getWaiterTaskCountForDate($waiterId, $scheduledDate);
 
                 if ($dailyCap !== null && (int) $taskCount >= (int) $dailyCap && ! $isOverride) {
                     return response()->json([
@@ -513,7 +519,7 @@ class RackCheckPlanningController extends Controller
             $oldWaiterId   = (string) ($task['assigned_to'] ?? '');
 
             // Validasi petugas baru bekerja pada tanggal tersebut
-            $isWorking = $this->firebase->isWorkingDay($newWaiterId, $scheduledDate);
+            $isWorking = $this->shift->isWorkingDay($newWaiterId, $scheduledDate);
             if (! $isWorking) {
                 return response()->json([
                     'success'    => false,
@@ -525,7 +531,7 @@ class RackCheckPlanningController extends Controller
             // Validasi daily cap (kecuali override)
             if (! $isOverride) {
                 $templateId   = (string) ($task['template_id'] ?? '');
-                $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+                $allTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
                 $template     = null;
                 foreach ($allTemplates as $tpl) {
                     if ((string) ($tpl['id'] ?? '') === $templateId) {
@@ -535,8 +541,8 @@ class RackCheckPlanningController extends Controller
                 }
 
                 if ($template !== null) {
-                    $dailyCap  = $this->firebase->getRackCheckDailyCap($newWaiterId, $scheduledDate, $template);
-                    $taskCount = $this->firebase->getWaiterTaskCountForDate($newWaiterId, $scheduledDate);
+                    $dailyCap  = $this->rack->getRackCheckDailyCap($newWaiterId, $scheduledDate, $template);
+                    $taskCount = $this->waiterTask->getWaiterTaskCountForDate($newWaiterId, $scheduledDate);
 
                     if ($dailyCap !== null && (int) $taskCount >= (int) $dailyCap) {
                         return response()->json([
@@ -564,7 +570,7 @@ class RackCheckPlanningController extends Controller
             $isPublished  = ! empty($task['is_published']);
             $waiterTaskId = (string) ($task['waiter_task_id'] ?? '');
             if ($isPublished && $waiterTaskId !== '') {
-                $this->firebase->updateWaiterTask($waiterTaskId, [
+                $this->waiterTask->updateWaiterTask($waiterTaskId, [
                     'assigned_waiter_id'   => $newWaiterId,
                     'assigned_waiter_name' => $newWaiterName,
                 ]);
@@ -641,7 +647,7 @@ class RackCheckPlanningController extends Controller
 
             // Hapus waiter_task lama jika sudah published
             if ($isPublished && $waiterTaskId !== '') {
-                $this->firebase->removeWaiterTask($waiterTaskId);
+                $this->waiterTask->removeWaiterTask($waiterTaskId);
             }
 
             // Hapus lock lama
@@ -717,7 +723,7 @@ class RackCheckPlanningController extends Controller
 
             // Hapus waiter_task lama jika sudah published
             if ($isPublished && $waiterTaskId !== '') {
-                $this->firebase->removeWaiterTask($waiterTaskId);
+                $this->waiterTask->removeWaiterTask($waiterTaskId);
             }
 
             $this->planning->logPlanningAction('ignore_rack', [
@@ -754,7 +760,7 @@ class RackCheckPlanningController extends Controller
 
         try {
             // Ambil semua rak yang due untuk tanggal ini
-            $allDueRacks = $this->firebase->getRacksDueForDateFromTemplates($date);
+            $allDueRacks = $this->rack->getRacksDueForDateFromTemplates($date);
 
             if (empty($allDueRacks)) {
                 return response()->json([
@@ -816,7 +822,7 @@ class RackCheckPlanningController extends Controller
                     continue;
                 }
 
-                $isWorking = $this->firebase->isWorkingDay($waiterId, $date);
+                $isWorking = $this->shift->isWorkingDay($waiterId, $date);
                 if (! $isWorking) {
                     continue;
                 }
@@ -825,10 +831,10 @@ class RackCheckPlanningController extends Controller
                 $dailyCap  = null;
                 $firstRack = $unassignedRacks[0] ?? null;
                 if ($firstRack !== null) {
-                    $dailyCap = $this->firebase->getRackCheckDailyCap($waiterId, $date, $firstRack);
+                    $dailyCap = $this->rack->getRackCheckDailyCap($waiterId, $date, $firstRack);
                 }
 
-                $taskCount       = (int) $this->firebase->getWaiterTaskCountForDate($waiterId, $date);
+                $taskCount       = (int) $this->waiterTask->getWaiterTaskCountForDate($waiterId, $date);
                 $remainingCapacity = $dailyCap !== null ? max(0, (int) $dailyCap - $taskCount) : PHP_INT_MAX;
 
                 $workingWaiters[] = [

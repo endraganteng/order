@@ -37,3 +37,7 @@ resources/views/webhooks/partials/dana_entry.blade.php
 .claude/
 .omc/
 /storage/app/screenshots
+storage/fb-creds.json
+storage/firebase-credentials.json
+import_migration_data.sql
+orderan.sql

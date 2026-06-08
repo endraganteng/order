@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Services\FirebaseService;
+use App\Services\RackStockFirebaseService;
+use App\Services\WaiterTaskFirebaseService;
 use Illuminate\Console\Command;
 
 /**
@@ -32,7 +34,7 @@ class BonusRackRecheckMarkLegacy extends Command
 
     protected $description = 'Tandai task rack_check legacy (done tanpa recheck_pending) sebagai pending review.';
 
-    public function handle(FirebaseService $firebase): int
+    public function handle(FirebaseService $firebase, RackStockFirebaseService $rack): int
     {
         $dryRun = (bool) $this->option('dry-run');
         $from = $this->validateDate($this->option('from'));
@@ -48,7 +50,7 @@ class BonusRackRecheckMarkLegacy extends Command
         }
         $this->newLine();
 
-        $tasks = $firebase->getWaiterTasks();
+        $tasks = $waiterTask->getWaiterTasks();
         $candidates = [];
         foreach ($tasks as $t) {
             if (($t['task_type'] ?? '') !== 'rack_check') {
@@ -95,7 +97,7 @@ class BonusRackRecheckMarkLegacy extends Command
             ];
 
             if (! $dryRun) {
-                $result = $firebase->markRackCheckPendingReview($id);
+                $result = $rack->markRackCheckPendingReview($id);
                 if ($result['success'] ?? false) {
                     $applied++;
                 } else {

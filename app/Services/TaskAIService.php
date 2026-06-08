@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Services\WaiterTaskFirebaseService;
+
 use App\Models\AiChatMessage;
 use App\Models\AiChatSession;
 use App\Traits\ConversationMemory;
@@ -20,14 +22,16 @@ class TaskAIService
 {
     use ConversationMemory;
     protected FirebaseService $firebase;
+    protected WaiterTaskFirebaseService $waiterTask;
     protected string $provider;
     protected string $model;
     protected float $temperature;
     protected int $timeout;
 
-    public function __construct(FirebaseService $firebase)
+    public function __construct(FirebaseService $firebase, WaiterTaskFirebaseService $waiterTask)
     {
         $this->firebase = $firebase;
+        $this->waiterTask = $waiterTask;
 
         // Load AI config from finance_settings (shared with FinanceChatService)
         $this->provider = $this->getSetting('ai_provider', 'gemini');
@@ -266,7 +270,7 @@ SYSTEM;
         // 5. Active templates with scheduling info
         $lines[] = "";
         $lines[] = "TEMPLATE AKTIF:";
-        $templates = $this->firebase->getRecurringWaiterTaskTemplates();
+        $templates = $this->waiterTask->getRecurringWaiterTaskTemplates();
         $activeTemplates = array_filter($templates, fn($t) => !empty($t['is_active']));
         foreach ($activeTemplates as $tpl) {
             $type = $tpl['task_type'] ?? 'general';
@@ -541,7 +545,7 @@ SYSTEM;
         $reason = $action['reason'] ?? 'Bulk cancel via AI HRD Bot';
 
         $waiterName = $this->resolveWaiterName($waiterId);
-        $tasks = $this->firebase->getWaiterTasksByDate($date);
+        $tasks = $this->waiterTask->getWaiterTasksByDate($date);
 
         $cancelled = 0;
         $updates = [];

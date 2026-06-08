@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\AiProductEnrichmentBatch;
 use App\Models\AiProductEnrichmentJob;
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use App\Services\ProductEnrichmentService;
 use App\Services\ProductKnowledgeService;
 use App\Services\ProductVectorSyncService;
@@ -43,7 +44,7 @@ class AiProductEnrichmentBatchRun extends Command
         protected ProductEnrichmentService $enrichment,
         protected ProductVectorSyncService $vectorSync,
         protected SupabaseVectorService $vectors,
-    ) {
+        private ProductFirebaseService $product) {
         parent::__construct();
     }
 
@@ -82,7 +83,7 @@ class AiProductEnrichmentBatchRun extends Command
         ]);
 
         try {
-            $allProducts = $this->firebase->getActiveProducts();
+            $allProducts = $this->product->getActiveProducts();
         } catch (\Throwable $e) {
             $this->markFailed($batch, 'Gagal load produk Firebase: '.$e->getMessage());
 

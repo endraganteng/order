@@ -27,7 +27,7 @@ class ProductEnrichmentService
         protected ProductKnowledgeService $knowledge,
         protected ProductKnowledgeExtractionService $extractor,
         protected VariantDetectorService $variant,
-    ) {
+        private ProductFirebaseService $product) {
     }
 
     /**
@@ -37,7 +37,7 @@ class ProductEnrichmentService
      */
     public function enrichByProductId(string $productId, ?string $generatedBy = null, ?array $allProductsCache = null): array
     {
-        $product = $this->firebase->getProductById($productId);
+        $product = $this->product->getProductById($productId);
         if (! $product) {
             return ['success' => false, 'status' => 'failed', 'message' => "Produk {$productId} tidak ditemukan."];
         }
@@ -64,7 +64,7 @@ class ProductEnrichmentService
         $variantLabel = $detected['variant'];
 
         // Tentukan PRIMARY produk dari group (kalau punya varian saudara).
-        $allProducts = $allProductsCache ?? $this->firebase->getActiveProducts();
+        $allProducts = $allProductsCache ?? $this->product->getActiveProducts();
         $groups = $this->variant->groupByBase($allProducts);
         $group = $groups[$baseName] ?? null;
         $primaryId = $group['primary_id'] ?? $productId;
@@ -75,7 +75,7 @@ class ProductEnrichmentService
             $primaryKnowledge = $this->knowledge->get($primaryId);
             if (! $primaryKnowledge || ($primaryKnowledge['status'] ?? '') !== 'approved') {
                 // Recursive enrich primary (cache reused).
-                $primaryProduct = $this->firebase->getProductById($primaryId);
+                $primaryProduct = $this->product->getProductById($primaryId);
                 if ($primaryProduct) {
                     $this->enrichProduct($primaryProduct, $generatedBy, $allProducts);
                 }
@@ -328,7 +328,7 @@ class ProductEnrichmentService
         if (! $categoryId) {
             return null;
         }
-        $map = $this->firebase->getProductCategoriesMap();
+        $map = $this->product->getProductCategoriesMap();
         $cat = $map[$categoryId] ?? null;
         if (is_array($cat) && isset($cat['name'])) {
             return (string) $cat['name'];

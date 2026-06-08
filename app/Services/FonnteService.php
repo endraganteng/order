@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Services\WaiterTaskFirebaseService;
+
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -9,9 +11,10 @@ class FonnteService
 {
     protected $firebase;
 
-    public function __construct(FirebaseService $firebase)
+    public function __construct(FirebaseService $firebase, WaiterTaskFirebaseService $waiterTask)
     {
         $this->firebase = $firebase;
+        $this->waiterTask = $waiterTask;
     }
 
     public function isEnabled(): bool
@@ -513,7 +516,7 @@ class FonnteService
 
     protected function dispatchReminder(string $waiterId, string $date, string $type, int $cooldownSeconds, string $phone, string $message, array $metadata, int $now, int $maxSends = 0): bool
     {
-        $claimed = $this->firebase->claimTaskReminderDispatch($waiterId, $date, $type, $cooldownSeconds, $now, $maxSends);
+        $claimed = $this->waiterTask->claimTaskReminderDispatch($waiterId, $date, $type, $cooldownSeconds, $now, $maxSends);
         if (! $claimed) {
             return false;
         }
@@ -521,16 +524,16 @@ class FonnteService
         try {
             $result = $this->sendMessage($phone, $message);
             if (! is_array($result) || ! ($result['status'] ?? false)) {
-                $this->firebase->releaseTaskReminderDispatch($waiterId, $date, $type, $now);
+                $this->waiterTask->releaseTaskReminderDispatch($waiterId, $date, $type, $now);
 
                 return false;
             }
 
-            $this->firebase->completeTaskReminderDispatch($waiterId, $date, $type, $now, $metadata);
+            $this->waiterTask->completeTaskReminderDispatch($waiterId, $date, $type, $now, $metadata);
 
             return true;
         } catch (\Throwable $e) {
-            $this->firebase->releaseTaskReminderDispatch($waiterId, $date, $type, $now);
+            $this->waiterTask->releaseTaskReminderDispatch($waiterId, $date, $type, $now);
             report($e);
 
             return false;

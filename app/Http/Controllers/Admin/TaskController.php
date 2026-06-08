@@ -8,7 +8,12 @@ use App\Http\Requests\StoreCashierWorkerRequest;
 use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateRecurringTaskRequest;
 use App\Repositories\Contracts\WaiterTaskRepositoryInterface;
+use App\Services\AttendanceFirebaseService;
+use App\Services\CashierFirebaseService;
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
+use App\Services\RackStockFirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
 use App\Services\FonnteService;
 use Illuminate\Http\Request;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -17,14 +22,24 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 class TaskController extends Controller
 {
     protected FirebaseService $firebase;
+    protected WaiterTaskFirebaseService $waiterTask;
+    protected RackStockFirebaseService $rack;
+    protected CashierFirebaseService $cashierFb;
+    protected ShiftScheduleFirebaseService $shift;
+    protected AttendanceFirebaseService $attendance;
 
     protected FonnteService $fonnte;
 
     protected WaiterTaskRepositoryInterface $waiterTasks;
 
-    public function __construct(FirebaseService $firebase, FonnteService $fonnte, WaiterTaskRepositoryInterface $waiterTasks)
+    public function __construct(FirebaseService $firebase, FonnteService $fonnte, WaiterTaskRepositoryInterface $waiterTasks, AttendanceFirebaseService $attendance, ShiftScheduleFirebaseService $shift, CashierFirebaseService $cashierFb, RackStockFirebaseService $rack, WaiterTaskFirebaseService $waiterTask)
     {
         $this->firebase = $firebase;
+        $this->waiterTask = $waiterTask;
+        $this->rack = $rack;
+        $this->cashierFb = $cashierFb;
+        $this->shift = $shift;
+        $this->attendance = $attendance;
         $this->fonnte = $fonnte;
         $this->waiterTasks = $waiterTasks;
     }
@@ -51,7 +66,7 @@ class TaskController extends Controller
     public function rackReset()
     {
         try {
-            $result = $this->firebase->resetRackCheckWaiterData();
+            $result = $this->rack->resetRackCheckWaiterData();
             $deletedTasks = (int) ($result['deleted_tasks'] ?? 0);
             $deletedTemplates = (int) ($result['deleted_templates'] ?? 0);
 
@@ -87,7 +102,7 @@ class TaskController extends Controller
         }
 
         try {
-            $result = $this->firebase->resetAllTasks();
+            $result = $this->waiterTask->resetAllTasks();
             $counts = $result['counts'] ?? [];
             $total = (int) ($result['total'] ?? 0);
 
@@ -144,8 +159,8 @@ class TaskController extends Controller
         $taskScope = $requestedScope === 'rack_check' ? 'rack_check' : 'general';
 
         $waiters = $this->firebase->getActiveWaiters();
-        $racks = $this->firebase->getActiveRacks();
-        $categories = $this->firebase->getTaskCategories();
+        $racks = $this->rack->getActiveRacks();
+        $categories = $this->waiterTask->getTaskCategories();
         $requestedTaskType = $taskScope === 'rack_check' ? 'rack_check' : 'general';
         $backRouteName = $taskScope === 'rack_check'
             ? 'admin.tasks.rack.index'
@@ -157,7 +172,7 @@ class TaskController extends Controller
         foreach ($waiters as $waiter) {
             $wId = $waiter['id'] ?? '';
             if ($wId !== '') {
-                $waiterDayOffMap[$wId] = !$this->firebase->isWorkingDay($wId, $today);
+                $waiterDayOffMap[$wId] = !$this->shift->isWorkingDay($wId, $today);
             }
         }
 
@@ -187,7 +202,7 @@ class TaskController extends Controller
 
             // Cek active templates yang sudah ada untuk rack_check
             try {
-                $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+                $existingTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
                 foreach ($existingTemplates as $tpl) {
                     if (($tpl['task_type'] ?? 'general') !== 'rack_check') {
                         continue;
@@ -395,7 +410,7 @@ class TaskController extends Controller
         ]];
 
         if ($taskType === 'rack_check') {
-            $activeRacks = $this->firebase->getActiveRacks();
+            $activeRacks = $this->rack->getActiveRacks();
             if (count($activeRacks) === 0) {
                 return back()
                     ->withErrors(['rack_ids' => 'Tidak ada rak aktif. Tambahkan/aktifkan rak dulu sebelum membuat tugas cek rak.'])
@@ -452,7 +467,7 @@ class TaskController extends Controller
 
             // Backend guard: reject rak yang sudah punya template aktif (cegah duplikat).
             try {
-                $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+                $existingTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
                 $lockedRackMap = [];
                 foreach ($existingTemplates as $tpl) {
                     if (($tpl['task_type'] ?? 'general') !== 'rack_check') {
@@ -706,7 +721,7 @@ class TaskController extends Controller
      */
     public function forceGenerate()
     {
-        $result = $this->firebase->generateDueRecurringWaiterTasks(true);
+        $result = $this->waiterTask->generateDueRecurringWaiterTasks(true);
         $count = is_array($result)
             ? (int) ($result['generated'] ?? 0)
             : (int) $result;
@@ -725,7 +740,7 @@ class TaskController extends Controller
         $today = date('Y-m-d');
         $note = 'Dibatalkan admin via bulk cancel ('.$today.')';
 
-        $cancelled = $this->firebase->bulkCancelPendingTasksForDate($today, $taskType, $note);
+        $cancelled = $this->waiterTask->bulkCancelPendingTasksForDate($today, $taskType, $note);
 
         $redirectRouteName = $taskType === 'rack_check'
             ? 'admin.tasks.rack.index'
@@ -769,9 +784,9 @@ class TaskController extends Controller
      */
     public function recurringDestroy($id, Request $request)
     {
-        $template = $this->firebase->getRecurringWaiterTaskTemplateById($id);
+        $template = $this->waiterTask->getRecurringWaiterTaskTemplateById($id);
 
-        $result = $this->firebase->deleteRecurringWaiterTaskTemplate($id);
+        $result = $this->waiterTask->deleteRecurringWaiterTaskTemplate($id);
         $cancelledTasks = is_array($result) ? (int) ($result['cancelled_tasks'] ?? 0) : 0;
 
         if ($request->expectsJson() || $request->ajax()) {
@@ -797,9 +812,9 @@ class TaskController extends Controller
         $totalCancelled = 0;
 
         foreach ($templateIds as $templateId) {
-            $template = $this->firebase->getRecurringWaiterTaskTemplateById($templateId);
+            $template = $this->waiterTask->getRecurringWaiterTaskTemplateById($templateId);
             if ($template) {
-                $result = $this->firebase->deleteRecurringWaiterTaskTemplate($templateId);
+                $result = $this->waiterTask->deleteRecurringWaiterTaskTemplate($templateId);
                 $deletedCount++;
                 $totalCancelled += is_array($result) ? (int) ($result['cancelled_tasks'] ?? 0) : 0;
             }
@@ -850,7 +865,7 @@ class TaskController extends Controller
         }
 
         // Validasi rak aktif + tidak konflik dengan template aktif
-        $activeRacks = $this->firebase->getActiveRacks();
+        $activeRacks = $this->rack->getActiveRacks();
         $rackMap = [];
         foreach ($activeRacks as $rack) {
             $rackMap[(string) ($rack['id'] ?? '')] = $rack;
@@ -870,7 +885,7 @@ class TaskController extends Controller
 
         // Cek rack uniqueness — tolak rak yang sudah punya template aktif
         try {
-            $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+            $existingTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
             $lockedRacks = [];
             foreach ($existingTemplates as $tpl) {
                 if (($tpl['task_type'] ?? 'general') !== 'rack_check') {
@@ -963,7 +978,7 @@ class TaskController extends Controller
         }
         $targetShiftId = (string) $request->input('target_shift_id', '');
         if ($targetShiftId !== '') {
-            $shift = $this->firebase->getShiftById($targetShiftId);
+            $shift = $this->shift->getShiftById($targetShiftId);
             if (! $shift || ! ($shift['is_active'] ?? true)) {
                 return response()->json(['success' => false, 'message' => 'Shift target tidak valid.'], 422);
             }
@@ -975,7 +990,7 @@ class TaskController extends Controller
         foreach ($rackIds as $idx => $rackId) {
             $rack = $rackMap[$rackId];
             try {
-                $this->firebase->createRecurringWaiterTaskTemplate([
+                $this->waiterTask->createRecurringWaiterTaskTemplate([
                     'title' => (string) ($rack['name'] ?? 'Rak'),
                     'description' => '',
                     'priority' => 'normal',
@@ -1041,8 +1056,8 @@ class TaskController extends Controller
      */
     public function recurringEdit($id)
     {
-        $template = $this->firebase->getRecurringWaiterTaskTemplateById($id);
-        $categories = $this->firebase->getTaskCategories();
+        $template = $this->waiterTask->getRecurringWaiterTaskTemplateById($id);
+        $categories = $this->waiterTask->getTaskCategories();
 
         if (! $template) {
             abort(404);
@@ -1056,7 +1071,7 @@ class TaskController extends Controller
      */
     public function recurringUpdate($id, UpdateRecurringTaskRequest $request)
     {
-        $template = $this->firebase->getRecurringWaiterTaskTemplateById($id);
+        $template = $this->waiterTask->getRecurringWaiterTaskTemplateById($id);
         if (! $template) {
             abort(404);
         }
@@ -1097,7 +1112,7 @@ class TaskController extends Controller
         $deadlineMode = (string) $request->input('deadline_mode', 'fixed');
         $deadlineBeforeEndMinutes = (int) $request->input('deadline_before_end_minutes', 60);
 
-        $this->firebase->updateRecurringWaiterTaskTemplate($id, [
+        $this->waiterTask->updateRecurringWaiterTaskTemplate($id, [
             'title' => $request->title,
             'description' => $request->description ?? '',
             'priority' => $request->priority,
@@ -1177,7 +1192,7 @@ class TaskController extends Controller
         }
 
         $viewMode = $request->query('view', 'role');
-        $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+        $allTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
         $waiters = $this->firebase->getActiveWaiters();
 
         // Filter by scope (task_type)
@@ -1193,8 +1208,8 @@ class TaskController extends Controller
 
         if ($viewMode === 'role') {
             // Group by role
-            $categories = $this->firebase->getTaskCategories();
-            $racks = $scope === 'rack_check' ? $this->firebase->getActiveRacks() : [];
+            $categories = $this->waiterTask->getTaskCategories();
+            $racks = $scope === 'rack_check' ? $this->rack->getActiveRacks() : [];
             $columns = [
                 'pelayan'  => ['label' => '👤 Pelayan'],
                 'kasir'    => ['label' => '💰 Kasir'],
@@ -1329,7 +1344,7 @@ class TaskController extends Controller
             } else {
                 // R3: rack must exist and be active
                 try {
-                    $activeRacks = $this->firebase->getActiveRacks();
+                    $activeRacks = $this->rack->getActiveRacks();
                     $rackFound = null;
                     foreach ($activeRacks as $rack) {
                         if ((string) ($rack['id'] ?? '') === $rackId) {
@@ -1343,7 +1358,7 @@ class TaskController extends Controller
                         // R2: rack uniqueness — only 1 active template per rack
                         // (excluding self when editing)
                         try {
-                            $existingTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+                            $existingTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
                             foreach ($existingTemplates as $tpl) {
                                 $tplId = (string) ($tpl['id'] ?? '');
                                 if ($excludeTemplateId !== null && $tplId === $excludeTemplateId) {
@@ -1463,7 +1478,7 @@ class TaskController extends Controller
 
         // target_shift_id must reference active shift
         if ($targetShiftId !== '') {
-            $shift = $this->firebase->getShiftById($targetShiftId);
+            $shift = $this->shift->getShiftById($targetShiftId);
             if (! $shift || ! ($shift['is_active'] ?? true)) {
                 $errors['target_shift_id'] = 'Shift target tidak ditemukan atau tidak aktif.';
             }
@@ -1551,7 +1566,7 @@ class TaskController extends Controller
         }
 
         if ($targetShiftId !== '') {
-            $shift = $this->firebase->getShiftById($targetShiftId);
+            $shift = $this->shift->getShiftById($targetShiftId);
             if (! $shift || ! ($shift['is_active'] ?? true)) {
                 $errors['target_shift_id'] = 'Shift target tidak ditemukan atau tidak aktif.';
             }
@@ -1587,9 +1602,9 @@ class TaskController extends Controller
 
         $scope = 'general';
         $waiters = $this->firebase->getActiveWaiters();
-        $categories = $this->firebase->getTaskCategories();
-        $racks = $this->firebase->getActiveRacks();
-        $allTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
+        $categories = $this->waiterTask->getTaskCategories();
+        $racks = $this->rack->getActiveRacks();
+        $allTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
 
         // Studio handles BOTH scopes. Frontend toggles scope without reload.
         // We pass ALL templates (general + rack_check) and let JS filter by scope.
@@ -1681,7 +1696,7 @@ class TaskController extends Controller
                 'clock_in_time' => (string) ($shift['clock_in_time'] ?? ''),
                 'clock_out_time' => (string) ($shift['clock_out_time'] ?? ''),
             ];
-        }, $this->firebase->getActiveShifts()));
+        }, $this->shift->getActiveShifts()));
 
         $jsRacks = array_values(array_map(function ($rack) {
             return [
@@ -1794,7 +1809,7 @@ class TaskController extends Controller
 
         // ── CONFLICT GUARD on PATCH (apply patch onto current template snapshot) ──
         // Active for BOTH general and rack_check.
-        $existingTemplate = $this->firebase->getRecurringWaiterTaskTemplateById($id);
+        $existingTemplate = $this->waiterTask->getRecurringWaiterTaskTemplateById($id);
         if ($existingTemplate) {
             $merged = array_merge($existingTemplate, $patch);
 
@@ -1829,7 +1844,7 @@ class TaskController extends Controller
             }
         }
 
-        $result = $this->firebase->updateRecurringScheduleDays($id, $patch);
+        $result = $this->shift->updateRecurringScheduleDays($id, $patch);
 
         if (! $result['success']) {
             return response()->json(['success' => false, 'message' => $result['error']], 422);
@@ -1854,7 +1869,7 @@ class TaskController extends Controller
      */
     public function recurringForceGenerate($id, Request $request)
     {
-        $result = $this->firebase->forceGenerateForTemplate((string) $id);
+        $result = $this->waiterTask->forceGenerateForTemplate((string) $id);
 
         $this->firebase->logAuditAction('force_generate', 'task_template', $id, [
             'generated' => $result['generated'] ?? 0,
@@ -1878,7 +1893,7 @@ class TaskController extends Controller
      */
     public function cashierStore(StoreCashierWorkerRequest $request)
     {
-        $this->firebase->addCashierWorker($request->cashier_name);
+        $this->cashierFb->addCashierWorker($request->cashier_name);
 
         return redirect()->route('admin.tasks.index')
             ->with('success', 'Nama kasir berhasil ditambahkan');
@@ -1889,7 +1904,7 @@ class TaskController extends Controller
      */
     public function cashierDestroy($id)
     {
-        $this->firebase->deleteCashierWorker($id);
+        $this->cashierFb->deleteCashierWorker($id);
 
         return redirect()->route('admin.tasks.index')
             ->with('success', 'Nama kasir berhasil dihapus');
@@ -1906,10 +1921,10 @@ class TaskController extends Controller
         $selectedDate = $request->input('track_date', date('Y-m-d'));
         $rangeStart = date('Y-m-d', strtotime('-30 days', strtotime($selectedDate)));
         $tasks = $this->waiterTasks->forDateRange($rangeStart, $selectedDate);
-        $recurringTemplates = $this->firebase->getRecurringWaiterTaskTemplates();
-        $categories = $this->firebase->getTaskCategories();
+        $recurringTemplates = $this->waiterTask->getRecurringWaiterTaskTemplates();
+        $categories = $this->waiterTask->getTaskCategories();
         $waiters = $this->firebase->getActiveWaiters();
-        $racks = $this->firebase->getRacks();
+        $racks = $this->rack->getRacks();
 
         $tasks = array_map(function ($task) {
             $task['tracking_date'] = $this->resolveTrackingDate($task);
@@ -1930,7 +1945,7 @@ class TaskController extends Controller
         $dateTasks = array_values(array_filter($tasks, function ($task) use ($selectedDate) {
             return ($task['tracking_date'] ?? '') === $selectedDate;
         }));
-        $waiterActivityReports = $this->firebase->getWaiterActivityReportsByDate($selectedDate);
+        $waiterActivityReports = $this->waiterTask->getWaiterActivityReportsByDate($selectedDate);
         $waiterActivityBoard = $this->buildWaiterActivityBoard($waiterActivityReports);
 
         $dateDoneTasks = array_values(array_filter($dateTasks, function ($task) {
@@ -2063,7 +2078,7 @@ class TaskController extends Controller
         // ── Scan compliance stats (rack_check scope only) ──
         $scanStats = [];
         if ($isRackScope) {
-            $scanStats = $this->firebase->getScanStats($selectedDate);
+            $scanStats = $this->attendance->getScanStats($selectedDate);
         }
 
         // ── History data pre-grouped by waiter ──
@@ -2216,7 +2231,7 @@ class TaskController extends Controller
                 }
             }
 
-            $this->firebase->createRecurringWaiterTaskTemplate([
+            $this->waiterTask->createRecurringWaiterTaskTemplate([
                 'title' => $resolvedTaskTitle,
                 'description' => $taskDescription,
                 'priority' => $taskPriority,
@@ -2372,7 +2387,7 @@ class TaskController extends Controller
                 $taskAssignedWaiterId = $assignmentType === 'single' ? $assignedWaiterId : null;
             }
 
-            $result = $this->firebase->createWaiterTasksFromAssignment([
+            $result = $this->waiterTask->createWaiterTasksFromAssignment([
                 'title' => $resolvedTaskTitle,
                 'description' => $taskDescription,
                 'priority' => $taskPriority,
@@ -2552,7 +2567,7 @@ class TaskController extends Controller
             $waiter = $this->firebase->getWaiterById($waiterId);
             if (! $waiter || (($waiter['is_active'] ?? true) === false)) {
                 $invalidWaiters[] = $waiter['name'] ?? $waiterId;
-            } elseif (! $this->firebase->isWorkingDay($waiterId, $today)) {
+            } elseif (! $this->shift->isWorkingDay($waiterId, $today)) {
                 $offDayWaiters[] = $waiterId;
             }
         }
@@ -2615,7 +2630,7 @@ class TaskController extends Controller
                         : [null]; // non-weekly: single iteration
 
                     foreach ($weeklyDays as $weeklyDay) {
-                        $this->firebase->createRecurringWaiterTaskTemplate([
+                        $this->waiterTask->createRecurringWaiterTaskTemplate([
                             'title' => $title,
                             'description' => $description,
                             'priority' => 'normal',
@@ -2662,7 +2677,7 @@ class TaskController extends Controller
                         }
                     }
 
-                    $result = $this->firebase->createWaiterTasksFromAssignment([
+                    $result = $this->waiterTask->createWaiterTasksFromAssignment([
                         'title' => $title,
                         'description' => $description,
                         'priority' => 'normal',
@@ -3296,7 +3311,7 @@ class TaskController extends Controller
             if ($waiterId === '') {
                 continue;
             }
-            $waiterDayOffMap[$waiterId] = ! $this->firebase->isWorkingDay($waiterId, $today);
+            $waiterDayOffMap[$waiterId] = ! $this->shift->isWorkingDay($waiterId, $today);
         }
 
         return view('admin.tasks.live', compact('waiters', 'today', 'waiterDayOffMap'));
@@ -3322,7 +3337,7 @@ class TaskController extends Controller
      */
     public function categoryIndex()
     {
-        $categories = $this->firebase->getTaskCategories();
+        $categories = $this->waiterTask->getTaskCategories();
 
         return response()->json(['categories' => $categories]);
     }
@@ -3338,7 +3353,7 @@ class TaskController extends Controller
             'order' => 'nullable|integer|min:0',
         ]);
 
-        $id = $this->firebase->createTaskCategory(
+        $id = $this->waiterTask->createTaskCategory(
             $request->input('name'),
             $request->input('color'),
             (int) $request->input('order', 0)
@@ -3352,7 +3367,7 @@ class TaskController extends Controller
      */
     public function categoryDestroy(string $id)
     {
-        $this->firebase->deleteTaskCategory($id);
+        $this->waiterTask->deleteTaskCategory($id);
 
         return response()->json(['success' => true]);
     }
@@ -3368,7 +3383,7 @@ class TaskController extends Controller
             'date' => 'required|date_format:Y-m-d',
         ]);
 
-        $count = $this->firebase->bulkReassignPendingTasks(
+        $count = $this->waiterTask->bulkReassignPendingTasks(
             $request->input('from_waiter_id'),
             $request->input('to_waiter_id'),
             $request->input('date')

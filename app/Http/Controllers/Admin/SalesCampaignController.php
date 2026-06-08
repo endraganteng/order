@@ -5,24 +5,27 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Services\SalesCampaignService;
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use Illuminate\Http\Request;
 
 class SalesCampaignController extends Controller
 {
     protected SalesCampaignService $campaign;
     protected FirebaseService $firebase;
+    protected ProductFirebaseService $product;
 
-    public function __construct(SalesCampaignService $campaign, FirebaseService $firebase)
+    public function __construct(SalesCampaignService $campaign, FirebaseService $firebase, ProductFirebaseService $product)
     {
         $this->campaign = $campaign;
         $this->firebase = $firebase;
+        $this->product = $product;
     }
 
     public function index()
     {
         $campaigns = $this->campaign->getAllCampaigns();
         $waiters = $this->firebase->getAllowedEmails();
-        $masterProducts = $this->firebase->getActiveProducts();
+        $masterProducts = $this->product->getActiveProducts();
 
         return view('admin.bonus.campaigns', compact('campaigns', 'waiters', 'masterProducts'));
     }

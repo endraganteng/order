@@ -512,7 +512,8 @@ class TelegramBotController extends Controller
     protected function commandHrdRackTasks(): string
     {
         $firebase = app(\App\Services\FirebaseService::class);
-        $templates = $firebase->getRecurringWaiterTaskTemplates();
+        $waiterTask = app(\App\Services\WaiterTaskFirebaseService::class);
+        $templates = $waiterTask->getRecurringWaiterTaskTemplates();
 
         $rackTemplates = array_filter($templates, function ($tpl) {
             return ($tpl['task_type'] ?? 'general') === 'rack_check';
@@ -548,7 +549,8 @@ class TelegramBotController extends Controller
     protected function sendHrdGeneralTasks(int|string $chatId, ?int $threadId): void
     {
         $firebase = app(\App\Services\FirebaseService::class);
-        $templates = $firebase->getRecurringWaiterTaskTemplates();
+        $waiterTask = app(\App\Services\WaiterTaskFirebaseService::class);
+        $templates = $waiterTask->getRecurringWaiterTaskTemplates();
 
         $generalTemplates = array_values(array_filter($templates, function ($tpl) {
             return ($tpl['task_type'] ?? 'general') === 'general' && !empty($tpl['is_active']);
@@ -600,7 +602,7 @@ class TelegramBotController extends Controller
     {
         $firebase = app(\App\Services\FirebaseService::class);
         $today = date('Y-m-d');
-        $tasks = $firebase->getWaiterTasksByDate($today);
+        $tasks = $waiterTask->getWaiterTasksByDate($today);
 
         // Filter only pending/in_progress
         $activeTasks = array_filter($tasks, function ($task) {
@@ -646,7 +648,7 @@ class TelegramBotController extends Controller
     {
         $firebase = app(\App\Services\FirebaseService::class);
 
-        $template = $firebase->getRecurringWaiterTaskTemplateById($templateId);
+        $template = $waiterTask->getRecurringWaiterTaskTemplateById($templateId);
         if (!$template) {
             return "❌ Template tidak ditemukan.";
         }
@@ -660,7 +662,7 @@ class TelegramBotController extends Controller
         }
 
         // Deactivate template
-        $firebase->updateRecurringWaiterTaskTemplate($templateId, array_merge($template, [
+        $waiterTask->updateRecurringWaiterTaskTemplate($templateId, array_merge($template, [
             'is_active' => false,
         ]));
 
@@ -685,7 +687,7 @@ class TelegramBotController extends Controller
         return implode("\n", $lines);
     }
 
-    protected function cancelPendingTasksByTemplate(\App\Services\FirebaseService $firebase, string $templateId): int
+    protected function cancelPendingTasksByTemplate(\App\Services\WaiterTaskFirebaseService $firebase, string $templateId): int
     {
         $database = $firebase->getDatabase();
         $reference = $database->getReference('waiter_tasks')

@@ -4,14 +4,18 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Repositories\Contracts\AttendanceRepositoryInterface;
+use App\Services\AttendanceFirebaseService;
 use App\Services\FirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
 use Illuminate\Http\Request;
 
 class AttendanceController extends Controller
 {
     public function __construct(
         protected FirebaseService $firebase,
-        protected AttendanceRepositoryInterface $attendance,
+        protected AttendanceRepositoryInterface $attendanceRepo,
+        private AttendanceFirebaseService $attendance,
+        private ShiftScheduleFirebaseService $shift
     ) {
     }
 
@@ -23,7 +27,7 @@ class AttendanceController extends Controller
         $date = $request->input('date', date('Y-m-d'));
 
         $waiters = $this->firebase->getActiveWaiters();
-        $attendanceByDate = $this->attendance->allOnDate($date);
+        $attendanceByDate = $this->attendanceRepo->allOnDate($date);
 
         // Build today's shifts from schedule template
         $todayShifts = [];
@@ -31,12 +35,12 @@ class AttendanceController extends Controller
         $schedules = [];
         foreach ($waiters as $waiter) {
             $wId = $waiter['id'] ?? '';
-            $todayShift = $this->firebase->getWaiterShiftForDate($wId, $date);
+            $todayShift = $this->shift->getWaiterShiftForDate($wId, $date);
             $todayShifts[$wId] = $todayShift;
             if ($todayShift && isset($todayShift['id'])) {
                 $shifts[$todayShift['id']] = $todayShift;
             }
-            $schedules[$wId] = $this->firebase->getWaiterSchedule($wId);
+            $schedules[$wId] = $this->shift->getWaiterSchedule($wId);
         }
 
         return view('admin.attendance.index', compact('date', 'waiters', 'attendanceByDate', 'shifts', 'schedules', 'todayShifts'));
@@ -53,7 +57,7 @@ class AttendanceController extends Controller
         $summaries = [];
         foreach ($waiters as $waiter) {
             $wId = $waiter['id'] ?? '';
-            $monthData = $this->attendance->forWaiterInMonth($wId, $yearMonth);
+            $monthData = $this->attendanceRepo->forWaiterInMonth($wId, $yearMonth);
 
             // Build summary from attendance data
             $present = 0;
@@ -107,7 +111,7 @@ class AttendanceController extends Controller
         }
 
         // Override masih via FirebaseService karena perlu write ke RTDB + sync MySQL
-        $this->firebase->updateAttendance($waiterId, $date, $data);
+        $this->attendance->updateAttendance($waiterId, $date, $data);
 
         $this->firebase->logAuditAction('override', 'attendance', $waiterId, ['date' => $date, 'fields' => array_keys($data)]);
 
@@ -119,7 +123,7 @@ class AttendanceController extends Controller
      */
     public function destroy($waiterId, $date)
     {
-        $this->attendance->delete($waiterId, $date);
+        $this->attendanceRepo->delete($waiterId, $date);
 
         $this->firebase->logAuditAction('delete', 'attendance', $waiterId, ['date' => $date]);
 
@@ -131,7 +135,7 @@ class AttendanceController extends Controller
      */
     public function qrConfig()
     {
-        $qrValue = $this->firebase->getAttendanceQrCode();
+        $qrValue = $this->attendance->getAttendanceQrCode();
 
         return view('admin.attendance.qr_config', compact('qrValue'));
     }
@@ -141,7 +145,7 @@ class AttendanceController extends Controller
      */
     public function regenerateQr()
     {
-        $newValue = $this->firebase->regenerateAttendanceQrCode();
+        $newValue = $this->attendance->regenerateAttendanceQrCode();
 
         return response()->json(['success' => true, 'qr_value' => $newValue, 'message' => 'QR code berhasil di-regenerate']);
     }
@@ -151,7 +155,7 @@ class AttendanceController extends Controller
      */
     public function printQr()
     {
-        $qrValue = $this->firebase->getAttendanceQrCode();
+        $qrValue = $this->attendance->getAttendanceQrCode();
 
         return view('admin.attendance.print_qr', compact('qrValue'));
     }

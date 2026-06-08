@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\BonusService;
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
 use Illuminate\Console\Command;
 
 /**
@@ -57,7 +58,7 @@ class BonusRackRecheckBackfill extends Command
         $this->newLine();
 
         $this->line('Loading semua waiter_tasks dari Firebase...');
-        $allTasks = $firebase->getWaiterTasks();
+        $allTasks = $waiterTask->getWaiterTasks();
         $this->info('Loaded ' . count($allTasks) . ' tasks total.');
 
         // Filter: rack_check + done + sudah direview (recheck_points ada & recheck_pending falsy)
@@ -124,7 +125,7 @@ class BonusRackRecheckBackfill extends Command
         foreach (array_keys($pairs) as $key) {
             [$waiterId, $date] = explode('|', $key, 2);
             try {
-                $allWaiterTasks = $firebase->getWaiterTasksForDate($waiterId, $date);
+                $allWaiterTasks = $waiterTask->getWaiterTasksForDate($waiterId, $date);
                 $scores = $bonus->autoScoreDailyPoints($waiterId, $date, null, $allWaiterTasks, []);
                 $rackScore = (int) ($scores['rack_recheck'] ?? 0);
 

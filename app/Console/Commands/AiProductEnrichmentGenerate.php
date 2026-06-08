@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\AiProductEnrichmentJob;
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use App\Services\ProductEnrichmentService;
 use App\Services\ProductKnowledgeService;
 use Illuminate\Console\Command;
@@ -34,7 +35,7 @@ class AiProductEnrichmentGenerate extends Command
         protected FirebaseService $firebase,
         protected ProductKnowledgeService $knowledge,
         protected ProductEnrichmentService $enrichment,
-    ) {
+        private ProductFirebaseService $product) {
         parent::__construct();
     }
 
@@ -48,7 +49,7 @@ class AiProductEnrichmentGenerate extends Command
 
         // Single-produk mode
         if ($singleProductId !== '') {
-            $product = $this->firebase->getProductById($singleProductId);
+            $product = $this->product->getProductById($singleProductId);
             if (! $product) {
                 $this->error("Produk {$singleProductId} tidak ditemukan.");
 
@@ -68,7 +69,7 @@ class AiProductEnrichmentGenerate extends Command
 
         // Massal mode
         $this->info('Mengambil daftar produk aktif dari Firebase...');
-        $allProducts = $this->firebase->getActiveProducts();
+        $allProducts = $this->product->getActiveProducts();
         $this->info('Total produk aktif: '.count($allProducts));
 
         $candidates = [];

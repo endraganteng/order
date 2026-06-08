@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Repositories\Contracts\RackProductRepositoryInterface;
 use App\Services\FirebaseService;
+use App\Services\RackStockFirebaseService;
+use App\Services\ProductFirebaseService;
 use Illuminate\Http\Request;
 
 class RackProductController extends Controller
@@ -12,6 +14,8 @@ class RackProductController extends Controller
     public function __construct(
         protected FirebaseService $firebase,
         protected RackProductRepositoryInterface $rackProducts,
+        private ProductFirebaseService $product,
+        private RackStockFirebaseService $rack
     ) {
     }
 
@@ -70,7 +74,7 @@ class RackProductController extends Controller
     private function buildFilteredProducts(Request $request): array
     {
         $allProducts = $this->rackProducts->all();
-        $categories = $this->firebase->getActiveProductCategories();
+        $categories = $this->product->getActiveProductCategories();
 
         $categoryMap = [];
         foreach ($categories as $cat) {
@@ -278,7 +282,7 @@ class RackProductController extends Controller
     {
         try {
             $resetCategories = $request->boolean('reset_categories', false);
-            $result = $this->firebase->resetAllProducts($resetCategories);
+            $result = $this->product->resetAllProducts($resetCategories);
 
             $msg = "{$result['deleted']} produk berhasil dihapus. Semua assignment rak juga direset.";
             if ($result['categories_deleted'] > 0) {
@@ -315,7 +319,7 @@ class RackProductController extends Controller
         try {
             $file = $request->file('excel_file');
             $defaultQty = (int) ($request->input('default_standard_qty', 0));
-            $result = $this->firebase->importProductsFromExcel($file->getRealPath(), $defaultQty);
+            $result = $this->product->importProductsFromExcel($file->getRealPath(), $defaultQty);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -349,8 +353,8 @@ class RackProductController extends Controller
     public function bulkAssign()
     {
         $products = $this->rackProducts->allActive();
-        $racks = $this->firebase->getActiveRacks();
-        $categories = $this->firebase->getActiveProductCategories();
+        $racks = $this->rack->getActiveRacks();
+        $categories = $this->product->getActiveProductCategories();
 
         $categoryMap = [];
         foreach ($categories as $cat) {
@@ -365,7 +369,7 @@ class RackProductController extends Controller
                 continue;
             }
 
-            $rackProducts = $this->firebase->getRackProducts($rackId);
+            $rackProducts = $this->product->getRackProducts($rackId);
             $currentAssignments[$rackId] = [];
             foreach ($rackProducts as $rp) {
                 $currentAssignments[$rackId][(string) $rp['id']] = (int) ($rp['standard_qty'] ?? 0);
@@ -403,7 +407,7 @@ class RackProductController extends Controller
         }
 
         try {
-            $this->firebase->bulkAssignProductsToRacks($assignments);
+            $this->product->bulkAssignProductsToRacks($assignments);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -431,14 +435,14 @@ class RackProductController extends Controller
 
     public function rackProducts($rackId)
     {
-        $rack = $this->firebase->getRackById($rackId);
+        $rack = $this->rack->getRackById($rackId);
         if (! $rack) {
             abort(404);
         }
 
         $allProducts = $this->rackProducts->allActive();
-        $rackProductsList = $this->firebase->getRackProducts($rackId);
-        $liveStockMap = $this->firebase->getRackProductLiveStock($rackId, $rackProductsList);
+        $rackProductsList = $this->product->getRackProducts($rackId);
+        $liveStockMap = $this->product->getRackProductLiveStock($rackId, $rackProductsList);
         $assignedProductIds = array_values(array_map(function ($product) {
             return (string) ($product['id'] ?? '');
         }, $rackProductsList));
@@ -448,7 +452,7 @@ class RackProductController extends Controller
 
     public function saveRackProducts(Request $request, $rackId)
     {
-        $rack = $this->firebase->getRackById($rackId);
+        $rack = $this->rack->getRackById($rackId);
         if (! $rack) {
             abort(404);
         }
@@ -483,7 +487,7 @@ class RackProductController extends Controller
         }
 
         try {
-            $this->firebase->assignProductsToRack($rackId, $assignments);
+            $this->product->assignProductsToRack($rackId, $assignments);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -516,9 +520,9 @@ class RackProductController extends Controller
             abort(404);
         }
 
-        $events = $this->firebase->getProductAuditTrail($id, 200);
-        $stats = $this->firebase->getProductStats($id);
-        $racks = $this->firebase->getRacks();
+        $events = $this->product->getProductAuditTrail($id, 200);
+        $stats = $this->product->getProductStats($id);
+        $racks = $this->rack->getRacks();
 
         return view('admin.products.audit_trail', compact('product', 'events', 'stats', 'racks'));
     }

@@ -9,11 +9,14 @@ class BonusService
 {
     protected FirebaseService $firebase;
 
+    protected BonusFirebaseService $bonusFirebase;
+
     protected Database $database;
 
-    public function __construct(FirebaseService $firebase, Database $database)
+    public function __construct(FirebaseService $firebase, BonusFirebaseService $bonusFirebase, Database $database)
     {
         $this->firebase = $firebase;
+        $this->bonusFirebase = $bonusFirebase;
         $this->database = $database;
     }
 
@@ -2170,4 +2173,29 @@ class BonusService
 
         return $bonus;
     }
+
+    // =========================================================================
+    //  PROXY → BonusFirebaseService
+    // =========================================================================
+
+    public function getAllDailyPointsByDate(string $date): array
+    {
+        return $this->bonusFirebase->getAllDailyPointsByDate($date);
+    }
+
+    public function getWaiterBonusHistory(string $waiterId, int $periodsBack = 6): array
+    {
+        return $this->bonusFirebase->getWaiterBonusHistory($waiterId, $periodsBack);
+    }
+
+    public function flagTaskBonusPending(string $taskId, string $waiterId, array $context = []): void
+    {
+        $this->bonusFirebase->flagTaskBonusPending($taskId, $waiterId, $context);
+    }
+
+    public function flagWaiterBonusPending(string $waiterId, string $date, array $context = []): void
+    {
+        $this->bonusFirebase->flagWaiterBonusPending($waiterId, $date, $context);
+    }
+
 }

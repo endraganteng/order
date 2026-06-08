@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use App\Services\PurchaseOrderFirebaseService;
 use App\Services\RestockService;
 use Illuminate\Http\Request;
@@ -14,6 +15,7 @@ class RestockController extends Controller
         protected FirebaseService $firebase,
         protected PurchaseOrderFirebaseService $poService,
         protected RestockService $restockService,
+        private ProductFirebaseService $product
     ) {
     }
 
@@ -24,7 +26,7 @@ class RestockController extends Controller
     {
         $groupedItems = $this->poService->getPendingRestockGroupedByProduct();
         $summary = $this->poService->getRestockSummary();
-        $categories = $this->firebase->getActiveProductCategories();
+        $categories = $this->product->getActiveProductCategories();
 
         return view('admin.restock.index', compact('groupedItems', 'summary', 'categories'));
     }

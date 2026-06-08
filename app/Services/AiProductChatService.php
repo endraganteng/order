@@ -29,7 +29,7 @@ class AiProductChatService
         protected ProductKnowledgeService $knowledge,
         protected GeminiService $gemini,
         protected SupabaseVectorService $vectors,
-    ) {
+        private ProductFirebaseService $product) {
     }
 
     /**
@@ -187,7 +187,7 @@ class AiProductChatService
 
         $allCategories = [];
         try {
-            $allCategories = $this->firebase->getProductCategoriesMap();
+            $allCategories = $this->product->getProductCategoriesMap();
         } catch (\Throwable $e) {
             // ignore
         }
@@ -198,7 +198,7 @@ class AiProductChatService
             if ($productId === '') {
                 continue;
             }
-            $product = $this->firebase->getProductById($productId);
+            $product = $this->product->getProductById($productId);
             if (! $product) {
                 continue; // produk dihapus, skip.
             }
@@ -350,7 +350,7 @@ SYS;
         $catName = '-';
         $catId = $product['category_id'] ?? '';
         if ($catId) {
-            $map = $this->firebase->getProductCategoriesMap();
+            $map = $this->product->getProductCategoriesMap();
             $entry = $map[$catId] ?? null;
             $catName = is_array($entry) ? (string) ($entry['name'] ?? '-') : (string) ($entry ?? '-');
         }

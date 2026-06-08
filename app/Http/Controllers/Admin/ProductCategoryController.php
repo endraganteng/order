@@ -5,15 +5,17 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ProductCategory;
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use Illuminate\Http\Request;
 
 class ProductCategoryController extends Controller
 {
     protected $firebase;
 
-    public function __construct(FirebaseService $firebase)
+    public function __construct(FirebaseService $firebase, ProductFirebaseService $product)
     {
         $this->firebase = $firebase;
+        $this->product = $product;
     }
 
     public function index()
@@ -27,7 +29,7 @@ class ProductCategoryController extends Controller
                 'is_active' => (bool) $c->is_active,
             ])->all();
         } else {
-            $categories = $this->firebase->getProductCategories();
+            $categories = $this->product->getProductCategories();
         }
 
         return view('admin.products.categories', compact('categories'));
@@ -58,10 +60,10 @@ class ProductCategoryController extends Controller
                 $category = array_merge(['id' => (string) $row->id], $data);
 
                 if (config('features.legacy_write_product_categories')) {
-                    $this->firebase->createProductCategory($data);
+                    $this->product->createProductCategory($data);
                 }
             } else {
-                $category = $this->firebase->createProductCategory($data);
+                $category = $this->product->createProductCategory($data);
             }
 
             if ($request->expectsJson()) {
@@ -97,7 +99,7 @@ class ProductCategoryController extends Controller
                 abort(404);
             }
         } else {
-            $category = $this->firebase->getProductCategoryById($id);
+            $category = $this->product->getProductCategoryById($id);
             if (! $category) {
                 abort(404);
             }
@@ -122,10 +124,10 @@ class ProductCategoryController extends Controller
                 $row->update($data + ['event_updated_at' => time()]);
 
                 if (config('features.legacy_write_product_categories')) {
-                    $this->firebase->updateProductCategory($id, $data);
+                    $this->product->updateProductCategory($id, $data);
                 }
             } else {
-                $this->firebase->updateProductCategory($id, $data);
+                $this->product->updateProductCategory($id, $data);
             }
 
             if ($request->expectsJson()) {
@@ -160,7 +162,7 @@ class ProductCategoryController extends Controller
                 abort(404);
             }
         } else {
-            $category = $this->firebase->getProductCategoryById($id);
+            $category = $this->product->getProductCategoryById($id);
             if (! $category) {
                 abort(404);
             }
@@ -171,10 +173,10 @@ class ProductCategoryController extends Controller
                 $row->delete();
 
                 if (config('features.legacy_write_product_categories')) {
-                    $this->firebase->deleteProductCategory($id);
+                    $this->product->deleteProductCategory($id);
                 }
             } else {
-                $this->firebase->deleteProductCategory($id);
+                $this->product->deleteProductCategory($id);
             }
 
             if (request()->expectsJson()) {

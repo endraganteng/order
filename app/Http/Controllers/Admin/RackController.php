@@ -9,6 +9,8 @@ use App\Http\Requests\StoreRackRequest;
 use App\Http\Requests\UpdateRackRequest;
 use App\Repositories\Contracts\RackRepositoryInterface;
 use App\Services\FirebaseService;
+use App\Services\RackStockFirebaseService;
+use App\Services\ProductFirebaseService;
 use Illuminate\Http\Request;
 
 class RackController extends Controller
@@ -16,6 +18,8 @@ class RackController extends Controller
     public function __construct(
         protected FirebaseService $firebase,
         protected RackRepositoryInterface $racks,
+        private ProductFirebaseService $product,
+        private RackStockFirebaseService $rack
     ) {
     }
 
@@ -196,7 +200,7 @@ class RackController extends Controller
     public function regenerateBarcode($id)
     {
         // Barcode generation masih di FirebaseService (generate + simpan ke RTDB)
-        $barcode = $this->firebase->regenerateRackBarcode($id);
+        $barcode = $this->rack->regenerateRackBarcode($id);
         if (! $barcode) {
             abort(404);
         }
@@ -213,10 +217,10 @@ class RackController extends Controller
         }
 
         // History, stock movements, liveStock belum ada di MySQL
-        $history = $this->firebase->getRackCheckHistory($id, 100);
-        $rackProducts = $this->firebase->getRackProducts($id);
-        $liveStockMap = $this->firebase->getRackProductLiveStock($id, $rackProducts);
-        $stockMovements = $this->firebase->getRackStockMovements($id, 800);
+        $history = $this->rack->getRackCheckHistory($id, 100);
+        $rackProducts = $this->product->getRackProducts($id);
+        $liveStockMap = $this->product->getRackProductLiveStock($id, $rackProducts);
+        $stockMovements = $this->rack->getRackStockMovements($id, 800);
 
         $filterProductId = trim((string) $request->input('movement_product_id', ''));
         $filterStatus = trim((string) $request->input('movement_status', 'all'));

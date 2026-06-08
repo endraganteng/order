@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\FirebaseService;
+use App\Services\ProductFirebaseService;
 use App\Services\ProductKnowledgeService;
 use App\Services\ProductVectorSyncService;
 use Illuminate\Console\Command;
@@ -35,7 +36,7 @@ class AiProductVectorsSync extends Command
         protected FirebaseService $firebase,
         protected ProductKnowledgeService $knowledge,
         protected ProductVectorSyncService $sync,
-    ) {
+        private ProductFirebaseService $product) {
         parent::__construct();
     }
 
@@ -55,7 +56,7 @@ class AiProductVectorsSync extends Command
         }
 
         $this->info('Mengambil daftar produk aktif...');
-        $allProducts = $this->firebase->getActiveProducts();
+        $allProducts = $this->product->getActiveProducts();
 
         $candidates = [];
         foreach ($allProducts as $p) {

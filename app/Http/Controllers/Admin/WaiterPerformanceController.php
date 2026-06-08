@@ -4,14 +4,18 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\BonusService;
+use App\Services\AttendanceFirebaseService;
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
 use Illuminate\Http\Request;
 
 class WaiterPerformanceController extends Controller
 {
     public function __construct(
         private FirebaseService $firebase,
-        private BonusService $bonus
+        private BonusService $bonus,
+        private AttendanceFirebaseService $attendance,
+        private WaiterTaskFirebaseService $waiterTask
     ) {
     }
 
@@ -30,7 +34,7 @@ class WaiterPerformanceController extends Controller
 
         // Task performance (may fail if Firebase index not set)
         try {
-            $taskPerformance = $this->firebase->getWaiterTaskPerformance($id, $fromDate, $toDate);
+            $taskPerformance = $this->waiterTask->getWaiterTaskPerformance($id, $fromDate, $toDate);
         } catch (\Exception $e) {
             $taskPerformance = ['total_tasks' => 0, 'total_done' => 0, 'total_overdue' => 0, 'completion_rate' => 0, 'daily_stats' => []];
         }
@@ -38,14 +42,14 @@ class WaiterPerformanceController extends Controller
         // Attendance summary (current month)
         $currentMonth = now()->format('Y-m');
         try {
-            $attendanceSummary = $this->firebase->getAttendanceSummary($id, $currentMonth);
+            $attendanceSummary = $this->attendance->getAttendanceSummary($id, $currentMonth);
         } catch (\Exception $e) {
             $attendanceSummary = [];
         }
 
         // Bonus history (last 6 months)
         try {
-            $bonusHistory = $this->firebase->getWaiterBonusHistory($id, 6);
+            $bonusHistory = $this->bonus->getWaiterBonusHistory($id, 6);
         } catch (\Exception $e) {
             $bonusHistory = [];
         }

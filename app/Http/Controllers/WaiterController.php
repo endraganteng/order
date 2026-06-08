@@ -3,7 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Services\BonusService;
+use App\Services\AttendanceFirebaseService;
 use App\Services\FirebaseService;
+use App\Services\PurchaseOrderFirebaseService;
+use App\Services\WaiterTaskFirebaseService;
+use App\Services\RackStockFirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
+use App\Services\ProductFirebaseService;
 use App\Services\FonnteService;
 use App\Services\KasirScheduleService;
 use App\Services\RetailScheduleService;
@@ -17,9 +23,15 @@ class WaiterController extends Controller
     protected $bonus;
     protected $fonnte;
 
-    public function __construct(FirebaseService $firebase, BonusService $bonus, FonnteService $fonnte)
+    public function __construct(FirebaseService $firebase, BonusService $bonus, FonnteService $fonnte, AttendanceFirebaseService $attendance, ProductFirebaseService $product, ShiftScheduleFirebaseService $shift, RackStockFirebaseService $rack, WaiterTaskFirebaseService $waiterTask,
+        private PurchaseOrderFirebaseService $po)
     {
         $this->firebase = $firebase;
+        $this->waiterTask = $waiterTask;
+        $this->rack = $rack;
+        $this->shift = $shift;
+        $this->product = $product;
+        $this->attendance = $attendance;
         $this->bonus = $bonus;
         $this->fonnte = $fonnte;
     }
@@ -108,10 +120,10 @@ class WaiterController extends Controller
         try {
             $taskBuckets = $this->buildWaiterTaskBuckets($waiterId);
             $activityReports = $this->buildWaiterActivityReports($waiterId, $reportDate);
-            $rackProductsMap = $this->firebase->getAllRackProductsMap();
-            $rackTypesMap = $this->firebase->getRackTypesMap();
-            $todayAttendance = $this->firebase->getAttendanceByDate($waiterId, date('Y-m-d'));
-            $waiterShift = $this->firebase->getWaiterShift($waiterId);
+            $rackProductsMap = $this->product->getAllRackProductsMap();
+            $rackTypesMap = $this->rack->getRackTypesMap();
+            $todayAttendance = $this->attendance->getAttendanceByDate($waiterId, date('Y-m-d'));
+            $waiterShift = $this->shift->getWaiterShift($waiterId);
             $settings = $this->firebase->getSettings();
             $clockOutEnabled = !empty($settings['clock_out_enabled']);
 
@@ -123,7 +135,7 @@ class WaiterController extends Controller
             $isVerifier = in_array($waiterRole, ['finance', 'supervisor'], true);
             $isAttendanceExempt = ! empty($waiterRecord['attendance_exempt']);
             $rackCheckPendingReview = $isFinance
-                ? $this->firebase->getRackCheckPendingReview($reportDate, 7)
+                ? $this->rack->getRackCheckPendingReview($reportDate, 7)
                 : [];
 
             // Bonus produk pending claims badge: untuk finance/supervisor
@@ -270,7 +282,7 @@ class WaiterController extends Controller
         $waiterEmail = (string) session('waiter_email', '');
         $reportDate = date('Y-m-d');
 
-        $result = $this->firebase->createWaiterActivityReport([
+        $result = $this->waiterTask->createWaiterActivityReport([
             'waiter_id' => $waiterId,
             'waiter_name' => $waiterName,
             'waiter_email' => $waiterEmail,
@@ -296,9 +308,9 @@ class WaiterController extends Controller
             $bonusService = app(\App\Services\BonusService::class);
             $today = date('Y-m-d');
 
-            $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
-            $todayTasks = $this->firebase->getWaiterTasksForDate($waiterId, $today);
-            $reports = $this->firebase->getWaiterActivityReportsByWaiterIdForDate($waiterId, $today);
+            $attendance = $this->attendance->getAttendanceByDate($waiterId, $today);
+            $todayTasks = $this->waiterTask->getWaiterTasksForDate($waiterId, $today);
+            $reports = $this->waiterTask->getWaiterActivityReportsByWaiterIdForDate($waiterId, $today);
 
             $autoScores = $bonusService->autoScoreDailyPoints($waiterId, $today, $attendance, $todayTasks, $reports);
 
@@ -314,7 +326,7 @@ class WaiterController extends Controller
             report($e);
             // Flag waiter untuk worker retry; jangan biarkan poin hilang silent.
             try {
-                $this->firebase->flagWaiterBonusPending($waiterId, $reportDate, [
+                $this->bonus->flagWaiterBonusPending($waiterId, $reportDate, [
                     'source' => 'activity_report',
                     'reason' => 'auto_score_failed',
                     'error_class' => get_class($e),
@@ -377,7 +389,7 @@ class WaiterController extends Controller
                 'photo_url' => $request->input('photo_proof_data_url'),
             ]);
         } else {
-            $result = $this->firebase->updateWaiterTaskStatus(
+            $result = $this->waiterTask->updateWaiterTaskStatus(
                 $id,
                 'done',
                 $waiterId,
@@ -418,9 +430,9 @@ class WaiterController extends Controller
                 ? $previousDaily['categories']
                 : [];
 
-            $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
-            $todayTasks = $this->firebase->getWaiterTasksForDate($waiterId, $today);
-            $reports = $this->firebase->getWaiterActivityReportsByWaiterIdForDate($waiterId, $today);
+            $attendance = $this->attendance->getAttendanceByDate($waiterId, $today);
+            $todayTasks = $this->waiterTask->getWaiterTasksForDate($waiterId, $today);
+            $reports = $this->waiterTask->getWaiterActivityReportsByWaiterIdForDate($waiterId, $today);
 
             $autoScores = $bonusService->autoScoreDailyPoints($waiterId, $today, $attendance, $todayTasks, $reports);
 
@@ -493,7 +505,7 @@ class WaiterController extends Controller
             report($e);
             // Flag task untuk worker retry; jangan biarkan poin hilang silent.
             try {
-                $this->firebase->flagTaskBonusPending((string) $id, $waiterId, [
+                $this->bonus->flagTaskBonusPending((string) $id, $waiterId, [
                     'source' => 'complete_task',
                     'date' => date('Y-m-d'),
                     'reason' => 'auto_score_failed',
@@ -534,7 +546,7 @@ class WaiterController extends Controller
         $waiterId = (string) session('waiter_id');
         $waiterName = (string) session('waiter_name', 'Waiter');
 
-        $result = $this->firebase->claimWaiterTask((string) $id, $waiterId, $waiterName);
+        $result = $this->waiterTask->claimWaiterTask((string) $id, $waiterId, $waiterName);
         $ok = (bool) ($result['success'] ?? false);
 
         return response()->json([
@@ -551,7 +563,7 @@ class WaiterController extends Controller
     public function releaseTask($id, Request $request)
     {
         $waiterId = (string) session('waiter_id');
-        $result = $this->firebase->releaseWaiterTask((string) $id, $waiterId);
+        $result = $this->waiterTask->releaseWaiterTask((string) $id, $waiterId);
         $ok = (bool) ($result['success'] ?? false);
 
         return response()->json([
@@ -565,8 +577,8 @@ class WaiterController extends Controller
      */
     public function getRackProducts()
     {
-        $rackProductsMap = $this->firebase->getAllRackProductsMap();
-        $rackTypesMap = $this->firebase->getRackTypesMap();
+        $rackProductsMap = $this->product->getAllRackProductsMap();
+        $rackTypesMap = $this->rack->getRackTypesMap();
 
         return response()->json([
             'success' => true,
@@ -606,7 +618,7 @@ class WaiterController extends Controller
         $config = $bonusService->getBonusConfig();
         $maxPoints = (int) ($config['point_categories']['rack_recheck']['max_daily_points'] ?? 10);
 
-        $result = $this->firebase->submitRackCheckReview(
+        $result = $this->rack->submitRackCheckReview(
             (string) $id,
             $waiterId,
             (string) ($waiter['name'] ?? 'Finance'),
@@ -633,9 +645,9 @@ class WaiterController extends Controller
         $taskDate = (string) ($task['scheduled_for_date'] ?? date('Y-m-d'));
         if ($ownerWaiterId !== '') {
             try {
-                $attendance = $this->firebase->getAttendanceByDate($ownerWaiterId, $taskDate);
-                $ownerTasks = $this->firebase->getWaiterTasksForDate($ownerWaiterId, $taskDate);
-                $reports = $this->firebase->getWaiterActivityReportsByWaiterIdForDate($ownerWaiterId, $taskDate);
+                $attendance = $this->attendance->getAttendanceByDate($ownerWaiterId, $taskDate);
+                $ownerTasks = $this->waiterTask->getWaiterTasksForDate($ownerWaiterId, $taskDate);
+                $reports = $this->waiterTask->getWaiterActivityReportsByWaiterIdForDate($ownerWaiterId, $taskDate);
                 $autoScores = $bonusService->autoScoreDailyPoints($ownerWaiterId, $taskDate, $attendance, $ownerTasks, $reports);
 
                 // Pakai mergeRackRecheckPoints supaya record dengan admin_override=true
@@ -673,7 +685,7 @@ class WaiterController extends Controller
         $rackId = trim((string) $request->input('rack_id', ''));
         $excludeIds = [];
         if ($rackId !== '') {
-            foreach ($this->firebase->getRackProducts($rackId) as $rp) {
+            foreach ($this->product->getRackProducts($rackId) as $rp) {
                 $id = (string) ($rp['id'] ?? '');
                 if ($id !== '') {
                     $excludeIds[] = $id;
@@ -681,7 +693,7 @@ class WaiterController extends Controller
             }
         }
 
-        $results = $this->firebase->searchMasterProducts(
+        $results = $this->product->searchMasterProducts(
             (string) $request->input('q', ''),
             $excludeIds,
             (int) $request->input('limit', 30)
@@ -706,7 +718,7 @@ class WaiterController extends Controller
             'min_qty' => 'nullable|integer|min:0|max:99999',
         ]);
 
-        $result = $this->firebase->addSingleProductToRack(
+        $result = $this->product->addSingleProductToRack(
             (string) $request->input('rack_id'),
             (string) $request->input('product_id'),
             $request->filled('standard_qty') ? (int) $request->input('standard_qty') : null,
@@ -734,7 +746,7 @@ class WaiterController extends Controller
             'product_ids.*' => 'string|max:64',
         ]);
 
-        $info = $this->firebase->getStorageInfoForProducts(
+        $info = $this->product->getStorageInfoForProducts(
             (array) $request->input('product_ids', [])
         );
 
@@ -767,7 +779,7 @@ class WaiterController extends Controller
             'rack_barcode_value' => 'required|string|max:120',
         ]);
 
-        $result = $this->firebase->getStorageRackProductsByBarcode((string) $request->input('rack_barcode_value'));
+        $result = $this->product->getStorageRackProductsByBarcode((string) $request->input('rack_barcode_value'));
         if (! ($result['success'] ?? false)) {
             return response()->json([
                 'success' => false,
@@ -806,7 +818,7 @@ class WaiterController extends Controller
         $waiterName = (string) session('waiter_name', 'Waiter');
         $waiterEmail = (string) session('waiter_email', '');
 
-        $result = $this->firebase->submitStandaloneStockTake([
+        $result = $this->rack->submitStandaloneStockTake([
             'waiter_id' => $waiterId,
             'waiter_name' => $waiterName,
             'waiter_email' => $waiterEmail,
@@ -854,15 +866,15 @@ class WaiterController extends Controller
         
         if ($useGlobalQr) {
             // Global QR mode (scan-triggered rotating)
-            $result = $this->firebase->processGlobalQrScanWithRegeneration($waiterId, 'clock_in', (string) $scannedValue);
+            $result = $this->attendance->processGlobalQrScanWithRegeneration($waiterId, 'clock_in', (string) $scannedValue);
         } else {
             // Per-waiter QR mode (original)
-            $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_in', (string) $scannedValue, 'qr_scan', $clientTimestamp);
+            $result = $this->attendance->processAttendanceQrScan($waiterId, 'clock_in', (string) $scannedValue, 'qr_scan', $clientTimestamp);
         }
 
         if ($result['success'] ?? false) {
             // Check if late and auto-apply penalty
-            $attendance = $this->firebase->getAttendanceByDate($waiterId, date('Y-m-d'));
+            $attendance = $this->attendance->getAttendanceByDate($waiterId, date('Y-m-d'));
             if ($attendance && ($attendance['status'] ?? '') === 'late' && ((int)($attendance['late_minutes'] ?? 0)) > 0) {
                 try {
                     $bonusService = app(\App\Services\BonusService::class);
@@ -902,9 +914,9 @@ class WaiterController extends Controller
                 $bonusService = app(\App\Services\BonusService::class);
                 $today = date('Y-m-d');
 
-                $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
-                $todayTasks = $this->firebase->getWaiterTasksForDate($waiterId, $today);
-                $reports = $this->firebase->getWaiterActivityReportsByWaiterIdForDate($waiterId, $today);
+                $attendance = $this->attendance->getAttendanceByDate($waiterId, $today);
+                $todayTasks = $this->waiterTask->getWaiterTasksForDate($waiterId, $today);
+                $reports = $this->waiterTask->getWaiterActivityReportsByWaiterIdForDate($waiterId, $today);
 
                 $autoScores = $bonusService->autoScoreDailyPoints($waiterId, $today, $attendance, $todayTasks, $reports);
 
@@ -920,7 +932,7 @@ class WaiterController extends Controller
                 report($e);
                 // Flag waiter untuk worker retry; jangan biarkan poin hilang silent.
                 try {
-                    $this->firebase->flagWaiterBonusPending($waiterId, date('Y-m-d'), [
+                    $this->bonus->flagWaiterBonusPending($waiterId, date('Y-m-d'), [
                         'source' => 'clock_in',
                         'reason' => 'auto_score_failed',
                         'error_class' => get_class($e),
@@ -958,10 +970,10 @@ class WaiterController extends Controller
         
         if ($useGlobalQr) {
             // Global QR mode (scan-triggered rotating)
-            $result = $this->firebase->processGlobalQrScanWithRegeneration($waiterId, 'clock_out', (string) $scannedValue);
+            $result = $this->attendance->processGlobalQrScanWithRegeneration($waiterId, 'clock_out', (string) $scannedValue);
         } else {
             // Per-waiter QR mode (original)
-            $result = $this->firebase->processAttendanceQrScan($waiterId, 'clock_out', (string) $scannedValue, 'qr_scan', $clientTimestamp);
+            $result = $this->attendance->processAttendanceQrScan($waiterId, 'clock_out', (string) $scannedValue, 'qr_scan', $clientTimestamp);
         }
 
         return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
@@ -974,8 +986,8 @@ class WaiterController extends Controller
     {
         $waiterId = (string) session('waiter_id');
         $today = date('Y-m-d');
-        $attendance = $this->firebase->getAttendanceByDate($waiterId, $today);
-        $shift = $this->firebase->getWaiterShift($waiterId);
+        $attendance = $this->attendance->getAttendanceByDate($waiterId, $today);
+        $shift = $this->shift->getWaiterShift($waiterId);
 
         return response()->json([
             'attendance' => $attendance,
@@ -1000,7 +1012,7 @@ class WaiterController extends Controller
      */
     protected function buildWaiterTaskBuckets(string $waiterId): array
     {
-        $tasks = $this->firebase->getWaiterTasksByWaiterId(
+        $tasks = $this->waiterTask->getWaiterTasksByWaiterId(
             $waiterId,
             now()->subDays(7)->format('Y-m-d'),
             now()->format('Y-m-d')
@@ -1038,13 +1050,13 @@ class WaiterController extends Controller
         $now = time();
 
         // Check if today is a working day
-        $isWorking = $this->firebase->isWorkingDay($waiterId, $today);
+        $isWorking = $this->shift->isWorkingDay($waiterId, $today);
         if (!$isWorking) {
             // Day off: no tasks shown at all
             return [];
         }
 
-        $shift = $this->firebase->getWaiterShift($waiterId);
+        $shift = $this->shift->getWaiterShift($waiterId);
 
         // Has schedule but shift data missing (edge case): show all
         if (!$shift) {
@@ -1120,7 +1132,7 @@ class WaiterController extends Controller
      */
     protected function buildWaiterActivityReports(string $waiterId, ?string $reportDate = null): array
     {
-        return $this->firebase->getWaiterActivityReportsByWaiterIdForDate($waiterId, $reportDate);
+        return $this->waiterTask->getWaiterActivityReportsByWaiterIdForDate($waiterId, $reportDate);
     }
 
     /**
@@ -1128,10 +1140,10 @@ class WaiterController extends Controller
      */
     public function restockList()
     {
-        $orders = $this->firebase->getPurchaseOrders();
+        $orders = $this->po->getPurchaseOrders();
         // Filter to only active POs (ordered or partial)
         $activeOrders = array_filter($orders, fn($o) => in_array($o['status'] ?? '', ['ordered', 'partial']));
-        $activeRacks = $this->firebase->getActiveRacks();
+        $activeRacks = $this->rack->getActiveRacks();
 
         return view('waiter.restock', compact('activeOrders', 'activeRacks'));
     }
@@ -1151,7 +1163,7 @@ class WaiterController extends Controller
         $waiterId = (string) session('waiter_id');
         $waiterName = (string) session('waiter_name', 'Waiter');
 
-        $result = $this->firebase->receivePoItem(
+        $result = $this->po->receivePoItem(
             $poId,
             $request->input('restock_id'),
             (int) $request->input('received_qty'),
@@ -1181,7 +1193,7 @@ class WaiterController extends Controller
         $restockId = $request->input('restock_id');
         $issueNote = $request->input('issue_note');
 
-        $result = $this->firebase->reportPoItemIssue($poId, $restockId, $issueNote, $waiterId, $waiterName, $request->input('idempotency_key'));
+        $result = $this->po->reportPoItemIssue($poId, $restockId, $issueNote, $waiterId, $waiterName, $request->input('idempotency_key'));
 
         return response()->json($result);
     }

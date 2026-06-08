@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
 use Illuminate\Console\Command;
 
 /**
@@ -24,7 +25,7 @@ class MigrateTaskPhotosToStorage extends Command
 
     protected $description = 'Migrasi foto base64 task lama ke Firebase Storage';
 
-    public function handle(FirebaseService $firebase): int
+    public function handle(FirebaseService $firebase, WaiterTaskFirebaseService $waiterTask): int
     {
         $from = $this->option('from') ?: now()->subDays(30)->format('Y-m-d');
         $to = $this->option('to') ?: now()->format('Y-m-d');
@@ -32,7 +33,7 @@ class MigrateTaskPhotosToStorage extends Command
 
         $this->info("Migrasi foto task [{$from}..{$to}]".($dryRun ? ' (DRY-RUN)' : ''));
 
-        $r = $firebase->migrateTaskPhotosToStorage($from, $to, $dryRun);
+        $r = $waiterTask->migrateTaskPhotosToStorage($from, $to, $dryRun);
 
         $this->info("Scanned: {$r['scanned']} | Migrated: {$r['migrated']} | Failed: {$r['failed']} | Skipped: {$r['skipped']}");
 
