@@ -1454,24 +1454,40 @@ class RackStockFirebaseService
      */
     public function normalizeTemplateRacks(array $template): array
     {
+        $rackIds = [];
+
         if (! empty($template['racks']) && is_array($template['racks'])) {
-            return array_values(array_filter($template['racks'], function ($r) {
-                return is_array($r) && ((string) ($r['id'] ?? '')) !== '';
-            }));
+            $rackIds = array_values(array_filter(
+                array_map(fn ($r) => is_array($r) ? (string) ($r['id'] ?? '') : '', $template['racks']),
+                fn ($id) => $id !== ''
+            ));
+        } else {
+            $rid = (string) ($template['rack_id'] ?? '');
+            if ($rid !== '') {
+                $rackIds = [$rid];
+            }
         }
 
-        $rid = (string) ($template['rack_id'] ?? '');
-        if ($rid === '') {
+        if (empty($rackIds)) {
             return [];
         }
 
-        return [[
-            'id' => $rid,
-            'name' => (string) ($template['rack_name'] ?? ''),
-            'location' => (string) ($template['rack_location'] ?? ''),
-            'barcode_value' => (string) ($template['rack_barcode_value'] ?? ''),
-            'rack_type' => (string) ($template['rack_type'] ?? 'storage'),
-        ]];
+        // Always resolve fresh from master to avoid stale barcode in template
+        $result = [];
+        foreach ($rackIds as $rackId) {
+            $masterRack = $this->getRackById($rackId);
+            if ($masterRack) {
+                $result[] = [
+                    'id' => $rackId,
+                    'name' => (string) ($masterRack['name'] ?? ''),
+                    'location' => (string) ($masterRack['location'] ?? ''),
+                    'barcode_value' => (string) ($masterRack['barcode_value'] ?? ''),
+                    'rack_type' => (string) ($masterRack['rack_type'] ?? 'storage'),
+                ];
+            }
+        }
+
+        return $result;
     }
 
     /**
