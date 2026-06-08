@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Services\FirebaseService;
+use App\Models\ReconciliationReport;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -11,19 +11,18 @@ use Illuminate\View\View;
 
 class ReconciliationController extends Controller
 {
-    public function __construct(private FirebaseService $firebase) {}
-
     public function index(Request $request): View
     {
         $selectedWeek = trim((string) $request->query('iso_year_week', ''));
-        $latestReports = $this->firebase->getReconciliationReports(null, 10);
 
-        if ($selectedWeek === '' && ! empty($latestReports)) {
-            $selectedWeek = (string) ($latestReports[0]['iso_year_week'] ?? '');
+        $latestReports = ReconciliationReport::orderByDesc('created_at')->limit(10)->get();
+
+        if ($selectedWeek === '' && $latestReports->isNotEmpty()) {
+            $selectedWeek = (string) $latestReports->first()->iso_year_week;
         }
 
         $reports = $selectedWeek !== ''
-            ? $this->firebase->getReconciliationReports($selectedWeek, 10)
+            ? ReconciliationReport::forWeek($selectedWeek)->orderByDesc('created_at')->limit(10)->get()
             : $latestReports;
 
         $weekOptions = [];
@@ -32,7 +31,7 @@ class ReconciliationController extends Controller
         }
 
         return view('admin.reconciliation.index', [
-            'reports' => $reports,
+            'reports' => $reports->toArray(),
             'selectedWeek' => $selectedWeek,
             'weekOptions' => $weekOptions,
         ]);
@@ -40,14 +39,18 @@ class ReconciliationController extends Controller
 
     public function show(Request $request, string $isoYearWeek, string $reportId): View
     {
-        $report = $this->firebase->getReconciliationReportById($isoYearWeek, $reportId);
+        $report = ReconciliationReport::where('iso_year_week', $isoYearWeek)
+            ->where('id', $reportId)
+            ->first();
+
         abort_if(! $report, 404);
 
-        $anomalies = is_array($report['anomalies'] ?? null) ? $report['anomalies'] : [];
+        $reportArray = $report->toArray();
+        $anomalies = is_array($reportArray['anomalies'] ?? null) ? $reportArray['anomalies'] : [];
         usort($anomalies, fn ($a, $b) => (($b['drift_pct'] ?? 0) <=> ($a['drift_pct'] ?? 0)));
 
         return view('admin.reconciliation.show', [
-            'report' => $report,
+            'report' => $reportArray,
             'anomalies' => $anomalies,
             'isoYearWeek' => $isoYearWeek,
             'reportId' => $reportId,

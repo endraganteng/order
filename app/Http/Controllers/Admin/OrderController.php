@@ -5,17 +5,15 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateTestOrderRequest;
 use App\Http\Requests\ProcessCleanupRequest;
+use App\Models\Order;
 use App\Services\FirebaseService;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class OrderController extends Controller
 {
-    protected $firebase;
-
-    public function __construct(FirebaseService $firebase)
+    public function __construct(protected FirebaseService $firebase)
     {
-        $this->firebase = $firebase;
     }
 
     public function showTestOrder()
@@ -42,6 +40,7 @@ class OrderController extends Controller
             'expires_at' => time() + ($timeoutMinutes * 60),
         ];
 
+        // Write to Firebase for realtime + MySQL for persistence
         $this->firebase->createOrder($orderData);
 
         return back()->with('success', 'Test order berhasil dibuat!');
@@ -55,8 +54,15 @@ class OrderController extends Controller
         $filterDateInput = trim((string) $request->input('filter_date', $todayDate));
         $filterDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $filterDateInput) === 1 ? $filterDateInput : $todayDate;
 
-        // Fetch only orders for the selected date (not ALL orders)
-        $rawOrders = $this->firebase->getOrdersByDate($filterDate);
+        // Read from MySQL instead of Firebase
+        $rawOrders = Order::forDate($filterDate)->get()->map(function ($order) {
+            $arr = $order->toArray();
+            $arr['id'] = $order->firebase_legacy_key ?? (string) $order->id;
+            $arr['created_at'] = $order->created_at ? $order->created_at->timestamp : 0;
+            $arr['expires_at'] = $order->expires_at ? $order->expires_at->timestamp : 0;
+            return $arr;
+        })->toArray();
+
         $filterHourInput = trim((string) $request->input('filter_hour', ''));
         $filterTimeInput = trim((string) $request->input('filter_time', ''));
         $filterWaiter = trim((string) $request->input('filter_waiter', $request->input('filter_waiter_id', '')));
@@ -274,14 +280,20 @@ class OrderController extends Controller
 
     public function showCleanup()
     {
-        $stats = $this->firebase->getCleanupStats();
+        $stats = [
+            'total_orders' => Order::count(),
+            'orders_30_days' => Order::where('order_date', '<', now()->subDays(30)->format('Y-m-d'))->count(),
+            'orders_60_days' => Order::where('order_date', '<', now()->subDays(60)->format('Y-m-d'))->count(),
+            'orders_90_days' => Order::where('order_date', '<', now()->subDays(90)->format('Y-m-d'))->count(),
+        ];
 
         return view('admin.cleanup', compact('stats'));
     }
 
     public function processCleanup(ProcessCleanupRequest $request)
     {
-        $deletedCount = $this->firebase->cleanupOldOrders($request->days_old);
+        $cutoffDate = now()->subDays($request->days_old)->format('Y-m-d');
+        $deletedCount = Order::where('order_date', '<', $cutoffDate)->delete();
 
         return back()->with('success', "Berhasil menghapus {$deletedCount} order lama!");
     }
