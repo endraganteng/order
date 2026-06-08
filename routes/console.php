@@ -2,6 +2,13 @@
 
 use App\Services\BonusService;
 use App\Services\FirebaseService;
+use App\Services\WaiterTaskFirebaseService;
+use App\Services\BonusFirebaseService;
+use App\Services\AttendanceFirebaseService;
+use App\Services\ShiftScheduleFirebaseService;
+use App\Services\RackStockFirebaseService;
+use App\Services\PurchaseOrderFirebaseService;
+use App\Services\PlanningFirebaseService;
 use App\Services\FonnteService;
 use App\Services\TelegramService;
 use App\Services\PayrollService;
@@ -15,21 +22,22 @@ Artisan::command('inspire', function () {
 
 Artisan::command('waiter:process-tasks', function () {
     $firebase = app(FirebaseService::class);
+    $waiterTask = app(WaiterTaskFirebaseService::class);
     $fonnte = app(FonnteService::class);
 
     // Cancel orphaned tasks (template deleted but tasks still pending)
-    $orphansCancelled = $firebase->cancelOrphanedPendingTasks();
+    $orphansCancelled = $waiterTask->cancelOrphanedPendingTasks();
     if ($orphansCancelled > 0) {
         $this->info("Cancelled {$orphansCancelled} orphaned tasks (template deleted).");
     }
 
-    $generateResult = $firebase->generateDueRecurringWaiterTasks();
+    $generateResult = $waiterTask->generateDueRecurringWaiterTasks();
     $generatedCount = is_array($generateResult)
         ? (int) ($generateResult['generated'] ?? 0)
         : (int) $generateResult;
     $generatedDates = is_array($generateResult) ? ($generateResult['dates'] ?? []) : [];
 
-    $overdueResult = $firebase->markOverdueWaiterTasks();
+    $overdueResult = $waiterTask->markOverdueWaiterTasks();
     $notified = 0;
 
     foreach (($overdueResult['overdue_tasks'] ?? []) as $task) {
@@ -57,12 +65,15 @@ Artisan::command('waiter:process-tasks', function () {
 
 Artisan::command('waiter:send-task-reminders {date?}', function (?string $date = null) {
     $firebase = app(FirebaseService::class);
+    $attendanceFb = app(AttendanceFirebaseService::class);
+    $shiftFb = app(ShiftScheduleFirebaseService::class);
+    $waiterTask = app(WaiterTaskFirebaseService::class);
     $fonnte = app(FonnteService::class);
     $date = $date ?: date('Y-m-d');
     $sentByType = ['general' => 0, 'rack_check' => 0];
 
     // Single indexed query for all tasks today (instead of N+1 per waiter)
-    $allTodayTasks = $firebase->getWaiterTasksByDateRange($date, $date);
+    $allTodayTasks = $waiterTask->getWaiterTasksByDateRange($date, $date);
     $tasksByWaiter = [];
     foreach ($allTodayTasks as $task) {
         $wid = (string) ($task['assigned_waiter_id'] ?? '');
@@ -92,7 +103,7 @@ Artisan::command('waiter:send-task-reminders {date?}', function (?string $date =
                 return true;
             }
 
-            $shift = $firebase->getWaiterShiftForDate($waiterId, $date);
+            $shift = $shiftFb->getWaiterShiftForDate($waiterId, $date);
             $clockInTime = trim((string) ($shift['clock_in_time'] ?? ''));
             if ($clockInTime === '') {
                 return true;
@@ -107,7 +118,7 @@ Artisan::command('waiter:send-task-reminders {date?}', function (?string $date =
             continue;
         }
 
-        $attendance = $firebase->getAttendanceByDate($waiterId, $date);
+        $attendance = $attendanceFb->getAttendanceByDate($waiterId, $date);
         $result = $fonnte->sendTaskReminders($waiterId, $visiblePendingTasks, $attendance, $date);
         foreach (($result['sent'] ?? []) as $type) {
             if (isset($sentByType[$type])) {
@@ -122,6 +133,8 @@ Artisan::command('waiter:send-task-reminders {date?}', function (?string $date =
 
 Artisan::command('waiter:audit-attendance {date?}', function (?string $date = null) {
     $firebase = app(FirebaseService::class);
+    $attendanceFb = app(AttendanceFirebaseService::class);
+    $shiftFb = app(ShiftScheduleFirebaseService::class);
     $bonus = app(BonusService::class);
     $date = $date ?: date('Y-m-d');
     $periodStart = date('Y-m-d', strtotime('-29 days', strtotime($date)));
@@ -139,7 +152,7 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
 
     foreach ($firebase->getActiveWaiters() as $waiter) {
         $waiterId = (string) ($waiter['id'] ?? '');
-        if ($waiterId === '' || ! $firebase->isWorkingDay($waiterId, $date)) {
+        if ($waiterId === '' || ! $shiftFb->isWorkingDay($waiterId, $date)) {
             continue;
         }
 
@@ -148,7 +161,7 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
             continue;
         }
 
-        $shift = $firebase->getWaiterShiftForDate($waiterId, $date);
+        $shift = $shiftFb->getWaiterShiftForDate($waiterId, $date);
         $clockOutTime = trim((string) ($shift['clock_out_time'] ?? ''));
         if ($clockOutTime !== '') {
             $cutoff = strtotime($date.' '.$clockOutTime.':00');
@@ -157,7 +170,7 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
             }
         }
 
-        $attendance = $firebase->getAttendanceByDate($waiterId, $date);
+        $attendance = $attendanceFb->getAttendanceByDate($waiterId, $date);
         if (! empty($attendance['clock_in'])) {
             continue;
         }
@@ -169,7 +182,7 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
 
         if ($status !== 'absent') {
             $note = trim((string) ($attendance['note'] ?? ''));
-            $firebase->updateAttendance($waiterId, $date, [
+            $attendanceFb->updateAttendance($waiterId, $date, [
                 'status' => 'absent',
                 'late_minutes' => 0,
                 'note' => $note !== '' ? $note : 'Auto-marked absent by scheduler',
@@ -200,6 +213,7 @@ Artisan::command('waiter:audit-attendance {date?}', function (?string $date = nu
 
 Artisan::command('waiter:send-weekly-report', function () {
     $firebase = app(FirebaseService::class);
+    $waiterTask = app(WaiterTaskFirebaseService::class);
     $fonnte = app(FonnteService::class);
 
     $endDate = now()->subDay()->format('Y-m-d'); // Yesterday (Sunday)
@@ -217,7 +231,7 @@ Artisan::command('waiter:send-weekly-report', function () {
             continue;
         }
 
-        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId, $startDate, $endDate);
+        $tasks = $waiterTask->getWaiterTasksByWaiterId($waiterId, $startDate, $endDate);
         $waiterTotal = 0;
         $waiterDone = 0;
 
@@ -272,6 +286,7 @@ Artisan::command('waiter:send-weekly-report', function () {
 
 Artisan::command('waiter:send-monthly-report', function () {
     $firebase = app(FirebaseService::class);
+    $waiterTask = app(WaiterTaskFirebaseService::class);
     $fonnte = app(FonnteService::class);
 
     $lastMonth = now()->subMonth();
@@ -292,7 +307,7 @@ Artisan::command('waiter:send-monthly-report', function () {
             continue;
         }
 
-        $tasks = $firebase->getWaiterTasksByWaiterId($waiterId, $startDate, $endDate);
+        $tasks = $waiterTask->getWaiterTasksByWaiterId($waiterId, $startDate, $endDate);
         $waiterTotal = 0;
         $waiterDone = 0;
 
@@ -356,6 +371,7 @@ Artisan::command('waiter:send-monthly-report', function () {
 
 Artisan::command('firebase:cleanup-idempotency {--days=7 : Hapus cache yang lebih lama dari N hari}', function () {
     $firebase = app(FirebaseService::class);
+    $poFb = app(PurchaseOrderFirebaseService::class);
     $days = max(1, (int) $this->option('days'));
     $cutoff = time() - ($days * 86400);
 
@@ -367,6 +383,7 @@ Artisan::command('firebase:cleanup-idempotency {--days=7 : Hapus cache yang lebi
 
 Artisan::command('waiter:check-stale-po', function () {
     $firebase = app(FirebaseService::class);
+    $poFb = app(PurchaseOrderFirebaseService::class);
     $telegram = app(TelegramService::class);
 
     if (!$telegram->isConfigured()) {
@@ -374,7 +391,7 @@ Artisan::command('waiter:check-stale-po', function () {
         return;
     }
 
-    $staleOrders = $firebase->getStalePurchaseOrders(3);
+    $staleOrders = $poFb->getStalePurchaseOrders(3);
     if (empty($staleOrders)) {
         $this->info('No stale POs found.');
         return;
@@ -458,9 +475,12 @@ Artisan::command('bonus:generate-leaderboard {start_date? : Format Y-m-d} {end_d
 
 Artisan::command('bonus:reconcile-pending', function () {
     $firebase = app(FirebaseService::class);
+    $attendanceFb = app(AttendanceFirebaseService::class);
+    $bonusFb = app(BonusFirebaseService::class);
+    $waiterTask = app(WaiterTaskFirebaseService::class);
     $bonus = app(BonusService::class);
 
-    $items = $firebase->getBonusPendingRecomputes(100);
+    $items = $bonusFb->getBonusPendingRecomputes(100);
     if (empty($items)) {
         $this->info('No pending bonus recompute items.');
         return 0;
@@ -474,14 +494,14 @@ Artisan::command('bonus:reconcile-pending', function () {
         $waiterId = (string) ($item['waiter_id'] ?? '');
         $date = (string) ($item['date'] ?? '');
         if ($waiterId === '' || $date === '') {
-            $firebase->clearBonusPendingFlag($item);
+            $bonusFb->clearBonusPendingFlag($item);
             continue;
         }
 
         try {
-            $attendance = $firebase->getAttendanceByDate($waiterId, $date);
-            $todayTasks = $firebase->getWaiterTasksForDate($waiterId, $date);
-            $reports = $firebase->getWaiterActivityReportsByWaiterIdForDate($waiterId, $date);
+            $attendance = $attendanceFb->getAttendanceByDate($waiterId, $date);
+            $todayTasks = $waiterTask->getWaiterTasksForDate($waiterId, $date);
+            $reports = $waiterTask->getWaiterActivityReportsByWaiterIdForDate($waiterId, $date);
 
             $autoScores = $bonus->autoScoreDailyPoints($waiterId, $date, $attendance, $todayTasks, $reports);
             $categoryScores = [
@@ -491,7 +511,7 @@ Artisan::command('bonus:reconcile-pending', function () {
             ];
             $bonus->saveAutoDailyScore($waiterId, $date, $categoryScores, 'Auto-scored on reconcile worker', $autoScores['auto_details'] ?? []);
 
-            $firebase->clearBonusPendingFlag($item);
+            $bonusFb->clearBonusPendingFlag($item);
             $success++;
         } catch (\Throwable $e) {
             report($e);
@@ -588,8 +608,9 @@ Artisan::command('waiter:send-daily-task-recap {--date= : Tanggal (Y-m-d), defau
 
 Artisan::command('waiter:cancel-pending-today {--date= : Tanggal (Y-m-d), default hari ini}', function () {
     $firebase = app(FirebaseService::class);
+    $waiterTask = app(WaiterTaskFirebaseService::class);
     $date = $this->option('date') ?: date('Y-m-d');
-    $tasks = $firebase->getWaiterTasksByDate($date);
+    $tasks = $waiterTask->getWaiterTasksByDate($date);
 
     if (empty($tasks)) {
         $this->info("Tidak ada task untuk tanggal {$date}.");
@@ -611,13 +632,16 @@ Artisan::command('waiter:cancel-pending-today {--date= : Tanggal (Y-m-d), defaul
         return;
     }
 
-    $cancelled = $firebase->bulkCancelWaiterTasks($pendingIds, 'Dibatalkan admin (bulk cancel pending ' . $date . ')');
+    $cancelled = $waiterTask->bulkCancelWaiterTasks($pendingIds, 'Dibatalkan admin (bulk cancel pending ' . $date . ')');
     $this->info("{$cancelled} task pending berhasil dibatalkan untuk {$date}.");
 })->purpose('Cancel semua task pending untuk tanggal tertentu (default hari ini)');
 
 Artisan::command('rack-check:cleanup-legacy', function () {
     $firebase = app(FirebaseService::class);
-    $allTemplates = $firebase->getRecurringWaiterTaskTemplates();
+    $planningFb = app(PlanningFirebaseService::class);
+    $rackFb = app(RackStockFirebaseService::class);
+    $waiterTask = app(WaiterTaskFirebaseService::class);
+    $allTemplates = $waiterTask->getRecurringWaiterTaskTemplates();
 
     $legacy = array_filter($allTemplates, function ($tpl) {
         return ($tpl['task_type'] ?? '') === 'rack_check'
@@ -638,7 +662,7 @@ Artisan::command('rack-check:cleanup-legacy', function () {
         if ($id === '') continue;
 
         try {
-            $firebase->updateRecurringWaiterTaskTemplate($id, [
+            $waiterTask->updateRecurringWaiterTaskTemplate($id, [
                 'title' => (string) ($tpl['title'] ?? 'Rak'),
                 'description' => (string) ($tpl['description'] ?? ''),
                 'priority' => (string) ($tpl['priority'] ?? 'normal'),
@@ -663,13 +687,15 @@ Artisan::command('rack-check:cleanup-legacy', function () {
 
 Artisan::command('planning:remind-incomplete', function () {
     $firebase = app(FirebaseService::class);
+    $planningFb = app(PlanningFirebaseService::class);
+    $rackFb = app(RackStockFirebaseService::class);
     $fonnte = app(FonnteService::class);
     $payroll = app(PayrollService::class);
 
     $tomorrow = now()->addDay()->format('Y-m-d');
 
-    $total = $firebase->countRacksDueForDate($tomorrow);
-    $planningTasks = $firebase->getPlanningTasksForDate($tomorrow);
+    $total = $rackFb->countRacksDueForDate($tomorrow);
+    $planningTasks = $planningFb->getPlanningTasksForDate($tomorrow);
 
     $assigned = 0;
 
