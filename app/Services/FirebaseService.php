@@ -42,31 +42,11 @@ class FirebaseService
     }
 
     /**
-     * Bust per-request cache. Call setelah write yang invalidate cache.
-     */
-    public function bustRequestCache(?string $key = null): void
-    {
-        if ($key === null) {
-            $this->requestCache = [];
-        } else {
-            unset($this->requestCache[$key]);
-        }
-    }
-
-    /**
      * Get all allowed waiter emails
      */
     public function getAllowedEmails()
     {
         return app(\App\Repositories\Contracts\WaiterRepositoryInterface::class)->all();
-    }
-
-    /**
-     * Add new allowed email
-     */
-    public function addAllowedEmail($email, $name)
-    {
-        $this->addAllowedEmailWithPassword($email, $name, null);
     }
 
     /**
@@ -314,48 +294,6 @@ class FirebaseService
     }
 
     /**
-     * Create new rack with generated barcode value.
-     */
-    public function createRack(array $data)
-    {
-        $name = trim((string) ($data['name'] ?? ''));
-        $location = trim((string) ($data['location'] ?? ''));
-        $description = trim((string) ($data['description'] ?? ''));
-
-        $payload = [
-            'name' => $name,
-            'location' => $location,
-            'description' => $description,
-            'barcode_value' => $this->generateUniqueRackBarcodeValue($name),
-            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
-            'rack_type' => in_array($data['rack_type'] ?? '', ['display', 'storage']) ? $data['rack_type'] : 'storage',
-            'check_order' => max(0, (int) ($data['check_order'] ?? 0)),
-            'created_at' => time(),
-            'updated_at' => time(),
-        ];
-
-        return app(\App\Repositories\Contracts\RackRepositoryInterface::class)->create($payload);
-    }
-
-    /**
-     * Update rack metadata.
-     */
-    public function updateRack($id, array $data)
-    {
-        $payload = [
-            'name' => trim((string) ($data['name'] ?? '')),
-            'location' => trim((string) ($data['location'] ?? '')),
-            'description' => trim((string) ($data['description'] ?? '')),
-            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
-            'rack_type' => in_array($data['rack_type'] ?? '', ['display', 'storage']) ? $data['rack_type'] : 'storage',
-            'check_order' => max(0, (int) ($data['check_order'] ?? 0)),
-            'updated_at' => time(),
-        ];
-
-        app(\App\Repositories\Contracts\RackRepositoryInterface::class)->update((string) $id, $payload);
-    }
-
-    /**
      * Regenerate rack barcode value.
      */
     public function regenerateRackBarcode($id)
@@ -372,14 +310,6 @@ class FirebaseService
         ]);
 
         return $barcode;
-    }
-
-    /**
-     * Delete rack by id.
-     */
-    public function deleteRack($id)
-    {
-        app(\App\Repositories\Contracts\RackRepositoryInterface::class)->delete((string) $id);
     }
 
     /**
@@ -1156,43 +1086,6 @@ class FirebaseService
     }
 
     /**
-     * Resolve storage rack by barcode and return active product list.
-     *
-     * @return array<string, mixed>
-     */
-    public function getStorageRackByBarcode(string $barcodeValue): array
-    {
-        $barcode = strtoupper(trim($barcodeValue));
-        if ($barcode === '') {
-            return ['success' => false, 'message' => 'Barcode rak wajib diisi.'];
-        }
-
-        $rack = $this->findActiveRackByBarcode($barcode);
-        if (! $rack) {
-            return ['success' => false, 'message' => 'Rak tidak ditemukan atau tidak aktif.'];
-        }
-
-        $rackType = trim((string) ($rack['rack_type'] ?? 'storage'));
-        if ($rackType !== 'storage') {
-            return ['success' => false, 'message' => 'Rak ini bukan tipe storage/gudang.'];
-        }
-
-        $rackId = trim((string) ($rack['id'] ?? ''));
-
-        return [
-            'success' => true,
-            'rack' => [
-                'id' => $rackId,
-                'name' => (string) ($rack['name'] ?? ''),
-                'location' => (string) ($rack['location'] ?? ''),
-                'barcode_value' => (string) ($rack['barcode_value'] ?? ''),
-                'rack_type' => $rackType,
-            ],
-            'products' => $this->getRackProducts($rackId),
-        ];
-    }
-
-    /**
      * =========================================================================
      *  PRODUCT CATEGORIES
      * =========================================================================
@@ -1420,42 +1313,6 @@ class FirebaseService
     public function createProduct(array $data)
     {
         return app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->create($data);
-    }
-
-    /**
-     * Update master product.
-     */
-    public function updateProduct($id, array $data)
-    {
-        app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->update((string) $id, $data);
-    }
-
-    /**
-     * Delete master product and remove all rack assignments.
-     */
-    public function deleteProduct($id)
-    {
-        $racksReference = $this->database->getReference('waiter_racks');
-        $racksSnapshot = $racksReference->getSnapshot();
-
-        if ($racksSnapshot->exists()) {
-            $updates = [];
-
-            foreach ($racksSnapshot->getValue() as $rackId => $rack) {
-                $rackProducts = $rack['products'] ?? [];
-                if (! is_array($rackProducts) || ! array_key_exists($id, $rackProducts)) {
-                    continue;
-                }
-
-                $updates[$rackId.'/products/'.$id] = null;
-            }
-
-            if (! empty($updates)) {
-                $racksReference->update($updates);
-            }
-        }
-
-        app(\App\Repositories\Contracts\RackProductRepositoryInterface::class)->delete((string) $id);
     }
 
     /**
@@ -2160,24 +2017,6 @@ class FirebaseService
     }
 
     /**
-     * Get all active orders
-     */
-    public function getOrders()
-    {
-        $reference = $this->database->getReference('orders');
-        $snapshot = $reference->getSnapshot();
-
-        $orders = [];
-        if ($snapshot->exists()) {
-            foreach ($snapshot->getValue() as $key => $order) {
-                $orders[] = array_merge(['id' => $key], $order);
-            }
-        }
-
-        return $orders;
-    }
-
-    /**
      * Get orders filtered by date range using Firebase query.
      * Much more efficient than getOrders() when you only need a specific period.
      *
@@ -2267,115 +2106,6 @@ class FirebaseService
         return array_values(array_filter($orders, fn($order) => ($order['waiter_id'] ?? '') === $waiterId));
     }
 
-    /**
-     * Get order statistics per user (filtered to current month for bandwidth efficiency).
-     */
-    public function getUserOrderStats()
-    {
-        $startOfMonth = strtotime(date('Y-m-01') . ' 00:00:00') * 1000;
-
-        $ordersRef = $this->database->getReference('orders');
-        $ordersSnapshot = $ordersRef
-            ->orderByChild('created_at')
-            ->startAt($startOfMonth)
-            ->getSnapshot();
-
-        $stats = [];
-
-        if ($ordersSnapshot->exists()) {
-            foreach ($ordersSnapshot->getValue() as $order) {
-                $waiterId = $order['waiter_id'] ?? 'unknown';
-                $waiterName = $order['waiter_name'] ?? 'Unknown';
-                $waiterEmail = $order['waiter_email'] ?? '';
-
-                if (! isset($stats[$waiterId])) {
-                    $stats[$waiterId] = [
-                        'waiter_id' => $waiterId,
-                        'waiter_name' => $waiterName,
-                        'waiter_email' => $waiterEmail,
-                        'order_count' => 0,
-                    ];
-                }
-
-                $stats[$waiterId]['order_count']++;
-            }
-        }
-
-        // Sort by order count descending
-        usort($stats, function ($a, $b) {
-            return $b['order_count'] - $a['order_count'];
-        });
-
-        return $stats;
-    }
-
-    /**
-     * Delete orders older than specified days
-     */
-    public function cleanupOldOrders($daysOld = 30)
-    {
-        $ordersRef = $this->database->getReference('orders');
-        $ordersSnapshot = $ordersRef->getSnapshot();
-
-        $deletedCount = 0;
-        $cutoffTime = time() - ($daysOld * 24 * 60 * 60);
-
-        if ($ordersSnapshot->exists()) {
-            $updates = [];
-
-            foreach ($ordersSnapshot->getValue() as $key => $order) {
-                $createdAt = $order['created_at'] ?? 0;
-
-                if ($createdAt < $cutoffTime) {
-                    $updates[$key] = null; // null value means delete
-                    $deletedCount++;
-                }
-            }
-
-            if (! empty($updates)) {
-                $ordersRef->update($updates);
-            }
-        }
-
-        return $deletedCount;
-    }
-
-    /**
-     * Get cleanup statistics
-     */
-    public function getCleanupStats()
-    {
-        $ordersRef = $this->database->getReference('orders');
-        $ordersSnapshot = $ordersRef->getSnapshot();
-
-        $stats = [
-            'total_orders' => 0,
-            'orders_30_days' => 0,
-            'orders_60_days' => 0,
-            'orders_90_days' => 0,
-        ];
-
-        if ($ordersSnapshot->exists()) {
-            $now = time();
-
-            foreach ($ordersSnapshot->getValue() as $order) {
-                $stats['total_orders']++;
-                $createdAt = $order['created_at'] ?? 0;
-                $ageInDays = ($now - $createdAt) / (24 * 60 * 60);
-
-                if ($ageInDays > 90) {
-                    $stats['orders_90_days']++;
-                } elseif ($ageInDays > 60) {
-                    $stats['orders_60_days']++;
-                } elseif ($ageInDays > 30) {
-                    $stats['orders_30_days']++;
-                }
-            }
-        }
-
-        return $stats;
-    }
-
     // ========================================
     // Waiter Task Management (Supervisor → Waiter)
     // ========================================
@@ -2425,61 +2155,6 @@ class FirebaseService
         }
 
         return ['count' => $count, 'entries' => $createdEntries];
-    }
-
-    /**
-     * Create a refill task for display rack shortage (auto-generated).
-     * Assigns to the same waiter who reported the shortage.
-     */
-    public function createDisplayRefillTask(
-        string $waiterId,
-        string $waiterName,
-        string $rackId,
-        string $rackName,
-        array $shortageItems
-    ): ?string {
-        if (empty($shortageItems)) return null;
-
-        // Build description listing all shortage items
-        $lines = [];
-        foreach ($shortageItems as $item) {
-            $productName = $item['product_name'] ?? '';
-            $needed = (int) ($item['qty_needed'] ?? 0);
-            $lines[] = "• {$productName}: ambil {$needed} pcs dari gudang";
-        }
-        $description = "Isi ulang rak display dari gudang:\n" . implode("\n", $lines);
-
-        $taskData = [
-            'title' => "Isi ulang {$rackName} dari gudang",
-            'description' => $description,
-            'task_type' => 'general',
-            'status' => 'pending',
-            'assigned_waiter_id' => $waiterId,
-            'assigned_waiter_name' => $waiterName,
-            'assignment_type' => 'single',
-            'created_at' => time(),
-            'created_by' => 'system',
-            'created_by_name' => 'Sistem Otomatis',
-            'scheduled_for_date' => date('Y-m-d'),
-            'deadline_at' => null,
-            'requires_photo_proof' => false,
-            'requires_photo_before' => false,
-            'repeat_count' => 1,
-            'completed_count' => 0,
-            'completions' => [],
-            'category_id' => null,
-            'category_name' => null,
-            'rack_id' => $rackId,
-            'rack_name' => $rackName,
-            'refill_source' => 'display_shortage',
-            'refill_items' => $shortageItems,
-            'is_recurring_instance' => false,
-            'source_template_id' => null,
-        ];
-
-        $ref = $this->database->getReference('waiter_tasks')->push($taskData);
-        $this->dualWriteWaiterTaskToMysql((string) $ref->getKey(), $taskData);
-        return $ref->getKey();
     }
 
     /**
@@ -2624,11 +2299,6 @@ class FirebaseService
         ]);
 
         return ['success' => true];
-    }
-
-    public function getWaiterTaskById(string $taskId): ?array
-    {
-        return app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->find($taskId);
     }
 
     /**
@@ -3508,14 +3178,6 @@ class FirebaseService
         $taskRef->update($updates);
 
         return ['success' => true, 'message' => 'Klaim tugas berhasil dilepas.'];
-    }
-
-    /**
-     * Delete waiter task by id.
-     */
-    public function deleteWaiterTask($id)
-    {
-        app(\App\Repositories\Contracts\WaiterTaskRepositoryInterface::class)->delete((string) $id);
     }
 
     /**
@@ -5800,27 +5462,6 @@ class FirebaseService
     }
 
     /**
-     * Update an existing task category.
-     */
-    public function updateTaskCategory(string $id, array $data): void
-    {
-        $updateData = [];
-        if (isset($data['name'])) {
-            $updateData['name'] = trim($data['name']);
-        }
-        if (isset($data['color'])) {
-            $updateData['color'] = $data['color'];
-        }
-        if (isset($data['order'])) {
-            $updateData['order'] = (int) $data['order'];
-        }
-
-        if (count($updateData) > 0) {
-            $this->database->getReference('task_categories/' . $id)->update($updateData);
-        }
-    }
-
-    /**
      * Delete a task category.
      */
     public function deleteTaskCategory(string $id): void
@@ -6375,92 +6016,6 @@ class FirebaseService
     // ========================================
 
     /**
-     * Create a new task for the cashier
-     */
-    public function createTask($data)
-    {
-        $taskData = [
-            'title' => $data['title'],
-            'description' => $data['description'] ?? '',
-            'priority' => $data['priority'] ?? 'normal',
-            'status' => 'pending',
-            'assigned_by' => $data['assigned_by'] ?? 'Supervisor',
-            'created_at' => time(),
-            'completed_at' => null,
-            'completed_note' => null,
-            'is_recurring_instance' => false,
-            'scheduled_time' => null,
-            'scheduled_for_date' => null,
-            'source_template_id' => null,
-            'time_limit_minutes' => null,
-            'deadline_at' => null,
-            'completed_by_worker_id' => null,
-            'completed_by_worker_name' => null,
-        ];
-
-        app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->create($taskData);
-    }
-
-    /**
-     * Get all tasks
-     */
-    public function getTasks()
-    {
-        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->all();
-    }
-
-    /**
-     * Get active (pending) tasks only
-     */
-    public function getActiveTasks()
-    {
-        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->allActive();
-    }
-
-    /**
-     * Update task status
-     */
-    public function updateTaskStatus($id, $status, $note = null, $workerId = null, $workerName = null)
-    {
-        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)
-            ->updateStatus((string) $id, $status, $note, $workerId, $workerName);
-    }
-
-    /**
-     * Delete a task
-     */
-    public function deleteTask($id)
-    {
-        app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->delete((string) $id);
-    }
-
-    /**
-     * Create recurring task template
-     */
-    public function createRecurringTaskTemplate($data)
-    {
-        $recurrenceType = $data['recurrence_type'] ?? 'daily';
-        $templateData = [
-            'title' => $data['title'],
-            'description' => $data['description'] ?? '',
-            'priority' => $data['priority'] ?? 'normal',
-            'assigned_by' => $data['assigned_by'] ?? 'Supervisor',
-            'schedule_time' => $data['schedule_time'], // HH:MM
-            'time_limit_minutes' => (int) ($data['time_limit_minutes'] ?? 0),
-            'recurrence_type' => $recurrenceType,
-            'weekly_day' => $recurrenceType === 'weekly' ? (int) ($data['weekly_day'] ?? date('N')) : null,
-            'interval_days' => $recurrenceType === 'every_n_days' ? (int) ($data['interval_days'] ?? 1) : null,
-            'recurrence_anchor_date' => $data['recurrence_anchor_date'] ?? date('Y-m-d'),
-            'is_active' => true,
-            'created_at' => time(),
-            'last_generated_date' => null,
-        ];
-
-        $this->database->getReference('cashier_task_templates')
-            ->push($templateData);
-    }
-
-    /**
      * Get recurring task templates
      */
     public function getRecurringTaskTemplates()
@@ -6495,62 +6050,6 @@ class FirebaseService
         }
 
         return array_merge(['id' => $id], $snapshot->getValue());
-    }
-
-    /**
-     * Update recurring task template
-     */
-    public function updateRecurringTaskTemplate($id, $data)
-    {
-        $existing = $this->getRecurringTaskTemplateById($id);
-        if (! $existing) {
-            return;
-        }
-
-        $recurrenceType = $data['recurrence_type'] ?? ($existing['recurrence_type'] ?? 'daily');
-        $anchorDate = $existing['recurrence_anchor_date'] ?? date('Y-m-d');
-        if ($recurrenceType === 'every_n_days' && ! empty($data['reset_anchor_date'])) {
-            $anchorDate = date('Y-m-d');
-        }
-
-        $updatedScheduleTime = $data['schedule_time'];
-        $updatedWeeklyDay = $recurrenceType === 'weekly' ? (int) ($data['weekly_day'] ?? date('N')) : null;
-        $updatedIntervalDays = $recurrenceType === 'every_n_days' ? (int) ($data['interval_days'] ?? 1) : null;
-
-        $scheduleAffectsGeneration =
-            ($existing['schedule_time'] ?? null) !== $updatedScheduleTime ||
-            ($existing['recurrence_type'] ?? 'daily') !== $recurrenceType ||
-            (int) ($existing['weekly_day'] ?? 0) !== (int) ($updatedWeeklyDay ?? 0) ||
-            (int) ($existing['interval_days'] ?? 0) !== (int) ($updatedIntervalDays ?? 0) ||
-            ($existing['recurrence_anchor_date'] ?? null) !== $anchorDate;
-
-        $todayDate = date('Y-m-d');
-        $hasPendingInstanceToday = $this->hasPendingRecurringInstanceForDate($id, $todayDate);
-        $hasDoneInstanceToday = $this->hasDoneRecurringInstanceForDate($id, $todayDate);
-
-        $updates = [
-            'title' => $data['title'],
-            'description' => $data['description'] ?? '',
-            'priority' => $data['priority'] ?? 'normal',
-            'schedule_time' => $updatedScheduleTime,
-            'time_limit_minutes' => (int) ($data['time_limit_minutes'] ?? 0),
-            'recurrence_type' => $recurrenceType,
-            'weekly_day' => $updatedWeeklyDay,
-            'interval_days' => $updatedIntervalDays,
-            'recurrence_anchor_date' => $anchorDate,
-            'is_active' => isset($data['is_active']) ? (bool) $data['is_active'] : true,
-        ];
-
-        if ($scheduleAffectsGeneration && ! $hasPendingInstanceToday && ! $hasDoneInstanceToday) {
-            // Allow regeneration for today after schedule edits when no pending instance exists.
-            $updates['last_generated_date'] = null;
-        }
-
-        $this->database->getReference('cashier_task_templates/'.$id)
-            ->update($updates);
-
-        $updatedTemplate = array_merge($existing, $updates, ['id' => $id]);
-        $this->syncPendingRecurringInstancesForDate($id, $todayDate, $updatedTemplate);
     }
 
     /**
@@ -6630,14 +6129,6 @@ class FirebaseService
         }
 
         return $generatedCount;
-    }
-
-    /**
-     * Mark pending tasks as overdue when deadline passes
-     */
-    public function markOverdueTasks()
-    {
-        return app(\App\Repositories\Contracts\CashierTaskRepositoryInterface::class)->markOverdue();
     }
 
     /**
@@ -6762,15 +6253,6 @@ class FirebaseService
 
         // Default mode: daily
         return true;
-    }
-
-    /**
-     * Delete recurring task template
-     */
-    public function deleteRecurringTaskTemplate($id)
-    {
-        $this->database->getReference('cashier_task_templates/'.$id)
-            ->remove();
     }
 
     /**
@@ -6905,16 +6387,6 @@ class FirebaseService
         ]);
 
         return $value;
-    }
-
-    /**
-     * Verify a scanned QR code value against the stored attendance QR code.
-     */
-    public function verifyAttendanceQrCode(string $scannedValue): bool
-    {
-        $stored = $this->getAttendanceQrCode();
-
-        return $scannedValue === $stored;
     }
 
     /**
@@ -7197,116 +6669,6 @@ class FirebaseService
     protected function generateAttendanceQrToken(string $waiterId, string $date, string $purpose): string
     {
         return 'ATTENDANCE:'.strtoupper($purpose).':'.substr(hash('sha256', $waiterId.'|'.$date.'|'.$purpose.'|'.Str::random(40)), 0, 40);
-    }
-
-    /**
-     * Record clock-in for a waiter.
-     */
-    public function clockIn(string $waiterId, string $method = 'qr_scan'): array
-    {
-        $today = date('Y-m-d');
-        $now = date('H:i');
-
-        // Check if already clocked in today
-        $existing = $this->getAttendanceByDate($waiterId, $today);
-        if ($existing && ! empty($existing['clock_in'])) {
-            return [
-                'success' => false,
-                'message' => 'Sudah absen masuk hari ini pada '.$existing['clock_in'],
-            ];
-        }
-
-        // Get waiter data
-        $waiter = $this->getWaiterById($waiterId);
-        if (! $waiter) {
-            return ['success' => false, 'message' => 'Data waiter tidak ditemukan'];
-        }
-
-        // Check if waiter is off today (libur)
-        $shift = $this->getWaiterShiftForDate($waiterId, $today);
-        if (!$shift) {
-            return [
-                'success' => false,
-                'message' => 'Anda sedang libur hari ini dan tidak perlu absen',
-            ];
-        }
-
-        // Determine late status based on today's schedule template (not static shift_id)
-        $status = 'present';
-        $lateMinutes = 0;
-
-        $clockInTime = $shift['clock_in_time'] ?? null;
-        $tolerance = (int) ($shift['late_tolerance_minutes'] ?? 0);
-
-        if ($clockInTime) {
-            $expectedTimestamp = strtotime($today.' '.$clockInTime);
-            $toleranceTimestamp = $expectedTimestamp + ($tolerance * 60);
-            $actualTimestamp = strtotime($today.' '.$now);
-
-            if ($actualTimestamp > $toleranceTimestamp) {
-                $status = 'late';
-                $lateMinutes = (int) round(($actualTimestamp - $expectedTimestamp) / 60);
-            }
-        }
-
-        $record = [
-            'clock_in' => $now,
-            'clock_in_timestamp' => time(),
-            'status' => $status,
-            'late_minutes' => $lateMinutes,
-            'method' => $method,
-            'note' => '',
-            'updated_at' => time(),
-        ];
-
-        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$today)->update($record);
-
-        if (config('features.mysql_attendance')) {
-            $this->syncAttendanceToMysql($waiterId, $today);
-        }
-
-        return [
-            'success' => true,
-            'message' => $status === 'late'
-                ? 'Absen masuk tercatat (terlambat '.$lateMinutes.' menit)'
-                : 'Absen masuk tercatat tepat waktu',
-            'status' => $status,
-            'late_minutes' => $lateMinutes,
-        ];
-    }
-
-    /**
-     * Record clock-out for a waiter.
-     */
-    public function clockOut(string $waiterId, string $method = 'qr_scan'): array
-    {
-        $today = date('Y-m-d');
-        $now = date('H:i');
-
-        $existing = $this->getAttendanceByDate($waiterId, $today);
-
-        if (! $existing || empty($existing['clock_in'])) {
-            return ['success' => false, 'message' => 'Belum absen masuk hari ini'];
-        }
-
-        if (! empty($existing['clock_out'])) {
-            return [
-                'success' => false,
-                'message' => 'Sudah absen keluar hari ini pada '.$existing['clock_out'],
-            ];
-        }
-
-        $this->database->getReference('waiter_attendance/'.$waiterId.'/'.$today)->update([
-            'clock_out' => $now,
-            'clock_out_timestamp' => time(),
-            'updated_at' => time(),
-        ]);
-
-        if (config('features.mysql_attendance')) {
-            $this->syncAttendanceToMysql($waiterId, $today);
-        }
-
-        return ['success' => true, 'message' => 'Absen keluar tercatat pada '.$now];
     }
 
     // ===================================================================
@@ -7976,47 +7338,9 @@ class FirebaseService
         return $result;
     }
 
-    /**
-     * BACKWARD COMPAT: Get all waiter schedules as boolean maps.
-     */
-    public function getAllWaiterSchedules(?string $weekKey = null): array
-    {
-        $template = $this->getScheduleTemplate();
-        $result = [];
-
-        $days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-        foreach ($template as $waiterId => $waiterSchedule) {
-            if (!is_array($waiterSchedule)) continue;
-            foreach ($days as $day) {
-                $val = $waiterSchedule[$day] ?? null;
-                $result[$waiterId][$day] = ($val !== null && $val !== 'off');
-            }
-        }
-
-        return $result;
-    }
-
     // ===================================================================
     // ROTATION PATTERN (for kasir with rotating schedule)
     // ===================================================================
-
-    /**
-     * Set rotation pattern for kasir.
-     */
-    public function setRotationPattern(string $waiterId, array $pattern): void
-    {
-        $payload = [
-            'enabled' => true,
-            'role' => $pattern['role'] ?? 'primary', // primary | backup
-            'default_shift_id' => $pattern['default_shift_id'] ?? null,
-            'rotation_days' => $pattern['rotation_days'] ?? [],
-            'start_week' => $pattern['start_week'] ?? date('o-\WW'),
-            'start_day' => $pattern['start_day'] ?? 'monday',
-            'updated_at' => time(),
-        ];
-        
-        $this->database->getReference("rotation_patterns/{$waiterId}")->set($payload);
-    }
 
     /**
      * Get rotation pattern for waiter/kasir.
@@ -8076,62 +7400,6 @@ class FirebaseService
         }
         
         return $snapshot->getValue();
-    }
-
-    /**
-     * Calculate and set backup coverage for date.
-     */
-    public function calculateBackupCoverageForDate(string $date): void
-    {
-        // Get all kasir with rotation
-        $allWaiters = $this->getAllowedEmails();
-        $primaryKasir = [];
-        $backupKasir = null;
-        
-        foreach ($allWaiters as $waiter) {
-            $pattern = $this->getRotationPattern($waiter['id']);
-            if (!$pattern) continue;
-            
-            if ($pattern['role'] === 'primary') {
-                $primaryKasir[] = [
-                    'id' => $waiter['id'],
-                    'pattern' => $pattern,
-                ];
-            } elseif ($pattern['role'] === 'backup') {
-                $backupKasir = $waiter['id'];
-            }
-        }
-        
-        if (!$backupKasir) return;
-        
-        // Check which primary is off today
-        foreach ($primaryKasir as $kasir) {
-            $isOff = $this->isRotationOffDay($kasir['pattern'], $date);
-            if ($isOff) {
-                // BUG FIX (#12): Validate backup is working today before writing coverage.
-                // Previously: silent fail kalau backup juga libur → toko tanpa kasir.
-                if (! $this->isWorkingDay($backupKasir, $date)) {
-                    \Log::warning('[BACKUP_COVERAGE] Both primary kasir and backup are off — no coverage', [
-                        'date' => $date,
-                        'primary_id' => $kasir['id'],
-                        'backup_id' => $backupKasir,
-                    ]);
-                    // Don't write coverage — coverage absent, downstream code akan handle missing
-                    return;
-                }
-
-                // Backup covers this kasir
-                $this->database->getReference("backup_coverage/{$date}/{$backupKasir}")->set([
-                    'covering_for' => $kasir['id'],
-                    'shift_id' => $kasir['pattern']['default_shift_id'],
-                    'calculated_at' => time(),
-                ]);
-                return; // Only cover one kasir per day
-            }
-        }
-        
-        // No one off = backup is off
-        $this->database->getReference("backup_coverage/{$date}/{$backupKasir}")->remove();
     }
 
     /**
@@ -8258,14 +7526,6 @@ class FirebaseService
         if (config('features.mysql_attendance')) {
             $this->syncAttendanceToMysql($waiterId, $date);
         }
-    }
-
-    /**
-     * Delete attendance record for a waiter on a specific date.
-     */
-    public function deleteAttendance(string $waiterId, string $date): void
-    {
-        app(\App\Repositories\Contracts\AttendanceRepositoryInterface::class)->delete($waiterId, $date);
     }
 
     /**
@@ -8446,29 +7706,12 @@ class FirebaseService
     }
 
     /**
-     * Save daily points for a waiter
-     */
-    public function saveDailyPoints(string $waiterId, string $date, array $data): void
-    {
-        $data['updated_at'] = time();
-        $this->database->getReference("waiter_daily_points/{$waiterId}/{$date}")->set($data);
-    }
-
-    /**
      * Get daily points for a waiter on a specific date
      */
     public function getDailyPoints(string $waiterId, string $date): ?array
     {
         $snapshot = $this->database->getReference("waiter_daily_points/{$waiterId}/{$date}")->getSnapshot();
         return $snapshot->exists() ? $snapshot->getValue() : null;
-    }
-
-    /**
-     * Get all daily points for a waiter in a month
-     */
-    public function getMonthlyDailyPoints(string $waiterId, string $month): array
-    {
-        return $this->getDailyPointsInRange($waiterId, $month . '-01', $month . '-31');
     }
 
     /**
@@ -8515,15 +7758,6 @@ class FirebaseService
     }
 
     /**
-     * Create a penalty record
-     */
-    public function createPenalty(array $data): string
-    {
-        $ref = $this->database->getReference('waiter_penalties')->push($data);
-        return $ref->getKey();
-    }
-
-    /**
      * Get all penalties, optionally filtered by month and/or waiter
      */
     public function getPenalties(?string $month = null, ?string $waiterId = null, ?string $startDate = null, ?string $endDate = null): array
@@ -8538,23 +7772,6 @@ class FirebaseService
     public function deletePenalty(string $penaltyId): void
     {
         app(\App\Repositories\Contracts\BonusRepositoryInterface::class)->deletePenalty($penaltyId);
-    }
-
-    /**
-     * Get a single penalty by ID
-     */
-    public function getPenaltyById(string $penaltyId): ?array
-    {
-        return app(\App\Repositories\Contracts\BonusRepositoryInterface::class)->penaltyById($penaltyId);
-    }
-
-    /**
-     * Save sales target for a waiter/month
-     */
-    public function saveSalesTarget(string $waiterId, string $month, array $data): void
-    {
-        $data['last_updated_at'] = time();
-        $this->database->getReference("waiter_sales_targets/{$waiterId}/{$month}")->update($data);
     }
 
     /**
@@ -8614,15 +7831,6 @@ class FirebaseService
     }
 
     /**
-     * Save bonus summary by period key (Y-m-d_Y-m-d).
-     */
-    public function saveBonusSummary(string $waiterId, string $periodKey, array $data): void
-    {
-        $data['updated_at'] = time();
-        $this->database->getReference("waiter_bonus_summary/{$waiterId}/{$periodKey}")->set($data);
-    }
-
-    /**
      * Get bonus summary for a waiter by period key.
      */
     public function getBonusSummary(string $waiterId, string $periodKey): ?array
@@ -8639,38 +7847,12 @@ class FirebaseService
     }
 
     /**
-     * Save leaderboard for a period key
-     */
-    public function saveLeaderboard(string $periodKey, array $data): void
-    {
-        $data['last_calculated_at'] = time();
-        $this->database->getReference("waiter_leaderboard/{$month}")->set($data);
-    }
-
-    /**
      * Get leaderboard for a month
      */
     public function getLeaderboard(string $month): ?array
     {
         $snapshot = $this->database->getReference("waiter_leaderboard/{$month}")->getSnapshot();
         return $snapshot->exists() ? $snapshot->getValue() : null;
-    }
-
-    /**
-     * Get waiter specialist role
-     */
-    public function getWaiterSpecialistRole(string $waiterId): ?string
-    {
-        $snapshot = $this->database->getReference("allowed_waiters/{$waiterId}/specialist_role")->getSnapshot();
-        return $snapshot->exists() ? $snapshot->getValue() : null;
-    }
-
-    /**
-     * Update waiter specialist role
-     */
-    public function updateWaiterSpecialistRole(string $waiterId, ?string $role): void
-    {
-        $this->database->getReference("allowed_waiters/{$waiterId}/specialist_role")->set($role);
     }
 
     // ==========================================
@@ -10216,22 +9398,6 @@ class FirebaseService
     // ==========================================
 
     /**
-     * Save handover note at clock-out
-     */
-    public function saveHandoverNote(string $waiterId, string $waiterName, string $date, string $note): void
-    {
-        $entry = [
-            'waiter_id' => $waiterId,
-            'waiter_name' => $waiterName,
-            'date' => $date,
-            'note' => $note,
-            'created_at' => time(),
-        ];
-
-        $this->database->getReference("handover_notes/{$date}/{$waiterId}")->set($entry);
-    }
-
-    /**
      * Get handover notes for a date (from previous shift)
      */
     public function getHandoverNotes(string $date): array
@@ -10250,31 +9416,9 @@ class FirebaseService
         return $notes;
     }
 
-    /**
-     * Get latest handover notes (yesterday or last working day)
-     */
-    public function getLatestHandoverNotes(): array
-    {
-        // Try yesterday first, then go back up to 3 days
-        for ($i = 1; $i <= 3; $i++) {
-            $date = now()->subDays($i)->format('Y-m-d');
-            $notes = $this->getHandoverNotes($date);
-            if (!empty($notes)) return $notes;
-        }
-        return [];
-    }
-
     // ========================================
     // SUPPLIER MANAGEMENT
     // ========================================
-
-    /**
-     * Get all suppliers
-     */
-    public function getSuppliers(): array
-    {
-        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->all();
-    }
 
     /**
      * Get supplier by ID
@@ -10282,30 +9426,6 @@ class FirebaseService
     public function getSupplierById(string $id): ?array
     {
         return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->find($id);
-    }
-
-    /**
-     * Create supplier
-     */
-    public function createSupplier(array $data): string
-    {
-        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->create($data);
-    }
-
-    /**
-     * Update supplier
-     */
-    public function updateSupplier(string $id, array $data): bool
-    {
-        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->update($id, $data);
-    }
-
-    /**
-     * Delete supplier
-     */
-    public function deleteSupplier(string $id): bool
-    {
-        return app(\App\Repositories\Contracts\SupplierRepositoryInterface::class)->delete($id);
     }
 
     public function getProductAuditTrail(string $productId, int $limit = 200): array
@@ -10614,81 +9734,6 @@ class FirebaseService
             'anomalies' => $anomalies,
             'iso_year_week' => $isoYearWeek,
         ];
-    }
-
-    public function getReconciliationReports(?string $isoYearWeek = null, int $limit = 10): array
-    {
-        $limit = max(1, $limit);
-
-        if ($isoYearWeek !== null && trim($isoYearWeek) !== '') {
-            $snapshot = $this->database->getReference('reconciliation_reports/'.trim($isoYearWeek))->getSnapshot();
-            if (! $snapshot->exists()) {
-                return [];
-            }
-
-            $reports = [];
-            foreach ((array) $snapshot->getValue() as $reportId => $report) {
-                if (! is_array($report)) {
-                    continue;
-                }
-                $report['id'] = (string) $reportId;
-                $report['iso_year_week'] = (string) ($report['iso_year_week'] ?? trim($isoYearWeek));
-                $reports[] = $report;
-            }
-
-            usort($reports, fn ($a, $b) => ((int) ($b['generated_at'] ?? 0)) <=> ((int) ($a['generated_at'] ?? 0)));
-
-            return array_slice($reports, 0, $limit);
-        }
-
-        $rootSnapshot = $this->database->getReference('reconciliation_reports')
-            ->orderByKey()
-            ->limitToLast($limit)
-            ->getSnapshot();
-
-        if (! $rootSnapshot->exists()) {
-            return [];
-        }
-
-        $all = [];
-        foreach ((array) $rootSnapshot->getValue() as $week => $reports) {
-            if (! is_array($reports)) {
-                continue;
-            }
-
-            foreach ($reports as $reportId => $report) {
-                if (! is_array($report)) {
-                    continue;
-                }
-                $report['id'] = (string) $reportId;
-                $report['iso_year_week'] = (string) ($report['iso_year_week'] ?? $week);
-                $all[] = $report;
-            }
-        }
-
-        usort($all, fn ($a, $b) => ((int) ($b['generated_at'] ?? 0)) <=> ((int) ($a['generated_at'] ?? 0)));
-
-        return array_slice($all, 0, $limit);
-    }
-
-    public function getReconciliationReportById(string $isoYearWeek, string $reportId): ?array
-    {
-        $isoYearWeek = trim($isoYearWeek);
-        $reportId = trim($reportId);
-        if ($isoYearWeek === '' || $reportId === '') {
-            return null;
-        }
-
-        $snapshot = $this->database->getReference("reconciliation_reports/{$isoYearWeek}/{$reportId}")->getSnapshot();
-        if (! $snapshot->exists()) {
-            return null;
-        }
-
-        $report = (array) $snapshot->getValue();
-        $report['id'] = $reportId;
-        $report['iso_year_week'] = (string) ($report['iso_year_week'] ?? $isoYearWeek);
-
-        return $report;
     }
 
     /**
@@ -11367,84 +10412,6 @@ class FirebaseService
         }
     }
 
-    public function assignRackCheckOverflow(string $overflowId, string $waiterId, bool $overrideCap = false, ?string $note = null): array
-    {
-        $overflow = (array) ($this->database->getReference('rack_check_overflows/'.$overflowId)->getValue() ?? []);
-        if (empty($overflow) || (string) ($overflow['status'] ?? '') !== 'pending') {
-            return ['success' => false, 'message' => 'Overflow tidak ditemukan atau sudah diproses.'];
-        }
-
-        $waiter = $this->getWaiterById($waiterId);
-        if (! $waiter || ($waiter['is_active'] ?? true) === false) {
-            return ['success' => false, 'message' => 'Karyawan tidak aktif atau tidak ditemukan.'];
-        }
-
-        $targetDate = (string) ($overflow['target_date'] ?? date('Y-m-d'));
-        $template = $this->getRecurringWaiterTaskTemplateById((string) ($overflow['template_id'] ?? ''));
-        if (! $template) {
-            return ['success' => false, 'message' => 'Template overflow tidak ditemukan.'];
-        }
-        $template = array_merge($template, [
-            'rack_id' => (string) ($overflow['rack_id'] ?? ''),
-            'rack_name' => (string) ($overflow['rack_name'] ?? ''),
-        ]);
-
-        $isWorking = $this->isWorkingDay($waiterId, $targetDate);
-        $dailyCap = $isWorking ? $this->getRackCheckDailyCap($waiterId, $targetDate, $template) : 0;
-        $todayCount = $this->countRackCheckTasksForWaiterOnDate($waiterId, $targetDate);
-        if (! $overrideCap && (! $isWorking || $todayCount >= $dailyCap)) {
-            return ['success' => false, 'message' => "Karyawan sudah {$todayCount}/{$dailyCap} tugas cek rak hari ini. Centang lewati cap untuk assign manual."];
-        }
-
-        $assignmentReason = [
-            'mode' => 'supervisor_overflow_assign',
-            'overflow_id' => $overflowId,
-            'selected_waiter_id' => $waiterId,
-            'selected_waiter_name' => (string) ($waiter['name'] ?? ''),
-            'today_rack_task_count_before' => $todayCount,
-            'daily_cap' => $dailyCap,
-            'monthly_points_before' => $this->getWaiterMonthlyPointsForPriority($waiterId, $targetDate),
-            'cap_overridden_by_supervisor' => $overrideCap,
-            'supervisor_note' => $note,
-        ];
-
-        $createResult = $this->createSimpleLowestLoadTask($template, $waiter, $targetDate, $assignmentReason);
-        if (! ($createResult['success'] ?? false)) {
-            return ['success' => false, 'message' => 'Gagal membuat task: '.(string) ($createResult['reason'] ?? 'unknown')];
-        }
-
-        $taskId = (string) ($createResult['task_node_key'] ?? '');
-        $this->database->getReference('rack_check_overflows/'.$overflowId)->update([
-            'status' => 'assigned',
-            'assigned_task_id' => $taskId,
-            'assigned_waiter_id' => $waiterId,
-            'assigned_waiter_name' => (string) ($waiter['name'] ?? ''),
-            'supervisor_note' => $note,
-            'updated_at' => time(),
-        ]);
-        $this->writeSimpleLowestLoadLock((string) ($template['id'] ?? ''), $targetDate, [
-            'status' => 'generated',
-            'task_id' => $taskId,
-            'assigned_waiter_id' => $waiterId,
-            'assigned_waiter_name' => (string) ($waiter['name'] ?? ''),
-            'overflow_id' => $overflowId,
-            'overflow_status' => 'assigned',
-        ], (string) ($template['rack_id'] ?? ''));
-        $this->logAuditAction('assign', 'rack_check_overflow', $overflowId, $assignmentReason);
-
-        return ['success' => true, 'message' => 'Overflow berhasil di-assign.', 'task_id' => $taskId];
-    }
-
-    public function moveRackCheckOverflowToTomorrow(string $overflowId, ?string $note = null): array
-    {
-        return $this->moveRackCheckOverflow($overflowId, date('Y-m-d', strtotime('+1 day')), 'moved_to_tomorrow', $note);
-    }
-
-    public function moveRackCheckOverflowToNextShift(string $overflowId, ?string $note = null): array
-    {
-        return $this->moveRackCheckOverflow($overflowId, date('Y-m-d', strtotime('+1 day')), 'moved_to_next_shift', $note);
-    }
-
     protected function moveRackCheckOverflow(string $overflowId, string $newDate, string $status, ?string $note = null): array
     {
         $overflow = (array) ($this->database->getReference('rack_check_overflows/'.$overflowId)->getValue() ?? []);
@@ -11474,34 +10441,6 @@ class FirebaseService
         ]);
 
         return ['success' => true, 'message' => 'Overflow berhasil dipindahkan.', 'overflow_id' => $newId];
-    }
-
-    public function ignoreRackCheckOverflow(string $overflowId, string $reason): array
-    {
-        $reason = trim($reason);
-        if ($reason === '') {
-            return ['success' => false, 'message' => 'Alasan wajib diisi.'];
-        }
-
-        $overflow = (array) ($this->database->getReference('rack_check_overflows/'.$overflowId)->getValue() ?? []);
-        if (empty($overflow) || (string) ($overflow['status'] ?? '') !== 'pending') {
-            return ['success' => false, 'message' => 'Overflow tidak ditemukan atau sudah diproses.'];
-        }
-
-        $this->database->getReference('rack_check_overflows/'.$overflowId)->update([
-            'status' => 'ignored',
-            'ignored_reason' => $reason,
-            'updated_at' => time(),
-        ]);
-        $this->writeSimpleLowestLoadLock((string) ($overflow['template_id'] ?? ''), (string) ($overflow['target_date'] ?? ''), [
-            'status' => 'skipped_no_eligible_waiter',
-            'overflow_id' => $overflowId,
-            'overflow_status' => 'ignored',
-            'reason' => 'ignored_by_supervisor',
-        ], (string) ($overflow['rack_id'] ?? ''));
-        $this->logAuditAction('ignore', 'rack_check_overflow', $overflowId, ['reason' => $reason]);
-
-        return ['success' => true, 'message' => 'Overflow berhasil diabaikan.'];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -11674,78 +10613,6 @@ class FirebaseService
             'task_id' => $lastTaskId,
             'assigned_waiter_id' => $lastAssignedWaiterId,
             'rack_results' => $rackResults,
-        ];
-    }
-
-    /**
-     * Dry-run preview: evaluate candidates tanpa create task atau lock.
-     * Used by /admin/rack-check/templates/{id}/preview.
-     */
-    public function previewSimpleLowestLoadTemplate(array $template, string $targetDate): array
-    {
-        $evaluation = $this->evaluateSimpleLowestLoadCandidates($template, $targetDate);
-        $evaluated = $evaluation['evaluated'];
-        $eligible = $evaluation['eligible'];
-
-        if (empty($eligible)) {
-            $rejected = array_values(array_filter($evaluated, fn ($row) => ! $row['eligible']));
-            return [
-                'status' => 'skipped_no_eligible_waiter',
-                'date' => $targetDate,
-                'rack_name' => (string) ($template['rack_name'] ?? ''),
-                'selected' => null,
-                'evaluated' => $evaluated,
-                'rejected_candidates' => array_map(fn ($r) => [
-                    'waiter_id' => $r['waiter_id'],
-                    'name' => $r['waiter']['name'] ?? '',
-                    'reason' => $r['reject_reason'] ?? '',
-                ], $rejected),
-            ];
-        }
-
-        usort($eligible, function ($a, $b) {
-            return [
-                $a['today_count'], $a['monthly_points'], $a['weekly_count'], $a['last_assigned_at'], $a['waiter_id'],
-            ] <=> [
-                $b['today_count'], $b['monthly_points'], $b['weekly_count'], $b['last_assigned_at'], $b['waiter_id'],
-            ];
-        });
-
-        $selected = $eligible[0];
-        $selectedWaiterId = (string) $selected['waiter_id'];
-
-        $rejectedSummary = [];
-        foreach ($evaluated as $row) {
-            if ($row['waiter_id'] === $selectedWaiterId) {
-                continue;
-            }
-            $rejectedSummary[] = [
-                'waiter_id' => $row['waiter_id'],
-                'name' => $row['waiter']['name'] ?? '',
-                'reason' => $row['eligible']
-                    ? 'Masuk, tapi beban lebih tinggi atau peringkat lebih rendah'
-                    : ($row['reject_reason'] ?? ''),
-                'is_working_day' => (bool) $row['is_working_day'],
-                'today_count' => (int) $row['today_count'],
-                'monthly_points' => (int) ($row['monthly_points'] ?? 0),
-                'daily_cap' => (int) $row['daily_cap'],
-            ];
-        }
-
-        return [
-            'status' => 'eligible',
-            'date' => $targetDate,
-            'rack_name' => (string) ($template['rack_name'] ?? ''),
-            'selected' => [
-                'waiter_id' => $selectedWaiterId,
-                'name' => (string) ($selected['waiter']['name'] ?? ''),
-                'today_count' => (int) $selected['today_count'],
-                'weekly_count' => (int) $selected['weekly_count'],
-                'monthly_points' => (int) ($selected['monthly_points'] ?? 0),
-                'daily_cap' => (int) $selected['daily_cap'],
-            ],
-            'evaluated' => $evaluated,
-            'rejected_candidates' => $rejectedSummary,
         ];
     }
 
@@ -12155,30 +11022,6 @@ class FirebaseService
         }
     }
 
-    /**
-     * Mark lock as cancelled_by_admin (called from cancel handler / admin UI).
-     */
-    public function markSimpleLowestLoadLockCancelled(string $templateId, string $date, ?string $rackId = null): void
-    {
-        $existing = $this->getSimpleLowestLoadLock($templateId, $date, $rackId);
-        if ($existing === null) {
-            return;
-        }
-        $dateCompact = str_replace('-', '', $date);
-        $path = $rackId !== null && $rackId !== ''
-            ? 'waiter_task_generation_locks/'.$templateId.'/'.$rackId.'/'.$dateCompact
-            : 'waiter_task_generation_locks/'.$templateId.'/'.$dateCompact;
-        try {
-            $this->database->getReference($path)->update([
-                'status' => 'cancelled_by_admin',
-                'cancelled_by_admin' => true,
-                'cancelled_at' => time(),
-            ]);
-        } catch (\Throwable $e) {
-            report($e);
-        }
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
     // ROUND ROBIN SIMPLE (rack-check wizard, mode "Giliran Tetap")
     // ─────────────────────────────────────────────────────────────────────────
@@ -12408,130 +11251,6 @@ class FirebaseService
             'task_id' => $lastTaskId,
             'assigned_waiter_id' => (string) ($selectedWaiter['id'] ?? ''),
             'rack_results' => $rackResults,
-        ];
-    }
-
-    /**
-     * Dry-run preview untuk round_robin_simple. Tidak buat task atau advance counter.
-     */
-    public function previewRoundRobinSimpleTemplate(array $template, string $targetDate): array
-    {
-        $templateId = (string) ($template['id'] ?? '');
-        $selectedIdsRaw = $template['selected_waiter_ids'] ?? [];
-        if (! is_array($selectedIdsRaw)) {
-            $selectedIdsRaw = [];
-        }
-        $selectedIds = array_values(array_unique(array_filter(array_map(
-            fn ($id) => trim((string) $id),
-            $selectedIdsRaw
-        ), fn ($id) => $id !== '')));
-
-        if (empty($selectedIds)) {
-            return [
-                'status' => 'skipped_no_eligible_waiter',
-                'date' => $targetDate,
-                'rack_name' => (string) ($template['rack_name'] ?? ''),
-                'mode' => 'round_robin_simple',
-                'selected' => null,
-                'evaluated' => [],
-                'rejected_candidates' => [],
-            ];
-        }
-
-        $counterPath = 'waiter_task_round_robin_counters/'.$templateId;
-        $counter = $templateId !== ''
-            ? (array) ($this->database->getReference($counterPath)->getValue() ?? [])
-            : [];
-        $currentIdx = (int) ($counter['next_index'] ?? 0);
-        if ($currentIdx < 0 || $currentIdx >= count($selectedIds)) {
-            $currentIdx = 0;
-        }
-
-        $evaluated = [];
-        $selectedWaiter = null;
-        $pickedIdx = null;
-        $loopCount = count($selectedIds);
-
-        for ($i = 0; $i < $loopCount; $i++) {
-            $idx = ($currentIdx + $i) % $loopCount;
-            $candidateId = $selectedIds[$idx];
-            try {
-                $waiter = $this->getWaiterById($candidateId);
-            } catch (\Throwable $e) {
-                $waiter = null;
-            }
-            if (! $waiter || ($waiter['is_active'] ?? true) === false) {
-                $evaluated[] = [
-                    'waiter_id' => $candidateId,
-                    'name' => $waiter['name'] ?? '—',
-                    'reason' => 'Tidak aktif atau tidak ditemukan',
-                    'is_working_day' => false,
-                    'today_count' => 0,
-                    'daily_cap' => 0,
-                ];
-                continue;
-            }
-
-            $isWorking = $this->isWorkingDay($candidateId, $targetDate);
-            $dailyCap = $isWorking ? $this->getRackCheckDailyCap($candidateId, $targetDate, $template) : 0;
-            $todayCount = $this->countRackCheckTasksForWaiterOnDate($candidateId, $targetDate);
-
-            if (! $isWorking) {
-                $evaluated[] = [
-                    'waiter_id' => $candidateId,
-                    'name' => (string) ($waiter['name'] ?? ''),
-                    'reason' => 'LIBUR',
-                    'is_working_day' => false,
-                    'today_count' => $todayCount,
-                    'daily_cap' => $dailyCap,
-                ];
-                continue;
-            }
-            if ($todayCount >= $dailyCap) {
-                $evaluated[] = [
-                    'waiter_id' => $candidateId,
-                    'name' => (string) ($waiter['name'] ?? ''),
-                    'reason' => "Sudah {$todayCount}/{$dailyCap} task hari ini",
-                    'is_working_day' => true,
-                    'today_count' => $todayCount,
-                    'daily_cap' => $dailyCap,
-                ];
-                continue;
-            }
-
-            $selectedWaiter = $waiter;
-            $pickedIdx = $idx;
-            break;
-        }
-
-        if ($selectedWaiter === null) {
-            return [
-                'status' => 'skipped_no_eligible_waiter',
-                'date' => $targetDate,
-                'rack_name' => (string) ($template['rack_name'] ?? ''),
-                'mode' => 'round_robin_simple',
-                'selected' => null,
-                'evaluated' => $evaluated,
-                'rejected_candidates' => $evaluated,
-                'rotation_start_index' => $currentIdx,
-                'rotation_size' => $loopCount,
-            ];
-        }
-
-        return [
-            'status' => 'eligible',
-            'date' => $targetDate,
-            'rack_name' => (string) ($template['rack_name'] ?? ''),
-            'mode' => 'round_robin_simple',
-            'selected' => [
-                'waiter_id' => (string) ($selectedWaiter['id'] ?? ''),
-                'name' => (string) ($selectedWaiter['name'] ?? ''),
-                'rotation_picked_index' => $pickedIdx,
-                'rotation_size' => $loopCount,
-            ],
-            'rotation_start_index' => $currentIdx,
-            'evaluated' => $evaluated,
-            'rejected_candidates' => $evaluated,
         ];
     }
 
