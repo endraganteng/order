@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\FirebaseService;
+use App\Services\PlanningFirebaseService;
 use App\Services\RackCheckTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ class RackCheckPlanningController extends Controller
 {
     public function __construct(
         protected FirebaseService $firebase,
+        protected PlanningFirebaseService $planning,
         protected RackCheckTemplateService $templateService,
     ) {
     }
@@ -46,7 +48,7 @@ class RackCheckPlanningController extends Controller
                 $dueCount += count($racks);
             }
 
-            $planningTasks = $this->firebase->getPlanningTasksForDate($date);
+            $planningTasks = $this->planning->getPlanningTasksForDate($date);
             $assignedCount = count(array_filter($planningTasks, fn (array $task): bool => ! empty($task['assigned_to'])));
 
             $days[] = [
@@ -103,7 +105,7 @@ class RackCheckPlanningController extends Controller
             }
 
             // Existing planning tasks untuk tanggal ini
-            $planningTasks = $this->firebase->getPlanningTasksForDate($date);
+            $planningTasks = $this->planning->getPlanningTasksForDate($date);
 
             // Pre-compute task count per waiter dari planning tasks yang sudah ada (skip N+1 query)
             $taskCountByWaiter = [];
@@ -232,7 +234,7 @@ class RackCheckPlanningController extends Controller
             }
 
             // Cek duplikat planning task
-            $existingTasks = $this->firebase->getPlanningTasksForDate($scheduledDate);
+            $existingTasks = $this->planning->getPlanningTasksForDate($scheduledDate);
             foreach ($existingTasks as $task) {
                 if (
                     (string) ($task['template_id'] ?? '') === $templateId
@@ -250,8 +252,8 @@ class RackCheckPlanningController extends Controller
                         'updated_at'            => time(),
                         'override_reason'       => $isOverride ? $overrideReason : null,
                     ];
-                    $this->firebase->updatePlanningTask($taskId, $updateData);
-                    $this->firebase->logPlanningAction('assign_rack', [
+                    $this->planning->updatePlanningTask($taskId, $updateData);
+                    $this->planning->logPlanningAction('assign_rack', [
                         'task_id'         => $taskId,
                         'template_id'     => $templateId,
                         'rack_id'         => $rackId,
@@ -289,10 +291,10 @@ class RackCheckPlanningController extends Controller
                 'override_reason'      => $isOverride ? $overrideReason : null,
             ];
 
-            $savedTask = $this->firebase->savePlanningTask($taskData);
+            $savedTask = $this->planning->savePlanningTask($taskData);
             $newTaskId = (string) ($savedTask['id'] ?? '');
 
-            $this->firebase->logPlanningAction('assign_rack', [
+            $this->planning->logPlanningAction('assign_rack', [
                 'task_id'         => $newTaskId,
                 'template_id'     => $templateId,
                 'rack_id'         => $rackId,
@@ -342,7 +344,7 @@ class RackCheckPlanningController extends Controller
                     continue;
                 }
                 try {
-                    $this->firebase->updatePlanningTask($taskId, [
+                    $this->planning->updatePlanningTask($taskId, [
                         'assigned_to'  => $taskInput['assigned_to'] ?? null,
                         'status'       => 'planned',
                         'is_published' => false,
@@ -354,7 +356,7 @@ class RackCheckPlanningController extends Controller
                 }
             }
 
-            $this->firebase->logPlanningAction('save_draft', [
+            $this->planning->logPlanningAction('save_draft', [
                 'date'        => $date,
                 'saved_count' => $savedCount,
                 'errors'      => $errors,
@@ -389,12 +391,12 @@ class RackCheckPlanningController extends Controller
         $date = (string) $data['date'];
 
         try {
-            $result = $this->firebase->publishPlanningForDate($date);
+            $result = $this->planning->publishPlanningForDate($date);
 
             $publishedCount = (int) ($result['published_count'] ?? 0);
             $skippedCount   = (int) ($result['skipped_count'] ?? 0);
 
-            $this->firebase->logPlanningAction('publish_planning', [
+            $this->planning->logPlanningAction('publish_planning', [
                 'date'            => $date,
                 'published_count' => $publishedCount,
                 'skipped_count'   => $skippedCount,
@@ -432,7 +434,7 @@ class RackCheckPlanningController extends Controller
 
         try {
             // Validasi: task dengan status terminal tidak boleh di-unassign
-            $existingTask = $this->firebase->getPlanningTaskById($taskId);
+            $existingTask = $this->planning->getPlanningTaskById($taskId);
             if ($existingTask !== null) {
                 $status = (string) ($existingTask['status'] ?? '');
                 if (in_array($status, ['done', 'recheck_pending', 'reviewed'], true)) {
@@ -444,7 +446,7 @@ class RackCheckPlanningController extends Controller
                 }
             }
 
-            $this->firebase->updatePlanningTask($taskId, [
+            $this->planning->updatePlanningTask($taskId, [
                 'assigned_to'          => null,
                 'assigned_waiter_name' => null,
                 'status'               => 'planning_pending',
@@ -452,7 +454,7 @@ class RackCheckPlanningController extends Controller
                 'updated_at'           => time(),
             ]);
 
-            $this->firebase->logPlanningAction('unassign_rack', [
+            $this->planning->logPlanningAction('unassign_rack', [
                 'task_id' => $taskId,
             ]);
         } catch (\Throwable $e) {
@@ -489,7 +491,7 @@ class RackCheckPlanningController extends Controller
         $overrideReason = isset($data['override_reason']) ? (string) $data['override_reason'] : null;
 
         try {
-            $task = $this->firebase->getPlanningTaskById($taskId);
+            $task = $this->planning->getPlanningTaskById($taskId);
             if ($task === null) {
                 return response()->json([
                     'success'    => false,
@@ -551,7 +553,7 @@ class RackCheckPlanningController extends Controller
             $newWaiter     = $this->getWaiterData($newWaiterId);
             $newWaiterName = (string) ($newWaiter['name'] ?? $newWaiterId);
 
-            $this->firebase->updatePlanningTask($taskId, [
+            $this->planning->updatePlanningTask($taskId, [
                 'assigned_to'          => $newWaiterId,
                 'assigned_waiter_name' => $newWaiterName,
                 'updated_at'           => time(),
@@ -568,7 +570,7 @@ class RackCheckPlanningController extends Controller
                 ]);
             }
 
-            $this->firebase->logPlanningAction('reassign_rack', [
+            $this->planning->logPlanningAction('reassign_rack', [
                 'task_id'       => $taskId,
                 'old_waiter_id' => $oldWaiterId,
                 'new_waiter_id' => $newWaiterId,
@@ -605,7 +607,7 @@ class RackCheckPlanningController extends Controller
         $reason  = isset($data['reason']) ? (string) $data['reason'] : null;
 
         try {
-            $task = $this->firebase->getPlanningTaskById($taskId);
+            $task = $this->planning->getPlanningTaskById($taskId);
             if ($task === null) {
                 return response()->json([
                     'success'    => false,
@@ -629,7 +631,7 @@ class RackCheckPlanningController extends Controller
             $templateId   = (string) ($task['template_id'] ?? '');
             $rackId       = (string) ($task['rack_id'] ?? '');
 
-            $this->firebase->updatePlanningTask($taskId, [
+            $this->planning->updatePlanningTask($taskId, [
                 'scheduled_for_date' => $newDate,
                 'status'             => 'planning_pending',
                 'assigned_to'        => null,
@@ -644,10 +646,10 @@ class RackCheckPlanningController extends Controller
 
             // Hapus lock lama
             if ($templateId !== '' && $rackId !== '' && $oldDate !== '') {
-                $this->firebase->removePlanningLock($templateId, $rackId, $oldDate);
+                $this->planning->removePlanningLock($templateId, $rackId, $oldDate);
             }
 
-            $this->firebase->logPlanningAction('reschedule_rack', [
+            $this->planning->logPlanningAction('reschedule_rack', [
                 'task_id'  => $taskId,
                 'old_date' => $oldDate,
                 'new_date' => $newDate,
@@ -684,7 +686,7 @@ class RackCheckPlanningController extends Controller
         $reason = (string) $data['reason'];
 
         try {
-            $task = $this->firebase->getPlanningTaskById($taskId);
+            $task = $this->planning->getPlanningTaskById($taskId);
             if ($task === null) {
                 return response()->json([
                     'success'    => false,
@@ -705,7 +707,7 @@ class RackCheckPlanningController extends Controller
             $isPublished  = ! empty($task['is_published']);
             $waiterTaskId = (string) ($task['waiter_task_id'] ?? '');
 
-            $this->firebase->updatePlanningTask($taskId, [
+            $this->planning->updatePlanningTask($taskId, [
                 'status'        => 'ignored_with_reason',
                 'ignore_reason' => $reason,
                 'assigned_to'   => null,
@@ -718,7 +720,7 @@ class RackCheckPlanningController extends Controller
                 $this->firebase->removeWaiterTask($waiterTaskId);
             }
 
-            $this->firebase->logPlanningAction('ignore_rack', [
+            $this->planning->logPlanningAction('ignore_rack', [
                 'task_id' => $taskId,
                 'reason'  => $reason,
             ]);
@@ -764,7 +766,7 @@ class RackCheckPlanningController extends Controller
             }
 
             // Ambil planning tasks yang sudah ada untuk tanggal ini
-            $existingTasks = $this->firebase->getPlanningTasksForDate($date);
+            $existingTasks = $this->planning->getPlanningTasksForDate($date);
 
             // Buat lookup: template_id + rack_id → task (untuk cek duplikat)
             $assignedKeys = [];
@@ -874,7 +876,7 @@ class RackCheckPlanningController extends Controller
                     'created_by'           => 'auto_suggest',
                 ];
 
-                $this->firebase->savePlanningTask($taskData);
+                $this->planning->savePlanningTask($taskData);
                 $assignedCount++;
 
                 // Kurangi kapasitas petugas ini, lalu re-sort
@@ -884,7 +886,7 @@ class RackCheckPlanningController extends Controller
 
             $remaining = count($unassignedRacks) - $assignedCount;
 
-            $this->firebase->logPlanningAction('auto_suggest', [
+            $this->planning->logPlanningAction('auto_suggest', [
                 'date'                 => $date,
                 'assigned_count'       => $assignedCount,
                 'remaining_unassigned' => $remaining,

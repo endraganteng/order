@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\FirebaseService;
+use App\Services\PurchaseOrderFirebaseService;
 use App\Services\RestockService;
 use Illuminate\Http\Request;
 
@@ -11,6 +12,7 @@ class RestockController extends Controller
 {
     public function __construct(
         protected FirebaseService $firebase,
+        protected PurchaseOrderFirebaseService $poService,
         protected RestockService $restockService,
     ) {
     }
@@ -20,8 +22,8 @@ class RestockController extends Controller
      */
     public function index()
     {
-        $groupedItems = $this->firebase->getPendingRestockGroupedByProduct();
-        $summary = $this->firebase->getRestockSummary();
+        $groupedItems = $this->poService->getPendingRestockGroupedByProduct();
+        $summary = $this->poService->getRestockSummary();
         $categories = $this->firebase->getActiveProductCategories();
 
         return view('admin.restock.index', compact('groupedItems', 'summary', 'categories'));
@@ -45,7 +47,7 @@ class RestockController extends Controller
         $createdByName = session('admin_name', 'Admin');
 
         $restockIds = $request->input('restock_ids', []);
-        $restockRows = $this->firebase->getRestockRequests();
+        $restockRows = $this->poService->getRestockRequests();
         $productIds = [];
         foreach ($restockRows as $row) {
             if (!is_array($row)) continue;
@@ -57,7 +59,7 @@ class RestockController extends Controller
 
         $forceDuplicate = (string) $request->input('force_duplicate', '0') === '1';
         $supplierKey = $request->input('supplier');
-        $conflicts = $this->firebase->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierKey, 86400);
+        $conflicts = $this->poService->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierKey, 86400);
         if (!$forceDuplicate && !empty($conflicts)) {
             return response()->json([
                 'success' => false,
@@ -67,7 +69,7 @@ class RestockController extends Controller
             ], 409);
         }
 
-        $poId = $this->firebase->createPurchaseOrder(
+        $poId = $this->poService->createPurchaseOrder(
             $restockIds,
             $createdBy,
             $createdByName,
@@ -104,7 +106,7 @@ class RestockController extends Controller
         $createdByName = session('admin_name', 'Admin');
         $results = [];
         $forceDuplicate = (string) $request->input('force_duplicate', '0') === '1';
-        $restockRows = $this->firebase->getRestockRequests();
+        $restockRows = $this->poService->getRestockRequests();
         $restockToProduct = [];
         foreach ($restockRows as $row) {
             if (!is_array($row)) continue;
@@ -123,7 +125,7 @@ class RestockController extends Controller
             // Resolve supplier details if ID provided
             $supplierPhone = null;
             if ($supplierId) {
-                $supplierData = $this->firebase->getSupplierById($supplierId);
+                $supplierData = $this->poService->getSupplierById($supplierId);
                 if ($supplierData) {
                     $supplierName = $supplierData['name'];
                     $supplierPhone = $supplierData['phone'] ?? null;
@@ -144,7 +146,7 @@ class RestockController extends Controller
                 }
             }
 
-            $conflicts = $this->firebase->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierName, 86400);
+            $conflicts = $this->poService->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierName, 86400);
             if (!$forceDuplicate && !empty($conflicts)) {
                 return response()->json([
                     'success' => false,
@@ -155,7 +157,7 @@ class RestockController extends Controller
                 ], 409);
             }
 
-            $poId = $this->firebase->createPurchaseOrder(
+            $poId = $this->poService->createPurchaseOrder(
                 $restockIds,
                 $createdBy,
                 $createdByName,
@@ -172,7 +174,7 @@ class RestockController extends Controller
                 ]);
                 
                 // Get PO details for response
-                $po = $this->firebase->getPurchaseOrder($poId);
+                $po = $this->poService->getPurchaseOrder($poId);
                 
                 $results[] = [
                     'po_id' => $poId,
@@ -216,7 +218,7 @@ class RestockController extends Controller
         $supplierId = $request->input('supplier_id');
         $supplierName = $request->input('supplier_name');
         if ($supplierId) {
-            $supplierData = $this->firebase->getSupplierById($supplierId);
+            $supplierData = $this->poService->getSupplierById($supplierId);
             if ($supplierData) {
                 $supplierName = $supplierData['name'] ?? $supplierName;
             }
@@ -224,7 +226,7 @@ class RestockController extends Controller
 
         $forceDuplicate = (string) $request->input('force_duplicate', '0') === '1';
         $productIds = array_map(fn($i) => $i['product_id'], $request->input('items'));
-        $conflicts = $this->firebase->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierName, 86400);
+        $conflicts = $this->poService->findOpenPOConflicts(array_values(array_unique($productIds)), $supplierName, 86400);
         if (!$forceDuplicate && !empty($conflicts)) {
             return response()->json([
                 'success' => false,
@@ -237,17 +239,17 @@ class RestockController extends Controller
         $rackId = (string) $request->input('rack_id', '');
         $rackName = '';
         if ($rackId !== '') {
-            $rack = $this->firebase->getRackById($rackId);
+            $rack = $this->poService->getRackById($rackId);
             $rackName = (string) ($rack['name'] ?? '');
         }
 
         $restockIds = [];
         $qtyOverrides = [];
         foreach ($request->input('items') as $item) {
-            $product = $this->firebase->getProductById($item['product_id']);
+            $product = $this->poService->getProductById($item['product_id']);
             $qty = (int) $item['qty'];
 
-            $restockId = $this->firebase->createOrUpdateRestockRequest([
+            $restockId = $this->poService->createOrUpdateRestockRequest([
                 'product_id' => $item['product_id'],
                 'product_name' => (string) ($product['name'] ?? $item['product_id']),
                 'product_category_id' => $product['category_id'] ?? null,
@@ -267,7 +269,7 @@ class RestockController extends Controller
             $qtyOverrides[$restockId] = $qty;
         }
 
-        $poId = $this->firebase->createPurchaseOrder(
+        $poId = $this->poService->createPurchaseOrder(
             $restockIds,
             $createdBy,
             $createdByName,
@@ -298,12 +300,12 @@ class RestockController extends Controller
      */
     public function productStock(string $productId)
     {
-        $product = $this->firebase->getProductById($productId);
+        $product = $this->poService->getProductById($productId);
         if (! $product) {
             return response()->json(['success' => false, 'message' => 'Produk tidak ditemukan.'], 404);
         }
 
-        $summary = $this->firebase->getProductStockSummary($productId);
+        $summary = $this->poService->getProductStockSummary($productId);
 
         return response()->json([
             'success' => true,
@@ -323,7 +325,7 @@ class RestockController extends Controller
     public function listDrafts(Request $request)
     {
         $createdBy = (string) session('admin_id', '');
-        $drafts = $this->firebase->getPurchaseOrderDrafts($createdBy ?: null);
+        $drafts = $this->poService->getPurchaseOrderDrafts($createdBy ?: null);
 
         return response()->json([
             'success' => true,
@@ -340,7 +342,7 @@ class RestockController extends Controller
 
     public function getDraft(string $draftId)
     {
-        $draft = $this->firebase->getPurchaseOrderDraft($draftId);
+        $draft = $this->poService->getPurchaseOrderDraft($draftId);
         if (! $draft) {
             return response()->json(['success' => false, 'message' => 'Draft tidak ditemukan.'], 404);
         }
@@ -366,7 +368,7 @@ class RestockController extends Controller
         $createdBy = (string) session('admin_id', 'admin');
         $createdByName = (string) session('admin_name', 'Admin');
 
-        $draftId = $this->firebase->savePurchaseOrderDraft([
+        $draftId = $this->poService->savePurchaseOrderDraft([
             'supplier_id' => $data['supplier_id'] ?? null,
             'supplier_name' => $data['supplier_name'] ?? '',
             'rack_id' => $data['rack_id'] ?? '',
@@ -385,7 +387,7 @@ class RestockController extends Controller
 
     public function deleteDraft(string $draftId)
     {
-        $ok = $this->firebase->deletePurchaseOrderDraft($draftId);
+        $ok = $this->poService->deletePurchaseOrderDraft($draftId);
 
         return response()->json([
             'success' => $ok,
@@ -399,7 +401,7 @@ class RestockController extends Controller
     public function orders(Request $request)
     {
         $status = $request->query('status');
-        $orders = $this->firebase->getPurchaseOrders($status);
+        $orders = $this->poService->getPurchaseOrders($status);
 
         return view('admin.restock.orders', compact('orders', 'status'));
     }
@@ -409,7 +411,7 @@ class RestockController extends Controller
      */
     public function orderDetail(string $id)
     {
-        $order = $this->firebase->getPurchaseOrder($id);
+        $order = $this->poService->getPurchaseOrder($id);
         if (!$order) {
             return redirect()->route('admin.restock.orders')->with('error', 'PO tidak ditemukan.');
         }
@@ -419,7 +421,7 @@ class RestockController extends Controller
         foreach (($order['items'] ?? []) as $restockId => $item) {
             $pid = $item['product_id'] ?? '';
             if ($pid && !isset($productHistories[$pid])) {
-                $productHistories[$pid] = $this->firebase->getProductRestockHistory($pid, 10);
+                $productHistories[$pid] = $this->poService->getProductRestockHistory($pid, 10);
             }
         }
 
@@ -431,7 +433,7 @@ class RestockController extends Controller
      */
     public function cancelOrder(string $id)
     {
-        $result = $this->firebase->cancelPurchaseOrder($id);
+        $result = $this->poService->cancelPurchaseOrder($id);
 
         if (!$result) {
             return response()->json(['success' => false, 'message' => 'Gagal membatalkan PO.'], 422);
@@ -450,7 +452,7 @@ class RestockController extends Controller
         $adminId = (string) session('admin_id', 'admin');
         $adminName = (string) session('admin_name', 'Supervisor');
 
-        $result = $this->firebase->acceptPoItemAsIs($poId, $restockId, $adminId, $adminName);
+        $result = $this->poService->acceptPoItemAsIs($poId, $restockId, $adminId, $adminName);
 
         if (!$result['success']) {
             return response()->json($result, 422);
