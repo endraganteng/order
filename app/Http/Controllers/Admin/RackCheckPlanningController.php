@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\FirebaseService;
+use App\Services\RackCheckTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,11 +15,10 @@ use Illuminate\Http\Request;
  */
 class RackCheckPlanningController extends Controller
 {
-    protected FirebaseService $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected RackCheckTemplateService $templateService,
+    ) {
     }
 
     /**

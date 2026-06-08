@@ -4,15 +4,15 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\FirebaseService;
+use App\Services\RestockService;
 use Illuminate\Http\Request;
 
 class RestockController extends Controller
 {
-    protected $firebase;
-
-    public function __construct(FirebaseService $firebase)
-    {
-        $this->firebase = $firebase;
+    public function __construct(
+        protected FirebaseService $firebase,
+        protected RestockService $restockService,
+    ) {
     }
 
     /**
