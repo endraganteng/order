@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\ImageCompressionService;
 use Kreait\Firebase\Contract\Database;
 use Kreait\Firebase\Exception\Database\TransactionFailed;
 
@@ -2214,11 +2215,20 @@ class BonusService
             return '';
         }
 
-        $ext = match ($mime) {
-            'image/png' => 'png',
-            'image/webp' => 'webp',
-            default => 'jpg',
-        };
+        // Server-side compression safety net
+        $compressor = app(ImageCompressionService::class);
+        $compressed = $compressor->compressBinary($bytes);
+        if ($compressed !== null) {
+            $bytes = $compressed['content'];
+            $mime = $compressed['mime'];
+            $ext = $compressed['extension'];
+        } else {
+            $ext = match ($mime) {
+                'image/png' => 'png',
+                'image/webp' => 'webp',
+                default => 'jpg',
+            };
+        }
 
         $safeWaiter = preg_replace('/[^A-Za-z0-9_-]/', '', $waiterId) ?: 'unknown';
         $object = sprintf('penalty_evidence/%s/%d.%s', $safeWaiter, time(), $ext);

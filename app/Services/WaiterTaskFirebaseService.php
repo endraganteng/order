@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\WaiterTask;
+use App\Services\ImageCompressionService;
 use Kreait\Firebase\Contract\Database;
 
 class WaiterTaskFirebaseService
@@ -2956,11 +2957,20 @@ class WaiterTaskFirebaseService
             return '';
         }
 
-        $ext = match ($mime) {
-            'image/png' => 'png',
-            'image/webp' => 'webp',
-            default => 'jpg',
-        };
+        // Server-side compression safety net
+        $compressor = app(ImageCompressionService::class);
+        $compressed = $compressor->compressBinary($bytes);
+        if ($compressed !== null) {
+            $bytes = $compressed['content'];
+            $mime = $compressed['mime'];
+            $ext = $compressed['extension'];
+        } else {
+            $ext = match ($mime) {
+                'image/png' => 'png',
+                'image/webp' => 'webp',
+                default => 'jpg',
+            };
+        }
 
         $safeTask = preg_replace('/[^A-Za-z0-9_-]/', '', $taskId) ?: 'unknown';
         $object = sprintf('task_photos/%s/%s_%d.%s', $safeTask, $kind, time(), $ext);
