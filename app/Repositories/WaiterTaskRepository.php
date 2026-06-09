@@ -48,7 +48,15 @@ class WaiterTaskRepository implements WaiterTaskRepositoryInterface
 
     public function delete(string $id): void
     {
+        // Remove from RTDB
         $this->database->getReference('waiter_tasks/'.$id)->remove();
+
+        // Also cancel in MySQL (waiter portal reads from MySQL)
+        if (config('features.mysql_waiter_tasks')) {
+            WaiterTask::where('firebase_legacy_key', $id)
+                ->where('status', 'pending')
+                ->update(['status' => 'cancelled']);
+        }
     }
 
     public function forDate(string $date): array

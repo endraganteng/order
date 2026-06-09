@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\WaiterTask;
 use Kreait\Firebase\Contract\Database;
 
 class WaiterTaskFirebaseService
@@ -3503,6 +3504,18 @@ class WaiterTaskFirebaseService
 
         if (! empty($updates)) {
             $this->database->getReference('waiter_tasks')->update($updates);
+
+            // Sync cancellation to MySQL (waiter portal reads from MySQL)
+            if (config('features.mysql_waiter_tasks')) {
+                // Extract task IDs from update keys (format: "taskId/field")
+                $cancelledIds = array_unique(array_map(
+                    fn ($key) => explode('/', $key)[0],
+                    array_keys($updates)
+                ));
+                WaiterTask::whereIn('firebase_legacy_key', $cancelledIds)
+                    ->whereIn('status', ['pending', 'in_progress'])
+                    ->update(['status' => 'cancelled']);
+            }
         }
 
         return $cancelled;

@@ -169,6 +169,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Live Dashboard
         Route::get('tasks/live', [TaskController::class, 'live'])->name('tasks.live');
         Route::get('tasks/live/active-sessions', [TaskController::class, 'liveActiveSessions'])->name('tasks.live.active_sessions');
+        Route::get('tasks/live/firebase-token', [TaskController::class, 'liveFirebaseToken'])->name('tasks.live.firebase_token');
 
         Route::get('reconciliation', [ReconciliationController::class, 'index'])->name('reconciliation.index');
         Route::get('reconciliation/{isoYearWeek}/{reportId}', [ReconciliationController::class, 'show'])->name('reconciliation.show');
@@ -522,6 +523,7 @@ Route::prefix('waiter')->name('waiter.')->group(function () {
         Route::get('tasks/poll', [WaiterController::class, 'pollTasks'])
             ->middleware('throttle:waiter-poll')
             ->name('task.poll');
+        Route::get('firebase-token', [WaiterController::class, 'firebaseToken'])->name('firebase_token');
         Route::post('tasks/sync-due', [WaiterController::class, 'syncDueTasks'])
             ->middleware('throttle:waiter-sync-due')
             ->name('task.sync_due');

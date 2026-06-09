@@ -42,6 +42,26 @@ class FirebaseService
     }
 
     /**
+     * Generate Firebase custom token for client-side auth.
+     * Custom tokens are valid for 1 hour but Firebase SDK auto-refreshes.
+     */
+    public function createCustomToken(string $uid = 'admin-live-monitor'): string
+    {
+        $customToken = $this->auth->createCustomToken($uid);
+
+        return $customToken->toString();
+    }
+
+    /**
+     * Proxy: delegate to RackStockFirebaseService for backward compatibility.
+     * ProductFirebaseService calls $this->firebase->getActiveRacks().
+     */
+    public function getActiveRacks(): array
+    {
+        return app(\App\Repositories\Contracts\RackRepositoryInterface::class)->allActive();
+    }
+
+    /**
      * Get all allowed waiter emails
      */
     public function getAllowedEmails()

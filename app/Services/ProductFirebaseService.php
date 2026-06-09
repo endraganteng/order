@@ -106,7 +106,7 @@ class ProductFirebaseService
      */
     public function getStorageRackProductsByBarcode(string $barcodeValue): array
     {
-        $rack = $this->firebase->resolveStorageRackByBarcode($barcodeValue);
+        $rack = app(RackStockFirebaseService::class)->resolveStorageRackByBarcode($barcodeValue);
         if (! $rack) {
             return [
                 'success' => false,

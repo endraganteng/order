@@ -588,6 +588,21 @@ class WaiterController extends Controller
     }
 
     /**
+     * Generate Firebase custom token for waiter client-side RTDB auth.
+     */
+    public function firebaseToken()
+    {
+        try {
+            $waiterId = (string) session('waiter_id', 'waiter-anonymous');
+            $token = $this->firebase->createCustomToken('waiter-' . $waiterId);
+
+            return response()->json(['success' => true, 'token' => $token]);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Submit Finance review of a rack_check task.
      * Hanya waiter dengan role finance yang bisa.
      *

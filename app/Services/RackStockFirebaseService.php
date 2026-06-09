@@ -464,7 +464,7 @@ class RackStockFirebaseService
      *
      * @return array<string,mixed>|null
      */
-    protected function resolveStorageRackByBarcode(string $barcodeValue): ?array
+    public function resolveStorageRackByBarcode(string $barcodeValue): ?array
     {
         $candidates = $this->extractRackBarcodeCandidates($barcodeValue);
         if (count($candidates) === 0) {

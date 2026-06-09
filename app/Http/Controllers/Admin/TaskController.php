@@ -742,13 +742,17 @@ class TaskController extends Controller
 
         $cancelled = $this->waiterTask->bulkCancelPendingTasksForDate($today, $taskType, $note);
 
-        $redirectRouteName = $taskType === 'rack_check'
-            ? 'admin.tasks.rack.index'
-            : 'admin.tasks.index';
-
         $message = $cancelled > 0
             ? "{$cancelled} task pending/in-progress hari ini berhasil dibatalkan."
             : 'Tidak ada task pending hari ini untuk dibatalkan.';
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json(['success' => true, 'cancelled' => $cancelled, 'message' => $message]);
+        }
+
+        $redirectRouteName = $taskType === 'rack_check'
+            ? 'admin.tasks.rack.index'
+            : 'admin.tasks.index';
 
         return redirect()->route($redirectRouteName)->with('success', $message);
     }
@@ -3330,6 +3334,20 @@ class TaskController extends Controller
             'sessions' => $sessions,
             'fetched_at' => time(),
         ]);
+    }
+
+    /**
+     * Generate Firebase custom token for live monitor client-side auth.
+     */
+    public function liveFirebaseToken()
+    {
+        try {
+            $token = $this->firebase->createCustomToken('admin-live-monitor');
+
+            return response()->json(['success' => true, 'token' => $token]);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 
     /**

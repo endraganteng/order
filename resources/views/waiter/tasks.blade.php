@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="firebase-token-url" content="{{ route('waiter.firebase_token') }}">
     <title>Portal Tugas Waiter</title>
     <style>
         * { box-sizing: border-box; }

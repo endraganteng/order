@@ -12,11 +12,20 @@
                 Real-time progress tugas hari ini — <span id="lm-date">{{ $today }}</span>
             </p>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <span id="lm-status" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 500; background: var(--color-success-bg); color: var(--color-success); border: 1px solid var(--color-success-border);">
                 <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-success); animation: pulse 2s infinite;"></span>
                 Terhubung
             </span>
+            <div style="position:relative;display:inline-block;" id="lm-bulk-cancel-wrap">
+                <button onclick="toggleBulkCancelMenu()" style="padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-danger-border); background: var(--color-danger-bg); color: var(--color-danger); cursor: pointer; font-size: 0.8rem; font-weight: 500;">🗑️ Bulk Cancel</button>
+                <div id="lm-bulk-cancel-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:#fff;border:1px solid var(--color-border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);z-index:100;min-width:200px;padding:8px 0;">
+                    <button onclick="bulkCancel('rack_check')" style="display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:0.82rem;color:var(--color-text);" onmouseover="this.style.background='var(--color-bg-muted)'" onmouseout="this.style.background='none'">📦 Cancel Rack Check</button>
+                    <button onclick="bulkCancel('general')" style="display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:0.82rem;color:var(--color-text);" onmouseover="this.style.background='var(--color-bg-muted)'" onmouseout="this.style.background='none'">📝 Cancel General</button>
+                    <hr style="margin:4px 0;border:none;border-top:1px solid var(--color-border);">
+                    <button onclick="cancelSelected()" id="lm-cancel-selected-btn" style="display:none;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;font-size:0.82rem;color:var(--color-danger);font-weight:500;" onmouseover="this.style.background='var(--color-danger-bg)'" onmouseout="this.style.background='none'">✓ Cancel Terpilih (<span id="lm-selected-count">0</span>)</button>
+                </div>
+            </div>
             <button onclick="location.reload()" style="padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: #fff; cursor: pointer; font-size: 0.8rem;">🔄 Refresh</button>
         </div>
     </div>
@@ -121,7 +130,7 @@
 <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
     import { getDatabase, ref, onValue, query, orderByChild, equalTo, limitToLast } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
-    import { getAuth, signInWithCredential, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+    import { getAuth, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
     const firebaseConfig = {
         apiKey: "{{ env('FIREBASE_API_KEY') }}",
@@ -138,15 +147,18 @@
     const auth = getAuth(app);
     const today = "{{ $today }}";
 
-    // Authenticate with Firebase using stored token or onAuthStateChanged
-    const storedToken = {!! json_encode(session('admin_firebase_token')) !!};
-    if (storedToken) {
-        try {
-            const credential = GoogleAuthProvider.credential(storedToken);
-            await signInWithCredential(auth, credential);
-        } catch (e) {
-            console.warn('Firebase auth with stored token failed, trying anonymous...', e.message);
+    // Authenticate with Firebase custom token from backend (service account)
+    try {
+        const tokenRes = await fetch("{{ route('admin.tasks.live.firebase_token') }}", {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+        });
+        const tokenJson = await tokenRes.json();
+        if (tokenJson.success && tokenJson.token) {
+            await signInWithCustomToken(auth, tokenJson.token);
         }
+    } catch (e) {
+        console.warn('Firebase custom token auth failed:', e.message);
     }
 
     // Parse waiter data
@@ -239,7 +251,7 @@
             const wId = task.assigned_waiter_id;
             if (waiterStats[wId]) {
                 waiterStats[wId].total++;
-                waiterStats[wId].tasks.push(task);
+                waiterStats[wId].tasks.push({ ...task, id: id });
             }
 
             if (task.status === 'done') {
@@ -363,11 +375,16 @@
                     const title = task.title || task.rack_name || task.rack_code || 'Tugas';
                     const statusBadge = getStatusBadge(task.status);
                     const completedTime = task.status === 'done' && task.completed_at ? ` <span style="font-size:0.7rem;color:var(--color-text-muted);">${formatTime(task.completed_at)}</span>` : '';
+                    const taskId = task.id || '';
+                    const canCancel = task.status !== 'done' && task.status !== 'cancelled';
+                    const cancelBtn = canCancel ? `<button onclick="cancelTask('${taskId}', this)" title="Cancel task" style="flex-shrink:0;width:22px;height:22px;border-radius:4px;border:1px solid var(--color-danger-border);background:var(--color-danger-bg);color:var(--color-danger);cursor:pointer;font-size:0.7rem;display:flex;align-items:center;justify-content:center;padding:0;">✕</button>` : '';
+                    const checkbox = canCancel ? `<input type="checkbox" class="lm-task-checkbox" data-task-id="${taskId}" onchange="updateSelectedCount()" style="flex-shrink:0;width:14px;height:14px;cursor:pointer;accent-color:var(--color-danger);">` : '';
                     return `
-                        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--radius-sm);background:var(--color-bg-subtle, #f8fafc);border:1px solid var(--color-border);margin-bottom:4px;">
+                        <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:var(--radius-sm);background:var(--color-bg-subtle, #f8fafc);border:1px solid var(--color-border);margin-bottom:4px;">
+                            ${checkbox}
                             <span style="font-size:0.85rem;flex-shrink:0;">${icon}</span>
                             <span style="flex:1;font-size:0.78rem;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${truncate(title, 35)}</span>
-                            ${statusBadge}${completedTime}
+                            ${statusBadge}${completedTime}${cancelBtn}
                         </div>
                     `;
                 }).join('');
@@ -534,5 +551,123 @@
             // For now, Firebase SDK handles this efficiently with keep-alive
         }
     });
+
+    // === Cancel Task Functions ===
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+
+    window.cancelTask = async function(taskId, btnEl) {
+        if (!taskId) return;
+        if (!confirm('Batalkan task ini?')) return;
+
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳'; }
+
+        try {
+            const res = await fetch(`/admin/tasks/${taskId}`, {
+                method: 'DELETE',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+            });
+            const json = await res.json();
+            if (json.success) {
+                if (btnEl) {
+                    const row = btnEl.closest('div[style*="display:flex"]');
+                    if (row) row.style.opacity = '0.4';
+                }
+            } else {
+                alert(json.message || 'Gagal membatalkan task.');
+                if (btnEl) { btnEl.disabled = false; btnEl.textContent = '✕'; }
+            }
+        } catch (e) {
+            alert('Error: ' + e.message);
+            if (btnEl) { btnEl.disabled = false; btnEl.textContent = '✕'; }
+        }
+    };
+
+    window.toggleBulkCancelMenu = function() {
+        const menu = document.getElementById('lm-bulk-cancel-menu');
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    };
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        const wrap = document.getElementById('lm-bulk-cancel-wrap');
+        if (wrap && !wrap.contains(e.target)) {
+            document.getElementById('lm-bulk-cancel-menu').style.display = 'none';
+        }
+    });
+
+    window.bulkCancel = async function(scope) {
+        const scopeLabel = scope === 'rack_check' ? 'Rack Check' : 'General';
+        if (!confirm(`Batalkan SEMUA task ${scopeLabel} yang pending/in-progress hari ini?`)) return;
+
+        document.getElementById('lm-bulk-cancel-menu').style.display = 'none';
+
+        try {
+            const res = await fetch('{{ route("admin.tasks.bulk_cancel_today") }}', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({ task_scope: scope }),
+            });
+            const json = await res.json();
+            if (json.success !== false) {
+                alert(json.message || 'Bulk cancel berhasil.');
+            } else {
+                alert(json.message || 'Gagal bulk cancel.');
+            }
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    };
+
+    window.updateSelectedCount = function() {
+        const checked = document.querySelectorAll('.lm-task-checkbox:checked');
+        const count = checked.length;
+        const btn = document.getElementById('lm-cancel-selected-btn');
+        const countEl = document.getElementById('lm-selected-count');
+        if (count > 0) {
+            btn.style.display = 'block';
+            countEl.textContent = count;
+        } else {
+            btn.style.display = 'none';
+        }
+    };
+
+    window.cancelSelected = async function() {
+        const checked = document.querySelectorAll('.lm-task-checkbox:checked');
+        const taskIds = Array.from(checked).map(cb => cb.dataset.taskId).filter(Boolean);
+
+        if (taskIds.length === 0) return;
+        if (!confirm(`Batalkan ${taskIds.length} task yang dipilih?`)) return;
+
+        document.getElementById('lm-bulk-cancel-menu').style.display = 'none';
+
+        let successCount = 0;
+        for (const taskId of taskIds) {
+            try {
+                const res = await fetch(`/admin/tasks/${taskId}`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                });
+                const json = await res.json();
+                if (json.success) successCount++;
+            } catch (e) { /* skip */ }
+        }
+
+        alert(`${successCount}/${taskIds.length} task berhasil dibatalkan.`);
+        // Checkboxes will disappear on next Firebase update
+        updateSelectedCount();
+    };
 </script>
 @endsection
