@@ -381,6 +381,51 @@ Artisan::command('firebase:cleanup-idempotency {--days=7 : Hapus cache yang lebi
     $this->info('waiter_task_idempotency dihapus: '.$stats['waiter_task']);
 })->purpose('Bersihkan idempotency cache lama untuk hemat bandwidth Firebase');
 
+Artisan::command('firebase:archive-completed-tasks {--keep-hours=2 : Simpan task selesai selama N jam sebelum archive}', function () {
+    $firebase = app(FirebaseService::class);
+    $db = $firebase->getDatabase();
+    $keepHours = max(1, (int) $this->option('keep-hours'));
+    $cutoff = time() - ($keepHours * 3600);
+
+    $tasks = $db->getReference('waiter_tasks')->getValue() ?: [];
+    $archiveUpdates = [];
+    $removeKeys = [];
+
+    foreach ($tasks as $id => $task) {
+        $status = $task['status'] ?? 'pending';
+        if (in_array($status, ['pending', 'in_progress'])) {
+            continue;
+        }
+
+        // Keep recently completed tasks for a grace period
+        $completedAt = (int) ($task['completed_at'] ?? $task['cancelled_at'] ?? 0);
+        if ($completedAt > $cutoff) {
+            continue;
+        }
+
+        $date = $task['scheduled_for_date'] ?? date('Y-m-d');
+        $archiveUpdates["waiter_tasks_archive/$date/$id"] = $task;
+        $removeKeys[] = $id;
+    }
+
+    if (!empty($archiveUpdates)) {
+        $chunks = array_chunk($archiveUpdates, 10, true);
+        foreach ($chunks as $chunk) {
+            $db->getReference('/')->update($chunk);
+        }
+
+        $removeUpdates = [];
+        foreach ($removeKeys as $key) {
+            $removeUpdates[$key] = null;
+        }
+        $db->getReference('waiter_tasks')->update($removeUpdates);
+    }
+
+    $this->info("Archived: " . count($removeKeys) . " completed tasks (cutoff: {$keepHours}h)");
+    $remaining = $db->getReference('waiter_tasks')->getValue() ?: [];
+    $this->info("Remaining: " . count($remaining) . " tasks (" . round(strlen(json_encode($remaining)) / 1024, 1) . " KB)");
+})->purpose('Archive completed/cancelled tasks from waiter_tasks to reduce RTDB bandwidth');
+
 Artisan::command('waiter:check-stale-po', function () {
     $firebase = app(FirebaseService::class);
     $poFb = app(PurchaseOrderFirebaseService::class);
@@ -749,6 +794,7 @@ Schedule::command('bonus:reconcile-pending')->everyFiveMinutes()->withoutOverlap
 Schedule::command('waiter:send-monthly-report')->monthlyOn(1, '07:00')->withoutOverlapping();
 Schedule::command('waiter:check-stale-po')->dailyAt('08:00')->withoutOverlapping();
 Schedule::command('firebase:cleanup-idempotency')->dailyAt('03:00')->withoutOverlapping();
+Schedule::command('firebase:archive-completed-tasks')->hourly()->withoutOverlapping();
 Schedule::command('waiter:send-daily-task-recap')->dailyAt('21:00')->withoutOverlapping();
 Schedule::command('planning:remind-incomplete')->dailyAt('18:00')->withoutOverlapping();
 
