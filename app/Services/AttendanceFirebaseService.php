@@ -8,10 +8,12 @@ class AttendanceFirebaseService
 {
     protected $database;
     protected FirebaseService $firebase;
+    protected ShiftScheduleFirebaseService $shift;
 
-    public function __construct(Database $database, FirebaseService $firebase)
+    public function __construct(Database $database, FirebaseService $firebase, ShiftScheduleFirebaseService $shift)
     {
         $this->database = $database;
+        $this->shift = $shift;
         $this->firebase = $firebase;
     }
 
@@ -236,7 +238,7 @@ class AttendanceFirebaseService
         $clockSkewSeconds = $clientTimestampSeconds !== null ? ($nowTimestamp - $clientTimestampSeconds) : null;
 
         if ($purpose === 'clock_in') {
-            $shift = $this->firebase->getWaiterShiftForDate($waiterId, $today);
+            $shift = $this->shift->getWaiterShiftForDate($waiterId, $today);
             
             // Check if waiter is off today (libur)
             if (!$shift) {
@@ -362,6 +364,11 @@ class AttendanceFirebaseService
             $transaction->set($attendanceReference, $record);
             $transaction->set($tokenReference, $qrTokens);
         });
+
+        // Dual-write to MySQL if feature flag enabled
+        if (($result["success"] ?? false) && config("features.mysql_attendance")) {
+            $this->syncAttendanceToMysql($waiterId, $today);
+        }
 
         return $result;
     }
@@ -530,7 +537,7 @@ class AttendanceFirebaseService
                 }
                 
                 // Check if waiter is off today (libur)
-                $shift = $this->firebase->getWaiterShiftForDate($waiterId, $today);
+                $shift = $this->shift->getWaiterShiftForDate($waiterId, $today);
                 if (!$shift) {
                     $result = [
                         'success' => false,
@@ -612,6 +619,11 @@ class AttendanceFirebaseService
             
             $transaction->set($qrRef, $newQrData);
         });
+        
+        // Dual-write to MySQL if feature flag enabled
+        if (($result["success"] ?? false) && config("features.mysql_attendance")) {
+            $this->syncAttendanceToMysql($waiterId, $today);
+        }
         
         return $result;
     }
