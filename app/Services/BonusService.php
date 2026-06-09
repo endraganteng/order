@@ -824,7 +824,7 @@ class BonusService
             'date'               => $date,
             'month'              => substr($date, 0, 7),
             'reason'             => (string) ($data['reason'] ?? ''),
-            'evidence_photo_url' => (string) ($data['evidence_photo_url'] ?? ''),
+            'evidence_photo_url' => $this->uploadEvidencePhoto((string) ($data['evidence_photo_url'] ?? ''), (string) ($data['waiter_id'] ?? 'unknown')),
             'related_task_id'    => $relatedTaskId,
             'created_at'         => time(),
         ];
@@ -2198,4 +2198,45 @@ class BonusService
         $this->bonusFirebase->flagWaiterBonusPending($waiterId, $date, $context);
     }
 
+    /**
+     * Upload evidence photo to Firebase Storage, return URL.
+     * If not base64 or upload fails, return original string (may be empty or already a URL).
+     */
+    protected function uploadEvidencePhoto(string $photoUrl, string $waiterId): string
+    {
+        if ($photoUrl === '' || ! preg_match('/^data:(image\/[\w.+-]+);base64,(.+)$/si', $photoUrl, $m)) {
+            return $photoUrl;
+        }
+
+        $mime = strtolower($m[1]);
+        $bytes = base64_decode(preg_replace('/\s+/', '', $m[2]) ?? '', true);
+        if ($bytes === false || $bytes === '') {
+            return '';
+        }
+
+        $ext = match ($mime) {
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => 'jpg',
+        };
+
+        $safeWaiter = preg_replace('/[^A-Za-z0-9_-]/', '', $waiterId) ?: 'unknown';
+        $object = sprintf('penalty_evidence/%s/%d.%s', $safeWaiter, time(), $ext);
+
+        try {
+            $bucketName = (string) config('firebase.web.storage_bucket') ?: null;
+            $bucket = app('firebase.storage')->getBucket($bucketName);
+            $bucket->upload($bytes, [
+                'name' => $object,
+                'metadata' => ['contentType' => $mime],
+                'predefinedAcl' => 'publicRead',
+            ]);
+
+            return sprintf('https://storage.googleapis.com/%s/%s', $bucket->name(), $object);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return '';
+        }
+    }
 }
