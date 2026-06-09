@@ -234,7 +234,7 @@ class SalesCampaignService
             'quantity' => $quantity,
             'points_per_unit' => $pointsPerUnit,
             'points_claimed' => $pointsClaimed,
-            'photo_url' => $data['photo_url'] ?? null,
+            'photo_url' => $this->uploadClaimPhoto($data['photo_url'] ?? '', $campaignId, $data['waiter_id'] ?? 'unknown'),
             'status' => 'pending',
             'submitted_at' => time(),
             'verified_by' => null,
@@ -495,5 +495,48 @@ class SalesCampaignService
             'pending_claims' => $pendingClaims,
             'all_claims' => $claims,
         ];
+    }
+
+    /**
+     * Upload claim photo to Firebase Storage, return URL.
+     * Falls back to null (not base64) if upload fails.
+     */
+    protected function uploadClaimPhoto(string $dataUrl, string $campaignId, string $waiterId): ?string
+    {
+        if ($dataUrl === '' || ! preg_match('/^data:(image\/[\w.+-]+);base64,(.+)$/si', $dataUrl, $m)) {
+            return null;
+        }
+
+        $mime = strtolower($m[1]);
+        $bytes = base64_decode(preg_replace('/\s+/', '', $m[2]) ?? '', true);
+        if ($bytes === false || $bytes === '') {
+            return null;
+        }
+
+        $ext = match ($mime) {
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => 'jpg',
+        };
+
+        $safeCampaign = preg_replace('/[^A-Za-z0-9_-]/', '', $campaignId) ?: 'unknown';
+        $safeWaiter = preg_replace('/[^A-Za-z0-9_-]/', '', $waiterId) ?: 'unknown';
+        $object = sprintf('campaign_claims/%s/%s_%d.%s', $safeCampaign, $safeWaiter, time(), $ext);
+
+        try {
+            $bucketName = (string) config('firebase.web.storage_bucket') ?: null;
+            $bucket = app('firebase.storage')->getBucket($bucketName);
+            $bucket->upload($bytes, [
+                'name' => $object,
+                'metadata' => ['contentType' => $mime],
+                'predefinedAcl' => 'publicRead',
+            ]);
+
+            return sprintf('https://storage.googleapis.com/%s/%s', $bucket->name(), $object);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
     }
 }
